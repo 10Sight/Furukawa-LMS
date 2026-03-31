@@ -1,0 +1,362 @@
+/* Enhanced Responsive Styles for Student Course Page */
+
+/* Mobile-First Responsive Typography */
+.responsive-text {
+  font-size: clamp(0.875rem, 2.5vw, 1rem);
+  line-height: 1.6;
+}
+
+.responsive-title {
+  font-size: clamp(1.125rem, 4vw, 1.5rem);
+  line-height: 1.3;
+}
+
+.responsive-heading {
+  font-size: clamp(1.25rem, 5vw, 2rem);
+  line-height: 1.2;
+}
+
+/* Touch-Friendly Interactive Elements */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+    padding: 1rem;
+  }
+}
+
+/* Enhanced Button Responsiveness */
+.responsive-button {
+  font-size: clamp(0.75rem, 2vw, 0.875rem);
+  padding: clamp(0.5rem, 2vw, 0.75rem) clamp(0.75rem, 3vw, 1rem);
+  border-radius: clamp(0.375rem, 1vw, 0.5rem);
+}
+
+/* Mobile-Optimized Card Spacing */
+.mobile-card {
+  padding: clamp(1rem, 4vw, 1.5rem);
+  margin: clamp(0.5rem, 2vw, 1rem) 0;
+  border-radius: clamp(0.5rem, 2vw, 0.75rem);
+}
+
+/* Responsive Grid System */
+.responsive-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(1rem, 3vw, 1.5rem);
+}
+
+@media (min-width: 640px) {
+  .responsive-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-grid {
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  }
+}
+
+/* Enhanced Mobile Navigation */
+.mobile-nav-tab {
+  padding: clamp(0.75rem, 3vw, 1rem);
+  font-size: clamp(0.75rem, 2.5vw, 0.875rem);
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease-in-out;
+  white-space: nowrap;
+}
+
+.mobile-nav-tab:hover {
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.mobile-nav-tab.active {
+  border-bottom-color: rgb(59, 130, 246);
+  background-color: rgb(255, 255, 255);
+  color: rgb(59, 130, 246);
+}
+
+/* Responsive Progress Bars */
+.responsive-progress {
+  height: clamp(0.375rem, 1vw, 0.5rem);
+  border-radius: clamp(0.1875rem, 0.5vw, 0.25rem);
+}
+
+/* Mobile-Optimized Module Cards */
+.module-card {
+  border-radius: clamp(0.75rem, 2vw, 1rem);
+  padding: clamp(1rem, 4vw, 1.5rem);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.module-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 640px) {
+  .module-card:hover {
+    transform: none;
+  }
+}
+
+/* Responsive Badge Sizing */
+.responsive-badge {
+  font-size: clamp(0.625rem, 1.5vw, 0.75rem);
+  padding: clamp(0.25rem, 1vw, 0.375rem) clamp(0.5rem, 2vw, 0.75rem);
+  border-radius: clamp(0.25rem, 0.5vw, 0.375rem);
+}
+
+/* Enhanced Mobile Lesson Cards */
+.lesson-card {
+  border-radius: clamp(0.5rem, 1.5vw, 0.75rem);
+  padding: clamp(0.75rem, 3vw, 1rem);
+  margin: clamp(0.375rem, 1vw, 0.5rem) 0;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Mobile-Friendly Icon Sizing */
+.responsive-icon {
+  width: clamp(1rem, 3vw, 1.25rem);
+  height: clamp(1rem, 3vw, 1.25rem);
+}
+
+.responsive-icon-large {
+  width: clamp(1.25rem, 4vw, 1.5rem);
+  height: clamp(1.25rem, 4vw, 1.5rem);
+}
+
+/* Responsive Spacing Utilities */
+.responsive-space-y > * + * {
+  margin-top: clamp(0.75rem, 2vw, 1rem);
+}
+
+.responsive-space-y-lg > * + * {
+  margin-top: clamp(1rem, 3vw, 1.5rem);
+}
+
+.responsive-padding {
+  padding: clamp(1rem, 4vw, 1.5rem);
+}
+
+.responsive-padding-sm {
+  padding: clamp(0.5rem, 2vw, 0.75rem);
+}
+
+/* Mobile Scrollbar Styles */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Responsive Container */
+.responsive-container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 2rem);
+}
+
+/* Enhanced Focus States for Accessibility */
+.focus-enhanced:focus-visible {
+  outline: 2px solid rgb(59, 130, 246);
+  outline-offset: 2px;
+  border-radius: clamp(0.25rem, 0.5vw, 0.375rem);
+}
+
+/* Mobile-Optimized Alert Styles */
+.responsive-alert {
+  padding: clamp(0.75rem, 3vw, 1rem);
+  border-radius: clamp(0.5rem, 1.5vw, 0.75rem);
+  font-size: clamp(0.75rem, 2vw, 0.875rem);
+}
+
+/* Responsive Status Indicators */
+.status-indicator {
+  width: clamp(2rem, 5vw, 2.5rem);
+  height: clamp(2rem, 5vw, 2.5rem);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.75rem, 2vw, 0.875rem);
+  font-weight: 600;
+}
+
+/* Mobile-Friendly Tab Content */
+.tab-content {
+  padding: clamp(1rem, 4vw, 1.5rem);
+  min-height: 200px;
+}
+
+/* Responsive Skeleton Loading */
+.skeleton-responsive {
+  height: clamp(1rem, 3vw, 1.25rem);
+  border-radius: clamp(0.25rem, 0.5vw, 0.375rem);
+}
+
+/* Enhanced Mobile Layout Utilities */
+@media (max-width: 640px) {
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+  
+  .mobile-full-width {
+    width: 100% !important;
+  }
+  
+  .mobile-center {
+    text-align: center !important;
+  }
+  
+  .mobile-hidden {
+    display: none !important;
+  }
+}
+
+/* Tablet-Specific Optimizations */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .tablet-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .tablet-padding {
+    padding: clamp(1rem, 2vw, 1.5rem);
+  }
+}
+
+/* Desktop Enhancements */
+@media (min-width: 1025px) {
+  .desktop-hover-effects {
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .desktop-hover-effects:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* High DPI Display Optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .sharp-borders {
+    border-width: 0.5px;
+  }
+}
+
+/* Dark Mode Considerations */
+@media (prefers-color-scheme: dark) {
+  .responsive-card-dark {
+    background-color: rgba(31, 41, 55, 0.8);
+    border-color: rgba(75, 85, 99, 0.5);
+  }
+}
+
+/* Reduced Motion Preferences */
+@media (prefers-reduced-motion: reduce) {
+  .motion-safe {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .print-hidden {
+    display: none !important;
+  }
+  
+  .print-page-break {
+    page-break-after: always;
+  }
+}
+
+/* Custom Responsive Breakpoint Utilities */
+.xs-only {
+  display: block;
+}
+
+@media (min-width: 640px) {
+  .xs-only {
+    display: none;
+  }
+  
+  .sm-up {
+    display: block;
+  }
+}
+
+@media (min-width: 768px) {
+  .md-up {
+    display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lg-up {
+    display: block;
+  }
+}
+
+/* Enhanced Animation Classes */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Responsive Image Utilities */
+.responsive-image {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  object-fit: cover;
+  border-radius: clamp(0.5rem, 1vw, 0.75rem);
+}
+
+/* Mobile-Optimized Input Styles */
+.responsive-input {
+  font-size: 16px; /* Prevents zoom on iOS */
+  padding: clamp(0.75rem, 3vw, 1rem);
+  border-radius: clamp(0.5rem, 1vw, 0.75rem);
+}
+
+@media (min-width: 640px) {
+  .responsive-input {
+    font-size: 14px;
+  }
+}

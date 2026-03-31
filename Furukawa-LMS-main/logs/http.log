@@ -1,0 +1,83 @@
+[21 Feb, 2026 - 01:38:45:3845] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[21 Feb, 2026 - 01:38:58:3858] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[21 Feb, 2026 - 01:39:22:3922] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[21 Feb, 2026 - 01:39:42:3942] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[21 Feb, 2026 - 03:33:17:3317] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[21 Feb, 2026 - 03:33:36:3336] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[21 Feb, 2026 - 03:36:04:364] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[21 Feb, 2026 - 03:36:24:3624] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[24 Feb, 2026 - 23:19:20:1920] [34minfo[39m: [34mStarting database table initialization...[39m
+[24 Feb, 2026 - 23:19:21:1921] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[24 Feb, 2026 - 23:19:21:1921] [34minfo[39m: [34mDatabase connection established.[39m
+[24 Feb, 2026 - 23:19:21:1921] [34minfo[39m: [34mFound 38 model files to initialize.[39m
+[24 Feb, 2026 - 23:19:21:1921] [34minfo[39m: [34mProcessing auth.model.js...[39m
+[24 Feb, 2026 - 23:19:21:1921] [34minfo[39m: [34mProcessing department.model.js...[39m
+[24 Feb, 2026 - 23:19:21:1921] [34minfo[39m: [34mChecked/Created departments table in MSSQL[39m
+[24 Feb, 2026 - 23:19:22:1922] [34minfo[39m: [34mProcessing course.model.js...[39m
+[24 Feb, 2026 - 23:19:22:1922] [34minfo[39m: [34mProcessing module.model.js...[39m
+[24 Feb, 2026 - 23:19:23:1923] [34minfo[39m: [34mProcessing lesson.model.js...[39m
+[24 Feb, 2026 - 23:19:23:1923] [34minfo[39m: [34mProcessing assignment.model.js...[39m
+[24 Feb, 2026 - 23:19:24:1924] [34minfo[39m: [34mProcessing quiz.model.js...[39m
+[24 Feb, 2026 - 23:19:24:1924] [34minfo[39m: [34mProcessing attemptedQuiz.model.js...[39m
+[24 Feb, 2026 - 23:19:25:1925] [34minfo[39m: [34mProcessing attemptExtensionRequest.model.js...[39m
+[24 Feb, 2026 - 23:19:25:1925] [34minfo[39m: [34mProcessing attendanceLog.model.js...[39m
+[24 Feb, 2026 - 23:19:26:1926] [34minfo[39m: [34mProcessing audit.model.js...[39m
+[24 Feb, 2026 - 23:19:26:1926] [34minfo[39m: [34mProcessing certificate.model.js...[39m
+[24 Feb, 2026 - 23:19:27:1927] [34minfo[39m: [34mProcessing certificateTemplate.model.js...[39m
+[24 Feb, 2026 - 23:19:27:1927] [34minfo[39m: [34mProcessing courseLevelConfig.model.js...[39m
+[24 Feb, 2026 - 23:19:28:1928] [34minfo[39m: [34mProcessing customRole.model.js...[39m
+[24 Feb, 2026 - 23:19:28:1928] [34minfo[39m: [34mProcessing daily5MConfig.model.js...[39m
+[24 Feb, 2026 - 23:19:29:1929] [34minfo[39m: [34mProcessing daily5MRecord.model.js...[39m
+[24 Feb, 2026 - 23:19:29:1929] [34minfo[39m: [34mProcessing dailyProductionReport.model.js...[39m
+[24 Feb, 2026 - 23:19:30:1930] [34minfo[39m: [34mProcessing enrollment.model.js...[39m
+[24 Feb, 2026 - 23:19:30:1930] [34minfo[39m: [34mProcessing extraAttempt.model.js...[39m
+[24 Feb, 2026 - 23:19:31:1931] [34minfo[39m: [34mProcessing handoverSheet.model.js...[39m
+[24 Feb, 2026 - 23:19:31:1931] [34minfo[39m: [34mProcessing line.model.js...[39m
+[24 Feb, 2026 - 23:19:32:1932] [34minfo[39m: [34mProcessing machine.model.js...[39m
+[24 Feb, 2026 - 23:19:32:1932] [34minfo[39m: [34mProcessing mail.model.js...[39m
+[24 Feb, 2026 - 23:19:33:1933] [34minfo[39m: [34mProcessing moduleTimeline.model.js...[39m
+[24 Feb, 2026 - 23:19:33:1933] [34minfo[39m: [34mProcessing multiSkillingPlan.model.js...[39m
+[24 Feb, 2026 - 23:19:34:1934] [34minfo[39m: [34mProcessing onJobTraining.model.js...[39m
+[24 Feb, 2026 - 23:19:34:1934] [34minfo[39m: [34mChecked/Created on_job_trainings table in MSSQL[39m
+[24 Feb, 2026 - 23:19:34:1934] [34minfo[39m: [34mProcessing operatorObservance.model.js...[39m
+[24 Feb, 2026 - 23:19:35:1935] [34minfo[39m: [34mProcessing privilege.model.js...[39m
+[24 Feb, 2026 - 23:19:35:1935] [34minfo[39m: [34mProcessing progress.model.js...[39m
+[24 Feb, 2026 - 23:19:36:1936] [34minfo[39m: [34mProcessing requirement.model.js...[39m
+[24 Feb, 2026 - 23:19:36:1936] [34minfo[39m: [34mProcessing resource.model.js...[39m
+[24 Feb, 2026 - 23:19:37:1937] [34minfo[39m: [34mProcessing skillMatrix.model.js...[39m
+[24 Feb, 2026 - 23:19:37:1937] [34minfo[39m: [34mProcessing submission.model.js...[39m
+[24 Feb, 2026 - 23:19:38:1938] [34minfo[39m: [34mProcessing systemSettings.model.js...[39m
+[24 Feb, 2026 - 23:19:39:1939] [34minfo[39m: [34mProcessing tenCycleCheck.model.js...[39m
+[24 Feb, 2026 - 23:19:39:1939] [34minfo[39m: [34mProcessing tenCycleSheet.model.js...[39m
+[24 Feb, 2026 - 23:19:40:1940] [34minfo[39m: [34mProcessing threeDayMonitoring.model.js...[39m
+[24 Feb, 2026 - 23:19:40:1940] [34minfo[39m: [34mDatabase table initialization completed.[39m
+[25 Feb, 2026 - 11:11:09:119] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[25 Feb, 2026 - 11:11:22:1122] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[25 Feb, 2026 - 11:12:02:122] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Mar, 2026 - 23:18:41:1841] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Mar, 2026 - 23:18:52:1852] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Mar, 2026 - 23:19:14:1914] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Mar, 2026 - 23:20:16:2016] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Mar, 2026 - 23:40:07:407] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[12 Mar, 2026 - 00:31:32:3132] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[12 Mar, 2026 - 14:37:39:3739] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[13 Mar, 2026 - 23:54:41:5441] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[13 Mar, 2026 - 23:56:59:5659] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[14 Mar, 2026 - 00:32:59:3259] [34minfo[39m: [34mSocket.IO service initialized[39m
+[14 Mar, 2026 - 00:32:59:3259] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[14 Mar, 2026 - 00:33:00:330] [34minfo[39m: [34mChecked/Created departments table in MSSQL[39m
+[14 Mar, 2026 - 00:33:00:330] [34minfo[39m: [34mChecked/Created on_job_trainings table in MSSQL[39m
+[14 Mar, 2026 - 00:33:00:330] [34minfo[39m: [34mRequirementUpdateLogs table initialized/verified for MSSQL[39m
+[14 Mar, 2026 - 00:33:01:331] [34minfo[39m: [34mChecked/Created sections table and migrated columns in MSSQL[39m
+[14 Mar, 2026 - 00:33:01:331] [34minfo[39m: [34mSubSection table initialized[39m
+[14 Mar, 2026 - 00:33:22:3322] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[14 Mar, 2026 - 00:34:50:3450] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[14 Mar, 2026 - 00:35:06:356] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[14 Mar, 2026 - 00:35:50:3550] [34minfo[39m: [34mSocket.IO service initialized[39m
+[14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mChecked/Created departments table in MSSQL[39m
+[14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mRequirementUpdateLogs table initialized/verified for MSSQL[39m
+[14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mChecked/Created on_job_trainings table in MSSQL[39m
+[14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mChecked/Created sections table and migrated columns in MSSQL[39m
+[14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mSubSection table initialized[39m
+[14 Mar, 2026 - 00:36:06:366] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m

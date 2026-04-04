@@ -176,6 +176,21 @@ class Section {
         await executeQuery(`UPDATE [sections] SET ${updateFields.join(", ")} WHERE id = ?`, values);
         return Section.findById(id);
     }
+    
+    static async findAll() {
+        const query = `
+            SELECT s.*, 
+            (SELECT COUNT(DISTINCT ma.user_id) 
+             FROM machine_assignments ma
+             JOIN machines m ON ma.machine_id = m.id
+             JOIN sub_sections ss ON m.subSectionId = ss.id
+             JOIN [lines] l ON ss.lineId = l.id
+             WHERE l.sectionId = s.id) as sectionCount
+            FROM [sections] s 
+            ORDER BY s.createdAt DESC`;
+        const [rows] = await executeQuery(query);
+        return rows.map(row => new Section(row));
+    }
 }
 
 // Initialize table

@@ -50,7 +50,7 @@ const ensureSkillMatrixMonthSchema = async () => {
 const saveSkillMatrix = asyncHandler(async (req, res) => {
     await ensureSkillMatrixMonthSchema();
 
-    const { department, line, month, entries, headerInfo, footerInfo } = req.body;
+    const { department, section, line, subSection, station, month, entries, headerInfo, footerInfo } = req.body;
 
     if (!department || !line) {
         throw new ApiError(400, "Department and Line are required");
@@ -62,10 +62,17 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
     const headerJson = JSON.stringify(headerInfo || {});
     const footerJson = JSON.stringify(footerInfo || {});
 
-    // Check if exists
+    // Build Where Clause for existence check
+    const whereClauses = ["department = ?", "line = ?", "month = ?"];
+    const whereParams = [department, line, targetMonth];
+
+    if (section) { whereClauses.push("section = ?"); whereParams.push(section); } else { whereClauses.push("section IS NULL"); }
+    if (subSection) { whereClauses.push("subSection = ?"); whereParams.push(subSection); } else { whereClauses.push("subSection IS NULL"); }
+    if (station) { whereClauses.push("station = ?"); whereParams.push(station); } else { whereClauses.push("station IS NULL"); }
+
     const [existing] = await executeQuery(
-        "SELECT id FROM skill_matrices WHERE department = ? AND line = ? AND month = ?",
-        [department, line, targetMonth]
+        `SELECT id FROM skill_matrices WHERE ${whereClauses.join(' AND ')}`,
+        whereParams
     );
 
     let matrixId;
@@ -81,10 +88,10 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
     } else {
         // Insert
         const [insertRows] = await executeQuery(
-            `INSERT INTO skill_matrices (department, line, month, entries, headerInfo, footerInfo, createdAt, updatedAt)
+            `INSERT INTO skill_matrices (department, section, line, subSection, station, month, entries, headerInfo, footerInfo, createdAt, updatedAt)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
-            [department, line, targetMonth, entriesJson, headerJson, footerJson]
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+            [department, section || null, line, subSection || null, station || null, targetMonth, entriesJson, headerJson, footerJson]
         );
         matrixId = insertRows[0].id;
     }
@@ -165,25 +172,29 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
 const getSkillMatrix = asyncHandler(async (req, res) => {
     await ensureSkillMatrixMonthSchema();
 
-    const { departmentId, lineId } = req.params;
-    const { month } = req.query;
+    // Use query params for all flexible hierarchy filters
+    const { departmentId, sectionId, lineId, subSectionId, stationId, month } = req.query;
 
-    if (!departmentId || !lineId) {
+    // Backward compatibility with params if still used, but prefer query
+    const dept = departmentId || req.params.departmentId;
+    const line = lineId || req.params.lineId;
+
+    if (!dept || !line) {
         throw new ApiError(400, "Department ID and Line ID are required");
     }
 
-    let rows;
-    if (month) {
-        [rows] = await executeQuery(
-            "SELECT * FROM skill_matrices WHERE department = ? AND line = ? AND month = ?",
-            [departmentId, lineId, month]
-        );
-    } else {
-        [rows] = await executeQuery(
-            "SELECT TOP 1 * FROM skill_matrices WHERE department = ? AND line = ? ORDER BY updatedAt DESC",
-            [departmentId, lineId]
-        );
-    }
+    let whereClauses = ["department = ?", "line = ?"];
+    let params = [dept, line];
+
+    if (sectionId) { whereClauses.push("section = ?"); params.push(sectionId); }
+    if (subSectionId) { whereClauses.push("subSection = ?"); params.push(subSectionId); }
+    if (stationId) { whereClauses.push("station = ?"); params.push(stationId); }
+    if (month) { whereClauses.push("month = ?"); params.push(month); }
+
+    let sql = `SELECT * FROM skill_matrices WHERE ${whereClauses.join(' AND ')}`;
+    if (!month) sql += " ORDER BY updatedAt DESC OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY";
+
+    const [rows] = await executeQuery(sql, params);
 
     if (rows.length === 0) {
         // Return null data with success code if not found, 
@@ -209,38 +220,42 @@ const getSkillMatrix = asyncHandler(async (req, res) => {
 const listSkillMatrices = asyncHandler(async (req, res) => {
     await ensureSkillMatrixMonthSchema();
 
-    const { departmentId, lineId, month } = req.query;
+    const { departmentId, sectionId, lineId, subSectionId, stationId, month } = req.query;
 
     let sql = `
         SELECT 
-            sm.id,
-            sm.department,
-            sm.line,
-            sm.month,
-            sm.createdAt,
-            sm.updatedAt,
+            sm.id, sm.department, sm.section, sm.line, sm.subSection, sm.station, sm.month, sm.createdAt, sm.updatedAt,
             d.name AS departmentName,
+            sec.name AS sectionName,
             l.name AS lineName,
-            l.lineLeader AS lineLeaderName
+            ss.name AS subSectionName,
+            st.name AS stationName,
+            l.lineLeader AS lineLeaderName,
+            -- Calculate User Count based on most granular hierarchy level
+            COALESCE(
+              CASE 
+                WHEN sm.station IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE stationId = CAST(sm.station AS VARCHAR(255)) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
+                WHEN sm.subSection IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE subSectionId = CAST(sm.subSection AS VARCHAR(255)) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
+                WHEN sm.line IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE (lineId = CAST(sm.line AS VARCHAR(255)) OR subSectionId IN (SELECT id FROM sub_sections WHERE lineId = CAST(sm.line AS VARCHAR(255)))) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
+                WHEN sm.section IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE (sectionId = CAST(sm.section AS VARCHAR(255)) OR lineId IN (SELECT id FROM [lines] WHERE sectionId = CAST(sm.section AS VARCHAR(255)))) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
+                ELSE (SELECT COUNT(*) FROM users WHERE departmentId = CAST(sm.department AS VARCHAR(255)) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
+              END, 0) as userCount
         FROM skill_matrices sm
         LEFT JOIN departments d ON (sm.department = CAST(d.id AS VARCHAR(255)) OR sm.department = d.name)
+        LEFT JOIN sections sec ON (sm.section = CAST(sec.id AS VARCHAR(255)) OR sm.section = sec.name)
         LEFT JOIN [lines] l ON (sm.line = CAST(l.id AS VARCHAR(255)) OR sm.line = l.name)
+        LEFT JOIN sub_sections ss ON (sm.subSection = CAST(ss.id AS VARCHAR(255)) OR sm.subSection = ss.name)
+        LEFT JOIN machines st ON (sm.station = CAST(st.id AS VARCHAR(255)) OR sm.station = st.name)
         WHERE 1 = 1
     `;
     const params = [];
 
-    if (departmentId) {
-        sql += " AND sm.department = ?";
-        params.push(departmentId);
-    }
-    if (lineId) {
-        sql += " AND sm.line = ?";
-        params.push(lineId);
-    }
-    if (month) {
-        sql += " AND sm.month = ?";
-        params.push(month);
-    }
+    if (departmentId) { sql += " AND sm.department = ?"; params.push(departmentId); }
+    if (sectionId) { sql += " AND sm.section = ?"; params.push(sectionId); }
+    if (lineId) { sql += " AND sm.line = ?"; params.push(lineId); }
+    if (subSectionId) { sql += " AND sm.subSection = ?"; params.push(subSectionId); }
+    if (stationId) { sql += " AND sm.station = ?"; params.push(stationId); }
+    if (month) { sql += " AND sm.month = ?"; params.push(month); }
 
     sql += " ORDER BY sm.updatedAt DESC, sm.createdAt DESC";
 

@@ -15,20 +15,30 @@ export const skillMatrixApi = createApi({
             invalidatesTags: ["SkillMatrix"],
         }),
         getSkillMatrix: builder.query({
-            query: ({ departmentId, lineId, month }) => ({
-                url: `/api/skill-matrix/${departmentId}/${lineId}`,
+            query: ({ departmentId, sectionId, lineId, subSectionId, stationId, month }) => ({
+                url: `/api/skill-matrix/fetch`, // Using a generic fetch endpoint or query params
                 method: "GET",
-                params: month ? { month } : undefined,
+                params: {
+                    departmentId,
+                    sectionId,
+                    lineId,
+                    subSectionId,
+                    stationId,
+                    ...(month ? { month } : {})
+                },
             }),
             providesTags: ["SkillMatrix"],
         }),
         getSkillMatrixList: builder.query({
-            query: ({ departmentId, lineId, month } = {}) => ({
+            query: ({ departmentId, sectionId, lineId, subSectionId, stationId, month } = {}) => ({
                 url: "/api/skill-matrix/list",
                 method: "GET",
                 params: {
                     ...(departmentId ? { departmentId } : {}),
+                    ...(sectionId ? { sectionId } : {}),
                     ...(lineId ? { lineId } : {}),
+                    ...(subSectionId ? { subSectionId } : {}),
+                    ...(stationId ? { stationId } : {}),
                     ...(month ? { month } : {}),
                 },
             }),

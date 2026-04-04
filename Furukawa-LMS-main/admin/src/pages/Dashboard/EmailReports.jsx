@@ -37,7 +37,7 @@ const fetchRecipients = async () => {
     try {
         setLoading(true);
         // 1. Ensure this matches index.js mounting point
-        const res = await axiosInstance.get('/api/email-configurations');
+        const res = await axiosInstance.get('/api/reports/recipients');
 
         // 2. Based on your controller, the list is in res.data.data
         const list = res?.data?.data;
@@ -92,18 +92,14 @@ const fetchRecipients = async () => {
         try {
             setSaving(true);
 
-            // This is your backend-compatible payload
+            // Payload for email_report_recipients via /api/reports/recipients
             const submission = {
-                formName: 'Manpower Report',
-                departmentId: null,
-                toEmails: cleanedEmail,
-                ccEmails: null,
-                includeTrainer: false,
-                isActive: true
+                email: cleanedEmail,
+                frequency: form.frequency,
+                reportTypes: form.reportTypes
             };
 
-            // FIXED THE URL HERE to match your index.js
-            const res = await axiosInstance.post(`/api/email-configurations`, submission);
+            const res = await axiosInstance.post(`/api/reports/recipients`, submission);
 
             // Reset the form using your existing setForm state
             setForm({
@@ -129,8 +125,8 @@ const fetchRecipients = async () => {
         try {
             setLoading(true);
 
-            // CHANGE THIS LINE: from `/api/reports/${id}` to `/api/email-configurations/${id}`
-            const res = await axiosInstance.delete(`/api/email-configurations/${id}`);
+            // CHANGE THIS LINE: from `/api/email-configurations/${id}` to `/api/reports/recipients/${id}`
+            const res = await axiosInstance.delete(`/api/reports/recipients/${id}`);
 
             if (res.data.success) {
                 toast.success("Recipient deleted successfully");
@@ -346,7 +342,7 @@ const fetchRecipients = async () => {
                             ) : (
                                 <div className="space-y-3 p-2">
                                     {recipients.map((r) => {
-                                        const displayEmail = (r.toEmails || '').split(',')[0]?.trim() || '-';
+                                        const displayEmail = (r.email || r.toEmails || '').split(',')[0]?.trim() || '-';
 
                                         return (
                                             <div key={r.id} className="group p-4 rounded-xl border border-transparent hover:border-slate-200 bg-slate-50/50 hover:bg-white transition-all flex flex-col md:flex-row items-center gap-4">

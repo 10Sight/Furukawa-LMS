@@ -11,6 +11,7 @@ class Machine {
         this.subSectionId = data.subSectionId || null;
         this.description = data.description;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
+        this.machineCount = data.machineCount || 0;
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -171,7 +172,14 @@ class Machine {
     }
 
     static async findById(id) {
-        const [rows] = await executeQuery("SELECT * FROM machines WHERE id = ?", [id]);
+        const query = `
+            SELECT m.*, 
+            (SELECT COUNT(DISTINCT ma.user_id) 
+             FROM machine_assignments ma
+             WHERE ma.machine_id = m.id) as machineCount
+            FROM machines m 
+            WHERE m.id = ?`;
+        const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
         return new Machine(rows[0]);
     }
@@ -190,7 +198,12 @@ class Machine {
 
     static async find(query = {}) {
         const keys = Object.keys(query).filter(key => query[key] !== undefined);
-        let sql = "SELECT * FROM machines";
+        let sql = `
+            SELECT m.*, 
+            (SELECT COUNT(DISTINCT ma.user_id) 
+             FROM machine_assignments ma
+             WHERE ma.machine_id = m.id) as machineCount
+            FROM machines m`;
         let values = [];
 
         if (keys.length > 0) {

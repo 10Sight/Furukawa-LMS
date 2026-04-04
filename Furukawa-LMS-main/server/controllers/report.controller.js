@@ -3,6 +3,8 @@ import NotificationService from '../services/notification.service.js';
 import { executeQuery } from '../db/mssqlHelper.js';
 import ExcelJS from 'exceljs';
 import HeadcountReport from '../models/headcountReport.model.js';
+import Mail from '../models/mail.model.js';
+import sendMail from '../utils/mail.util.js';
 
 /**
  * Controller to handle manual Excel report exports for configured sheets.
@@ -164,11 +166,11 @@ export const saveHeadcountReport = asyncHandler(async (req, res) => {
 
     // Trigger Email Notification
     const reportDate = new Date(year, month - 1, 1);
-    NotificationService.sendFormReport("Associates Headcount Report", null, { 
-        tableData, 
-        month, 
+    NotificationService.sendFormReport("Associates Headcount Report", null, {
+        tableData,
+        month,
         year,
-        date: reportDate.toISOString().split('T')[0] 
+        date: reportDate.toISOString().split('T')[0]
     }).catch(err => console.error("[Headcount] Notification failed:", err));
 
     res.status(200).json({
@@ -654,78 +656,26 @@ export const triggerManualReport = asyncHandler(async (req, res) => {
         return res.status(200).json({ success: true, data: { recipientCount: 0 }, message: "No recipients configured" });
     }
 
-    // Fetch current manpower data for the report body
-    let manpowerRows = [];
     try {
-        const [rows] = await executeQuery(`
-            SELECT TOP 100
-                section, sub_section, line_area, stationNo,
-                supervisorName, month, year, salesPlan, prodPlan
-            FROM requirements
-            ORDER BY year DESC, section ASC
-        `);
-        manpowerRows = rows || [];
+        const emailList = mails.map(m => m.email);
+        
+        // Import generateAndSend dynamically to avoid circular dependencies if any
+        const { generateAndSend } = await import('../services/report.service.js');
+        
+        // Send the complete Excel report
+        await generateAndSend(emailList, "(Manual Trigger)");
+
+        res.status(200).json({
+            success: true,
+            data: { recipientCount: mails.length, sent: mails.length, failed: 0 },
+            message: `Report Excel sent to ${mails.length} recipients successfully.`
+        });
     } catch (err) {
-        console.error("[Report] Failed to fetch manpower data:", err.message);
+        console.error("[Report Controller] Failed to trigger manual report:", err);
+        res.status(500).json({
+            success: false,
+            message: "Failed to generate and send Excel report.",
+            error: err.message
+        });
     }
-
-    // Build HTML table
-    const tableRows = manpowerRows.length > 0
-        ? manpowerRows.map(r => `
-            <tr>
-                <td style="padding:6px 10px;border:1px solid #e2e8f0">${r.section || '-'}</td>
-                <td style="padding:6px 10px;border:1px solid #e2e8f0">${r.sub_section || '-'}</td>
-                <td style="padding:6px 10px;border:1px solid #e2e8f0">${r.line_area || '-'}</td>
-                <td style="padding:6px 10px;border:1px solid #e2e8f0">${r.month || '-'}</td>
-                <td style="padding:6px 10px;border:1px solid #e2e8f0">${r.year || '-'}</td>
-                <td style="padding:6px 10px;border:1px solid #e2e8f0;text-align:center">${r.salesPlan ?? '-'}</td>
-                <td style="padding:6px 10px;border:1px solid #e2e8f0;text-align:center">${r.prodPlan ?? '-'}</td>
-            </tr>`).join('')
-        : `<tr><td colspan="7" style="padding:12px;text-align:center;color:#94a3b8">No data available</td></tr>`;
-
-    const reportDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
-
-    const htmlBody = `
-        <div style="font-family:Arial,sans-serif;max-width:900px;margin:0 auto">
-            <div style="background:#1e40af;color:white;padding:20px 24px;border-radius:8px 8px 0 0">
-                <h2 style="margin:0;font-size:20px">📊 Manpower Report</h2>
-                <p style="margin:4px 0 0;opacity:0.8;font-size:13px">Generated on ${reportDate}</p>
-            </div>
-            <div style="border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 8px 8px">
-                <table style="width:100%;border-collapse:collapse;font-size:13px">
-                    <thead>
-                        <tr style="background:#f1f5f9;color:#475569">
-                            <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left">Section</th>
-                            <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left">Sub-Section</th>
-                            <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left">Line Area</th>
-                            <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left">Month</th>
-                            <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left">Year</th>
-                            <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center">Sales Plan</th>
-                            <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center">Prod Plan</th>
-                        </tr>
-                    </thead>
-                    <tbody>${tableRows}</tbody>
-                </table>
-                <p style="margin-top:16px;font-size:12px;color:#94a3b8">
-                    This is an automated report from <strong>Furukawa LMS</strong>. Do not reply to this email.
-                </p>
-            </div>
-        </div>`;
-
-    // Dispatch to all recipients, track failures individually
-    const results = await Promise.allSettled(
-        mails.map(m => sendMail(m.email, `Manpower Report – ${reportDate}`, htmlBody))
-    );
-
-    const sent = results.filter(r => r.status === 'fulfilled').length;
-    const failed = results.filter(r => r.status === 'rejected');
-    if (failed.length > 0) {
-        failed.forEach((f, i) => console.error(`[Report] Failed to send to recipient ${i + 1}:`, f.reason?.message));
-    }
-
-    res.status(200).json({
-        success: true,
-        data: { recipientCount: mails.length, sent, failed: failed.length },
-        message: `Report sent to ${sent} of ${mails.length} recipients`
-    });
 });

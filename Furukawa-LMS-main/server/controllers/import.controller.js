@@ -6,6 +6,37 @@ import bcrypt from "bcryptjs";
 import User from "../models/auth.model.js";
 
 /**
+ * Helper to sync user ID to department's students array
+ */
+const syncDepartmentStudents = async (userId, departmentId) => {
+    if (!userId || !departmentId) return;
+    try {
+        const [deptRows] = await executeQuery("SELECT id, students FROM departments WHERE id = ?", [departmentId]);
+        if (deptRows.length === 0) return;
+
+        let students = [];
+        try {
+            students = JSON.parse(deptRows[0].students || "[]");
+        } catch (e) {
+            students = [];
+        }
+
+        if (!Array.isArray(students)) students = [];
+
+        // Add user if not already present
+        if (!students.includes(userId) && !students.includes(String(userId))) {
+            students.push(userId);
+            await executeQuery(
+                "UPDATE departments SET students = ? WHERE id = ?",
+                [JSON.stringify(students), departmentId]
+            );
+        }
+    } catch (error) {
+        console.error(`Error syncing user ${userId} to department ${departmentId}:`, error);
+    }
+};
+
+/**
  * Import employees from Excel file
  * Expected columns: EmployeeID, CardNo, Name, Father/HusbandName, Gender, Department, Section, Line, Sub Section, Station No., Mentor, Designation, D.O.B., D.O.J., Education, District, State, PIN, Bus Route, E-Mail ID, Mobile No., L, Date of Leaving, Reason of Leaving, Status
  */
@@ -201,7 +232,8 @@ export const importEmployees = async (req, res) => {
                     isAdmin: false,
                     isTrainer: false,
                     email: normalizedRow.email || `${normalizedRow.empId.toLowerCase()}@example.com`,
-                    status: normalizedRow.status || "PRESENT"
+                    status: normalizedRow.status || "PRESENT",
+                    departments: departmentId ? [departmentId] : []
                 };
 
                 // Check if user already exists
@@ -290,39 +322,44 @@ export const importEmployees = async (req, res) => {
                         }
                     }
 
-                    if (Object.keys(changes).length > 0) {
+                    // ALWAYS ensure departments array is in sync with departmentId
+                    if (userData.departmentId) {
+                        updatedData.departments = JSON.stringify([userData.departmentId]);
+                    }
+
+                    if (Object.keys(updatedData).length > 0) {
                         const updateFields = Object.keys(updatedData).map(k => `${k} = ?`).join(', ');
                         const values = [...Object.values(updatedData), existingUser.id];
-                        // Ensure user is restored if previously soft-deleted
+                        
                         await executeQuery(`UPDATE users SET ${updateFields}, isDeleted = 0 WHERE id = ?`, values);
 
+                        const status = Object.keys(changes).length > 0 ? "UPDATED" : "SUCCESS";
                         results.success.push({
                             row: rowNumber,
                             userName: userData.userName,
                             empId: userData.empId,
-                            status: "UPDATED",
-                            changes
+                            status
                         });
-                        results.updatedCount++;
+                        if (status === "UPDATED") results.updatedCount++;
 
                         await executeQuery(
                             "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId, changes) VALUES (?, ?, ?, ?, ?, ?)",
-                            [logId, rowNumber, JSON.stringify(row), "UPDATED", existingUser.id, JSON.stringify(changes)]
+                            [logId, rowNumber, JSON.stringify(row), status, existingUser.id, JSON.stringify(changes)]
                         );
+
+                        // Always ensure department students list is synced for any processed operator
+                        if (userData.departmentId) {
+                            await syncDepartmentStudents(existingUser.id, userData.departmentId);
+                        }
                     } else {
+                        // This case should theoretically not happen now as departments is always synced if departmentId exists
                         results.success.push({
                             row: rowNumber,
                             userName: userData.userName,
                             empId: userData.empId,
                             status: "SUCCESS"
                         });
-
-                        // Ensure user is restored if previously soft-deleted, even if no other data changed
-                        await executeQuery(
-                            "UPDATE users SET isDeleted = 0 WHERE id = ?",
-                            [existingUser.id]
-                        );
-
+                        await executeQuery("UPDATE users SET isDeleted = 0 WHERE id = ?", [existingUser.id]);
                         await executeQuery(
                             "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
                             [logId, rowNumber, JSON.stringify(row), "SUCCESS", existingUser.id]
@@ -333,6 +370,11 @@ export const importEmployees = async (req, res) => {
 
                 // Insert user
                 const newUser = await User.create(userData);
+
+                // Sync department students list for new user
+                if (departmentId) {
+                    await syncDepartmentStudents(newUser.id, departmentId);
+                }
 
                 results.success.push({
                     row: rowNumber,

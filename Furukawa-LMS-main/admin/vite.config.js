@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: '10Sight LMS',
-        short_name: '10Sight',
+        name: 'Furukawa Minda LMS',
+        short_name: 'Furukawa Minda',
         description: 'Learning Management System',
         theme_color: '#ffffff',
         background_color: '#ffffff',

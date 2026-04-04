@@ -33,6 +33,24 @@ export const MachineApi = createApi({
             }),
             providesTags: (result, error, lineId) => [{ type: 'Machine', id: `line-${lineId}` }],
         }),
+        
+        // Get Machines by Section
+        getMachinesBySection: builder.query({
+            query: (sectionId) => ({
+                url: `/api/machines/section/${sectionId}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, sectionId) => [{ type: 'Machine', id: `section-${sectionId}` }],
+        }),
+
+        // Get Machines by Department
+        getMachinesByDepartment: builder.query({
+            query: (departmentId) => ({
+                url: `/api/machines/department/${departmentId}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, departmentId) => [{ type: 'Machine', id: `dept-${departmentId}` }],
+        }),
 
         // Update Machine
         updateMachine: builder.mutation({
@@ -115,6 +133,8 @@ export const {
     useCreateMachineMutation,
     useGetMachinesBySubSectionQuery,
     useGetMachinesByLineQuery,
+    useGetMachinesBySectionQuery,
+    useGetMachinesByDepartmentQuery,
     useUpdateMachineMutation,
     useUpdateMachineStatusMutation,
     useDeleteMachineMutation,

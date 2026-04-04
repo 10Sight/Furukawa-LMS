@@ -78,7 +78,7 @@ self.addEventListener('activate', (event) => {
 // Push notification event
 self.addEventListener('push', (event) => {
   const options = {
-    body: event.data ? event.data.text() : 'New notification from 10Sight LMS',
+    body: event.data ? event.data.text() : 'New notification from Furukawa Minda LMS',
     icon: '/icons/icon-192x192.png',
     badge: '/icons/icon-72x72.png',
     vibrate: [200, 100, 200],
@@ -101,7 +101,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification('10Sight LMS', options)
+    self.registration.showNotification('Furukawa Minda LMS', options)
   );
 });
 

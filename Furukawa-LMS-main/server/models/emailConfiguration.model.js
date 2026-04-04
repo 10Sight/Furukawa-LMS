@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class EmailConfiguration {
@@ -6,6 +7,7 @@ class EmailConfiguration {
         this.id = data.id;
         this.formName = data.formName;
         this.departmentId = data.departmentId;
+        this.sectionId = data.sectionId;
         this.toEmails = data.toEmails;
         this.ccEmails = data.ccEmails;
         this.includeTrainer = data.includeTrainer !== undefined ? !!data.includeTrainer : false;
@@ -22,68 +24,73 @@ class EmailConfiguration {
           id INT IDENTITY(1,1) PRIMARY KEY,
           formName VARCHAR(150) NOT NULL,
           departmentId INT NULL,
+          sectionId INT NULL,
           toEmails NVARCHAR(MAX),
           ccEmails NVARCHAR(MAX),
           includeTrainer BIT DEFAULT 0,
           isActive BIT DEFAULT 1,
           createdAt DATETIME DEFAULT GETDATE(),
           updatedAt DATETIME DEFAULT GETDATE(),
-          CONSTRAINT fk_email_config_dept FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
+          CONSTRAINT fk_email_config_dept FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
+          CONSTRAINT fk_email_config_sec FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE NO ACTION
         )
-      END
-      ELSE
-      BEGIN
-        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('email_configurations') AND name = 'includeTrainer')
-        BEGIN
-          ALTER TABLE email_configurations ADD includeTrainer BIT DEFAULT 0;
-        END
       END
     `;
         try {
             await executeQuery(query);
+            // Auto-migration for missing columns
+            await migrationHelper.ensureColumnExists('email_configurations', 'includeTrainer', 'BIT DEFAULT 0');
+            await migrationHelper.ensureColumnExists('email_configurations', 'sectionId', 'INT NULL');
         } catch (error) {
             logger.error("Failed to initialize email_configurations table", error);
         }
     }
 
     static async create(data) {
-        const { formName, departmentId, toEmails, ccEmails, includeTrainer, isActive } = data;
+        const { formName, departmentId, sectionId, toEmails, ccEmails, includeTrainer, isActive } = data;
         const active = isActive !== undefined ? (isActive ? 1 : 0) : 1;
         const trainer = includeTrainer !== undefined ? (includeTrainer ? 1 : 0) : 0;
 
         const query = `
-      INSERT INTO email_configurations (formName, departmentId, toEmails, ccEmails, includeTrainer, isActive, updatedAt)
+      INSERT INTO email_configurations (formName, departmentId, sectionId, toEmails, ccEmails, includeTrainer, isActive, updatedAt)
       OUTPUT INSERTED.*
-      VALUES (?, ?, ?, ?, ?, ?, GETDATE())
+      VALUES (?, ?, ?, ?, ?, ?, ?, GETDATE())
     `;
 
-        const [rows] = await executeQuery(query, [formName, departmentId || null, toEmails, ccEmails, trainer, active]);
+        const [rows] = await executeQuery(query, [formName, departmentId || null, sectionId || null, toEmails, ccEmails, trainer, active]);
         return new EmailConfiguration(rows[0]);
     }
 
-    static async findByFormAndDept(formName, departmentId) {
+    static async findByFormDeptAndSection(formName, departmentId, sectionId) {
         const query = `
       SELECT * FROM email_configurations 
-      WHERE formName = ? AND (departmentId = ? OR departmentId IS NULL) 
+      WHERE formName = ? 
+      AND (
+        (sectionId = ? AND departmentId = ?) OR 
+        (sectionId IS NULL AND departmentId = ?) OR 
+        (sectionId IS NULL AND departmentId IS NULL)
+      ) 
       AND isActive = 1
-      ORDER BY departmentId DESC
+      ORDER BY sectionId DESC, departmentId DESC
     `;
-        const [rows] = await executeQuery(query, [formName, departmentId]);
+        const [rows] = await executeQuery(query, [formName, sectionId, departmentId, departmentId]);
         if (rows.length === 0) return null;
         return new EmailConfiguration(rows[0]);
     }
 
     static async findAll() {
         const query = `
-      SELECT ec.*, d.name as departmentName 
+      SELECT ec.*, d.name as departmentName, s.name as sectionName
       FROM email_configurations ec
       LEFT JOIN departments d ON ec.departmentId = d.id
+      LEFT JOIN sections s ON ec.sectionId = s.id
       ORDER BY ec.formName ASC
     `;
         const [rows] = await executeQuery(query);
         return rows.map(row => ({
             ...new EmailConfiguration(row),
-            departmentName: row.departmentName
+            departmentName: row.departmentName,
+            sectionName: row.sectionName
         }));
     }
 
@@ -100,6 +107,7 @@ class EmailConfiguration {
 
         if (data.formName !== undefined) { fields.push("formName = ?"); values.push(data.formName); }
         if (data.departmentId !== undefined) { fields.push("departmentId = ?"); values.push(data.departmentId || null); }
+        if (data.sectionId !== undefined) { fields.push("sectionId = ?"); values.push(data.sectionId || null); }
         if (data.toEmails !== undefined) { fields.push("toEmails = ?"); values.push(data.toEmails); }
         if (data.ccEmails !== undefined) { fields.push("ccEmails = ?"); values.push(data.ccEmails); }
         if (data.includeTrainer !== undefined) { fields.push("includeTrainer = ?"); values.push(data.includeTrainer ? 1 : 0); }

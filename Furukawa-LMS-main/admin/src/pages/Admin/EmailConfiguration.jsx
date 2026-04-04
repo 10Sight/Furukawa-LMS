@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -29,8 +29,10 @@ const AVAILABLE_FORMS = [
 export default function EmailConfiguration() {
     const [configs, setConfigs] = useState([]);
     const [departments, setDepartments] = useState([]);
+    const [sections, setSections] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedDeptId, setSelectedDeptId] = useState("all");
+    const [selectedSectionId, setSelectedSectionId] = useState("all");
     const [savingForm, setSavingForm] = useState(null);
 
     // Local state for edits before saving
@@ -41,12 +43,13 @@ export default function EmailConfiguration() {
             const res = await axiosInstance.get("/api/email-configurations");
             setConfigs(res.data.data);
 
-            // Initialize edit state from fetched configs
+            // Initialize edit state from fetched configs based on current context
             const initialEdits = {};
             AVAILABLE_FORMS.forEach(form => {
                 const config = res.data.data.find(c =>
                     c.formName === form &&
-                    (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId)
+                    (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId) &&
+                    (selectedSectionId === "all" ? !c.sectionId : c.sectionId?.toString() === selectedSectionId)
                 );
                 initialEdits[form] = {
                     toEmails: config?.toEmails || "",
@@ -71,13 +74,33 @@ export default function EmailConfiguration() {
         }
     };
 
+    const fetchSections = async (deptId) => {
+        if (!deptId || deptId === "all") {
+            setSections([]);
+            setSelectedSectionId("all");
+            return;
+        }
+        try {
+            const res = await axiosInstance.get(`/api/sections/department/${deptId}`);
+            setSections(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to fetch sections:", error);
+        }
+    };
+
     useEffect(() => {
         fetchDepartments();
     }, []);
 
     useEffect(() => {
         fetchConfigs();
-    }, [selectedDeptId]);
+        if (selectedDeptId !== "all") {
+            fetchSections(selectedDeptId);
+        } else {
+            setSections([]);
+            setSelectedSectionId("all");
+        }
+    }, [selectedDeptId, selectedSectionId]);
 
     const handleInputChange = (formName, field, value) => {
         setEditState(prev => ({
@@ -100,12 +123,14 @@ export default function EmailConfiguration() {
         try {
             const existing = configs.find(c =>
                 c.formName === formName &&
-                (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId)
+                (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId) &&
+                (selectedSectionId === "all" ? !c.sectionId : c.sectionId?.toString() === selectedSectionId)
             );
 
             const payload = {
                 formName,
                 departmentId: selectedDeptId === "all" ? null : parseInt(selectedDeptId),
+                sectionId: selectedSectionId === "all" ? null : parseInt(selectedSectionId),
                 toEmails: data.toEmails,
                 ccEmails: data.ccEmails,
                 includeTrainer: data.includeTrainer,
@@ -137,7 +162,6 @@ export default function EmailConfiguration() {
 
     return (
         <div className="space-y-6">
-            {/* Global Header & Filter */}
             <Card className="border-blue-100 bg-blue-50/30">
                 <CardContent className="pt-6">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -147,27 +171,50 @@ export default function EmailConfiguration() {
                                 Email Notifications Settings
                             </h2>
                             <p className="text-sm text-gray-500">
-                                Manage email recipients for all forms under a specific department.
+                                Manage email recipients for all forms under a specific department or section.
                             </p>
                         </div>
 
-                        <div className="flex items-center gap-3 min-w-[300px]">
-                            <div className="bg-white p-2 rounded-full shadow-sm border border-blue-100">
+                        <div className="flex flex-wrap items-center gap-4 min-w-[300px]">
+                            <div className="bg-white p-2 rounded-full shadow-sm border border-blue-100 hidden md:block">
                                 <IconFilter className="w-5 h-5 text-blue-500" />
                             </div>
-                            <div className="flex-1 space-y-1">
-                                <Label className="text-[10px] uppercase font-bold text-gray-400 ml-1">Select Department Context</Label>
+                            
+                            <div className="flex-1 space-y-1 min-w-[200px]">
+                                <Label className="text-[10px] uppercase font-bold text-gray-400 ml-1">1. Select Department</Label>
                                 <Select
                                     value={selectedDeptId}
-                                    onValueChange={setSelectedDeptId}
+                                    onValueChange={(val) => {
+                                        setSelectedDeptId(val);
+                                        setSelectedSectionId("all");
+                                    }}
                                 >
                                     <SelectTrigger className="bg-white border-blue-200">
                                         <SelectValue placeholder="Global (All Departments)" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">Global / Default (No Department)</SelectItem>
+                                        <SelectItem value="all">Global / Default</SelectItem>
                                         {departments.map(dept => (
                                             <SelectItem key={dept.id} value={dept.id.toString()}>{dept.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className={`flex-1 space-y-1 min-w-[200px] transition-opacity ${selectedDeptId === "all" ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                                <Label className="text-[10px] uppercase font-bold text-gray-400 ml-1">2. Select Section (Optional)</Label>
+                                <Select
+                                    value={selectedSectionId}
+                                    onValueChange={setSelectedSectionId}
+                                    disabled={selectedDeptId === "all"}
+                                >
+                                    <SelectTrigger className="bg-white border-blue-200">
+                                        <SelectValue placeholder="All Sections" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Entire Department</SelectItem>
+                                        {sections.map(sec => (
+                                            <SelectItem key={sec.id} value={sec.id.toString()}>{sec.name}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
@@ -177,14 +224,14 @@ export default function EmailConfiguration() {
                 </CardContent>
             </Card>
 
-            {/* Forms List */}
             <div className="grid grid-cols-1 gap-4">
                 {AVAILABLE_FORMS.map((formName) => {
                     const isSaving = savingForm === formName;
                     const currentEdit = editState[formName] || { toEmails: "", ccEmails: "", includeTrainer: false };
                     const hasConfig = configs.some(c =>
                         c.formName === formName &&
-                        (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId)
+                        (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId) &&
+                        (selectedSectionId === "all" ? !c.sectionId : c.sectionId?.toString() === selectedSectionId)
                     );
 
                     return (
@@ -202,7 +249,9 @@ export default function EmailConfiguration() {
                                                     {hasConfig ? "Configured" : "Not Set"}
                                                 </Badge>
                                                 <span className="text-[10px] text-gray-400">
-                                                    {selectedDeptId === "all" ? "Global Context" : `Department: ${departments.find(d => d.id.toString() === selectedDeptId)?.name}`}
+                                                    {selectedDeptId === "all" ? "Global Context" : 
+                                                     selectedSectionId === "all" ? `Department: ${departments.find(d => d.id.toString() === selectedDeptId)?.name}` :
+                                                     `Section: ${sections.find(s => s.id.toString() === selectedSectionId)?.name}`}
                                                 </span>
                                             </div>
                                         </div>
@@ -239,7 +288,6 @@ export default function EmailConfiguration() {
                                         />
                                     </div>
 
-                                    {/* Trainer Toggle Section */}
                                     <div className="md:col-span-2 flex items-center justify-between p-3 bg-blue-50/50 rounded-lg border border-blue-100 mt-2">
                                         <div className="flex items-center gap-3">
                                             <div className="bg-blue-100 p-1.5 rounded-full">

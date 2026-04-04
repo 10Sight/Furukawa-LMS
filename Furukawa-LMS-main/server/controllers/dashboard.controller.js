@@ -11,23 +11,23 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const monthsOrder = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     let reqSql = `
-        SELECT month, CAST(SUM(count) AS BIGINT) as required_count 
+        SELECT month_name as month, CAST(SUM(prod_plan) AS BIGINT) as required_count 
         FROM requirements 
-        WHERE year = ? 
+        WHERE year_val = ? 
     `;
     const reqParams = [currentYear];
 
     if (section && section !== 'ALL') {
-        reqSql += " AND sectionId = ?";
+        reqSql += " AND section_name = (SELECT name FROM [sections] WHERE id = ?)";
         reqParams.push(section);
     }
     if (line && line !== 'ALL') {
-        reqSql += " AND subSectionId = ?";
+        reqSql += " AND description_line = (SELECT name FROM [lines] WHERE id = ?)";
         reqParams.push(line);
     }
     // Ignoring machine filter as requested effectively
 
-    reqSql += " GROUP BY month";
+    reqSql += " GROUP BY month_name";
 
     let reqResults = [];
     try {
@@ -45,7 +45,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         userParams.push(section);
     }
     if (line && line !== 'ALL') {
-        userWhereClause += " AND subSectionId = ?";
+        userWhereClause += " AND lineId = ?";
         userParams.push(line);
     }
 
@@ -69,7 +69,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         initialParams.push(section);
     }
     if (line && line !== 'ALL') {
-        initialSql += " AND subSectionId = ?";
+        initialSql += " AND lineId = ?";
         initialParams.push(line);
     }
 
@@ -109,7 +109,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         skillParams.push(section);
     }
     if (line && line.toLowerCase() !== 'all') {
-        skillSql += " AND subSectionId = ?";
+        skillSql += " AND lineId = ?";
         skillParams.push(line);
     }
 

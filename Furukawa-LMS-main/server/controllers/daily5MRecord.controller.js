@@ -6,7 +6,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 // Create a new record
 export const create5MRecord = async (req, res, next) => {
     try {
-        const { departmentId, date, shift, line, recordData, formType, sessionId } = req.body;
+        const { departmentId, sectionId, date, shift, line, recordData, formType, sessionId } = req.body;
         const userId = req.user.id; // From auth middleware
 
         if (!departmentId || !date) {
@@ -15,6 +15,7 @@ export const create5MRecord = async (req, res, next) => {
 
         const newRecord = await Daily5MRecord.upsert({
             departmentId,
+            sectionId,
             date,
             shift,
             line,
@@ -26,6 +27,7 @@ export const create5MRecord = async (req, res, next) => {
 
         NotificationService.sendFormReport("Daily 5M Recording Sheet", departmentId, {
             departmentId,
+            sectionId,
             date,
             shift,
             line,
@@ -48,11 +50,12 @@ export const create5MRecord = async (req, res, next) => {
 export const get5MRecords = async (req, res, next) => {
     try {
         const { departmentId } = req.params;
-        const { startDate, endDate, limit, offset, formType, groupBySession } = req.query;
+        const { sectionId, startDate, endDate, limit, offset, formType, groupBySession } = req.query;
         const { id: userId, role } = req.user;
 
         const filters = {
             departmentId,
+            sectionId,
             startDate,
             endDate,
             formType,
@@ -102,7 +105,7 @@ export const get5MRecordById = async (req, res, next) => {
 // Get single record by Date and Department (Specific to User)
 export const get5MRecordByDate = async (req, res, next) => {
     try {
-        const { departmentId, date, userId: queryUserId } = req.query;
+        const { departmentId, sectionId, date, userId: queryUserId } = req.query;
         const currentUserId = req.user.id;
         const isAdmin = req.user.role === 'ADMIN' || req.user.role === 'SUPERADMIN';
 
@@ -114,7 +117,7 @@ export const get5MRecordByDate = async (req, res, next) => {
         // Otherwise, fetch current user's record.
         const targetUserId = (isAdmin && queryUserId) ? queryUserId : currentUserId;
 
-        const record = await Daily5MRecord.findByDateDeptAndUser(departmentId, date, targetUserId);
+        const record = await Daily5MRecord.findByDateDeptAndUser(departmentId, date, targetUserId, sectionId);
 
         if (!record) {
             // Return 200 with null data so frontend knows it's a new empty form
@@ -158,9 +161,16 @@ export const delete5MRecord = async (req, res, next) => {
 export const approve5MRecord = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const userId = req.user.id;
+        const user = req.user;
 
-        await Daily5MRecord.updateStatus(id, 'APPROVED', userId);
+        // Permission check: Admin or specific approval right
+        const canApprove = user.isAdmin || (user.customRole?.permissions?.includes('daily5m:approve'));
+        
+        if (!canApprove) {
+            return next(new ApiError("You do not have permission to approve records", 403));
+        }
+
+        await Daily5MRecord.updateStatus(id, 'APPROVED', user.id);
 
         res.status(200).json({
             success: true,
@@ -174,9 +184,16 @@ export const approve5MRecord = async (req, res, next) => {
 export const decline5MRecord = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const userId = req.user.id;
+        const user = req.user;
 
-        await Daily5MRecord.updateStatus(id, 'DECLINED', userId);
+        // Permission check: Admin or specific approval right
+        const canApprove = user.isAdmin || (user.customRole?.permissions?.includes('daily5m:approve'));
+        
+        if (!canApprove) {
+            return next(new ApiError("You do not have permission to decline records", 403));
+        }
+
+        await Daily5MRecord.updateStatus(id, 'DECLINED', user.id);
 
         res.status(200).json({
             success: true,

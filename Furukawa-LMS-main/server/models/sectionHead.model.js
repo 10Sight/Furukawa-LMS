@@ -14,9 +14,22 @@ class SectionHead {
                     email NVARCHAR(255) NOT NULL,
                     name NVARCHAR(255) NULL,
                     created_at DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT FK_SectionHead_Section FOREIGN KEY (sectionId) REFERENCES departments(id) ON DELETE CASCADE,
-                    CONSTRAINT FK_SectionHead_SubSection FOREIGN KEY (subSectionId) REFERENCES [lines](id) ON DELETE CASCADE
+                    CONSTRAINT FK_sh_Section FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE,
+                    CONSTRAINT FK_sh_SubSection FOREIGN KEY (subSectionId) REFERENCES [lines](id) ON DELETE CASCADE
                 )
+            END
+            ELSE
+            BEGIN
+                -- Drop old constraint if exist
+                IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_SectionHead_Section')
+                BEGIN
+                    ALTER TABLE [dbo].[section_heads] DROP CONSTRAINT FK_SectionHead_Section;
+                    
+                    -- Before adding new constraint, clear data to prevent conflict if IDs mismatch
+                    TRUNCATE TABLE [dbo].[section_heads];
+                    
+                    ALTER TABLE [dbo].[section_heads] ADD CONSTRAINT FK_sh_Section FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE;
+                END
             END
         `;
         try {
@@ -30,10 +43,10 @@ class SectionHead {
     static async findAll() {
         const query = `
             SELECT sh.*, 
-                   d.name AS sectionName, 
+                   s.name AS sectionName, 
                    l.name AS subSectionName
             FROM section_heads sh
-            LEFT JOIN departments d ON sh.sectionId = d.id
+            LEFT JOIN sections s ON sh.sectionId = s.id
             LEFT JOIN lines l ON sh.subSectionId = l.id
             ORDER BY sh.id DESC
         `;

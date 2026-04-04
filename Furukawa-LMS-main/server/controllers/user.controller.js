@@ -48,14 +48,26 @@ const handleInstructorAssignments = async (userId, departmentIds) => {
 
 const getHierarchyJoinSQL = `
   OUTER APPLY (
-    SELECT TOP 1 id, name, instructor
-    FROM departments
-    WHERE (u.departmentId = id OR u.department = CAST(id AS NVARCHAR(50)) OR u.department = name)
+    SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 
+    FROM sub_sections ss WHERE ss.id = u.subSectionId
+  ) ss_res
+  OUTER APPLY (
+    SELECT TOP 1 l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
+    FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
+  ) l_res
+  OUTER APPLY (
+    SELECT TOP 1 s.name as sectionName, s.departmentId as sDeptId, s.id as sectionId
+    FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
+  ) s_res
+  OUTER APPLY (
+    SELECT TOP 1 id, name as deptName, instructor as deptInstructor
+    FROM departments d 
+    WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
+       OR (u.departmentId IS NULL AND (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name))
   ) d
-  OUTER APPLY (SELECT TOP 1 name FROM sections WHERE id = u.sectionId) s
-  OUTER APPLY (SELECT TOP 1 name FROM [lines] WHERE id = u.lineId) l
-  OUTER APPLY (SELECT TOP 1 name FROM sub_sections WHERE id = u.subSectionId) ss
-  OUTER APPLY (SELECT TOP 1 name FROM machines WHERE id = u.stationId) st
+  OUTER APPLY (
+    SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
+  ) st
 `;
 
 const formatUser = (u) => {
@@ -96,31 +108,103 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   }
   if (req.query.status) { whereClauses.push("u.status = ?"); params.push(req.query.status); }
   if (req.query.unit) { whereClauses.push("u.unit = ?"); params.push(req.query.unit); }
-  if (req.query.departmentId) { 
-    whereClauses.push("d.id = ?"); 
-    params.push(req.query.departmentId); 
+  if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
+  if (req.query.sectionId) { 
+    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))"); 
+    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId); 
   }
+  if (req.query.lineId) { 
+    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))"); 
+    params.push(req.query.lineId, req.query.lineId); 
+  }
+  if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
+  if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
   if (req.query.role) { whereClauses.push("u.role = ?"); params.push(req.query.role); }
+  if (req.query.isStaff === "true") {
+    whereClauses.push("(u.isMentor = 1 OR u.isSupervisor = 1 OR u.isIncharge = 1 OR u.isTrainer = 1)");
+  }
+
+  const { dateFrom, dateTo, status, shift, date } = req.query;
+
+  let attendanceJoinSQL = "";
+  let attendanceParams = [];
+
+  if (dateFrom || dateTo || (date && date !== "all")) {
+    let start = dateFrom || date || dateTo;
+    let end = dateTo || date || dateFrom;
+
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT userId, 
+               MAX(status) as logStatus, 
+               MAX(shift) as logShift,
+               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+        FROM attendance_logs 
+        WHERE [date] BETWEEN ? AND ?
+        GROUP BY userId
+      ) al ON u.id = al.userId
+    `;
+    attendanceParams = [start, end];
+  } else {
+    // Ensure al alias exists even if no date filter is applied to avoid SQL errors in WHERE clause
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT NULL as logStatus, NULL as logShift, 0 as presentDaysCount, NULL as userId
+      ) al ON 1=0
+    `;
+  }
+
+  if (status === "Present") {
+    if (dateFrom && dateTo) {
+      whereClauses.push("al.presentDaysCount > 0");
+    } else {
+      whereClauses.push("al.logStatus = 'Present'");
+    }
+  } else if (status === "Absent") {
+    if (dateFrom && dateTo) {
+      whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
+    } else {
+      whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+    }
+  } else if (status) {
+    whereClauses.push("u.status = ?");
+    params.push(status);
+  }
+
+  if (shift) {
+    if (dateFrom || date) {
+      whereClauses.push("al.logShift = ?");
+    } else {
+      whereClauses.push("u.shift = ?");
+    }
+    params.push(shift);
+  }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
   const [cnt] = await executeQuery(`
     SELECT COUNT(*) as total 
     FROM users u ${getHierarchyJoinSQL} 
+    ${attendanceJoinSQL}
     ${whereSQL}
-  `, params);
+  `, [...attendanceParams, ...params]);
   const totalUsers = cnt[0].total;
 
   const [users] = await executeQuery(`
     SELECT u.*, 
-           d.id as actualDeptId, d.name as deptName, d.instructor as deptInstructor,
-           s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName
+           d.id as actualDeptId, d.deptName, d.deptInstructor,
+           s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           cr.name as customRoleName,
+           al.logShift,
+           al.logStatus
     FROM users u
     ${getHierarchyJoinSQL}
+    LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
+    ${attendanceJoinSQL}
     ${whereSQL}
     ORDER BY u.createdAt DESC
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit]);
 
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),
@@ -140,8 +224,8 @@ export const getUserById = asyncHandler(async (req, res) => {
 
   let query = `
     SELECT u.*, 
-           d.id as actualDeptId, d.name as deptName, d.instructor as deptInstructor,
-           s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName,
+           d.id as actualDeptId, d.deptName, d.deptInstructor,
+           s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
            cr.name as customRoleName, cr.color as customRoleColor, cr.allowedPages as customRoleAllowedPages
     FROM users u
     ${getHierarchyJoinSQL}
@@ -153,8 +237,8 @@ export const getUserById = asyncHandler(async (req, res) => {
     query += "u.id = ?";
     params.push(rawId);
   } else {
-    query += "(u.slug = ? OR u.userName = ?)";
-    params.push(term, term);
+    query += "(u.slug = ? OR u.userName = ? OR u.empId = ?)";
+    params.push(term, term, term);
   }
 
   const [rows] = await executeQuery(query, params);
@@ -230,7 +314,7 @@ export const createUser = asyncHandler(async (req, res) => {
 
   // Fetch created user with joins
   const [newUser] = await executeQuery(`
-    SELECT u.*, d.name as deptName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName
+    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
     FROM users u ${getHierarchyJoinSQL} WHERE u.id = ?
   `, [newUserId]);
 
@@ -295,7 +379,7 @@ export const updateUser = asyncHandler(async (req, res) => {
   }
 
   const [updated] = await executeQuery(`
-    SELECT u.*, d.name as deptName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName,
+    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
            cr.name as customRoleName, cr.color as customRoleColor, cr.allowedPages as customRoleAllowedPages
     FROM users u 
     ${getHierarchyJoinSQL}
@@ -408,16 +492,22 @@ export const getAllInstructors = asyncHandler(async (req, res) => {
 
   let whereClauses = ["u.isTrainer = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
   let params = [];
-  if (req.query.search) {
-    const t = `%${req.query.search}%`;
-    whereClauses.push("(u.fullName LIKE ? OR u.email LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
-    params.push(t, t, t, t);
+  if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
+  if (req.query.sectionId) { 
+    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))"); 
+    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId); 
   }
+  if (req.query.lineId) { 
+    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))"); 
+    params.push(req.query.lineId, req.query.lineId); 
+  }
+  if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
+  if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
   const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${whereSQL}`, params);
   const [instructors] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.name as deptName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
     FROM users u ${getHierarchyJoinSQL} ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...params, offset, limit]);
@@ -444,10 +534,17 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
     params.push(t, t, t);
   }
-  if (req.query.departmentId) {
-    whereClauses.push("d.id = ?");
-    params.push(req.query.departmentId);
+  if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
+  if (req.query.sectionId) { 
+    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))"); 
+    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId); 
   }
+  if (req.query.lineId) { 
+    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))"); 
+    params.push(req.query.lineId, req.query.lineId); 
+  }
+  if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
+  if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
   if (req.user.role === "INSTRUCTOR") {
     const [iDepts] = await executeQuery("SELECT id FROM departments WHERE instructor = ?", [req.user.id]);
     if (iDepts.length) {
@@ -463,7 +560,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     ${whereSQL}
   `, params);
   const [students] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.name as deptName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
     FROM users u ${getHierarchyJoinSQL} ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...params, offset, limit]);
@@ -478,18 +575,93 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 // Other specialized fetches (Mentors, Supervisors, Incharges) can be added similarly using formatUser
 
 export const getAllMentors = asyncHandler(async (req, res) => {
-  const [users] = await executeQuery(`SELECT u.* FROM users u WHERE u.isMentor = 1 AND (u.isDeleted = 0 OR u.isDeleted IS NULL)`);
-  res.json(new ApiResponse(200, users.map(formatUser), "Mentors fetched"));
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = (page - 1) * limit;
+
+  let whereClauses = ["u.isMentor = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let params = [];
+  if (req.query.search) {
+    const t = `%${req.query.search}%`;
+    whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+    params.push(t, t, t);
+  }
+
+  const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${whereSQL}`, params);
+  const [users] = await executeQuery(`
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
+    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+  `, [...params, offset, limit]);
+
+  res.json(new ApiResponse(200, {
+    users: users.map(formatUser),
+    totalUsers: cnt[0].total,
+    totalPages: Math.ceil(cnt[0].total / limit),
+    currentPage: page,
+    limit
+  }, "Mentors fetched successfully"));
 });
 
 export const getAllSupervisors = asyncHandler(async (req, res) => {
-  const [users] = await executeQuery(`SELECT u.* FROM users u WHERE u.isSupervisor = 1 AND (u.isDeleted = 0 OR u.isDeleted IS NULL)`);
-  res.json(new ApiResponse(200, users.map(formatUser), "Supervisors fetched"));
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = (page - 1) * limit;
+
+  let whereClauses = ["u.isSupervisor = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let params = [];
+  if (req.query.search) {
+    const t = `%${req.query.search}%`;
+    whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+    params.push(t, t, t);
+  }
+
+  const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${whereSQL}`, params);
+  const [users] = await executeQuery(`
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
+    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+  `, [...params, offset, limit]);
+
+  res.json(new ApiResponse(200, {
+    users: users.map(formatUser),
+    totalUsers: cnt[0].total,
+    totalPages: Math.ceil(cnt[0].total / limit),
+    currentPage: page,
+    limit
+  }, "Supervisors fetched successfully"));
 });
 
 export const getAllIncharges = asyncHandler(async (req, res) => {
-  const [users] = await executeQuery(`SELECT u.* FROM users u WHERE u.isIncharge = 1 AND (u.isDeleted = 0 OR u.isDeleted IS NULL)`);
-  res.json(new ApiResponse(200, users.map(formatUser), "Incharges fetched"));
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = (page - 1) * limit;
+
+  let whereClauses = ["u.isIncharge = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let params = [];
+  if (req.query.search) {
+    const t = `%${req.query.search}%`;
+    whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+    params.push(t, t, t);
+  }
+
+  const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${whereSQL}`, params);
+  const [users] = await executeQuery(`
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
+    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+  `, [...params, offset, limit]);
+
+  res.json(new ApiResponse(200, {
+    users: users.map(formatUser),
+    totalUsers: cnt[0].total,
+    totalPages: Math.ceil(cnt[0].total / limit),
+    currentPage: page,
+    limit
+  }, "Incharges fetched successfully"));
 });
 
 export const getEmployees = asyncHandler(async (req, res) => {

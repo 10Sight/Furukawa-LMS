@@ -30,11 +30,11 @@ const DashboardHome = () => {
     // Data Fetching
     // Data Fetching
     const [sections, setSections] = useState([]);
-    const [subSections, setSubSections] = useState([]);
+    const [lines, setLines] = useState([]);
 
     const [filterState, setFilterState] = useState({
-        section: "ALL", // Department ID
-        subSection: "ALL", // SubSection ID
+        section: "ALL", // Section ID
+        line: "ALL", // Line ID
         dateRange: undefined
     });
 
@@ -42,35 +42,35 @@ const DashboardHome = () => {
     useEffect(() => {
         const fetchSections = async () => {
             try {
-                const res = await axiosInstance.get('/api/departments');
-                if (res.data?.data?.departments) {
-                    setSections(res.data.data.departments);
+                const res = await axiosInstance.get('/api/sections');
+                if (res.data?.data) {
+                    setSections(res.data.data);
                 }
             } catch (error) {
-                console.error("Failed to fetch departments", error);
+                console.error("Failed to fetch sections", error);
             }
         };
         fetchSections();
     }, []);
 
-    // Fetch SubSections when section changes
+    // Fetch Lines when section changes
     useEffect(() => {
         if (filterState.section && filterState.section !== 'ALL') {
-            const fetchSubSections = async () => {
+            const fetchLines = async () => {
                 try {
                     const res = await axiosInstance.get(`/api/lines?sectionId=${filterState.section}`);
                     if (res.data?.data) {
-                        setSubSections(res.data.data);
+                        setLines(res.data.data);
                     }
                 } catch (error) {
-                    console.error("Failed to fetch subsections", error);
-                    setSubSections([]);
+                    console.error("Failed to fetch lines", error);
+                    setLines([]);
                 }
             };
-            fetchSubSections();
+            fetchLines();
         } else {
-            setSubSections([]);
-            setFilterState(prev => ({ ...prev, subSection: "ALL" }));
+            setLines([]);
+            setFilterState(prev => ({ ...prev, line: "ALL" }));
         }
     }, [filterState.section]);
 
@@ -78,7 +78,7 @@ const DashboardHome = () => {
     // Dashboard Stats Query
     const { data: dashboardStats } = useGetDashboardStatsQuery({
         section: filterState.section,
-        line: filterState.subSection, // Mapping subSection to line to match current API contract
+        line: filterState.line,
         machine: undefined
     });
 
@@ -96,7 +96,7 @@ const DashboardHome = () => {
 
             // Cascade Resets
             if (key === 'section') {
-                newState.subSection = "ALL";
+                newState.line = "ALL";
             }
 
             return newState;
@@ -134,19 +134,19 @@ const DashboardHome = () => {
 
                         <div className="h-4 w-[1px] bg-slate-300"></div>
 
-                        {/* SubSection Filter */}
+                        {/* Line Filter */}
                         <Select
-                            value={filterState.subSection}
-                            onValueChange={(val) => handleFilterChange("subSection", val)}
+                            value={filterState.line}
+                            onValueChange={(val) => handleFilterChange("line", val)}
                             disabled={filterState.section === "ALL"}
                         >
                             <SelectTrigger className="w-[140px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 shadow-none">
-                                <SelectValue placeholder="All Sub-sections" />
+                                <SelectValue placeholder="All Lines" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="ALL">All Sub-sections</SelectItem>
-                                {subSections.map(sub => (
-                                    <SelectItem key={sub.id} value={sub.id.toString()}>{sub.name}</SelectItem>
+                                <SelectItem value="ALL">All Lines</SelectItem>
+                                {lines.map(line => (
+                                    <SelectItem key={line.id} value={line.id.toString()}>{line.name}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>

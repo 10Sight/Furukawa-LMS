@@ -411,7 +411,7 @@ const InstructorSkillMatrix = () => {
         // Custom Header Layout (Approximating the UI)
         worksheet.mergeCells('A1:C4'); // Logo Area
         const logoCell = worksheet.getCell('A1');
-        logoCell.value = "10Sight"; // Placeholder for Logo
+        logoCell.value = "Furukawa Minda"; // Placeholder for Logo
         logoCell.alignment = centerStyle;
         logoCell.font = { size: 16, bold: true };
         logoCell.border = borderStyle;

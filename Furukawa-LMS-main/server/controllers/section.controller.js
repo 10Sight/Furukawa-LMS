@@ -40,6 +40,17 @@ export const getSectionsByDepartment = asyncHandler(async (req, res) => {
     );
 });
 
+// @desc    Get all sections globally
+// @route   GET /api/sections
+// @access  Private
+export const getAllSections = asyncHandler(async (req, res) => {
+    const sections = await Section.findAll();
+
+    res.status(200).json(
+        new ApiResponse(200, sections, "All sections fetched successfully")
+    );
+});
+
 // @desc    Update a section
 // @route   PUT /api/sections/:id
 // @access  Private

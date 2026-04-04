@@ -308,8 +308,8 @@ export function CmsLayout() {
                     </div>
                 </header>
 
-                <div className="pt-20 pb-6 px-4 sm:px-6 min-h-screen">
-                    <div className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6`}>
+                <div className="pt-20 pb-6 px-2 sm:px-4 min-h-screen">
+                    <div className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-2 sm:p-4`}>
                         <Outlet />
                     </div>
                 </div>

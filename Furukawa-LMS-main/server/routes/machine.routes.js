@@ -3,6 +3,8 @@ import {
     createMachine,
     getMachinesBySubSection,
     getMachinesByLine,
+    getMachinesBySection,
+    getMachinesByDepartment,
     updateMachine,
     deleteMachine,
     assignEmployee,
@@ -20,6 +22,8 @@ router.use(verifyJWT);
 router.post("/", authorizeRoles("isAdmin", "SUPERADMIN"), createMachine);
 router.get("/sub-section/:subSectionId", getMachinesBySubSection);
 router.get("/line/:lineId", getMachinesByLine);
+router.get("/section/:sectionId", getMachinesBySection);
+router.get("/department/:departmentId", getMachinesByDepartment);
 router.get("/:id", getMachineById); // Add this line
 router.put("/:id", authorizeRoles("isAdmin", "SUPERADMIN"), updateMachine);
 router.delete("/:id", authorizeRoles("isAdmin", "SUPERADMIN"), deleteMachine);

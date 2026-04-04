@@ -25,9 +25,13 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
       setFormData({
         name: role.name || '',
         description: role.description || '',
-        permissions: Array.isArray(role.permissions) 
-          ? role.permissions 
-          : Object.values(role.permissions || {}).flat()
+        permissions: (() => {
+          const raw = Array.isArray(role.permissions) 
+            ? role.permissions 
+            : Object.values(role.permissions || {}).flat();
+          // Sanitize: ensure only IDs (strings) are stored
+          return raw.map(p => typeof p === 'object' && p !== null ? (p.id || p) : p);
+        })()
       });
     }
   }, [role, open]);
@@ -56,17 +60,18 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
   };
 
   const handleCategoryToggle = (category, categoryPermissions) => {
-    const allSelected = categoryPermissions.every(p => formData.permissions.includes(p));
+    const categoryIds = categoryPermissions.map(p => typeof p === 'object' ? p.id : p);
+    const allSelected = categoryIds.every(p => formData.permissions.includes(p));
     
     if (allSelected) {
       setFormData(prev => ({
         ...prev,
-        permissions: prev.permissions.filter(p => !categoryPermissions.includes(p))
+        permissions: prev.permissions.filter(p => !categoryIds.includes(p))
       }));
     } else {
       setFormData(prev => ({
         ...prev,
-        permissions: [...new Set([...prev.permissions, ...categoryPermissions])]
+        permissions: [...new Set([...prev.permissions, ...categoryIds])]
       }));
     }
   };
@@ -239,18 +244,23 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
                     {/* Category Permissions */}
                     {isExpanded && (
                       <div className="p-4 space-y-2">
-                        {categoryPermissions.map((permission) => (
-                          <label key={permission} className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={formData.permissions.includes(permission)}
-                              onChange={() => handlePermissionToggle(permission)}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                              disabled={isSystemRole}
-                            />
-                            <span className="text-sm text-gray-700">{permission}</span>
-                          </label>
-                        ))}
+                        {categoryPermissions.map((permission) => {
+                          const permissionId = typeof permission === 'object' ? permission.id : permission;
+                          const permissionName = typeof permission === 'object' ? (permission.name || permissionId) : permission;
+                          
+                          return (
+                            <label key={permissionId} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={formData.permissions.includes(permissionId)}
+                                onChange={() => handlePermissionToggle(permissionId)}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                disabled={isSystemRole}
+                              />
+                              <span className="text-sm text-gray-700">{permissionName}</span>
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

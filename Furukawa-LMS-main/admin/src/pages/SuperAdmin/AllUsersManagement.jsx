@@ -27,6 +27,13 @@ import {
   useUpdateUserMutation as useSuperAdminUpdateUserMutation,
   usePermanentDeleteUserMutation
 } from "@/Redux/AllApi/SuperAdminApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
+import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetMachinesBySubSectionQuery } from "@/Redux/AllApi/MachineApi";
+import { IconCalendar } from "@tabler/icons-react";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 
@@ -64,7 +71,13 @@ const AllUsersManagement = () => {
     dateFrom: "",
     dateTo: "",
     departmentId: "",
+    sectionId: "",
+    lineId: "",
+    subSectionId: "",
+    stationId: "",
     unit: "",
+    shift: "",
+    date: format(new Date(), "yyyy-MM-dd"), // Default to today
   });
 
   const [customRoles, setCustomRoles] = useState([]);
@@ -99,8 +112,27 @@ const AllUsersManagement = () => {
     dateFrom: filters.dateFrom,
     dateTo: filters.dateTo,
     departmentId: filters.departmentId,
+    sectionId: filters.sectionId,
+    lineId: filters.lineId,
+    subSectionId: filters.subSectionId,
+    stationId: filters.stationId,
     unit: filters.unit,
+    shift: filters.shift,
+    date: filters.date,
   });
+
+  // Hierarchy Data Hooks
+  const { data: deptData } = useGetAllDepartmentsQuery();
+  const { data: sectionData } = useGetSectionsByDepartmentQuery(filters.departmentId, { skip: !filters.departmentId });
+  const { data: lineData } = useGetLinesBySectionQuery(filters.sectionId, { skip: !filters.sectionId });
+  const { data: subSectionData } = useGetSubSectionsByLineQuery(filters.lineId, { skip: !filters.lineId });
+  const { data: machineData } = useGetMachinesBySubSectionQuery(filters.subSectionId, { skip: !filters.subSectionId });
+
+  const departments = deptData?.data?.departments || [];
+  const sections = sectionData?.data || [];
+  const lines = lineData?.data || [];
+  const subSections = subSectionData?.data || [];
+  const stations = machineData?.data || [];
 
   // Fetch Custom Roles
   useEffect(() => {
@@ -229,10 +261,12 @@ const AllUsersManagement = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case "ACTIVE":
+      case "Present":
         return "bg-green-100 text-green-800";
       case "SUSPENDED":
         return "bg-yellow-100 text-yellow-800";
       case "BANNED":
+      case "Absent":
         return "bg-red-100 text-red-800";
       case "PENDING":
         return "bg-blue-100 text-blue-800";
@@ -642,71 +676,207 @@ const AllUsersManagement = () => {
       {/* Filters */}
       {showFilters && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-              <select
-                value={filters.role}
-                onChange={(e) => setFilters({ ...filters, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Date From</label>
+              <div className="relative">
+                <IconCalendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <Input
+                  type="date"
+                  value={filters.dateFrom}
+                  onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+                  className="pl-9 h-9"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Date To</label>
+              <div className="relative">
+                <IconCalendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <Input
+                  type="date"
+                  value={filters.dateTo}
+                  onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+                  className="pl-9 h-9"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
+              <Select
+                value={filters.departmentId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  departmentId: val === "all" ? "" : val,
+                  sectionId: "", lineId: "", subSectionId: "", stationId: ""
+                })}
               >
-                <option value="">All Roles</option>
-                <option value="SUPERADMIN">Super Admin</option>
-                <option value="ADMIN">Admin</option>
-                <option value="INSTRUCTOR">Instructor</option>
-                <option value="STUDENT">Student</option>
-              </select>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {departments.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Section</label>
+              <Select
+                value={filters.sectionId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  sectionId: val === "all" ? "" : val,
+                  lineId: "", subSectionId: "", stationId: ""
+                })}
+                disabled={!filters.departmentId}
               >
-                <option value="">All Status</option>
-                <option value="ACTIVE">Active</option>
-                <option value="SUSPENDED">Suspended</option>
-                <option value="BANNED">Banned</option>
-                <option value="PENDING">Pending</option>
-              </select>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Sections" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sections</SelectItem>
+                  {sections.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Unit</label>
-              <select
-                value={filters.unit}
-                onChange={(e) => setFilters({ ...filters, unit: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Line</label>
+              <Select
+                value={filters.lineId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  lineId: val === "all" ? "" : val,
+                  subSectionId: "", stationId: ""
+                })}
+                disabled={!filters.sectionId}
               >
-                <option value="">All Units</option>
-                <option value="UNIT_1">Unit 1</option>
-                <option value="UNIT_2">Unit 2</option>
-                <option value="UNIT_3">Unit 3</option>
-                <option value="UNIT_4">Unit 4</option>
-                <option value="UNIT_5">Unit 5</option>
-              </select>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Lines" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Lines</SelectItem>
+                  {lines.map(l => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date From</label>
-              <input
-                type="date"
-                value={filters.dateFrom}
-                onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Sub-Section</label>
+              <Select
+                value={filters.subSectionId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  subSectionId: val === "all" ? "" : val,
+                  stationId: ""
+                })}
+                disabled={!filters.lineId}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Sub-Sections" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sub-Sections</SelectItem>
+                  {subSections.map(ss => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date To</label>
-              <input
-                type="date"
-                value={filters.dateTo}
-                onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Station</label>
+              <Select
+                value={filters.stationId || "all"}
+                onValueChange={(val) => setFilters({ ...filters, stationId: val === "all" ? "" : val })}
+                disabled={!filters.subSectionId}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Stations" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Stations</SelectItem>
+                  {stations.map(st => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Shift</label>
+              <Select
+                value={filters.shift || "all"}
+                onValueChange={(val) => setFilters({ ...filters, shift: val === "all" ? "" : val })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Shifts" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Shifts</SelectItem>
+                  <SelectItem value="A">A-Shift</SelectItem>
+                  <SelectItem value="B">B-Shift</SelectItem>
+                  <SelectItem value="G">G-Shift</SelectItem>
+                  <SelectItem value="C">C-Shift</SelectItem>
+                  <SelectItem value="D">D-Shift</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Role</label>
+              <Select
+                value={filters.role || "all"}
+                onValueChange={(e) => setFilters({ ...filters, role: e === "all" ? "" : e })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  <SelectItem value="SUPERADMIN">Super Admin</SelectItem>
+                  <SelectItem value="ADMIN">Admin</SelectItem>
+                  <SelectItem value="INSTRUCTOR">Instructor</SelectItem>
+                  <SelectItem value="STUDENT">Operator</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+              <Select
+                value={filters.status || "all"}
+                onValueChange={(e) => setFilters({ ...filters, status: e === "all" ? "" : e })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="Present">Present (Attendance)</SelectItem>
+                  <SelectItem value="Absent">Absent (Attendance)</SelectItem>
+                  <SelectItem value="ACTIVE">System: Active</SelectItem>
+                  <SelectItem value="SUSPENDED">System: Suspended</SelectItem>
+                  <SelectItem value="BANNED">System: Banned</SelectItem>
+                  <SelectItem value="PENDING">System: Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-end">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full h-9"
+                onClick={() => setFilters({
+                  role: "", status: "", dateFrom: "", dateTo: "",
+                  departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
+                  unit: "", shift: "", date: format(new Date(), "yyyy-MM-dd")
+                })}
+              >
+                <IconX className="w-4 h-4 mr-2" />
+                Reset
+              </Button>
             </div>
           </div>
         </div>
@@ -795,13 +965,13 @@ const AllUsersManagement = () => {
                     />
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    User
+                    Emp ID
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contact
+                    Name
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
+                    Shift
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
@@ -810,7 +980,19 @@ const AllUsersManagement = () => {
                     Department
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Login
+                    Section
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Line
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Sub-Section
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Station
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Role
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
@@ -857,61 +1039,65 @@ const AllUsersManagement = () => {
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        {user.empId || "-"}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center">
                           <img
-                            className="h-10 w-10 rounded-full object-cover"
+                            className="h-8 w-8 rounded-full object-cover"
                             src={user.avatar?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=2563eb&color=fff`}
                             alt={user.fullName}
                           />
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
-                            <div className="text-sm text-gray-500">@{user.userName}</div>
+                          <div className="ml-3">
+                            <div className="text-sm font-medium text-gray-900 truncate max-w-[150px]">{user.fullName}</div>
+                            <div className="text-xs text-gray-500">@{user.userName}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900">{user.email}</div>
-                        <div className="text-sm text-gray-500">{user.phoneNumber}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleColor(user.role)}`}>
-                          {user.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(user.status)}`}>
-                          {user.status}
-                        </span>
-                      </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {user.department?.name || 'No Department'}
+                        {user.logShift || user.shift || "-"}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
+                      <td className="px-6 py-4 text-sm">
+                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(user.logStatus || ((filters.date || (filters.dateFrom && filters.dateTo)) ? "Absent" : user.status))}`}>
+                          {user.logStatus || ((filters.date || (filters.dateFrom && filters.dateTo)) ? "Absent" : user.status)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
+                        {user.deptName || "-"}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
+                        {user.sectionName || "-"}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
+                        {user.lineName || "-"}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
+                        {user.subSectionName || "-"}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
+                        {user.stationName || "-"}
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge className={`${getRoleColor(user.role)} whitespace-nowrap`}>
+                          {user.role === "STUDENT" ? "Operator" : (user.customRoleName || user.role)}
+                        </Badge>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="flex items-center justify-center space-x-2">
-                          <button
-                            onClick={() => {/* View user details */ }}
-                            className="text-blue-600 hover:text-blue-900 transition-colors"
-                            title="View Details"
-                          >
-                            <IconEye className="w-4 h-4" />
-                          </button>
+                        <div className="flex items-center justify-center space-x-1">
                           <button
                             onClick={() => {
                               setSelectedUser(user);
                               setShowEditModal(true);
                             }}
-                            className="text-green-600 hover:text-green-900 transition-colors"
+                            className="p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
                             title="Edit User"
                           >
                             <IconEdit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user._id, true)}
-                            className="text-red-600 hover:text-red-900 transition-colors"
+                            className="p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
                             title="Permanently Delete"
                           >
                             <IconTrash className="w-4 h-4" />
@@ -947,88 +1133,74 @@ const AllUsersManagement = () => {
               <Card key={user._id} className="transition-all duration-200 hover:shadow-md">
                 <CardContent className="p-4">
                   <div className="flex items-start space-x-3">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user._id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedUsers([...selectedUsers, user._id]);
-                          } else {
-                            setSelectedUsers(selectedUsers.filter(id => id !== user._id));
-                          }
-                        }}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                    <Avatar className="h-10 w-10 shrink-0">
+                      <AvatarImage
+                        src={user.avatar?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=2563eb&color=fff`}
+                        alt={user.fullName}
                       />
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage
-                          src={user.avatar?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=2563eb&color=fff`}
-                          alt={user.fullName}
-                        />
-                        <AvatarFallback className="bg-blue-100 text-blue-800">
-                          {user.fullName.charAt(0)}
-                        </AvatarFallback>
-                      </Avatar>
-                    </div>
+                      <AvatarFallback className="bg-blue-100 text-blue-800">
+                        {user.fullName.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between">
-                        <div className="min-w-0 flex-1">
-                          <h3 className="font-medium text-gray-900 truncate">{user.fullName}</h3>
-                          <p className="text-sm text-gray-500 truncate">@{user.userName}</p>
-                          <p className="text-sm text-gray-600 mt-1">{user.email}</p>
-                          {user.phoneNumber && (
-                            <p className="text-sm text-gray-500">{user.phoneNumber}</p>
-                          )}
+                        <div className="min-w-0">
+                          <h3 className="font-semibold text-gray-900 truncate">{user.fullName}</h3>
+                          <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                            <span className="font-medium text-blue-600">ID: {user.empId || "-"}</span>
+                            <span>•</span>
+                            <span>@{user.userName}</span>
+                          </div>
                         </div>
 
-                        <div className="flex items-center space-x-1 ml-2">
-                          <button
-                            onClick={() => {/* View user details */ }}
-                            className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="View Details"
-                          >
-                            <IconEye className="w-4 h-4" />
-                          </button>
+                        <div className="flex shrink-0 items-center space-x-1">
                           <button
                             onClick={() => {
                               setSelectedUser(user);
                               setShowEditModal(true);
                             }}
-                            className="p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded-lg transition-colors"
-                            title="Edit User"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                           >
                             <IconEdit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user._id, true)}
-                            className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Permanently Delete"
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                           >
                             <IconTrash className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 mt-3">
-                        <Badge className={getRoleColor(user.role)}>
-                          <IconShield className="w-3 h-3 mr-1" />
-                          {user.role}
-                        </Badge>
-                        <Badge className={getStatusColor(user.status)}>
-                          {user.status}
-                        </Badge>
-                        {user.department?.name && (
-                          <Badge variant="outline">
-                            {user.department.name}
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 text-xs">
+                        <div>
+                          <p className="text-gray-400 mb-0.5">Shift</p>
+                          <p className="font-medium text-gray-700">{user.logShift || user.shift || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400 mb-0.5">Department</p>
+                          <p className="font-medium text-gray-700 truncate">{user.deptName || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400 mb-0.5">Section</p>
+                          <p className="font-medium text-gray-700 truncate">{user.sectionName || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400 mb-0.5">Role</p>
+                          <Badge variant="outline" className={`${getRoleColor(user.role)} text-[10px] h-5 py-0`}>
+                            {user.role === "STUDENT" ? "Operator" : (user.customRoleName || user.role)}
                           </Badge>
-                        )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                        <div className="text-xs text-gray-500">
-                          Last login: {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
-                        </div>
+                      <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
+                        <Badge className={`${getStatusColor(user.logStatus || ((filters.date || (filters.dateFrom && filters.dateTo)) ? "Absent" : user.status))} text-[10px] h-5 py-0`}>
+                          {user.logStatus || ((filters.date || (filters.dateFrom && filters.dateTo)) ? "Absent" : user.status)}
+                        </Badge>
+                        <span className="text-[10px] text-gray-400 ml-auto">
+                          Station: {user.stationName || "-"}
+                        </span>
                       </div>
                     </div>
                   </div>

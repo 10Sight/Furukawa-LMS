@@ -371,6 +371,7 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                                 <TableHead className="h-9 py-2 text-xs">Leader</TableHead>
                                 <TableHead className="h-9 py-2 text-xs">Mentor</TableHead>
                                 <TableHead className="h-9 py-2 text-xs">Req.</TableHead>
+                                <TableHead className="h-9 py-2 text-xs">Operators</TableHead>
                                 <TableHead className="h-9 py-2 text-xs text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -392,6 +393,9 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                                     <TableCell className="py-2 text-sm">{line.mentor || "-"}</TableCell>
                                     <TableCell className="py-2">
                                             <span className="text-sm">{line.requirement || 0}</span>
+                                    </TableCell>
+                                    <TableCell className="py-2">
+                                            <span className="text-sm font-medium">{line.lineCount || 0}</span>
                                     </TableCell>
                                     <TableCell className="py-2 text-right">
                                             <div className="flex justify-end gap-1">

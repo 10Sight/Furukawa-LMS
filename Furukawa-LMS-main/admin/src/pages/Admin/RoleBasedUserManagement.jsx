@@ -94,7 +94,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     const { id, value } = e.target;
     setFormData((prev) => ({ ...prev, [id]: value }));
     if (id === "empId" && !formData.userName) {
-        setFormData(prev => ({ ...prev, userName: value }));
+      setFormData(prev => ({ ...prev, userName: value }));
     }
   };
 
@@ -197,16 +197,16 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-4">
-             <div className="flex-1 max-w-sm">
-                <SearchInput
-                  placeholder={`Search ${roleName.toLowerCase()}s...`}
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                />
-             </div>
-             <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching}>
-                <IconRefresh className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
-             </Button>
+            <div className="flex-1 max-w-sm">
+              <SearchInput
+                placeholder={`Search ${roleName.toLowerCase()}s...`}
+                value={searchTerm}
+                onChange={(val) => setSearchTerm(val)}
+              />
+            </div>
+            <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching}>
+              <IconRefresh className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -358,8 +358,8 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
             <DialogTitle>Edit {roleName}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-4">
-             {/* Same fields as Add Dialog without password */}
-             <div className="space-y-2">
+            {/* Same fields as Add Dialog without password */}
+            <div className="space-y-2">
               <Label htmlFor="fullName">Full Name</Label>
               <Input id="fullName" value={formData.fullName} onChange={handleInputChange} />
             </div>

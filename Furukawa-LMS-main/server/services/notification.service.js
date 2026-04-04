@@ -17,7 +17,7 @@ class NotificationService {
      * @param {object} formData - The data to be included in the report
      * @param {number} [studentId] - Student identifier to resolve department if needed
      */
-    static async sendFormReport(formName, departmentId, formData, studentId = null) {
+    static async sendFormReport(formName, departmentId, formData, studentId = null, sectionId = null) {
         try {
             logger.info(`[NotificationService] Processing ${formName} for department ${departmentId} or student ${studentId}`);
 
@@ -27,13 +27,9 @@ class NotificationService {
             }
 
             // 1. Fetch Email Configuration
-            const config = await EmailConfiguration.findByFormAndDept(formName, departmentId || null);
+            const config = await EmailConfiguration.findByFormDeptAndSection(formName, departmentId || null, sectionId || formData?.sectionId || null);
             if (!config) {
-                logger.info(`[NotificationService] No active email configuration for ${formName} and dept ${departmentId}. Skipping.`);
-                return;
-            }
-            if (!config) {
-                logger.info(`[NotificationService] No active email configuration for ${formName} and dept ${departmentId}. Skipping.`);
+                logger.info(`[NotificationService] No active email configuration for ${formName}, dept ${departmentId}, and section ${sectionId}. Skipping.`);
                 return;
             }
 
@@ -57,15 +53,17 @@ class NotificationService {
                 return;
             }
 
-            // 4. Generate Excel Report based on Form Name
+            // 4. Resolve Metadata Names
+            const department = await Department.findById(departmentId);
+            const deptName = department?.name || "Unknown Department";
+            if (formData) formData.departmentName = deptName;
+
+            // 5. Generate Excel Report based on Form Name
             const workbook = new ExcelJS.Workbook();
             const filename = await this._generateExcel(workbook, formName, departmentId, formData);
 
-            // 5. Send Email
+            // 6. Send Email
             const buffer = await workbook.xlsx.writeBuffer();
-            const department = await Department.findById(departmentId);
-            const deptName = department ? department.name : "Unknown Department";
-
             const subject = `${formName} Update - ${deptName} (${new Date().toLocaleDateString()})`;
             
             let actionButtons = "";
@@ -86,7 +84,7 @@ class NotificationService {
                 `;
             }
 
-            const htmlMessage = `
+            let htmlMessage = `
                 <div style="font-family: Arial, sans-serif; line-height: 1.6;">
                     <p>Hello,</p>
                     <p>The <strong>${formName}</strong> for department <strong>${deptName}</strong> has been updated.</p>
@@ -96,6 +94,35 @@ class NotificationService {
                     <p>Best Regards,<br/>LMS System</p>
                 </div>
             `;
+
+            if (formName === "Daily 5M Recording Sheet") {
+                const date = formData?.date || new Date().toLocaleDateString();
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const reviewUrl = `${adminUrl}/cms/daily-5m-recording?recordId=${formData.recordId}`;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <p>Dear All,</p>
+                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
+                        <p><strong>Sub:</strong> (Daily 5M Recording - ${deptName} (${date}))</p>
+                        <p>Please find the attached Daily 5M Recording sheet for <strong>${deptName}</strong> on <strong>${date}</strong>.</p>
+                        
+                        <div style="margin: 25px 0;">
+                            <a href="${reviewUrl}" 
+                               style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                               Review Recording Form
+                            </a>
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p style="font-size: 14px; color: #666;">Quick Actions (Direct Status Change):</p>
+                        ${actionButtons}
+                        <br/>
+                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
+                    </div>
+                `;
+            }
+
 
             await sendMail(
                 toRecipients.join(','),
@@ -969,78 +996,125 @@ class NotificationService {
     }
 
     static async _fillDaily5MRecordingSheet(worksheet, formData) {
-        worksheet.mergeCells('A1:H1');
+        // --- Header Section ---
+        worksheet.mergeCells('A1:L1');
         const companyCell = worksheet.getCell('A1');
         companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
-        companyCell.font = { bold: true, size: 10 };
+        companyCell.font = { bold: true, size: 11 };
         companyCell.alignment = { horizontal: 'right' };
 
-        worksheet.mergeCells('A2:H2');
+        worksheet.mergeCells('A2:L2');
         const titleCell = worksheet.getCell('A2');
         titleCell.value = 'DAILY 5M RECORDING SHEET';
-        titleCell.font = { bold: true, size: 16 };
+        titleCell.font = { bold: true, size: 18, color: { argb: 'FF000080' } };
         titleCell.alignment = { horizontal: 'center' };
 
-        worksheet.addRow([
-            'Date:', formData?.date || '',
-            'Shift:', formData?.shift || '',
-            'Line:', formData?.line || '',
-            'Department ID:', formData?.departmentId || ''
+        // --- Metadata Section ---
+        worksheet.addRow([]);
+        const infoRow = worksheet.addRow([
+            'Date:', formData?.date || 'N/A',
+            'Shift:', formData?.shift || 'N/A',
+            'Line:', formData?.line || 'N/A',
+            'Dept:', formData?.departmentName || formData?.departmentId || 'N/A',
+            'Form Type:', (formData?.formType || 'standard').toUpperCase()
         ]);
-        worksheet.getRow(worksheet.lastRow.number).font = { bold: true };
+        infoRow.font = { bold: true };
+        infoRow.eachCell(cell => {
+            if (cell.value === 'Date:' || cell.value === 'Shift:' || cell.value === 'Line:' || cell.value === 'Dept:' || cell.value === 'Form Type:') {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+            }
+        });
 
         worksheet.addRow([]);
 
+        // --- Data Extraction ---
         const raw = (formData && formData.recordData && typeof formData.recordData === "object")
             ? formData.recordData
             : {};
 
         const rowMap = {};
         const fieldOrder = [];
-        const orderedFields = ["Date", "Line Name", "Line", "Shift", "Process Name", "Problem", "Operator Code"];
+        // Prioritize these fields in this specific order
+        const orderedFields = [
+            "Date", "Shift", "Line", "StationMC", "Process Name", "Problem", 
+            "OperatorId", "OperatorName", "CSL", "ReqSkill", 
+            "DeputedPerson", "EmpCode", "ActSkill", "DeputedOnPlan", "OJT",
+            "InspectorName", "PartNo", "LotNo", "CircuitNo", "Result_Status",
+            "QA_Incharge", "Process_Owner", "Approved_By", "Remarks"
+        ];
 
         Object.entries(raw).forEach(([key, value]) => {
             const match = /^rec_(\d+)_(.+)$/.exec(key);
             if (!match) return;
             const idx = Number(match[1]);
-            const field = String(match[2]).trim();
+            let field = String(match[2]).trim();
             if (!Number.isFinite(idx) || !field) return;
 
+            // Normalize field names (some might have prefixes or different casing)
             if (!rowMap[idx]) rowMap[idx] = {};
             rowMap[idx][field] = value;
             if (!fieldOrder.includes(field)) fieldOrder.push(field);
         });
 
-        if (fieldOrder.length === 0) {
-            const noDataRow = worksheet.addRow(["No record rows captured"]);
-            worksheet.mergeCells(noDataRow.number, 1, noDataRow.number, 8);
+        if (Object.keys(rowMap).length === 0) {
+            const noDataRow = worksheet.addRow(["No data records captured for this session."]);
+            worksheet.mergeCells(noDataRow.number, 1, noDataRow.number, 12);
             noDataRow.getCell(1).alignment = { horizontal: "center" };
+            noDataRow.font = { italic: true };
             return;
         }
 
+        // --- Table Headers ---
         const headers = [
             "S.No",
             ...orderedFields.filter((f) => fieldOrder.includes(f)),
-            ...fieldOrder.filter((f) => !orderedFields.includes(f))
+            ...fieldOrder.filter((f) => !orderedFields.includes(f) && !f.includes('Retro') && !f.includes('Result_') && !f.includes('Setup') && !f.includes('Cont_') && !f.includes('Param_'))
         ];
 
         const headerRow = worksheet.addRow(headers);
         headerRow.eachCell((cell) => this._applyHeaderStyle(cell));
 
+        // Set column widths
         worksheet.columns = headers.map((h, index) => {
-            if (index === 0) return { key: "sn", width: 8 };
-            return { key: `c${index}`, width: h.length > 22 ? 28 : 18 };
+            if (index === 0) return { key: "sn", width: 6 };
+            const width = Math.max(12, h.length + 2);
+            return { key: `c${index}`, width: width > 35 ? 35 : width };
         });
 
+        // --- Data Rows ---
         Object.keys(rowMap)
             .map(Number)
             .sort((a, b) => a - b)
             .forEach((idx, rowIndex) => {
-                const rowValues = [rowIndex + 1, ...headers.slice(1).map((f) => rowMap[idx][f] ?? "")];
+                const rowValues = [
+                    rowIndex + 1, 
+                    ...headers.slice(1).map((f) => {
+                        const val = rowMap[idx][f];
+                        if (val === undefined || val === null) return "";
+                        return val;
+                    })
+                ];
                 const row = worksheet.addRow(rowValues);
                 row.eachCell((cell) => this._applyBorderStyle(cell));
+                
+                // Color coding for status/judgment if present
+                const statusIdx = headers.indexOf("Result_Status");
+                if (statusIdx !== -1) {
+                    const statusCell = row.getCell(statusIdx + 1);
+                    if (statusCell.value === "OK") statusCell.font = { color: { argb: 'FF008000' }, bold: true };
+                    else if (statusCell.value === "NG") statusCell.font = { color: { argb: 'FFFF0000' }, bold: true };
+                }
             });
+
+        // --- Footer Section ---
+        const lastRowNumber = worksheet.lastRow.number + 2;
+        worksheet.mergeCells(`A${lastRowNumber}:L${lastRowNumber}`);
+        const footerCell = worksheet.getCell(`A${lastRowNumber}`);
+        footerCell.value = 'FME Digital Portal - Daily 5M Recording Automated Report';
+        footerCell.font = { italic: true, size: 9, color: { argb: 'FF808080' } };
+        footerCell.alignment = { horizontal: 'center' };
     }
+
 
     static async _resolveDepartmentId(studentId) {
         try {

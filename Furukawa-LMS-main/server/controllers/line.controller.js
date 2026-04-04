@@ -67,7 +67,10 @@ export const createLine = asyncHandler(async (req, res) => {
         ]
     );
 
-    const [newLine] = await executeQuery("SELECT * FROM [lines] WHERE id = ?", [result[0].id]);
+    const [newLine] = await executeQuery(`
+        SELECT l.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        FROM [lines] l WHERE l.id = ?`, [result[0].id]);
 
     res.status(201).json(
         new ApiResponse(201, newLine[0], "Line created successfully")
@@ -83,7 +86,9 @@ export const getLinesBySection = asyncHandler(async (req, res) => {
     if (!sid) throw new ApiError(404, "Section not found");
 
     const [lines] = await executeQuery(
-        "SELECT l.*, s.name as sectionName FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId = ? OR l.department = ?) ORDER BY l.createdAt DESC",
+        `SELECT l.*, s.name as sectionName,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId = ? OR l.department = ?) ORDER BY l.createdAt DESC`,
         [sid, sid]
     );
 
@@ -101,7 +106,9 @@ export const getLinesByDepartment = asyncHandler(async (req, res) => {
     if (!did) throw new ApiError(404, "Department not found");
 
     const [lines] = await executeQuery(
-        "SELECT l.*, s.name as sectionName FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department = ? ORDER BY l.createdAt DESC",
+        `SELECT l.*, s.name as sectionName,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department = ? ORDER BY l.createdAt DESC`,
         [did]
     );
 
@@ -192,7 +199,10 @@ export const updateLine = asyncHandler(async (req, res) => {
         }
     }
 
-    const [updatedLine] = await executeQuery("SELECT * FROM [lines] WHERE id = ?", [id]);
+    const [updatedLine] = await executeQuery(`
+        SELECT l.*,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        FROM [lines] l WHERE l.id = ?`, [id]);
 
     res.status(200).json(
         new ApiResponse(200, updatedLine[0], "Line updated successfully")
@@ -246,7 +256,10 @@ export const getAllLines = asyncHandler(async (req, res) => {
 
     log(`[DEBUG] getAllLines params: sectionId=${sectionId}, departmentId=${departmentId}`);
 
-    let querySQL = "SELECT l.*, s.name as sectionName FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id";
+    let querySQL = `
+        SELECT l.*, s.name as sectionName,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id`;
     let params = [];
     let conditions = [];
 

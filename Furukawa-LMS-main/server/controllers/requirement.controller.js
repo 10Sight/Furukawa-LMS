@@ -15,6 +15,7 @@ const executeSql = async (queryStr, params = [], transactionOrPool = null) => {
     // If conn is a transaction, .request() returns a transaction-scoped request
     const activeConn = transactionOrPool || await poolPromise;
     const request = activeConn.request();
+    request.timeout = 300000; // 5 minute timeout for heavy merges
     let formattedQuery = queryStr;
     for (let i = 0; i < params.length; i++) {
         const paramName = `p${i}`;
@@ -198,10 +199,10 @@ export const addRequirements = asyncHandler(async (req, res) => {
     let secAttrColIdx = -1;
     let sectionCount = 0;
     targetSheet.getRow(headerRowIdx).eachCell((c, i) => {
-         if(norm(readCell(c)) === 'section') {
-             sectionCount++;
-             if(sectionCount === 2) secAttrColIdx = i;
-         }
+        if (norm(readCell(c)) === 'section') {
+            sectionCount++;
+            if (sectionCount === 2) secAttrColIdx = i;
+        }
     });
     COL.sectionAttribute = secAttrColIdx !== -1 ? secAttrColIdx : null;
 
@@ -292,28 +293,25 @@ export const addRequirements = asyncHandler(async (req, res) => {
             if (sp === null && pp === null) continue;
 
             rowsToProcess.push({
-                sr_no: srNo,
-                section_code: sectionCode ? String(sectionCode).trim() : null,
-                section_name: sectionName ? String(sectionName).trim() : null,
-                section_desc_unicode: String(sectionDescUnicode).trim(),
-                description_line: String(descriptionLine).trim(),
-                supervisor_name: String(supervisor).trim(),
-                mentor: String(mentor).trim(),
-                section_attribute: String(sectionAttribute).trim(),
-                station_no: stationNo,
-                month_name: MONTH_FULL[mk],
-                year_val: year,
-                sales_plan: sp !== null ? sp : 0,
-                prod_plan: pp !== null ? pp : 0
+                srNo: srNo,
+                sectionCode: sectionCode ? String(sectionCode).trim() : null,
+                sectionName: sectionName ? String(sectionName).trim() : null,
+                lineCode: sectionDescUnicode ? String(sectionDescUnicode).trim() : null,
+                lineDescription: descriptionLine ? String(descriptionLine).trim() : null,
+                monthName: MONTH_FULL[mk],
+                monthNumber: MONTH_KEYS.indexOf(mk) + 1,
+                year: year,
+                salesPlan: sp !== null ? sp : 0,
+                prodPlan: pp !== null ? pp : 0
             });
         }
     });
 
     if (rowsToProcess.length === 0) throw new ApiError("No valid data found in the Excel file.", 400);
 
-    // Context & Validation: Verify Section Name exists in 'sections' table
-    const [dbSections] = await executeSql("SELECT id, name FROM [sections]");
-    
+    // Context & Validation: Verify Section Name and Unicode exist in 'sections' table
+    const [dbSections] = await executeSql("SELECT id, name, uniCode FROM [sections]");
+
     // Normalize unicode to avoid mismatch due to different string representations
     const normalizeUnicode = (str) => {
         if (!str) return "";
@@ -328,22 +326,38 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
     const validSectionsMap = new Map();
     dbSections.forEach(s => {
-        if (s.name) validSectionsMap.set(normalizeUnicode(s.name), s.id);
+        if (s.name) {
+            const nameKey = normalizeUnicode(s.name);
+            const uniKey = normalizeUnicode(s.uniCode);
+            // Store mapping by name+unicode string combo
+            validSectionsMap.set(`${nameKey}|${uniKey}`, s.id);
+            // Also keep a fallback by just name (first encountered)
+            if (!validSectionsMap.has(`FALLBACK|${nameKey}`)) {
+                validSectionsMap.set(`FALLBACK|${nameKey}`, s.id);
+            }
+        }
     });
 
     const invalidSections = new Set();
     for (const row of rowsToProcess) {
-       const normSecName = normalizeUnicode(row.section_name);
-       if (!validSectionsMap.has(normSecName)) {
-           invalidSections.add(row.section_name);
-       } else {
-           row.section_id = validSectionsMap.get(normSecName);
-       }
+        const nameKey = normalizeUnicode(row.sectionName);
+        const uniKey = normalizeUnicode(row.lineCode);
+        const comboKey = `${nameKey}|${uniKey}`;
+        const fallbackKey = `FALLBACK|${nameKey}`;
+
+        if (validSectionsMap.has(comboKey)) {
+            // Note: DB schema does not have a section_id, so we just log or omit
+            // We will save to DB without `section_id` since it's missing from target table.
+        } else if (validSectionsMap.has(fallbackKey)) {
+            // Valid fallback mapped
+        } else {
+            invalidSections.add(`${row.sectionName} (${row.lineCode})`);
+        }
     }
 
     if (invalidSections.size > 0) {
         const errorList = Array.from(invalidSections).slice(0, 10).join("', '");
-        throw new ApiError(`Validation Failed: The following Section names do not exist in the system (Unicode mismatch or not created): '${errorList}'`, 400);
+        throw new ApiError(`Validation Failed: The following Section names (with unicodes) do not exist in the system: '${errorList}'`, 400);
     }
 
     const conn = await poolPromise;
@@ -353,53 +367,80 @@ export const addRequirements = asyncHandler(async (req, res) => {
     try {
         await transaction.begin();
 
+        console.log(`[UPLOAD v3] Starting bulk transaction for ${rowsToProcess.length} rows`);
+        const yearsToUpdate = [...new Set(rowsToProcess.map(r => r.year))];
+
+        console.log(`[UPLOAD v3] Fetching existing records for years: ${yearsToUpdate.join(',')}`);
+        const [existingReqs] = await executeSql(`SELECT id, sectionCode, lineCode, monthName, year FROM requirements WITH (NOLOCK) WHERE year IN (${yearsToUpdate.join(',')})`, [], transaction);
+
+        console.log(`[UPLOAD v3] Found ${existingReqs.length} existing records in DB`);
+        // Key includes srNo to allow multiple entries with the same Unicode/Section but different Serial Numbers
+        const makeKey = (r) => `${r.srNo}|${r.sectionCode || ''}|${r.lineCode || ''}|${r.monthName || ''}|${r.year || ''}`;
+
+        const existingMap = new Map();
+        existingReqs.forEach(r => {
+            existingMap.set(makeKey(r), r.id);
+        });
+
+        // Separate into batches
+        const rowsToInsert = [];
+        const rowsToUpdate = [];
+
+        rowsToProcess.forEach(r => {
+            const key = makeKey(r);
+            const existingId = existingMap.get(key);
+            if (existingId) {
+                r.id = existingId;
+                rowsToUpdate.push(r);
+            } else {
+                rowsToInsert.push(r);
+            }
+        });
+
+        console.log(`[UPLOAD v3] Separation complete. Inserts: ${rowsToInsert.length}, Updates: ${rowsToUpdate.length}`);
         const chunkSize = 50;
-        for (let i = 0; i < rowsToProcess.length; i += chunkSize) {
-            const chunkRows = rowsToProcess.slice(i, i + chunkSize);
-            
+
+        // Perform INSERTS
+        console.log(`[UPLOAD v3] Executing INSERTS in chunks of ${chunkSize}...`);
+        for (let i = 0; i < rowsToInsert.length; i += chunkSize) {
+            const chunk = rowsToInsert.slice(i, i + chunkSize);
             let paramsArray = [];
-            chunkRows.forEach(row => {
-                // map row values to DB columns securely
+            chunk.forEach(row => {
                 paramsArray.push(
-                    row.section_id, row.section_code, row.section_name,
-                    row.section_desc_unicode, row.description_line,
-                    row.supervisor_name, row.mentor,
-                    row.station_no, row.month_name,
-                    row.year_val, row.sales_plan, row.prod_plan
+                    row.srNo, row.sectionCode, row.sectionName,
+                    row.lineCode, row.lineDescription, row.monthName,
+                    row.monthNumber, row.salesPlan, row.prodPlan, row.year
                 );
             });
-            
-            const insertRowsStr = chunkRows.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).join(', ');
-
-            const mergeQuery = `
-                MERGE requirements AS target
-                USING (
-                    VALUES ${insertRowsStr}
-                ) AS source (section_id, section_code, section_name, section_desc_unicode, description_line, supervisor_name, mentor, station_no, month_name, year_val, sales_plan, prod_plan)
-                ON ISNULL(target.section_code, '') = ISNULL(source.section_code, '')
-                   AND ISNULL(target.section_desc_unicode, '') = ISNULL(source.section_desc_unicode, '')
-                   AND ISNULL(target.station_no, '') = ISNULL(source.station_no, '')
-                   AND target.month_name = source.month_name
-                   AND target.year_val = source.year_val
-                WHEN MATCHED THEN
-                    UPDATE SET 
-                        section_id = source.section_id,
-                        section_name = source.section_name,
-                        description_line = source.description_line,
-                        supervisor_name = source.supervisor_name,
-                        mentor = source.mentor,
-                        sales_plan = source.sales_plan,
-                        prod_plan = source.prod_plan
-                WHEN NOT MATCHED THEN
-                    INSERT (section_id, section_code, section_name, section_desc_unicode, description_line, supervisor_name, mentor, station_no, month_name, year_val, sales_plan, prod_plan)
-                    VALUES (source.section_id, source.section_code, source.section_name, source.section_desc_unicode, source.description_line, source.supervisor_name, source.mentor, source.station_no, source.month_name, source.year_val, source.sales_plan, source.prod_plan);
+            const placeholders = chunk.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).join(', ');
+            const insertQuery = `
+                INSERT INTO requirements 
+                (srNo, sectionCode, sectionName, lineCode, lineDescription, monthName, monthNumber, salesPlan, prodPlan, year)
+                VALUES ${placeholders}
             `;
-
-            const [, meta] = await executeSql(mergeQuery, paramsArray, transaction);
-            totalInsertedRows += (meta?.affectedRows || 0);
+            const [, meta] = await executeSql(insertQuery, paramsArray, transaction);
+            totalInsertedRows += (meta?.affectedRows || chunk.length);
         }
 
+        console.log(`[UPLOAD v3] INSERTS finished. Executing UPDATES continuously (1-by-1 to avoid compilation limits)...`);
+
+        // Perform UPDATES (Sequentially to avoid SQL statement compilation timeouts)
+        let updateCount = 0;
+        for (const row of rowsToUpdate) {
+            const updateQuery = `UPDATE requirements SET srNo=?, sectionCode=?, sectionName=?, lineCode=?, lineDescription=?, monthNumber=?, salesPlan=?, prodPlan=? WHERE id=?`;
+            const paramsArray = [row.srNo, row.sectionCode, row.sectionName, row.lineCode, row.lineDescription, row.monthNumber, row.salesPlan, row.prodPlan, row.id];
+
+            await executeSql(updateQuery, paramsArray, transaction);
+            updateCount++;
+
+            // Print progress cleanly
+            if (updateCount % 100 === 0) console.log(`[UPLOAD v3] ...Updated ${updateCount} rows`);
+        }
+        totalInsertedRows += updateCount;
+        console.log(`[UPLOAD v3] All UPDATES finished. Committing transaction...`);
+
         await transaction.commit();
+        console.log(`[UPLOAD v3] Transaction successfully committed.`);
 
         try {
             await Audit.create({
@@ -421,7 +462,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
         }, "Requirements uploaded successfully."));
 
     } catch (err) {
-        console.error("EXCEL UPLOAD MERGE ERROR:", err);
+        console.error("EXCEL UPLOAD FATAL ERROR V3:", err);
         try {
             await transaction.rollback();
         } catch (rollbackErr) {
@@ -542,6 +583,7 @@ export const getRequirementLogs = asyncHandler(async (req, res) => {
 
     const logs = rows.map(row => ({
         ...row,
+        created_at: row.created_at || row.updated_at || row.update_at, // Map varied timestamp names
         section_name: row.section_name || "N/A",
         subsection_name: row.subsection_name || "N/A",
         six_month_counts: null
@@ -934,7 +976,6 @@ export const updateRequirement = asyncHandler(async (req, res) => {
         await RequirementLog.create({
             requirement_id: id,
             section_id: currentReq.sectionId,
-            subsection_id: currentReq.subSectionId,
             old_values: currentReq,
             new_values: updatedReq,
             employee_id: req.user?._id || req.user?.id || null,
@@ -956,27 +997,18 @@ export const updateRequirement = asyncHandler(async (req, res) => {
         const headsQuery = `
             SELECT sh.email, sh.name 
             FROM section_heads sh
-            LEFT JOIN departments d ON sh.sectionId = d.id
-            LEFT JOIN lines l ON sh.subSectionId = l.id
-            WHERE (d.uniCode = ? OR d.name = ?) 
+            LEFT JOIN sections s ON sh.sectionId = s.id
+            WHERE s.uniCode = ? OR s.name = ?
         `;
 
         let heads = [];
-        // First try finding an exact match by Section AND SubSection Unicodes
         const [exactMatchHeads] = await executeSql(
-            headsQuery + " AND (l.uniCode = ? OR l.name = ?)", 
-            [currentReq.section_code, currentReq.section_name, currentReq.section_desc_unicode, currentReq.description_line]
+            headsQuery,
+            [currentReq.lineCode, currentReq.sectionName]
         );
 
         if (exactMatchHeads && exactMatchHeads.length > 0) {
             heads = exactMatchHeads;
-        } else {
-            // Fallback: Find by just Section Unicode/Name (Department Head only)
-            const [sectionOnlyHeads] = await executeSql(
-                headsQuery + " AND l.id IS NULL",
-                [currentReq.section_code, currentReq.section_name]
-            );
-            heads = sectionOnlyHeads;
         }
 
         if (!heads || heads.length === 0) {
@@ -1291,7 +1323,6 @@ export const batchUpdateRequirements = asyncHandler(async (req, res) => {
             await RequirementLog.create({
                 requirement_id: id,
                 section_id: currentReq.sectionId,
-                subsection_id: currentReq.subSectionId,
                 old_values: currentReq,
                 new_values: updatedReq,
                 employee_id: req.user?._id || req.user?.id || null,
@@ -1315,27 +1346,18 @@ export const batchUpdateRequirements = asyncHandler(async (req, res) => {
             const headsQuery = `
                 SELECT sh.email, sh.name 
                 FROM section_heads sh
-                LEFT JOIN departments d ON sh.sectionId = d.id
-                LEFT JOIN lines l ON sh.subSectionId = l.id
-                WHERE (d.uniCode = ? OR d.name = ?) 
+                LEFT JOIN sections s ON sh.sectionId = s.id
+                WHERE s.uniCode = ? OR s.name = ?
             `;
 
             let heads = [];
-            // First try finding an exact match by Section AND SubSection Unicodes
             const [exactMatchHeads] = await executeSql(
-                headsQuery + " AND (l.uniCode = ? OR l.name = ?)", 
-                [currentReq.section_code, currentReq.section_name, currentReq.section_desc_unicode, currentReq.description_line]
+                headsQuery,
+                [currentReq.lineCode, currentReq.sectionName]
             );
 
             if (exactMatchHeads && exactMatchHeads.length > 0) {
                 heads = exactMatchHeads;
-            } else {
-                // Fallback: Find by just Section Unicode/Name (Department Head only)
-                const [sectionOnlyHeads] = await executeSql(
-                    headsQuery + " AND l.id IS NULL",
-                    [currentReq.section_code, currentReq.section_name]
-                );
-                heads = sectionOnlyHeads;
             }
 
             if (!heads || heads.length === 0) {

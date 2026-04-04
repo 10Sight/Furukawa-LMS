@@ -29,7 +29,10 @@ export const createSubSection = asyncHandler(async (req, res) => {
         [name, lineId, description, true]
     );
 
-    const [newSubSection] = await executeQuery("SELECT * FROM [sub_sections] WHERE id = ?", [result[0].id]);
+    const [newSubSection] = await executeQuery(`
+        SELECT ss.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
+        FROM [sub_sections] ss WHERE ss.id = ?`, [result[0].id]);
 
     res.status(201).json(
         new ApiResponse(201, newSubSection[0], "Sub-Section created successfully")
@@ -46,7 +49,10 @@ export const getSubSectionsByLine = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid Line ID parameter. Must be numeric.");
     }
 
-    const [subSections] = await executeQuery("SELECT * FROM [sub_sections] WHERE lineId = ? ORDER BY createdAt DESC", [lineId]);
+    const [subSections] = await executeQuery(`
+        SELECT ss.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
+        FROM [sub_sections] ss WHERE ss.lineId = ? ORDER BY ss.createdAt DESC`, [lineId]);
 
     res.status(200).json(
         new ApiResponse(200, subSections, "Sub-Sections fetched successfully")
@@ -82,7 +88,10 @@ export const updateSubSection = asyncHandler(async (req, res) => {
         await executeQuery(`UPDATE [sub_sections] SET ${updateFields.join(', ')} WHERE id = ?`, [...updateValues, id]);
     }
 
-    const [updatedSubSection] = await executeQuery("SELECT * FROM [sub_sections] WHERE id = ?", [id]);
+    const [updatedSubSection] = await executeQuery(`
+        SELECT ss.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
+        FROM [sub_sections] ss WHERE ss.id = ?`, [id]);
 
     res.status(200).json(
         new ApiResponse(200, updatedSubSection[0], "Sub-Section updated successfully")
@@ -115,7 +124,10 @@ export const deleteSubSection = asyncHandler(async (req, res) => {
 export const getAllSubSections = asyncHandler(async (req, res) => {
     const { lineId } = req.query;
 
-    let querySQL = "SELECT * FROM [sub_sections]";
+    let querySQL = `
+        SELECT ss.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
+        FROM [sub_sections] ss`;
     let params = [];
 
     if (lineId) {

@@ -3,7 +3,8 @@ import {
     createSection,
     getSectionsByDepartment,
     updateSection,
-    deleteSection
+    deleteSection,
+    getAllSections
 } from "../controllers/section.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 
@@ -13,6 +14,7 @@ const router = Router();
 router.use(verifyJWT);
 
 router.route("/")
+    .get(getAllSections)
     .post(createSection);
 
 router.route("/department/:departmentId")

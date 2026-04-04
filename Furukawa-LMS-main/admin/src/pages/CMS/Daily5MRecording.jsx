@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Select,
     SelectContent,
@@ -9,19 +10,30 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
-import { useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
+import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
+import { useGetLinesBySectionQuery, useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
 import { useGetMachinesByLineQuery } from '@/Redux/AllApi/MachineApi';
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
 import { useLazyGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
+import { useLazyGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { Button } from "@/components/ui/button";
-import { IconSettings, IconPrinter, IconClipboardList, IconPlus, IconArrowLeft, IconSearch, IconTrash } from "@tabler/icons-react";
+import { IconSettings, IconPrinter, IconClipboardList, IconPlus, IconArrowLeft, IconSearch, IconTrash, IconExternalLink, IconCheck, IconX } from "@tabler/icons-react";
 import AssignmentSelect from "@/components/common/AssignmentSelect";
+import { Badge } from "@/components/ui/badge";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 
 const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departmentName }) => {
     const [assignments, setAssignments] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const [trigger, { data: searchResults, isFetching: isSearching }] = useLazyGetAllStudentsQuery();
+    const [trigger, { data: searchResults, isFetching: isSearching }] = useLazyGetAllUsersQuery();
     const [selectedRole, setSelectedRole] = useState("PROCESS_OWNER");
 
     const roles = [
@@ -52,7 +64,7 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
     const handleSearch = (val) => {
         setSearchTerm(val);
         if (val.length >= 2) {
-            trigger({ search: val, limit: 10 });
+            trigger({ search: val, limit: 10, isStaff: "true" });
         }
     };
 
@@ -92,7 +104,7 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
                 <DialogHeader>
                     <DialogTitle>Manage People - {departmentName}</DialogTitle>
                 </DialogHeader>
-                
+
                 <div className="flex-1 overflow-auto p-1 space-y-6">
                     <div className="space-y-4 border p-4 rounded-lg bg-slate-50">
                         <h3 className="font-bold text-sm uppercase text-slate-500">Add New Assignment</h3>
@@ -111,8 +123,8 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
                             <div className="space-y-2">
                                 <Label>Search Person (ID or Name)</Label>
                                 <div className="relative">
-                                    <Input 
-                                        placeholder="Type to search..." 
+                                    <Input
+                                        placeholder="Type to search..."
                                         value={searchTerm}
                                         onChange={(e) => handleSearch(e.target.value)}
                                     />
@@ -120,18 +132,18 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
                                 </div>
                             </div>
                         </div>
-                        
+
                         {searchTerm.length >= 2 && searchResults?.data?.users?.length > 0 && (
                             <div className="border rounded-md bg-white shadow-sm max-h-[150px] overflow-auto z-[9999]">
                                 {searchResults.data.users.map(u => (
-                                    <div 
-                                        key={u.id || u._id} 
+                                    <div
+                                        key={u.id || u._id}
                                         className="p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center border-b last:border-0"
                                         onClick={() => handleAdd(u)}
                                     >
                                         <div>
                                             <div className="font-bold text-sm">{u.fullName}</div>
-                                            <div className="text-[10px] text-slate-500">ID: {u.empId}</div>
+                                            <div className="text-[16px] text-slate-500">ID: {u.empId}</div>
                                         </div>
                                         <Button size="xs" variant="ghost" className="text-blue-600">Add</Button>
                                     </div>
@@ -153,13 +165,13 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
                                     if (roleAssignments.length === 0) return null;
                                     return (
                                         <div key={role.id} className="space-y-1">
-                                            <div className="text-[10px] font-bold text-slate-400 ml-1 uppercase">{role.label}</div>
+                                            <div className="text-[16px] font-bold text-slate-400 ml-1 uppercase">{role.label}</div>
                                             {roleAssignments.map(a => (
                                                 <div key={a.id} className="flex justify-between items-center p-2 bg-white border rounded-md group hover:border-blue-300">
                                                     <span className="text-sm font-medium">{a.userName}</span>
-                                                    <Button 
-                                                        variant="ghost" 
-                                                        size="sm" 
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
                                                         className="text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                                                         onClick={() => handleDelete(a.id)}
                                                     >
@@ -199,7 +211,7 @@ const LineSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
 
     return (
         <select
-            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
             value={formData[`rec_${recIndex}_From`] || ""}
             onChange={(e) => onInputChange(recIndex, 'From', e.target.value)}
             disabled={!departmentId}
@@ -238,7 +250,7 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
 
     return (
         <select
-            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
             value={formData[`rec_${recIndex}_Process`] || ""}
             onChange={(e) => onInputChange(recIndex, 'Process', e.target.value)}
             disabled={!lineId}
@@ -289,7 +301,7 @@ const ProblemSelect = ({ recIndex, value, onChange }) => {
     return (
         <div className="flex flex-col gap-1 min-w-[120px]">
             <select
-                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px] font-semibold text-blue-800"
+                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px] font-semibold text-blue-800"
                 value={isPredefined ? value : (value ? "Other" : "")}
                 onChange={(e) => {
                     const val = e.target.value;
@@ -317,7 +329,7 @@ const AutoResizeTextarea = ({ value, onChange, placeholder, className, ...props 
     return (
         <div className="grid w-full min-w-[30px] relative">
             <div
-                className={cn("invisible whitespace-pre-wrap break-words min-h-[1.2rem] px-0.5 py-0.5 m-0 text-left pointer-events-none text-[10px]", className)}
+                className={cn("invisible whitespace-pre-wrap break-words min-h-[1.2rem] px-0.5 py-0.5 m-0 text-left pointer-events-none text-[16px]", className)}
                 style={{ gridArea: '1 / 1 / 2 / 2' }}
             >
                 {value || placeholder || ' '}
@@ -326,7 +338,7 @@ const AutoResizeTextarea = ({ value, onChange, placeholder, className, ...props 
                 value={value}
                 onChange={onChange}
                 placeholder={placeholder}
-                className={cn("bg-transparent resize-none overflow-hidden focus:outline-none w-full h-full px-0.5 py-0.5 m-0 block text-black z-10 text-[10px]", className)}
+                className={cn("bg-transparent resize-none overflow-hidden focus:outline-none w-full h-full px-0.5 py-0.5 m-0 block text-black z-10 text-[16px]", className)}
                 style={{ gridArea: '1 / 1 / 2 / 2' }}
                 rows={1}
                 {...props}
@@ -356,7 +368,7 @@ const DaysInput = ({ value, onChange }) => {
     return (
         <input
             type={isFocused ? "date" : "text"}
-            className="w-full text-center bg-transparent outline-none h-7 text-[10px]"
+            className="w-full text-center bg-transparent outline-none h-7 text-[16px]"
             value={isFocused ? value : (calculateDays(value) || "")}
             onChange={onChange}
             onFocus={() => setIsFocused(true)}
@@ -371,15 +383,15 @@ const CRIMPING_CONFIG = {
         // Row 1
         [{ text: "Daily 5M Recording Man -Crimping section", colSpan: 40, className: "bg-blue-50 text-lg font-bold" }],
         // Row 2
-        [{ text: "*If any part NG during retroactive and containment inspection then 100% parts to be check since last OK (Set up / In-process)", colSpan: 40, className: "bg-yellow-50 text-red-600 font-semibold text-[10px]" }],
+        [{ text: "*If any part NG during retroactive and containment inspection then 100% parts to be check since last OK (Set up / In-process)", colSpan: 40, className: "bg-yellow-50 text-red-600 font-semibold text-[16px]" }],
         // Row 3
         [
             { text: "(To be filled by Leader / Supervisor)", colSpan: 16, className: "bg-gray-100" },
             { text: "Retroactive Inspection (To be filled by Leader / Supervisor Before Change)", colSpan: 6, className: "bg-gray-100" },
             { text: "Set up Approval After Change (To be filled by Quality dept., Pick 5 samples for judgement)", colSpan: 9, className: "bg-gray-100" },
             { text: "Containment Action if required", colSpan: 7, className: "bg-gray-100" },
-            { text: "Process Owner", rowSpan: 3, width: "w-16" },
-            { text: "Approved By (QA Incharge)", rowSpan: 3, width: "w-16" }
+            { text: "Process Owner", rowSpan: 3, width: "w-20" },
+            { text: "Approved By (QA Incharge)", rowSpan: 3, width: "w-20" }
         ],
         // Row 4
         [
@@ -441,7 +453,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
             {/* Row 1: Common fields and first parameter */}
             <tr className="hover:bg-slate-50">
                 <td rowSpan="5" className="border border-black p-0.5 text-center">{recIndex + 1}</td>
-                <td rowSpan="5" className="border border-black p-0.5"><input type="date" className="w-full text-center bg-transparent h-7 text-[10px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><input type="date" className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <AutoResizeTextarea
                         className="text-center"
@@ -452,7 +464,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <select
-                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_Shift`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'Shift', e.target.value)}
                     >
@@ -465,7 +477,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <select
-                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_Type`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'Type', e.target.value)}
                     >
@@ -491,11 +503,11 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 <td rowSpan="5" className="border border-black p-0.5 min-w-[100px]">
                     <UserAutocomplete
                         compact
-                        departmentId={formData[`rec_${recIndex}_DeputedDeptId`]} // Assuming departmentId is available in formData
+                        departmentId={departmentId}
                         value={formData[`rec_${recIndex}_OperatorName`] || ""}
                         onChange={(user) => {
                             handleInputChange(recIndex, 'OperatorName', user.fullName);
-                            handleInputChange(recIndex, 'CSL', user.currentLevel || "-");
+                            handleInputChange(recIndex, 'CSL', user.currentLevel || "L1");
                             handleInputChange(recIndex, 'OperatorId', user.empId || "");
                             handleInputChange(recIndex, 'EmpCode', user.empId || "");
                         }}
@@ -512,7 +524,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <select
-                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_ReqSkill`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'ReqSkill', e.target.value)}
                     >
@@ -526,11 +538,12 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 <td rowSpan="5" className="border border-black p-0.5 min-w-[100px]">
                     <UserAutocomplete
                         value={formData[`rec_${recIndex}_DeputedPerson`] || ""}
-                        onChange={({ fullName, empId, departmentId, deptName }) => {
+                        onChange={({ fullName, empId, departmentId, deptName, currentLevel }) => {
                             handleInputChange(recIndex, 'DeputedPerson', fullName);
                             handleInputChange(recIndex, 'EmpCode', empId);
                             handleInputChange(recIndex, 'DeputedDeptId', departmentId);
                             handleInputChange(recIndex, 'DeputedDeptName', deptName);
+                            handleInputChange(recIndex, 'ActSkill', currentLevel || "L1");
                         }}
                         placeholder="Deputed Person"
                         compact={true}
@@ -546,7 +559,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <select
-                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_ActSkill`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'ActSkill', e.target.value)}
                     >
@@ -572,7 +585,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <select
-                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_OJT`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'OJT', e.target.value)}
                     >
@@ -591,7 +604,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 <td rowSpan="2" className="border border-black p-0.5 text-center align-middle">
                     <div className="flex flex-col h-full items-center justify-center gap-1">
                         <select
-                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                             value={formData[`rec_${recIndex}_Retro_Status_Top`] !== undefined ? formData[`rec_${recIndex}_Retro_Status_Top`] : "OK"}
                             onChange={(e) => handleInputChange(recIndex, 'Retro_Status_Top', e.target.value)}
                         >
@@ -629,13 +642,14 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     <AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Setup_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Setup_${params[0]}_R`, e.target.value)} />
                 </td>
 
-                <td rowSpan="5" className="border border-black p-0.5">
-                    <AssignmentSelect 
-                        departmentId={departmentId} 
-                        role="QA_SHIFT_INCHARGE" 
-                        value={formData[`rec_${recIndex}_QA_Incharge`] || ""} 
+                <td rowSpan="5" className="border border-black p-0.5 text-[16px]">
+                    <AssignmentSelect
+                        departmentId={departmentId}
+                        role="QA_SHIFT_INCHARGE"
+                        value={formData[`rec_${recIndex}_QA_Incharge`] || ""}
                         onChange={(val) => handleInputChange(recIndex, 'QA_Incharge', val)}
                         placeholder="QA Shift IC"
+                        className='text-[16px]'
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_Status`] || ""} onChange={(e) => handleInputChange(recIndex, 'Result_Status', e.target.value)} /></td>
@@ -654,7 +668,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
 
                 {/* Dimension Check 1st */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
-                    <div className="flex flex-col text-[10px] p-0.5 h-full">
+                    <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
                         <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std1', e.target.value)} /></label>
                         <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs1', e.target.value)} /></label>
@@ -662,7 +676,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
                 {/* Dimension Check 2nd */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
-                    <div className="flex flex-col text-[10px] p-0.5 h-full">
+                    <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
                         <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std2', e.target.value)} /></label>
                         <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs2', e.target.value)} /></label>
@@ -670,7 +684,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
                 {/* Dimension Check 3rd */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
-                    <div className="flex flex-col text-[10px] p-0.5 h-full">
+                    <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
                         <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std3', e.target.value)} /></label>
                         <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs3', e.target.value)} /></label>
@@ -679,19 +693,19 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea placeholder="Remarks" value={formData[`rec_${recIndex}_Remarks`] || ""} onChange={(e) => handleInputChange(recIndex, 'Remarks', e.target.value)} /></td>
 
                 <td rowSpan="5" className="border border-black p-0.5">
-                    <AssignmentSelect 
-                        departmentId={departmentId} 
-                        role="PROCESS_OWNER" 
-                        value={formData[`rec_${recIndex}_Process_Owner`] || ""} 
+                    <AssignmentSelect
+                        departmentId={departmentId}
+                        role="PROCESS_OWNER"
+                        value={formData[`rec_${recIndex}_Process_Owner`] || ""}
                         onChange={(val) => handleInputChange(recIndex, 'Process_Owner', val)}
                         placeholder="Select Owner"
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
-                    <AssignmentSelect 
-                        departmentId={departmentId} 
-                        role="APPROVED_BY" 
-                        value={formData[`rec_${recIndex}_Approved_By`] || ""} 
+                    <AssignmentSelect
+                        departmentId={departmentId}
+                        role="APPROVED_BY"
+                        value={formData[`rec_${recIndex}_Approved_By`] || ""}
                         onChange={(val) => handleInputChange(recIndex, 'Approved_By', val)}
                         placeholder="Select QA"
                     />
@@ -704,10 +718,10 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     <td className="border border-black p-0.5 text-center font-bold bg-gray-50"><AutoResizeTextarea className="text-center font-bold bg-transparent" value={formData[`rec_${recIndex}_Param_${p}`] !== undefined ? formData[`rec_${recIndex}_Param_${p}`] : p} onChange={(e) => handleInputChange(recIndex, `Param_${p}`, e.target.value)} /></td>
                     {p === 'Visual' ? (
                         <>
-                            <td className="border border-black p-0.5 text-center text-[8px] bg-gray-50 font-bold">Total Qty</td>
-                            <td className="border border-black p-0.5"><input type="text" className="w-full text-center bg-transparent h-7 text-[10px]" value={formData[`rec_${recIndex}_Retro_${p}_TQ`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_TQ`, e.target.value)} /></td>
-                            <td className="border border-black p-0.5 text-center text-[8px] bg-gray-50 font-bold">NG Qty</td>
-                            <td className="border border-black p-0.5"><input type="text" className="w-full text-center bg-transparent h-7 text-[10px]" value={formData[`rec_${recIndex}_Retro_${p}_NG`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_NG`, e.target.value)} /></td>
+                            <td className="border border-black p-0.5 text-center text-[16px] bg-gray-50 font-bold">Total Qty</td>
+                            <td className="border border-black p-0.5"><input type="text" className="w-full text-center bg-transparent h-7 text-[16px]" value={formData[`rec_${recIndex}_Retro_${p}_TQ`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_TQ`, e.target.value)} /></td>
+                            <td className="border border-black p-0.5 text-center text-[16px] bg-gray-50 font-bold">NG Qty</td>
+                            <td className="border border-black p-0.5"><input type="text" className="w-full text-center bg-transparent h-7 text-[16px]" value={formData[`rec_${recIndex}_Retro_${p}_NG`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_NG`, e.target.value)} /></td>
                         </>
                     ) : p === 'Length' ? (
                         <>
@@ -726,7 +740,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     {p === 'I/H' ? null : (
                         <td className="border border-black p-0.5 text-center align-middle">
                             <select
-                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                 value={formData[`rec_${recIndex}_Retro_Status_${p}`] || "OK"}
                                 onChange={(e) => handleInputChange(recIndex, `Retro_Status_${p}`, e.target.value)}
                             >
@@ -746,7 +760,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     {p === 'Visual' ? (
                         <td colSpan="2" className="border border-black p-0.5">
                             <select
-                                className="w-full text-center bg-transparent h-7 text-[10px]"
+                                className="w-full text-center bg-transparent h-7 text-[16px]"
                                 value={formData[`rec_${recIndex}_Setup_${p}_OK`] || ""}
                                 onChange={(e) => handleInputChange(recIndex, `Setup_${p}_OK`, e.target.value)}
                             >
@@ -770,21 +784,21 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     {p === 'Strength' && (
                         <>
                             <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                <div className="flex flex-col text-[10px] p-0.5 h-full">
+                                <div className="flex flex-col text-[16px] p-0.5 h-full">
                                     <div className="font-semibold mb-1">Length:</div>
                                     <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std1', e.target.value)} /></label>
                                     <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs1', e.target.value)} /></label>
                                 </div>
                             </td>
                             <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                <div className="flex flex-col text-[10px] p-0.5 h-full">
+                                <div className="flex flex-col text-[16px] p-0.5 h-full">
                                     <div className="font-semibold mb-1">Length:</div>
                                     <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std2', e.target.value)} /></label>
                                     <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs2', e.target.value)} /></label>
                                 </div>
                             </td>
                             <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                <div className="flex flex-col text-[10px] p-0.5 h-full">
+                                <div className="flex flex-col text-[16px] p-0.5 h-full">
                                     <div className="font-semibold mb-1">Length:</div>
                                     <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std3', e.target.value)} /></label>
                                     <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs3', e.target.value)} /></label>
@@ -794,7 +808,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     )}
                     {p === 'Visual' && (
                         <td colSpan="3" className="border border-black p-0.5 align-top">
-                            <div className="flex items-center text-[10px] p-0.5 w-full">
+                            <div className="flex items-center text-[16px] p-0.5 w-full">
                                 <span className="whitespace-nowrap mr-1">Detail if NG:</span>
                                 <input className="w-full min-w-0 bg-transparent outline-none text-black" value={formData[`rec_${recIndex}_Cont_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGDetail', e.target.value)} />
                             </div>
@@ -808,11 +822,16 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
 
 const Daily5MRecording = () => {
     const [selectedDepartment, setSelectedDepartment] = useState("");
+    const [selectedSection, setSelectedSection] = useState("");
     const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
     const navigate = useNavigate();
     const location = useLocation();
+    const [searchParams] = useSearchParams();
+    const urlRecordId = searchParams.get('recordId');
     const { data: departmentsData } = useGetAllDepartmentsQuery();
-    const { data: linesData } = useGetLinesByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
+    const { data: sectionsData } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
+    const { data: linesData } = useGetLinesBySectionQuery(selectedSection, { skip: !selectedSection });
+    const sections = sectionsData?.data || [];
     const lines = linesData?.data || [];
 
     // Config State
@@ -837,6 +856,12 @@ const Daily5MRecording = () => {
     const [addDialogDate, setAddDialogDate] = useState(new Date().toLocaleDateString('en-CA'));
     const [currentRecordId, setCurrentRecordId] = useState(null);
     const [sessionId, setSessionId] = useState(null);
+    const [recordStatus, setRecordStatus] = useState('PENDING');
+
+    // Auth state for permissions
+    const authUser = useSelector(state => state.auth.user);
+    const isAdmin = authUser?.isAdmin;
+    const canApprove = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:approve');
 
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
     const [isManagePeopleOpen, setIsManagePeopleOpen] = useState(false);
@@ -844,30 +869,64 @@ const Daily5MRecording = () => {
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const tableRef = React.useRef(null);
 
-    const selectedDeptName = departmentsData?.data?.departments?.find(d => (d._id || d.id) === selectedDepartment)?.name || "Department";
+    // Filter departments based on user assignment
+    const assignableDepartments = React.useMemo(() => {
+        const allDepts = departmentsData?.data?.departments || [];
+        if (!authUser || isAdmin || !authUser.departments || authUser.departments.length === 0) {
+            return allDepts;
+        }
+        // User has specific department assignments
+        return allDepts.filter(dept => 
+            authUser.departments.includes(dept.id) || 
+            authUser.departments.includes(dept._id) ||
+            authUser.departments.includes(String(dept.id)) ||
+            authUser.departments.includes(String(dept._id))
+        );
+    }, [departmentsData, authUser, isAdmin]);
+
+    const isRestricted = authUser && !isAdmin && authUser.departments && authUser.departments.length > 0;
+
+    const selectedDeptName = assignableDepartments.find(d => (d._id || d.id) === selectedDepartment)?.name || "Department";
+    const section = sections.find(s => (s._id || s.id) === selectedSection);
+    const selectedSectionName = section ? `${section.name}${section.category ? ` (${section.category})` : ''}` : "Section";
+
+    // Auto-select department if only one is available for restricted users
+    useEffect(() => {
+        if (isRestricted && assignableDepartments.length === 1 && !selectedDepartment) {
+            setSelectedDepartment(assignableDepartments[0]._id || assignableDepartments[0].id);
+        }
+    }, [isRestricted, assignableDepartments, selectedDepartment]);
 
     useEffect(() => {
         if (selectedDepartment) {
             fetchConfig(selectedDepartment);
+            // Only reset section if we're not loading from a URL/deep link
+            if (!urlRecordId && !location.state?.recordId) {
+                setSelectedSection("");
+            }
         } else {
             setTableConfig(null);
             setConfigError(null);
         }
-    }, [selectedDepartment]);
+    }, [selectedDepartment, urlRecordId, location.state?.recordId]);
 
     useEffect(() => {
-        if (selectedDepartment && selectedDate) {
-            // Priority 1: If we have a recordId in state, fetch by ID directly and hide list
-            if (location.state?.recordId) {
-                fetchRecordById(location.state.recordId);
+        // Priority 1: Check for recordId in URL search params
+        if (urlRecordId) {
+            fetchRecordById(urlRecordId).then(() => {
                 setShowFormList(false);
-            } else {
-                // Priority 2: Fetch all records for today to show in the list
-                fetchTodayRecords(selectedDepartment, selectedDate);
-                setShowFormList(true);
-            }
+            });
         }
-    }, [selectedDepartment, selectedDate, location.state?.recordId]);
+        // Priority 2: If we have a recordId in location state (navigated from dashboard)
+        else if (location.state?.recordId) {
+            fetchRecordById(location.state.recordId);
+            setShowFormList(false);
+        } else if (selectedDepartment && selectedSection && selectedDate) {
+            // Priority 3: Fetch all records for today to show in the list
+            fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+            setShowFormList(true);
+        }
+    }, [selectedDepartment, selectedSection, selectedDate, location.state?.recordId, urlRecordId]);
 
     const fetchConfig = async (deptId) => {
         try {
@@ -947,7 +1006,7 @@ const Daily5MRecording = () => {
 
     const generatePDFBlob = async () => {
         if (!tableRef.current) return null;
-        setIsGeneratingPDF(true);
+        setIsGeneratingPDF(true); // Ensure state is set immediately
         try {
             const margin = 40;
             const logoHeight = 50;
@@ -975,7 +1034,7 @@ const Daily5MRecording = () => {
                     margin: '0',
                 },
                 backgroundColor: '#ffffff',
-                pixelRatio: 2,
+                pixelRatio: 1.5, // Slightly lower for faster generation of large tables
             });
 
             // 4. Calculate PDF page size: table + margins + logo (if it exists)
@@ -1023,10 +1082,11 @@ const Daily5MRecording = () => {
             return;
         }
 
-        const pdf = await generatePDFBlob();
-        if (pdf) {
-            const pdfBase64 = pdf.output('datauristring');
-            try {
+        const loadingToast = toast.info("Preparing PDF and sending email...", { duration: 0 });
+        try {
+            const pdf = await generatePDFBlob();
+            if (pdf) {
+                const pdfBase64 = pdf.output('datauristring');
                 setIsGeneratingPDF(true);
                 await axiosInstance.post('/api/daily-5m/pdf/send', {
                     email: emailForPDF,
@@ -1035,14 +1095,16 @@ const Daily5MRecording = () => {
                     date: selectedDate
                 });
                 toast.success("Email sent successfully!");
+                toast.dismiss(loadingToast);
                 setIsPrintDialogOpen(false);
                 setEmailForPDF("");
-            } catch (error) {
-                console.error("Email error:", error);
-                toast.error("Failed to send email");
-            } finally {
-                setIsGeneratingPDF(false);
             }
+        } catch (error) {
+            console.error("Email error:", error);
+            toast.error("Failed to send email");
+            toast.dismiss(loadingToast);
+        } finally {
+            setIsGeneratingPDF(false);
         }
     };
 
@@ -1079,10 +1141,10 @@ const Daily5MRecording = () => {
         }
     }, [location.state]);
 
-    const fetchTodayRecords = async (deptId, queryDate) => {
+    const fetchTodayRecords = async (deptId, sectionId, queryDate) => {
         try {
             // Use the same get5MRecords endpoint but with groupBySession=true
-            const response = await axiosInstance.get(`/api/daily-5m/records/${deptId}?startDate=${queryDate}&endDate=${queryDate}&groupBySession=true`);
+            const response = await axiosInstance.get(`/api/daily-5m/records/${deptId}?sectionId=${sectionId}&startDate=${queryDate}&endDate=${queryDate}&groupBySession=true`);
             if (response.data.success) {
                 setTodayRecords(response.data.data);
             }
@@ -1097,6 +1159,7 @@ const Daily5MRecording = () => {
             // and has a persistent ID for sessions.
             const payload = {
                 departmentId: selectedDepartment,
+                sectionId: selectedSection,
                 date: addDialogDate,
                 shift: "",
                 line: "",
@@ -1112,7 +1175,10 @@ const Daily5MRecording = () => {
                 setSelectedDate(addDialogDate);
                 setSubmittedBy(null);
                 setCurrentRecordId(newRecord.id);
-                setSessionId(newRecord.sessionId); // Important: capture the newly created sessionId
+                setSessionId(newRecord.sessionId);
+
+                // Keep URL in sync
+                navigate(`${location.pathname}?recordId=${newRecord.id}`, { replace: true });
 
                 // Load the new record configuration (handles row counts etc)
                 if (tableConfig?.bodyRows) setRowCount(tableConfig.bodyRows);
@@ -1133,13 +1199,21 @@ const Daily5MRecording = () => {
             if (response.data.success && response.data.data) {
                 const record = response.data.data;
                 const recordData = record.recordData || {};
+                const deptId = record.departmentId;
+                const sectId = record.sectionId;
+
+                setSelectedDepartment(deptId);
+                setSelectedSection(sectId);
+                setSelectedDate(record.date ? record.date.split('T')[0] : new Date().toLocaleDateString('en-CA'));
                 setFormData(recordData);
                 setSubmittedBy(record.submittedByName || "User");
                 setCurrentRecordId(record.id);
                 setSessionId(record.sessionId);
+                setRecordStatus(record.status || 'PENDING');
                 if (record.formType) {
                     setFormType(record.formType);
                 }
+                setShowFormList(false);
 
                 // Determine rowCount from existing data keys
                 updateRowCountFromData(recordData);
@@ -1211,6 +1285,11 @@ const Daily5MRecording = () => {
                 }
             }
 
+            // Auto-populate 'N/A' in Support Person Name if OJT is 'No'
+            if (field === 'OJT' && value === 'No') {
+                newFormData[`rec_${recIndex}_Cont1_Shift`] = 'N/A';
+            }
+
             return newFormData;
         });
     };
@@ -1227,6 +1306,7 @@ const Daily5MRecording = () => {
         try {
             const payload = {
                 departmentId: selectedDepartment,
+                sectionId: selectedSection,
                 date: selectedDate,
                 // Extract Shift/Line from the first record if available:
                 shift: formData['rec_0_Shift'] || "",
@@ -1239,9 +1319,12 @@ const Daily5MRecording = () => {
             await axiosInstance.post('/api/daily-5m/record/create', payload);
             toast.success("Record saved successfully!");
 
-            // Instead of navigating away, go back to the list to see the new snapshot
+            // Clear the URL when returning to the list
+            navigate(location.pathname, { replace: true });
+
+            // Go back to the list
             setShowFormList(true);
-            fetchTodayRecords(selectedDepartment, selectedDate);
+            fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
         } catch (error) {
             console.error("Save error:", error);
             toast.error(error.response?.data?.message || "Failed to save record");
@@ -1256,7 +1339,7 @@ const Daily5MRecording = () => {
 
     // Common Render: Header Section
     return (
-        <div className="space-y-6 w-full max-w-[95vw] mx-auto pb-10">
+        <div className="space-y-6 w-full mx-auto pb-10 px-0 sm:px-2">
             <div className="flex justify-between items-center print:hidden">
                 <div className="flex flex-col">
                     <h1 className="text-2xl font-bold tracking-tight">Daily 5M Recording</h1>
@@ -1285,8 +1368,8 @@ const Daily5MRecording = () => {
                         Manage People
                     </Button>
 
-                    <AssignmentManagementDialog 
-                        open={isManagePeopleOpen} 
+                    <AssignmentManagementDialog
+                        open={isManagePeopleOpen}
                         onOpenChange={setIsManagePeopleOpen}
                         departmentId={selectedDepartment}
                         departmentName={selectedDeptName}
@@ -1418,25 +1501,46 @@ const Daily5MRecording = () => {
             </div>
 
             {/* Content Area Switching */}
-            {!selectedDepartment ? (
-                /* State 1: No Department Selected */
+            {!selectedDepartment || !selectedSection ? (
+                /* State 1: Department & Section Selection */
                 <div className="p-8">
-                    <Card>
+                    <Card className="max-w-md mx-auto">
                         <CardHeader>
-                            <CardTitle>Select Department to View 5M Record</CardTitle>
-                            <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                                <SelectTrigger className="w-[300px]">
-                                    <SelectValue placeholder="Select Department" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {departmentsData?.data?.departments?.map((dept) => (
-                                        <SelectItem key={dept._id || dept.id} value={dept._id || dept.id}>
-                                            {dept.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <CardTitle>Daily 5M Recording Access</CardTitle>
                         </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="space-y-2">
+                                <Label>1. Select Department</Label>
+                                <Select value={selectedDepartment} onValueChange={setSelectedDepartment} disabled={isRestricted && assignableDepartments.length === 1}>
+                                    <SelectTrigger className={isRestricted && assignableDepartments.length === 1 ? "bg-slate-50 cursor-not-allowed" : ""}>
+                                        <SelectValue placeholder="Select Department" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {assignableDepartments.map((dept) => (
+                                            <SelectItem key={dept._id || dept.id} value={dept._id || dept.id}>
+                                                {dept.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className={`space-y-2 transition-opacity ${!selectedDepartment ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                                <Label>2. Select Section</Label>
+                                <Select value={selectedSection} onValueChange={setSelectedSection} disabled={!selectedDepartment}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select Section" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {sections.map((sec) => (
+                                            <SelectItem key={sec._id || sec.id} value={sec._id || sec.id}>
+                                                {sec.name} {sec.category ? `(${sec.category})` : ''}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </CardContent>
                     </Card>
                 </div>
             ) : loadingConfig ? (
@@ -1459,57 +1563,99 @@ const Daily5MRecording = () => {
                                 onChange={(e) => setSelectedDate(e.target.value)}
                                 className="w-[200px]"
                             />
-                            <h2 className="text-lg font-semibold text-slate-700">Today's Records for {selectedDeptName}</h2>
+                            <h2 className="text-lg font-semibold text-slate-700">Records for {selectedDeptName} - {selectedSectionName}</h2>
                         </div>
                         <Button onClick={() => setIsAddDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
                             <IconPlus className="mr-2" /> Add New Form
                         </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {todayRecords.length === 0 ? (
-                            <div className="col-span-full py-20 text-center bg-slate-50 border-2 border-dashed rounded-xl">
-                                <IconClipboardList className="mx-auto w-12 h-12 text-slate-300 mb-4" />
-                                <h3 className="text-lg font-medium text-slate-600">No forms created for this date</h3>
-                                <p className="text-slate-400 mb-6">Create a new entry to start recording 5M data.</p>
-                                <Button onClick={() => setIsAddDialogOpen(true)} variant="outline">Create First Form</Button>
-                            </div>
-                        ) : (
-                            todayRecords.map((record) => (
-                                <Card key={record.id} className="hover:shadow-md transition-shadow cursor-pointer overflow-hidden border-2" onClick={() => {
-                                    fetchRecordById(record.id);
-                                    setShowFormList(false);
-                                }}>
-                                    <div className={`h-2 ${record.formType === 'crimping' ? 'bg-orange-500' : 'bg-blue-500'}`} />
-                                    <CardHeader className="pb-2">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <CardTitle className="text-lg uppercase">
-                                                    {record.formType === 'standard' ? 'Assembly form' : 'cutting & crimping'}
-                                                </CardTitle>
-                                                <p className="text-sm text-slate-500 mt-1">Line: {record.line || 'N/A'} | Shift: {record.shift || 'N/A'}</p>
+                    <div className="bg-white rounded-xl border-2 shadow-sm overflow-hidden">
+                        <Table>
+                            <TableHeader className="bg-slate-50">
+                                <TableRow>
+                                    <TableHead className="w-20 font-bold p-4">ID</TableHead>
+                                    <TableHead className="font-bold p-4">Form Type</TableHead>
+                                    <TableHead className="font-bold p-4">Line</TableHead>
+                                    <TableHead className="font-bold p-4">Shift</TableHead>
+                                    <TableHead className="font-bold p-4">Created Time</TableHead>
+                                    <TableHead className="font-bold p-4 text-center">Status</TableHead>
+                                    <TableHead className="text-right font-bold p-4">Action</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {todayRecords.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={8} className="h-64 text-center">
+                                            <div className="flex flex-col items-center justify-center space-y-3 opacity-60">
+                                                <IconClipboardList size={48} className="text-slate-300" />
+                                                <div className="font-medium text-lg">No sessions found for this date</div>
+                                                <Button onClick={() => setIsAddDialogOpen(true)} variant="outline" size="sm">Create First Form</Button>
                                             </div>
-                                            <div className="bg-slate-100 px-2 py-1 rounded text-[10px] font-bold text-slate-600">
-                                                ID: #{record.id}
-                                            </div>
-                                        </div>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="flex flex-col gap-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-500">Submitted By:</span>
-                                                <span className="font-semibold">{record.submittedByName}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-500">Created At:</span>
-                                                <span>{new Date(record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </div>
-                                        </div>
-                                        <Button className="w-full mt-4" variant="secondary">Open Recording Table</Button>
-                                    </CardContent>
-                                </Card>
-                            ))
-                        )}
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    todayRecords.map((record) => (
+                                        <TableRow
+                                            key={record.id}
+                                            className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                                            onClick={() => navigate(`${location.pathname}?recordId=${record.id}`)}
+                                        >
+                                            <TableCell className="font-mono font-bold text-slate-500 p-4">
+                                                #{record.id}
+                                            </TableCell>
+                                            <TableCell className="p-4">
+                                                <Badge
+                                                    variant="secondary"
+                                                    className={`uppercase text-[16px] px-3 py-1 font-bold ${record.formType === 'crimping'
+                                                        ? 'bg-orange-100 text-orange-700 hover:bg-orange-100 border-orange-200'
+                                                        : 'bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200'
+                                                        }`}
+                                                >
+                                                    {record.formType === 'standard' ? 'Assembly' : 'Cutting & Crimping'}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="font-semibold p-4">
+                                                {record.line || 'N/A'}
+                                            </TableCell>
+                                            <TableCell className="p-4">
+                                                {record.shift ? (
+                                                    <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600">
+                                                        {record.shift}
+                                                    </span>
+                                                ) : 'N/A'}
+                                            </TableCell>
+                                            <TableCell className="p-4 text-slate-500 font-medium">
+                                                {new Date(record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </TableCell>
+                                            <TableCell className="p-4">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[16px] font-bold">
+                                                        {record.submittedByName?.charAt(0)}
+                                                    </div>
+                                                    <span className="font-semibold">{record.submittedByName}</span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="p-4 text-center">
+                                                <Badge
+                                                    className={`uppercase font-bold px-3 py-1 text-xs shadow-sm ${record.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100' :
+                                                        record.status === 'DECLINED' ? 'bg-red-100 text-red-700 border-red-200 hover:bg-red-100' :
+                                                            'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                        }`}
+                                                >
+                                                    {record.status || 'PENDING'}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-right p-4">
+                                                <Button size="sm" variant="ghost" className="text-blue-600 font-bold group-hover:bg-blue-50">
+                                                    Open <IconExternalLink size={16} className="ml-2" />
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
                     </div>
 
                     <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -1526,14 +1672,14 @@ const Daily5MRecording = () => {
                                             onClick={() => setAddDialogType('standard')}
                                         >
                                             <div className="text-center font-bold">Assembly</div>
-                                            <p className="text-[10px] text-center text-slate-500 mt-1">Regular 5M Sheet</p>
+                                            <p className="text-[16px] text-center text-slate-500 mt-1">Regular 5M Sheet</p>
                                         </Card>
                                         <Card
                                             className={`p-4 cursor-pointer border-2 transition-all ${addDialogType === 'crimping' ? 'border-orange-500 bg-orange-50' : 'hover:border-slate-300'}`}
                                             onClick={() => setAddDialogType('crimping')}
                                         >
                                             <div className="text-center font-bold">Cutting & Crimping</div>
-                                            <p className="text-[10px] text-center text-slate-500 mt-1">Crimping Machine Fix</p>
+                                            <p className="text-[16px] text-center text-slate-500 mt-1">Crimping Machine Fix</p>
                                         </Card>
                                     </div>
                                 </div>
@@ -1546,7 +1692,7 @@ const Daily5MRecording = () => {
                                         disabled // Restricted to current as requested "current date only"
                                         className="bg-slate-50"
                                     />
-                                    <p className="text-[10px] text-slate-400">Recordings are restricted to the current date.</p>
+                                    <p className="text-[16px] text-slate-400">Recordings are restricted to the current date.</p>
                                 </div>
                                 <Button onClick={handleAddForm} className="w-full h-12 text-lg">
                                     Open Recording Table
@@ -1560,12 +1706,60 @@ const Daily5MRecording = () => {
                 <Card className="print:border-none print:shadow-none bg-slate-50">
                     <CardHeader className="print:hidden space-y-4">
                         <div className="flex justify-between items-center">
-                            <Button variant="ghost" onClick={() => {
-                                setShowFormList(true);
-                                fetchTodayRecords(selectedDepartment, selectedDate);
-                            }}>
-                                <IconArrowLeft className="mr-2" /> Back to Session List
-                            </Button>
+                            <div className="flex items-center gap-4">
+                                <Button variant="ghost" onClick={() => {
+                                    navigate(location.pathname);
+                                    setShowFormList(true);
+                                    fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+                                }}>
+                                    <IconArrowLeft className="mr-2" /> Back to Session List
+                                </Button>
+
+                                {/* Approval Actions */}
+                                {canApprove && recordStatus === 'PENDING' && currentRecordId && (
+                                    <div className="flex items-center gap-2 border-l pl-4">
+                                        <Button
+                                            size="sm"
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                                            onClick={async () => {
+                                                try {
+                                                    await axiosInstance.post(`/api/daily-5m/record/${currentRecordId}/approve`);
+                                                    setRecordStatus('APPROVED');
+                                                    toast.success("Record Approved Successfully");
+                                                } catch (e) {
+                                                    toast.error("Failed to approve record");
+                                                }
+                                            }}
+                                        >
+                                            <IconCheck size={18} className="mr-1.5" /> Approve
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="text-red-600 border-red-200 hover:bg-red-50 font-bold"
+                                            onClick={async () => {
+                                                try {
+                                                    await axiosInstance.post(`/api/daily-5m/record/${currentRecordId}/decline`);
+                                                    setRecordStatus('DECLINED');
+                                                    toast.success("Record Declined");
+                                                } catch (e) {
+                                                    toast.error("Failed to decline record");
+                                                }
+                                            }}
+                                        >
+                                            <IconX size={18} className="mr-1.5" /> Decline
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Status Badge */}
+                                {recordStatus !== 'PENDING' && (
+                                    <Badge className={`ml-2 uppercase font-black px-4 py-1.5 text-sm shadow-sm ${recordStatus === 'APPROVED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                                        {recordStatus}
+                                    </Badge>
+                                )}
+                            </div>
+
                             <div className="text-right">
                                 <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active Session</div>
                                 <div className="text-2xl font-black text-slate-900">
@@ -1575,27 +1769,27 @@ const Daily5MRecording = () => {
                         </div>
                         <div className="flex gap-4 p-4 bg-white rounded-lg border shadow-sm">
                             <div className="flex flex-col gap-1 flex-1">
-                                <Label className="text-[10px] uppercase text-slate-400 font-bold">Department</Label>
-                                <div className="font-bold">{selectedDeptName}</div>
+                                <Label className="text-[16px] uppercase text-slate-400 font-bold">Dept / Section</Label>
+                                <div className="font-bold">{selectedDeptName} / {selectedSectionName}</div>
                             </div>
                             <div className="flex flex-col gap-1 flex-1">
-                                <Label className="text-[10px] uppercase text-slate-400 font-bold">Date</Label>
+                                <Label className="text-[16px] uppercase text-slate-400 font-bold">Date</Label>
                                 <div className="font-bold">{selectedDate}</div>
                             </div>
                             {submittedBy && (
                                 <div className="flex flex-col gap-1 flex-1">
-                                    <Label className="text-[10px] uppercase text-slate-400 font-bold">Operator</Label>
+                                    <Label className="text-[16px] uppercase text-slate-400 font-bold">Operator</Label>
                                     <div className="font-bold text-blue-600">{submittedBy}</div>
                                 </div>
                             )}
                         </div>
                     </CardHeader>
-                    <CardContent className="p-0 sm:p-4 overflow-auto">
+                    <CardContent className="p-0 sm:p-4 overflow-x-auto">
                         {/* Table Container for PDF Capture */}
-                        <div ref={tableRef} data-pdf-content="true" className="w-full bg-white p-4 overflow-x-auto">
+                        <div ref={tableRef} data-pdf-content="true" className="w-full bg-white p-4">
                             {/* Main Table Container */}
                             <div className="border-2 border-black inline-block min-w-full">
-                                <table className="w-max min-w-full border-collapse text-[10px] sm:text-xs">
+                                <table className="w-max min-w-full border-collapse text-[16px] sm:text-xs">
                                     <thead>
                                         {(formType === 'crimping' ? CRIMPING_CONFIG : tableConfig).headers.map((row, rowIndex) => (
                                             <tr key={rowIndex}>
@@ -1658,10 +1852,10 @@ const Daily5MRecording = () => {
 
                                                         <td rowSpan="3" className="border border-black p-0.5 text-center">{recIndex + 1}</td>
                                                         {/* Generic inputs for standard fields */}
-                                                        <td rowSpan="3" className="border border-black p-0.5"><input type="date" className="w-full text-center bg-transparent h-7 text-[10px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
+                                                        <td rowSpan="3" className="border border-black p-0.5"><input type="date" className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                 value={formData[`rec_${recIndex}_Line`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'Line', e.target.value)}
                                                             >
@@ -1675,7 +1869,7 @@ const Daily5MRecording = () => {
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                 value={formData[`rec_${recIndex}_Shift`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'Shift', e.target.value)}
                                                             >
@@ -1688,7 +1882,7 @@ const Daily5MRecording = () => {
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                 value={formData[`rec_${recIndex}_Type`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'Type', e.target.value)}
                                                             >
@@ -1707,10 +1901,10 @@ const Daily5MRecording = () => {
                                                             />
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
-                                                            <ProblemSelect 
-                                                                recIndex={recIndex} 
-                                                                value={formData[`rec_${recIndex}_Problem`] || ""} 
-                                                                onChange={handleInputChange} 
+                                                            <ProblemSelect
+                                                                recIndex={recIndex}
+                                                                value={formData[`rec_${recIndex}_Problem`] || ""}
+                                                                onChange={handleInputChange}
                                                             />
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5 text-center font-mono text-[9px]">
@@ -1732,7 +1926,7 @@ const Daily5MRecording = () => {
                                                         <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" placeholder="Cur Skill" value={formData[`rec_${recIndex}_CurSkill`] || ""} onChange={(e) => handleInputChange(recIndex, 'CurSkill', e.target.value)} /></td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                 value={formData[`rec_${recIndex}_ReqSkill`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'ReqSkill', e.target.value)}
                                                             >
@@ -1745,12 +1939,13 @@ const Daily5MRecording = () => {
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <UserAutocomplete
                                                                 value={formData[`rec_${recIndex}_DeputedCode`] || ""}
-                                                                onChange={({ fullName, empId, departmentId, deptName, lineName }) => {
+                                                                onChange={({ fullName, empId, departmentId, deptName, lineName, currentLevel }) => {
                                                                     handleInputChange(recIndex, 'DeputedCode', empId);
                                                                     handleInputChange(recIndex, 'Deputed', fullName);
                                                                     handleInputChange(recIndex, 'DeputedDeptId', departmentId);
                                                                     handleInputChange(recIndex, 'DeputedDeptName', deptName);
                                                                     handleInputChange(recIndex, 'From', lineName || "");
+                                                                    handleInputChange(recIndex, 'ActSkill', currentLevel || "L1");
                                                                 }}
                                                                 placeholder="Op Code"
                                                                 compact={true}
@@ -1758,7 +1953,7 @@ const Daily5MRecording = () => {
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                 value={formData[`rec_${recIndex}_ActSkill`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'ActSkill', e.target.value)}
                                                             >
@@ -1788,7 +1983,7 @@ const Daily5MRecording = () => {
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                 value={formData[`rec_${recIndex}_OJT`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'OJT', e.target.value)}
                                                             >
@@ -1801,11 +1996,11 @@ const Daily5MRecording = () => {
                                                         {/* Retro Row 1 */}
                                                         <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro1_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro1_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro1_Visual', e.target.value)} /></td>
                                                         <td colSpan="2" className="border border-black p-0.5 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full" value={formData[`rec_${recIndex}_Retro1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_Retro1_VisualSOP`] : "Visual as per SOP"} onChange={(e) => handleInputChange(recIndex, 'Retro1_VisualSOP', e.target.value)} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full" value={formData[`rec_${recIndex}_Retro1_NA`] !== undefined ? formData[`rec_${recIndex}_Retro1_NA`] : "NA"} onChange={(e) => handleInputChange(recIndex, 'Retro1_NA', e.target.value)} /></td>
+                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro1_NA`] !== undefined ? formData[`rec_${recIndex}_Retro1_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro1_NA', e.target.value)} /></td>
                                                         <td rowSpan="3" className="border border-black p-0.5 text-center align-middle">
                                                             <div className="flex flex-col h-full items-center justify-center gap-1">
                                                                 <select
-                                                                    className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]"
+                                                                    className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                     value={formData[`rec_${recIndex}_Retro_Status`] !== undefined ? formData[`rec_${recIndex}_Retro_Status`] : "OK"}
                                                                     onChange={(e) => handleInputChange(recIndex, 'Retro_Status', e.target.value)}
                                                                 >
@@ -1814,12 +2009,12 @@ const Daily5MRecording = () => {
                                                                     <option value="Scrap">Scrap</option>
                                                                 </select>
                                                                 <div className="w-full h-px bg-black/10" />
-                                                                <AutoResizeTextarea
+                                                                {/* <AutoResizeTextarea
                                                                     className="text-[8px] text-center"
                                                                     placeholder="Sign"
                                                                     value={formData[`rec_${recIndex}_Retro_Sign`] || ""}
                                                                     onChange={(e) => handleInputChange(recIndex, 'Retro_Sign', e.target.value)}
-                                                                />
+                                                                /> */}
                                                             </div>
                                                         </td>
 
@@ -1836,27 +2031,28 @@ const Daily5MRecording = () => {
                                                                 <div className="flex-1 flex items-center justify-center"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_5`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_5`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_5', e.target.value)} /></div>
                                                             </div>
                                                         </td>
-                                                        <td className="border border-black p-0.5 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full text-[8px]" value={formData[`rec_${recIndex}_FP1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_FP1_VisualSOP`] : "Visual(As per SOP)"} onChange={(e) => handleInputChange(recIndex, 'FP1_VisualSOP', e.target.value)} /></td>
+                                                        <td className="border border-black p-0.5 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full text-[16px]" value={formData[`rec_${recIndex}_FP1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_FP1_VisualSOP`] : "Visual(As per SOP)"} onChange={(e) => handleInputChange(recIndex, 'FP1_VisualSOP', e.target.value)} /></td>
                                                         {[1, 2, 3, 4, 5].map(num => (
-                                                            <td key={`FP1_Chk${num}`} className="border border-black p-0.5">
-                                                                <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]" value={formData[`rec_${recIndex}_FP1_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP1_Chk${num}`, e.target.value)}>
+                                                            <td key={`FP1_Chk${num}`} className="border border-black p-0.5 min-w-[60px]">
+                                                                <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]" value={formData[`rec_${recIndex}_FP1_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP1_Chk${num}`, e.target.value)}>
                                                                     <option value="">-</option>
                                                                     <option value="OK">OK</option>
                                                                     <option value="N/A">N/A</option>
                                                                 </select>
                                                             </td>
                                                         ))}
-                                                         <td rowSpan="3" className="border border-black p-0.5">
-                                                            <AssignmentSelect 
+                                                        <td rowSpan="3" className="border border-black p-0.5 text-[16px]">
+                                                            <AssignmentSelect
                                                                 departmentId={selectedDepartment}
                                                                 role="QA_SHIFT_INCHARGE"
                                                                 value={formData[`rec_${recIndex}_Result_1`] || ""}
                                                                 onChange={(val) => handleInputChange(recIndex, 'Result_1', val)}
                                                                 placeholder="QA Shift IC"
+                                                                className='text-[16px]'
                                                             />
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
-                                                            <div className="flex flex-col text-[8px] items-center justify-center p-1 font-semibold min-h-[40px]">
+                                                            <div className="flex flex-col text-[16px] items-center justify-center p-1 font-semibold min-h-[40px]">
                                                                 NG Detail if<br />any: <input className="w-6 text-center border-none ml-1 bg-transparent" value={formData[`rec_${recIndex}_Result_2`] !== undefined ? formData[`rec_${recIndex}_Result_2`] : "0"} onChange={(e) => handleInputChange(recIndex, 'Result_2', e.target.value)} />
                                                             </div>
                                                         </td>
@@ -1874,19 +2070,19 @@ const Daily5MRecording = () => {
                                                         <td rowSpan="2" className="border border-black p-0.5"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} /></td>
 
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                                            <div className="flex flex-col text-[10px] p-0.5 text-blue-600">
+                                                            <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
                                                                 <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_1`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_1', e.target.value)} />
                                                             </div>
                                                         </td>
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                                            <div className="flex flex-col text-[10px] p-0.5 text-blue-600">
+                                                            <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
                                                                 <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_2`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_2', e.target.value)} />
                                                             </div>
                                                         </td>
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                                            <div className="flex flex-col text-[10px] p-0.5 text-blue-600">
+                                                            <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
                                                                 <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_3`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_3', e.target.value)} />
                                                             </div>
@@ -1900,7 +2096,7 @@ const Daily5MRecording = () => {
 
                                                         {/* Owners */}
                                                         <td rowSpan="3" className="border border-black p-0.5">
-                                                            <AssignmentSelect 
+                                                            <AssignmentSelect
                                                                 departmentId={selectedDepartment}
                                                                 role="PROCESS_OWNER"
                                                                 value={formData[`rec_${recIndex}_Owner_Sign`] || ""}
@@ -1909,7 +2105,7 @@ const Daily5MRecording = () => {
                                                             />
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
-                                                            <AssignmentSelect 
+                                                            <AssignmentSelect
                                                                 departmentId={selectedDepartment}
                                                                 role="APPROVED_BY"
                                                                 value={formData[`rec_${recIndex}_Approved_By`] || ""}
@@ -1923,14 +2119,14 @@ const Daily5MRecording = () => {
                                                     <tr className="hover:bg-slate-50">
                                                         {/* Retro Row 2 */}
                                                         <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro2_Dim`] !== undefined ? formData[`rec_${recIndex}_Retro2_Dim`] : "Dimension"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Dim', e.target.value)} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-[8px] leading-tight"><AutoResizeTextarea className="text-center text-[8px] bg-transparent w-full" value={formData[`rec_${recIndex}_Retro2_Desc`] !== undefined ? formData[`rec_${recIndex}_Retro2_Desc`] : "Dim as per Dim board\n(if change at F/A process)"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Desc', e.target.value)} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full text-blue-600" value={formData[`rec_${recIndex}_Retro2_NA`] !== undefined ? formData[`rec_${recIndex}_Retro2_NA`] : "NA"} onChange={(e) => handleInputChange(recIndex, 'Retro2_NA', e.target.value)} /></td>
+                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-[16px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_Retro2_Desc`] !== undefined ? formData[`rec_${recIndex}_Retro2_Desc`] : "Dim as per Dim board\n(if change at F/A process)"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Desc', e.target.value)} /></td>
+                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro2_NA`] !== undefined ? formData[`rec_${recIndex}_Retro2_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro2_NA', e.target.value)} /></td>
 
                                                         {/* FP Row 2 */}
-                                                        <td rowSpan="2" className="border border-black p-0.5 text-center text-[8px] leading-tight"><AutoResizeTextarea className="text-center text-[8px] bg-transparent w-full" value={formData[`rec_${recIndex}_FP2_Desc`] !== undefined ? formData[`rec_${recIndex}_FP2_Desc`] : "Dim as per Dim board(If F/A)"} onChange={(e) => handleInputChange(recIndex, 'FP2_Desc', e.target.value)} /></td>
+                                                        <td rowSpan="2" className="border border-black p-0.5 text-center text-[8px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_FP2_Desc`] !== undefined ? formData[`rec_${recIndex}_FP2_Desc`] : "Dim as per Dim board(If F/A)"} onChange={(e) => handleInputChange(recIndex, 'FP2_Desc', e.target.value)} /></td>
                                                         {[1, 2, 3, 4, 5].map(num => (
-                                                            <td rowSpan="2" key={`FP2_Chk${num}`} className="border border-black p-0.5">
-                                                                <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]" value={formData[`rec_${recIndex}_FP2_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP2_Chk${num}`, e.target.value)}>
+                                                            <td rowSpan="2" key={`FP2_Chk${num}`} className="border border-black p-0.5 min-w-[60px]">
+                                                                <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]" value={formData[`rec_${recIndex}_FP2_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP2_Chk${num}`, e.target.value)}>
                                                                     <option value="">-</option>
                                                                     <option value="OK">OK</option>
                                                                     <option value="N/A">N/A</option>
@@ -1943,14 +2139,14 @@ const Daily5MRecording = () => {
                                                     <tr className="hover:bg-slate-50">
                                                         {/* Retro Row 3 */}
                                                         <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro3_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro3_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro3_Visual', e.target.value)} /></td>
-                                                        <td className="border border-black p-0.5 text-center text-[8px]">Total Qty</td>
-                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" value={formData[`rec_${recIndex}_Retro3_TQ`] !== undefined ? formData[`rec_${recIndex}_Retro3_TQ`] : "NA"} onChange={(e) => handleInputChange(recIndex, 'Retro3_TQ', e.target.value)} /></td>
-                                                        <td className="border border-black p-0.5 text-center text-[8px]">NG Qty</td>
-                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" value={formData[`rec_${recIndex}_Retro3_NG`] !== undefined ? formData[`rec_${recIndex}_Retro3_NG`] : "NA"} onChange={(e) => handleInputChange(recIndex, 'Retro3_NG', e.target.value)} /></td>
+                                                        <td className="border border-black p-0.5 text-center text-[16px]">Total Qty</td>
+                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_TQ`] !== undefined ? formData[`rec_${recIndex}_Retro3_TQ`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_TQ', e.target.value)} /></td>
+                                                        <td className="border border-black p-0.5 text-center text-[16px]">NG Qty</td>
+                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_NG`] !== undefined ? formData[`rec_${recIndex}_Retro3_NG`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_NG', e.target.value)} /></td>
 
                                                         {/* Cont Row 3 */}
                                                         <td colSpan="6" className="border border-black p-0.5">
-                                                            <div className="flex flex-row items-center justify-end text-[10px] w-full pr-2 text-right">
+                                                            <div className="flex flex-row items-center justify-end text-[16px] w-full pr-2 text-right">
                                                                 <span className="mr-1 text-gray-700">Detail if NG:</span>
                                                                 <input className="bg-transparent outline-none flex-1 text-blue-600 max-w-[50px] text-center mb-0 border-b border-black" value={formData[`rec_${recIndex}_Cont3_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont3_NGDetail', e.target.value)} />
                                                             </div>
@@ -1993,7 +2189,7 @@ const Daily5MRecording = () => {
                                             <td className="border border-black p-1 text-left">Retro/Containment Parts Description</td>
                                         </tr>
                                     </thead>
-                                    <tbody className="text-[10px] leading-normal">
+                                    <tbody className="text-[16px] leading-normal">
                                         {/* Row 1 */}
                                         <tr>
                                             <td rowSpan="7" className="border border-black p-1.5 text-center font-bold align-middle bg-slate-50">Expected Change (Planned)</td>
@@ -2124,9 +2320,9 @@ const Daily5MRecording = () => {
                                     </tbody>
                                 </table>
                             </div>
-                            
+
                             {/* Revision Info Footer */}
-                            <div className="mt-6 flex justify-between items-center px-1 pt-1 border-t border-black font-bold text-[10px] italic">
+                            <div className="mt-6 flex justify-between items-center px-1 pt-1 border-t border-black font-bold text-[16px] italic">
                                 <span>FRM-WH-QA-241</span>
                                 <span>Rev. No:02</span>
                                 <span>Rev Date:27.01.2023</span>

@@ -21,6 +21,7 @@ router.use(verifyJWT);
 
 router.route("/save").post(saveSkillMatrix);
 router.route("/list").get(listSkillMatrices);
+router.route("/fetch").get(getSkillMatrix);
 
 // Skill Matrix Certificate Config Routes
 router.route("/config/:departmentId").get(getSkillMatrixConfig);

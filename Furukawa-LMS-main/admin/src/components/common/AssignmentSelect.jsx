@@ -40,7 +40,7 @@ const AssignmentSelect = ({
       <select
         disabled={disabled || loading}
         className={cn(
-          "w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[10px]",
+          "w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]",
           loading && "opacity-50"
         )}
         value={value || ""}

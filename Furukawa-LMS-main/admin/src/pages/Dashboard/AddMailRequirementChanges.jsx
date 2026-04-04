@@ -69,8 +69,8 @@ export default function MailManagementModal({ isOpen, onClose }) {
 
     const fetchSections = async () => {
         try {
-            const res = await axiosInstance.get("/api/departments?limit=500");
-            if (res.data?.success) setSections(res.data.data.departments || []);
+            const res = await axiosInstance.get("/api/sections");
+            if (res.data?.success) setSections(res.data.data || []);
         } catch (e) {
             console.error(e);
             toast.error("Failed to load sections");

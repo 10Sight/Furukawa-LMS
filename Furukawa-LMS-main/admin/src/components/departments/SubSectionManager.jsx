@@ -204,6 +204,7 @@ const SubSectionManager = ({ lineId }) => {
                                 <TableRow>
                                     <TableHead className="font-semibold">Name</TableHead>
                                     <TableHead className="font-semibold">Description</TableHead>
+                                    <TableHead className="font-semibold">Operators</TableHead>
                                     <TableHead className="text-right font-semibold">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -220,6 +221,9 @@ const SubSectionManager = ({ lineId }) => {
                                         </TableCell>
                                         <TableCell className="text-sm text-muted-foreground">
                                             {subSection.description || "-"}
+                                        </TableCell>
+                                        <TableCell className="text-sm font-medium">
+                                            {subSection.subSectionCount || 0}
                                         </TableCell>
                                         <TableCell className="text-right">
                                                 <div className="flex justify-end gap-1">

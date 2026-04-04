@@ -222,6 +222,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
                             <TableRow>
                                 <TableHead>Station Name</TableHead>
                                 <TableHead>Description</TableHead>
+                                <TableHead>Operators</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -238,6 +239,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                         </div>
                                     </TableCell>
                                     <TableCell>{machine.description || "-"}</TableCell>
+                                    <TableCell className="text-sm font-medium">{machine.machineCount || 0}</TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                                             <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600" onClick={(e) => startEditing(e, machine)}>

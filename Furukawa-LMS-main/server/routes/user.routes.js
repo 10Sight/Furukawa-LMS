@@ -2,6 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
+import { authorizeRole } from "../middlewares/roleAuth.middleware.js";
+import { SYSTEM_PERMISSIONS } from "../controllers/rolesPermissions.controller.js";
 import { checkPrivilege } from "../middlewares/checkPrivilege.middleware.js";
 import {
   getAllUsers,
@@ -28,29 +30,29 @@ const router = Router();
 const upload = multer({ dest: "uploads/" }); // temp storage for avatar uploads
 
 // Create user (admin/super-admin only) - sends welcome email with credentials
-router.post("/", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("user management"), createUser);
+router.post("/", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_CREATE]), checkPrivilege("user management"), createUser);
 
 // Get all users (admin/super-admin only)
-router.get("/", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getAllUsers);
+router.get("/", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllUsers);
 
 // Get all instructors (admin/super-admin only)
-router.get("/instructors", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getAllInstructors);
+router.get("/instructors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllInstructors);
 
 // Get all students (admin/super-admin/instructor only)
-router.get("/students", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "isTrainer"), getAllStudents);
+router.get("/students", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllStudents);
 
 // Get all mentors
-router.get("/mentors", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getAllMentors);
+router.get("/mentors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllMentors);
 
 // Get all supervisors
-router.get("/supervisors", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getAllSupervisors);
+router.get("/supervisors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllSupervisors);
 
 // Get all incharges
-router.get("/incharges", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getAllIncharges);
+router.get("/incharges", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllIncharges);
 
 // Get employees (Onboarding & ID)
-router.get("/employees", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getEmployees);
-router.get("/employees/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getEmployeeById);
+router.get("/employees", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getEmployees);
+router.get("/employees/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getEmployeeById);
 
 // Super admin specific routes - must come before /:id routes
 router.get("/deleted/all", verifyJWT, authorizeRoles("SUPERADMIN"), getSoftDeletedUsers);
@@ -66,9 +68,9 @@ router.patch(
   upload.single("avatar"),
   updateAvatar
 );
-router.get("/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "isTrainer"), getUserById);
-router.patch("/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("user management"), updateUser);
-router.delete("/bulk", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("user management"), bulkDeleteUsers);
-router.delete("/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("user management"), deleteUser);
+router.get("/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getUserById);
+router.patch("/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), updateUser);
+router.delete("/bulk", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), checkPrivilege("user management"), bulkDeleteUsers);
+router.delete("/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), checkPrivilege("user management"), deleteUser);
 
 export default router;

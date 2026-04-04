@@ -82,6 +82,7 @@ import HandoverSheetConfig from "./models/handoverSheetConfig.model.js";
 import MultiSkillingPlanConfig from "./models/multiSkillingPlanConfig.model.js";
 import SkillMatrixDashboardConfig from "./models/skillMatrixDashboardConfig.model.js";
 import Requirement from "./models/requirement.model.js";
+import Mail from "./models/mail.model.js";
 import SubSection from "./models/subSection.model.js";
 import SectionHead from "./models/sectionHead.model.js";
 import LineRequirement from "./models/lineRequirement.model.js";
@@ -408,6 +409,7 @@ const startServer = async () => {
         await HandoverSheetConfig.init();
         await MultiSkillingPlanConfig.init();
         await SkillMatrixDashboardConfig.init();
+        await Mail.init();
         await Line.init();
         await LineRequirement.init();
         await LineRequirementHistory.init();

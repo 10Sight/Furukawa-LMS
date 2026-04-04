@@ -1,6 +1,15 @@
 import express from 'express';
 import verifyJWT from '../middlewares/auth.middleware.js';
-import { exportFormReport, saveHeadcountReport, getHeadcountReport, syncHeadcountData } from '../controllers/report.controller.js';
+import { 
+    exportFormReport, 
+    saveHeadcountReport, 
+    getHeadcountReport, 
+    syncHeadcountData,
+    getMails,
+    createMail,
+    deleteMail,
+    triggerManualReport
+} from '../controllers/report.controller.js';
 
 const router = express.Router();
 
@@ -24,6 +33,14 @@ router.get('/headcount/data', getHeadcountReport);
  * @desc Sync headcount report data from real sources
  */
 router.get('/headcount/sync', syncHeadcountData);
+
+// Mail Recipient Configuration Routes
+router.get('/recipients', getMails);
+router.post('/recipients', createMail);
+router.delete('/recipients/:id', deleteMail);
+
+// Trigger Manual Report
+router.post('/send-manual', triggerManualReport);
 
 /**
  * @route GET /api/v1/reports/:formName

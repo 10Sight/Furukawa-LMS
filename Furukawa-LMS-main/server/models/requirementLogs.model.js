@@ -19,7 +19,6 @@ const executeSql = async (queryStr, params = []) => {
 
 const RequirementLog = {
     async init() {
-        // MSSQL mein Table create karne ka tarika
         const createTableQuery = `
             IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[RequirementUpdateLogs]') AND type in (N'U'))
             BEGIN
@@ -33,18 +32,37 @@ const RequirementLog = {
                     employee_id INT NULL,
                     employee_role NVARCHAR(100),
                     created_at DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT FK_Log_Requirement FOREIGN KEY (requirement_id) REFERENCES requirements(id) ON DELETE CASCADE,
-                    CONSTRAINT FK_Log_Section FOREIGN KEY (section_id) REFERENCES departments(id) ON DELETE SET NULL,
-                    CONSTRAINT FK_Log_SubSection FOREIGN KEY (subsection_id) REFERENCES [lines](id) ON DELETE SET NULL
+                    CONSTRAINT FK_Log_Requirement FOREIGN KEY (requirement_id) REFERENCES requirements(id) ON DELETE CASCADE
                 )
+            END
+        `;
+
+        const migrationQuery = `
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RequirementUpdateLogs')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'section_id')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD section_id INT NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'subsection_id')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD subsection_id INT NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'old_values')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD old_values NVARCHAR(MAX);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'new_values')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD new_values NVARCHAR(MAX);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'created_at')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD created_at DATETIME DEFAULT GETDATE();
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'employee_id')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD employee_id INT NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'employee_role')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD employee_role NVARCHAR(100);
             END
         `;
 
         try {
             await executeSql(createTableQuery);
-            logger.info("RequirementUpdateLogs table initialized/verified for MSSQL");
+            await executeSql(migrationQuery);
+            logger.info("RequirementUpdateLogs table and schema verified");
         } catch (error) {
-            logger.error("Failed to initialize RequirementUpdateLogs table", error);
+            logger.error("Failed to initialize/migrate RequirementUpdateLogs table", error);
         }
     },
 

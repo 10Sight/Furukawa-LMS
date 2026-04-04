@@ -2,8 +2,11 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { IconPrinter, IconLoader, IconDeviceFloppy, IconDownload } from "@tabler/icons-react";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
-import { useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
-import { useGetMachinesByLineQuery } from '@/Redux/AllApi/MachineApi';
+import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
+import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
+import { useGetSubSectionsByLineQuery } from '@/Redux/AllApi/SubSectionApi';
+import { useGetMachinesBySubSectionQuery, useGetMachinesByLineQuery, useGetMachinesBySectionQuery, useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
+import { useGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
 import { useGetSkillMatrixListQuery, useGetSkillMatrixQuery, useSaveSkillMatrixMutation } from '@/Redux/AllApi/SkillMatrixApi';
 import { toast } from "sonner";
@@ -42,19 +45,33 @@ const normalizeLevel = (levelStr) => {
 const SkillMatrix = () => {
     const componentRef = useRef();
     const [selectedDepartment, setSelectedDepartment] = useState("");
+    const [selectedSection, setSelectedSection] = useState("");
     const [selectedLine, setSelectedLine] = useState("");
+    const [selectedSubSection, setSelectedSubSection] = useState("");
+    const [selectedStation, setSelectedStation] = useState("");
     const [selectedMonth, setSelectedMonth] = useState("");
     const [selectedLevel, setSelectedLevel] = useState("All");
     const [isMatrixOpen, setIsMatrixOpen] = useState(false);
     const [createOpen, setCreateOpen] = useState(false);
+
     const [createDepartment, setCreateDepartment] = useState("");
+    const [createSection, setCreateSection] = useState("");
     const [createLine, setCreateLine] = useState("");
+    const [createSubSection, setCreateSubSection] = useState("");
+    const [createStation, setCreateStation] = useState("");
     const [createMonth, setCreateMonth] = useState(new Date().toISOString().slice(0, 7));
+    
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 70;
 
     // --- Saved Data Fetching ---
     const { data: savedMatrixData, refetch: refetchMatrix } = useGetSkillMatrixQuery({
         departmentId: selectedDepartment,
+        sectionId: selectedSection,
         lineId: selectedLine,
+        subSectionId: selectedSubSection,
+        stationId: selectedStation,
         month: selectedMonth,
     }, {
         skip: !selectedDepartment || !selectedLine || !selectedMonth || !isMatrixOpen
@@ -62,17 +79,54 @@ const SkillMatrix = () => {
 
     const { data: matrixListData, isLoading: isMatrixListLoading } = useGetSkillMatrixListQuery({
         departmentId: selectedDepartment || undefined,
+        sectionId: selectedSection || undefined,
         lineId: selectedLine || undefined,
+        subSectionId: selectedSubSection || undefined,
+        stationId: selectedStation || undefined,
         month: selectedMonth || undefined,
     });
 
     const [saveSkillMatrix, { isLoading: isSaving }] = useSaveSkillMatrixMutation();
 
     // --- Data Fetching ---
+    // --- Hierarchy Data Hooks ---
     const { data: departmentsData } = useGetAllDepartmentsQuery();
-    const { data: linesData } = useGetLinesByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
-    const { data: createLinesData } = useGetLinesByDepartmentQuery(createDepartment, { skip: !createDepartment });
-    const { data: machinesData, isLoading: isMachinesLoading } = useGetMachinesByLineQuery(selectedLine, { skip: !selectedLine });
+    
+    // Combined Loader State
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Main Filter Data
+    const { data: sectionsData } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
+    const { data: linesData } = useGetLinesBySectionQuery(selectedSection, { skip: !selectedSection });
+    const { data: subSectionsData } = useGetSubSectionsByLineQuery(selectedLine, { skip: !selectedLine });
+
+    // Machine Fetching Options (fallback through hierarchy)
+    const { data: machinesByDepartmentData, isLoading: isDeptMachinesLoading } = useGetMachinesByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment || !!selectedSection });
+    const { data: machinesBySectionData, isLoading: isSectMachinesLoading } = useGetMachinesBySectionQuery(selectedSection, { skip: !selectedSection || !!selectedLine });
+    const { data: machinesByLineData, isLoading: isLineMachinesLoading } = useGetMachinesByLineQuery(selectedLine, { skip: !selectedLine || !!selectedSubSection });
+    const { data: machinesBySubSectionData, isLoading: isSubSectionMachinesLoading } = useGetMachinesBySubSectionQuery(selectedSubSection, { skip: !selectedSubSection });
+    
+    // Create Form Data
+    const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDepartment, { skip: !createDepartment });
+    const { data: createLinesData } = useGetLinesBySectionQuery(createSection, { skip: !createSection });
+    const { data: createSubSectionsData } = useGetSubSectionsByLineQuery(createLine, { skip: !createLine });
+    const { data: createMachinesData, isLoading: isCreateMachinesLoading } = useGetMachinesBySubSectionQuery(createSubSection, { skip: !createSubSection });
+    const { data: createMachinesByLineData } = useGetMachinesByLineQuery(createLine, { skip: !createLine || !!createSubSection });
+    const { data: createMachinesBySectData } = useGetMachinesBySectionQuery(createSection, { skip: !createSection || !!createLine });
+    const { data: createMachinesByDeptData } = useGetMachinesByDepartmentQuery(createDepartment, { skip: !createDepartment || !!createSection });
+
+    const isMachinesLoading = isDeptMachinesLoading || isSectMachinesLoading || isLineMachinesLoading || isSubSectionMachinesLoading;
+
+    // Fetch users for matrix based on hierarchy
+    const { data: usersData } = useGetAllUsersQuery({
+        departmentId: selectedDepartment,
+        sectionId: selectedSection,
+        lineId: selectedLine,
+        subSectionId: selectedSubSection,
+        // stationId removed to prevent UI clearing when filtering by station (users aren't linked to stations)
+        role: "Student",
+        limit: 1000
+    }, { skip: !selectedDepartment || !isMatrixOpen });
 
     const [matrixEntries, setMatrixEntries] = useState([]);
 
@@ -101,14 +155,8 @@ const SkillMatrix = () => {
     const [isDashboardSaving, setIsDashboardSaving] = useState(false);
 
     const departmentUsers = React.useMemo(() => {
-        if (!selectedDepartment || !departmentsData?.data?.departments) return [];
-        const selectedDept = departmentsData.data.departments.find(d => String(d.id || d._id) === String(selectedDepartment));
-        if (!selectedDept) return [];
-        const users = [];
-        // if (selectedDept.instructor) users.push({ ...selectedDept.instructor, type: 'TNR', level: 'L-5' });
-        if (selectedDept.students) selectedDept.students.forEach(student => users.push({ ...student, type: 'EMP', level: student.currentLevel || 'L-1' }));
-        return users;
-    }, [selectedDepartment, departmentsData]);
+        return usersData?.data?.users || [];
+    }, [usersData]);
 
     useEffect(() => {
         if (selectedDepartment) {
@@ -160,16 +208,25 @@ const SkillMatrix = () => {
     };
 
     useEffect(() => {
-        if (selectedLine && machinesData?.data) {
-            const activeMachines = machinesData.data;
+        // Reset pagination when selection changes
+        setCurrentPage(1);
+
+        if (selectedDepartment && !isMachinesLoading) {
+            const activeMachines = activeMachinesRef;
+            // If we have a department but NO machines at all, we can't show a matrix
+            if (activeMachines.length === 0) {
+                setMatrixEntries([]);
+                return;
+            }
+            
             const savedEntries = savedMatrixData?.data?.entries || [];
 
             // 1. Map Users
             const mappedData = departmentUsers.map((user, index) => {
-                const savedUserEntry = savedEntries.find(e => e.userId === user._id);
+                const savedUserEntry = savedEntries.find(e => String(e.userId) === String(user._id || user.id));
                 // Default stations
                 const defaultStations = activeMachines.map(machine => ({
-                    _id: machine._id,
+                    _id: machine._id || machine.id,
                     name: machine.name,
                     critical: "Non-Critical",
                     min: "L-1",
@@ -177,9 +234,9 @@ const SkillMatrix = () => {
                 }));
 
                 const mergedStations = activeMachines.map(machine => {
-                    const savedStation = savedUserEntry?.stations?.find(s => s.machineId === machine._id);
+                    const savedStation = savedUserEntry?.stations?.find(s => String(s.machineId) === String(machine._id || machine.id));
                     return {
-                        _id: machine._id,
+                        _id: machine._id || machine.id,
                         name: machine.name,
                         critical: savedStation?.critical || "Non-Critical",
                         min: savedStation?.min || "L-1",
@@ -187,19 +244,16 @@ const SkillMatrix = () => {
                     };
                 });
 
-                // Calculate Plan/Actual
+                // Calculate Actual
                 const actualCount = mergedStations.reduce((acc, s) => {
-                    // Check if level meets min? Or just count qualified?
-                    // Logic: If curr >= min, it's 1? 
-                    // For now simple: if curr != L-0 
-                    return acc + (s.curr !== 'L-0' ? 1 : 0);
+                    return acc + (s.curr !== 'L-0' && s.curr ? 1 : 0);
                 }, 0);
 
                 return {
                     srNo: index + 1,
-                    _id: user._id,
+                    _id: user._id || user.id,
                     name: user.fullName || "Unknown",
-                    cardNo: savedUserEntry?.cardNo || user.empId || "", // Allow override
+                    cardNo: savedUserEntry?.cardNo || user.empId || "", 
                     experience: savedUserEntry?.experience || (() => {
                         if (!user.createdAt) return "";
                         const start = new Date(user.createdAt);
@@ -207,25 +261,25 @@ const SkillMatrix = () => {
                         const diffInMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
                         const years = Math.floor(diffInMonths / 12);
                         const months = diffInMonths % 12;
-                        return `${years}.${months} `;
+                        return `${years}.${months}`;
                     })(),
-                    certDate: savedUserEntry?.certDate || "24-Jan-26",
+                    certDate: savedUserEntry?.certDate || "",
                     position: savedUserEntry?.position || "1.1",
                     stations: savedUserEntry ? mergedStations : defaultStations,
-                    plan: savedUserEntry?.plan ?? activeMachines.length, // Saved or calculated
-                    actual: savedUserEntry?.actual ?? actualCount,       // Saved or calculated
+                    plan: savedUserEntry?.plan ?? activeMachines.length, 
+                    actual: savedUserEntry?.actual ?? actualCount,       
                     status: savedUserEntry?.status || "OK",
                     isManual: false,
-                    level: user.level // Store level for filtering
+                    level: user.level 
                 };
             }).filter(Boolean);
 
             // 2. Manual Rows
             const manualRows = savedEntries.filter(e => e.isManual).map((entry, idx) => {
                 const mergedStations = activeMachines.map(machine => {
-                    const savedStation = entry.stations?.find(s => s.machineId === machine._id);
+                    const savedStation = entry.stations?.find(s => String(s.machineId) === String(machine._id || machine.id));
                     return {
-                        _id: machine._id,
+                        _id: machine._id || machine.id,
                         name: machine.name,
                         curr: savedStation?.curr || "L-0",
                     };
@@ -248,7 +302,6 @@ const SkillMatrix = () => {
 
             // Load Config
             if (savedMatrixData?.data?.footerInfo?.config) {
-                // Ensure footerRows and minSkills exist if loading old data
                 setConfig(prev => ({
                     ...prev,
                     ...savedMatrixData.data.footerInfo.config,
@@ -256,14 +309,14 @@ const SkillMatrix = () => {
                     minSkills: savedMatrixData.data.footerInfo.config.minSkills || prev.minSkills
                 }));
             }
-        } else if (!selectedLine) {
+        } else if (!selectedDepartment) {
             setMatrixEntries([]);
         }
-    }, [selectedLine, machinesData, departmentUsers, savedMatrixData]);
+    }, [selectedDepartment, selectedSection, selectedLine, selectedSubSection, selectedStation, machinesByLineData, machinesBySubSectionData, machinesBySectionData, machinesByDepartmentData, departmentUsers, savedMatrixData, isMachinesLoading]);
 
     const handleSave = async () => {
-        if (!selectedDepartment || !selectedLine) {
-            toast.error("Please select Department and Line first");
+        if (!selectedDepartment || !selectedMonth) {
+            toast.error("Please select Department and Month first");
             return;
         }
         try {
@@ -291,7 +344,10 @@ const SkillMatrix = () => {
 
             const payload = {
                 department: selectedDepartment,
+                section: selectedSection,
                 line: selectedLine,
+                subSection: selectedSubSection,
+                station: selectedStation,
                 month: selectedMonth,
                 entries: entriesToSave,
                 footerInfo: {
@@ -489,16 +545,72 @@ const SkillMatrix = () => {
         );
     };
 
+    const activeMachinesRef = React.useMemo(() => {
+        let base = [];
+        if (selectedSubSection) base = machinesBySubSectionData?.data || [];
+        else if (selectedLine) base = machinesByLineData?.data || [];
+        else if (selectedSection) base = machinesBySectionData?.data || [];
+        else if (selectedDepartment) base = machinesByDepartmentData?.data || [];
+
+        if (selectedStation && selectedStation !== "All") {
+            return base.filter(m => String(m._id || m.id) === String(selectedStation));
+        }
+        return base;
+    }, [selectedSubSection, selectedLine, selectedSection, selectedDepartment, selectedStation, machinesBySubSectionData, machinesByLineData, machinesBySectionData, machinesByDepartmentData]);
+
+    const filteredAndSortedEntries = React.useMemo(() => {
+        return matrixEntries.filter(entry => {
+            if (selectedLevel === "All") return true;
+            return normalizeLevel(entry.level) === normalizeLevel(selectedLevel);
+        });
+    }, [matrixEntries, selectedLevel]);
+
+    const totalPages = Math.ceil(filteredAndSortedEntries.length / itemsPerPage);
+    const paginatedEntries = React.useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredAndSortedEntries.slice(start, start + itemsPerPage);
+    }, [filteredAndSortedEntries, currentPage, itemsPerPage]);
+
+    const PaginationControls = () => {
+        if (totalPages <= 1) return null;
+        return (
+            <div className="flex items-center justify-center gap-4 py-4 no-print bg-white border-t border-b mb-4">
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                >
+                    Previous
+                </Button>
+                <div className="text-sm font-medium">
+                    Page {currentPage} of {totalPages} ({filteredAndSortedEntries.length} operators)
+                </div>
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                >
+                    Next
+                </Button>
+            </div>
+        );
+    };
+
     const selectedDeptName = departmentsData?.data?.departments?.find(d => String(d.id || d._id) === String(selectedDepartment))?.name || "Select";
     const selectedLineName = linesData?.data?.find(l => String(l.id || l._id) === String(selectedLine))?.name || "Select";
 
     const handleCreateSkillMatrix = () => {
-        if (!createDepartment || !createLine || !createMonth) {
-            toast.error("Please select Department, Line and Month");
+        if (!createDepartment || !createMonth) {
+            toast.error("Please select Department and Month");
             return;
         }
         setSelectedDepartment(createDepartment);
+        setSelectedSection(createSection);
         setSelectedLine(createLine);
+        setSelectedSubSection(createSubSection);
+        setSelectedStation(createStation);
         setSelectedMonth(createMonth);
         setIsMatrixOpen(true);
         setCreateOpen(false);
@@ -514,73 +626,144 @@ const SkillMatrix = () => {
                 </div>
 
                 <div className="p-6 border rounded bg-white space-y-4">
-                    <h2 className="text-lg font-semibold">Open Existing Skill Matrix Form</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-semibold">Saved Skill Matrix Sheets</h2>
+                        <Button variant="ghost" size="sm" onClick={() => {
+                            setSelectedDepartment("");
+                            setSelectedSection("");
+                            setSelectedLine("");
+                            setSelectedSubSection("");
+                            setSelectedStation("");
+                            setSelectedMonth("");
+                        }} className="text-blue-600 hover:text-blue-700 h-auto p-0">Clear Filters</Button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                         <div>
-                            <label className="text-sm font-medium mb-1 block">Department</label>
-                            <Select value={selectedDepartment} onValueChange={(val) => { setSelectedDepartment(val); setSelectedLine(""); }}>
-                                <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
+                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Department</label>
+                            <Select value={selectedDepartment} onValueChange={(val) => { 
+                                setSelectedDepartment(val); 
+                                setSelectedSection(""); 
+                                setSelectedLine(""); 
+                                setSelectedSubSection(""); 
+                                setSelectedStation(""); 
+                            }}>
+                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Departments" /></SelectTrigger>
                                 <SelectContent>
                                     {departmentsData?.data?.departments?.map((d, idx) => (
-                                        <SelectItem key={`${d.id || d._id} -${idx} `} value={String(d.id || d._id)}>{d.name}</SelectItem>
+                                        <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
                         <div>
-                            <label className="text-sm font-medium mb-1 block">Line</label>
-                            <Select value={selectedLine} onValueChange={setSelectedLine} disabled={!selectedDepartment}>
-                                <SelectTrigger><SelectValue placeholder="Select Line" /></SelectTrigger>
+                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Section</label>
+                            <Select value={selectedSection} onValueChange={(val) => { 
+                                setSelectedSection(val); 
+                                setSelectedLine(""); 
+                                setSelectedSubSection(""); 
+                                setSelectedStation(""); 
+                            }} disabled={!selectedDepartment}>
+                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Sections" /></SelectTrigger>
+                                <SelectContent>
+                                    {sectionsData?.data?.map((s, idx) => (
+                                        <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Line</label>
+                            <Select value={selectedLine} onValueChange={(val) => { 
+                                setSelectedLine(val); 
+                                setSelectedSubSection(""); 
+                                setSelectedStation(""); 
+                            }} disabled={!selectedSection}>
+                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Lines" /></SelectTrigger>
                                 <SelectContent>
                                     {linesData?.data?.map((l, idx) => (
-                                        <SelectItem key={`${l.id || l._id} -${idx} `} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                        <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
                         <div>
-                            <label className="text-sm font-medium mb-1 block">Month</label>
-                            <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Sub-Section</label>
+                            <Select value={selectedSubSection} onValueChange={(val) => { 
+                                setSelectedSubSection(val); 
+                                setSelectedStation(""); 
+                            }} disabled={!selectedLine}>
+                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Sub-Sections" /></SelectTrigger>
+                                <SelectContent>
+                                    {subSectionsData?.data?.map((ss, idx) => (
+                                        <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Station</label>
+                            <Select value={selectedStation} onValueChange={setSelectedStation} disabled={!selectedLine}>
+                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Stations" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="All">All Stations</SelectItem>
+                                    {(activeMachinesRef || []).map((m, idx) => (
+                                        <SelectItem key={`${m.id || m._id}-${idx}`} value={String(m.id || m._id)}>{m.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Month</label>
+                            <Input className="h-8 text-xs" type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
                         </div>
                     </div>
 
                     <div className="border rounded overflow-hidden">
                         <table className="w-full text-sm">
-                            <thead className="bg-muted/40">
+                            <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
                                 <tr>
-                                    <th className="text-left p-2 border-b">Form</th>
-                                    <th className="text-left p-2 border-b">Department</th>
-                                    <th className="text-left p-2 border-b">Line</th>
-                                    <th className="text-left p-2 border-b">Line Leader</th>
-                                    <th className="text-left p-2 border-b">Month</th>
-                                    <th className="text-left p-2 border-b">Last Updated</th>
+                                    <th className="p-3 border-b">Type</th>
+                                    <th className="p-3 border-b">Department</th>
+                                    <th className="p-3 border-b">Section</th>
+                                    <th className="p-3 border-b">Line</th>
+                                    <th className="p-3 border-b">Sub-Section</th>
+                                    <th className="p-3 border-b">Station</th>
+                                    <th className="p-3 border-b">User Count</th>
+                                    <th className="p-3 border-b">Month</th>
+                                    <th className="p-3 border-b">Last Updated</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {isMatrixListLoading ? (
-                                    <tr><td className="p-3 text-muted-foreground" colSpan={6}>Loading...</td></tr>
+                                    <tr><td className="p-4 text-center text-muted-foreground" colSpan={9}>Loading...</td></tr>
                                 ) : matrixList.length === 0 ? (
                                     <tr>
-                                        <td className="p-3 text-muted-foreground" colSpan={6}>
-                                            No skill matrix form found for selected filters.
+                                        <td className="p-4 text-center text-muted-foreground" colSpan={9}>
+                                            No skill matrix forms found for selected filters.
                                         </td>
                                     </tr>
                                 ) : (
                                     matrixList.map((row, idx) => (
                                         <tr
                                             key={row.id || idx}
-                                            className="hover:bg-muted/30 cursor-pointer"
+                                            className="hover:bg-muted/30 cursor-pointer text-[11px]"
                                             onClick={() => {
                                                 setSelectedDepartment(String(row.department || ""));
+                                                setSelectedSection(String(row.section || ""));
                                                 setSelectedLine(String(row.line || ""));
+                                                setSelectedSubSection(String(row.subSection || ""));
+                                                setSelectedStation(String(row.station || ""));
                                                 setSelectedMonth(String(row.month || ""));
                                                 setIsMatrixOpen(true);
                                             }}
                                         >
                                             <td className="p-2 border-b">Skill Matrix</td>
-                                            <td className="p-2 border-b">{row.departmentName || row.department || "-"}</td>
-                                            <td className="p-2 border-b">{row.lineName || row.line || "-"}</td>
-                                            <td className="p-2 border-b">{row.lineLeaderName || "-"}</td>
+                                            <td className="p-2 border-b">{row.departmentName || "-"}</td>
+                                            <td className="p-2 border-b">{row.sectionName || "-"}</td>
+                                            <td className="p-2 border-b">{row.lineName || "-"}</td>
+                                            <td className="p-2 border-b">{row.subSectionName || "-"}</td>
+                                            <td className="p-2 border-b">{row.stationName || "All"}</td>
+                                            <td className="p-2 border-b font-bold text-blue-600">{row.userCount || 0}</td>
                                             <td className="p-2 border-b">{row.month || "-"}</td>
                                             <td className="p-2 border-b">
                                                 {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-"}
@@ -601,22 +784,74 @@ const SkillMatrix = () => {
                         <div className="space-y-4">
                             <div>
                                 <label className="text-sm font-medium mb-1 block">Department</label>
-                                <Select value={createDepartment} onValueChange={(val) => { setCreateDepartment(val); setCreateLine(""); }}>
+                                <Select value={createDepartment} onValueChange={(val) => { 
+                                    setCreateDepartment(val); 
+                                    setCreateSection(""); 
+                                    setCreateLine(""); 
+                                    setCreateSubSection(""); 
+                                    setCreateStation(""); 
+                                }}>
                                     <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
                                     <SelectContent>
                                         {departmentsData?.data?.departments?.map((d, idx) => (
-                                            <SelectItem key={`${d.id || d._id} -${idx} `} value={String(d.id || d._id)}>{d.name}</SelectItem>
+                                            <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium mb-1 block">Section</label>
+                                <Select value={createSection} onValueChange={(val) => { 
+                                    setCreateSection(val); 
+                                    setCreateLine(""); 
+                                    setCreateSubSection(""); 
+                                    setCreateStation(""); 
+                                }} disabled={!createDepartment}>
+                                    <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
+                                    <SelectContent>
+                                        {createSectionsData?.data?.map((s, idx) => (
+                                            <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
                             <div>
                                 <label className="text-sm font-medium mb-1 block">Line</label>
-                                <Select value={createLine} onValueChange={setCreateLine} disabled={!createDepartment}>
+                                <Select value={createLine} onValueChange={(val) => { 
+                                    setCreateLine(val); 
+                                    setCreateSubSection(""); 
+                                    setCreateStation(""); 
+                                }} disabled={!createSection}>
                                     <SelectTrigger><SelectValue placeholder="Select Line" /></SelectTrigger>
                                     <SelectContent>
                                         {createLinesData?.data?.map((l, idx) => (
-                                            <SelectItem key={`${l.id || l._id} -${idx} `} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                            <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium mb-1 block">Sub-Section</label>
+                                <Select value={createSubSection} onValueChange={(val) => { 
+                                    setCreateSubSection(val); 
+                                    setCreateStation(""); 
+                                }} disabled={!createLine}>
+                                    <SelectTrigger><SelectValue placeholder="Select Sub-Section" /></SelectTrigger>
+                                    <SelectContent>
+                                        {createSubSectionsData?.data?.map((ss, idx) => (
+                                            <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium mb-1 block">Station</label>
+                                <Select value={createStation} onValueChange={setCreateStation} disabled={!createLine}>
+                                    <SelectTrigger><SelectValue placeholder="All Stations" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="All">All Stations</SelectItem>
+                                        {((createSubSection ? createMachinesData?.data : createMachinesByLineData?.data) || []).map((m, idx) => (
+                                            <SelectItem key={`${m.id || m._id}-${idx}`} value={String(m.id || m._id)}>{m.name}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
@@ -663,19 +898,93 @@ const SkillMatrix = () => {
             </style>
 
             {/* Controls */}
-            <div className="no-print p-4 bg-white border rounded shadow flex gap-4 items-center">
-                <div className="text-sm font-semibold">Department: {selectedDeptName}</div>
-                <div className="text-sm font-semibold">Line: {selectedLineName}</div>
-                <div className="text-sm font-semibold">Month: {selectedMonth || "-"}</div>
-                <Select value={selectedLevel} onValueChange={setSelectedLevel}>
-                    <SelectTrigger className="w-32"><SelectValue placeholder="Level" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="All">All Levels</SelectItem>
-                        {activeConfig?.levels?.map((l, idx) => (
-                            <SelectItem key={`${l.name} -${idx} `} value={l.name}>{l.name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+            <div className="no-print p-3 bg-white border rounded shadow flex flex-wrap gap-4 items-end">
+                <div className="flex flex-col">
+                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Dept</label>
+                    <span className="text-sm font-bold bg-gray-50 px-2 py-1 rounded border">{selectedDeptName}</span>
+                </div>
+
+                <div className="flex flex-col">
+                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Section</label>
+                    <Select value={selectedSection || "all-sections"} onValueChange={(val) => { 
+                        setSelectedSection(val === "all-sections" ? "" : val); 
+                        setSelectedLine(""); 
+                        setSelectedSubSection(""); 
+                        setSelectedStation(""); 
+                    }}>
+                        <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Sections" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all-sections">All Sections</SelectItem>
+                            {sectionsData?.data?.map((s, idx) => (
+                                <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="flex flex-col">
+                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Line</label>
+                    <Select value={selectedLine || "all-lines"} onValueChange={(val) => { 
+                        setSelectedLine(val === "all-lines" ? "" : val); 
+                        setSelectedSubSection(""); 
+                        setSelectedStation(""); 
+                    }} disabled={!selectedSection}>
+                        <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Lines" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all-lines">All Lines</SelectItem>
+                            {linesData?.data?.map((l, idx) => (
+                                <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="flex flex-col">
+                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Sub-Section</label>
+                    <Select value={selectedSubSection || "all-subsections"} onValueChange={(val) => { 
+                        setSelectedSubSection(val === "all-subsections" ? "" : val); 
+                        setSelectedStation(""); 
+                    }} disabled={!selectedLine}>
+                        <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Sub-Sections" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all-subsections">All Sub-Sections</SelectItem>
+                            {subSectionsData?.data?.map((ss, idx) => (
+                                <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="flex flex-col">
+                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Station</label>
+                    <Select value={selectedStation} onValueChange={setSelectedStation} disabled={!selectedLine}>
+                        <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Stations" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="All">All Stations</SelectItem>
+                            {(activeMachinesRef || []).map((m, idx) => (
+                                <SelectItem key={`${m.id || m._id}-${idx}`} value={String(m.id || m._id)}>{m.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="flex flex-col">
+                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Filter Level</label>
+                    <Select value={selectedLevel} onValueChange={setSelectedLevel}>
+                        <SelectTrigger className="h-8 text-xs w-32 font-semibold"><SelectValue placeholder="All Levels" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="All">All Levels</SelectItem>
+                            {activeConfig?.levels?.map((l, idx) => (
+                                <SelectItem key={`${l.name} -${idx} `} value={l.name}>{l.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="flex flex-col">
+                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Month</label>
+                    <Input className="h-8 text-xs font-bold w-32" type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+                </div>
                 <div className="ml-auto flex gap-2">
                     <Button variant="outline" onClick={() => setIsMatrixOpen(false)}>Back</Button>
                     <Button
@@ -706,7 +1015,10 @@ const SkillMatrix = () => {
                         className="border-green-600 text-green-600 hover:bg-green-50"
                         onClick={() => exportToExcel("Skill Matrix Sheet", {
                             departmentId: selectedDepartment,
+                            sectionId: selectedSection,
                             lineId: selectedLine,
+                            subSectionId: selectedSubSection,
+                            stationId: selectedStation,
                             month: selectedMonth
                         })}
                     >
@@ -717,33 +1029,52 @@ const SkillMatrix = () => {
             </div>
 
             {/* Main Table Container */}
-            {!selectedLine ? (
+            {!selectedDepartment || !selectedMonth ? (
                 <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
-                    <p>Please select a Section and Line to generate the Skill Matrix.</p>
+                    <p>Please select a Department and Month to generate the Skill Matrix.</p>
                 </div>
             ) : isMachinesLoading ? (
                 <div className="flex justify-center py-10">
                     <IconLoader className="animate-spin h-8 w-8" />
                 </div>
-            ) : !machinesData?.data || machinesData.data.length === 0 ? (
+            ) : !activeMachinesRef || activeMachinesRef.length === 0 ? (
                 <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-red-50">
-                    <p>No machines/stations found for this Line.</p>
+                    <p>No machines/stations found for this selection.</p>
                 </div>
             ) : (
                 <div id="printable-matrix" className="bg-white p-2 min-w-[1200px] overflow-x-auto">
+                    <PaginationControls />
                     <div className="border border-black text-center mb-1">
                         <h1 className="text-xl font-bold uppercase p-1">Skill Matrix</h1>
                     </div>
 
                     {/* Header Row 1 */}
-                    <div className="flex border border-black mb-1">
-                        <div className="w-32 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Department</div>
-                        <div className="w-48 p-1 font-bold border-r border-black flex items-center justify-center text-lg">{selectedDeptName}</div>
-                        <div className="w-24 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Line:</div>
-                        <div className="w-48 p-1 font-bold border-r border-black flex items-center justify-center text-lg">{selectedLineName}</div>
-                        <div className="w-24 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Shift</div>
-                        <div className="w-24 p-1 border-r border-black flex items-center justify-center">
-                            <Input className="text-center font-bold text-lg h-8 border-none" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} />
+                    <div className="flex border border-black mb-1 text-[10px]">
+                        <div className="flex-1 flex border-r border-black">
+                            <div className="w-20 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Dept</div>
+                            <div className="flex-1 p-1 font-bold flex items-center justify-center">{selectedDeptName}</div>
+                        </div>
+                        <div className="flex-1 flex border-r border-black">
+                            <div className="w-20 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Section</div>
+                            <div className="flex-1 p-1 font-bold flex items-center justify-center">
+                                {sectionsData?.data?.find(s => String(s.id || s._id) === String(selectedSection))?.name || "All"}
+                            </div>
+                        </div>
+                        <div className="flex-1 flex border-r border-black">
+                            <div className="w-20 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Line</div>
+                            <div className="flex-1 p-1 font-bold flex items-center justify-center">{selectedLineName || "All"}</div>
+                        </div>
+                        <div className="flex-1 flex border-r border-black">
+                            <div className="w-24 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Sub-Sect</div>
+                            <div className="flex-1 p-1 font-bold flex items-center justify-center">
+                                {subSectionsData?.data?.find(ss => String(ss.id || ss._id) === String(selectedSubSection))?.name || "All"}
+                            </div>
+                        </div>
+                        <div className="w-24 flex border-r border-black">
+                            <div className="w-10 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Shift</div>
+                            <div className="flex-1 flex items-center justify-center">
+                                <Input className="text-center font-bold text-xs h-6 border-none" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} />
+                            </div>
                         </div>
                         {/* Signatures */}
                         <div className="flex-1 grid grid-cols-3">
@@ -848,7 +1179,7 @@ const SkillMatrix = () => {
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Process name</th>
                                 {Array(16).fill(0).map((_, i) => {
-                                    const machineName = machinesData?.data?.[i]?.name || "";
+                                    const machineName = activeMachinesRef?.[i]?.name || "";
                                     return (
                                         <th key={i} className="border border-black w-8 h-32 align-bottom p-1">
                                             <div className="flex items-center justify-center [writing-mode:vertical-rl] rotate-270 w-full h-full text-[10px] leading-tight break-words">{machineName}</div>
@@ -896,69 +1227,65 @@ const SkillMatrix = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {matrixEntries.filter(entry => {
-                                if (selectedLevel === "All") return true;
-                                return normalizeLevel(entry.level) === normalizeLevel(selectedLevel);
-                            }).map((entry, rowIndex) => {
-                                // We need to map rowIndex back to original index if we are editing?
-                                // handleEntryChange takes rowIdx. If we pass the index from filter map, it will be wrong?
-                                // YES. handleEntryChange updates matrixEntries[rowIdx].
-                                // The index passed to map here is the index in the FILTERED array.
-                                // We need the index in the ORIGINAL matrixEntries array.
-                                // Let's find the real index.
-                                const originalIndex = matrixEntries.indexOf(entry);
-                                return (
-                                    <tr key={originalIndex} className="h-10 text-center">
-                                        <td className="border border-black font-bold">{entry.srNo}</td>
-                                        <td className="border border-black font-bold">{entry.name}</td>
-                                        <td className="border border-black">
-                                            <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.cardNo} onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)} />
-                                        </td>
-                                        <td className="border border-black p-0">
-                                            <div className="border-b border-black h-5 flex items-center justify-center">
-                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.experience} onChange={e => handleEntryChange(originalIndex, 'experience', e.target.value)} />
-                                            </div>
-                                            <div className="h-5 flex items-center justify-center">
-                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.certDate} onChange={e => handleEntryChange(originalIndex, 'certDate', e.target.value)} />
-                                            </div>
-                                        </td>
-                                        <td className="border border-black p-0 bg-yellow-100">
-                                            <div className="border-b border-black h-5 bg-white"></div>
-                                            <div className="h-5 flex items-center justify-center text-[9px]">
-                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.position} onChange={e => handleEntryChange(originalIndex, 'position', e.target.value)} />
-                                            </div>
-                                        </td>
+                            {paginatedEntries.length === 0 ? (
+                                <tr>
+                                    <td colSpan={25} className="p-10 text-center text-gray-500 italic border border-black bg-gray-50">
+                                        {isMachinesLoading || !usersData ? "Establishing connection and fetching operators hierarchy..." : "No operators found for the selected hierarchy filters."}
+                                    </td>
+                                </tr>
+                            ) : (
+                                paginatedEntries.map((entry, rowIndex) => {
+                                    const originalIndex = matrixEntries.indexOf(entry);
+                                    return (
+                                        <tr key={originalIndex} className="h-10 text-center border border-black hover:bg-gray-50">
+                                            <td className="border border-black font-bold">{entry.srNo}</td>
+                                            <td className="border border-black font-bold text-left px-1">{entry.name}</td>
+                                            <td className="border border-black">
+                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.cardNo} onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)} />
+                                            </td>
+                                            <td className="border border-black p-0">
+                                                <div className="border-b border-black h-5 flex items-center justify-center">
+                                                    <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.experience} onChange={e => handleEntryChange(originalIndex, 'experience', e.target.value)} />
+                                                </div>
+                                                <div className="h-5 flex items-center justify-center">
+                                                    <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.certDate} onChange={e => handleEntryChange(originalIndex, 'certDate', e.target.value)} />
+                                                </div>
+                                            </td>
+                                            <td className="border border-black p-0 bg-yellow-100">
+                                                <div className="border-b border-black h-5 bg-white"></div>
+                                                <div className="h-5 flex items-center justify-center text-[9px]">
+                                                    <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.position} onChange={e => handleEntryChange(originalIndex, 'position', e.target.value)} />
+                                                </div>
+                                            </td>
 
-                                        {/* Stations */}
-                                        {Array(16).fill(0).map((_, i) => {
-                                            // Match station by index or ID?
-                                            // Let's assume columns 1-16 map to matrixEntries stations
-                                            const station = entry.stations[i];
-                                            return (
-                                                <td key={i} className="border border-black p-0 align-middle">
-                                                    {station ? (
-                                                        <div className="flex justify-center items-center h-full">
-                                                            <SkillIcon levelStr={station.curr} size={24} editable={true} onClick={(l) => handleStationChange(originalIndex, i, l)} />
-                                                        </div>
-                                                    ) : <div className="bg-gray-100 h-full w-full"></div>}
-                                                </td>
-                                            )
-                                        })}
+                                            {/* Stations */}
+                                            {Array(16).fill(0).map((_, i) => {
+                                                const station = entry.stations[i];
+                                                return (
+                                                    <td key={i} className="border border-black p-0 align-middle">
+                                                        {station ? (
+                                                            <div className="flex justify-center items-center h-full">
+                                                                <SkillIcon levelStr={station.curr} size={24} editable={true} onClick={(l) => handleStationChange(originalIndex, i, l)} />
+                                                            </div>
+                                                        ) : <div className="bg-gray-100 h-full w-full"></div>}
+                                                    </td>
+                                                )
+                                            })}
 
-                                        <td className="border border-black">
-                                            <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.plan} onChange={e => handleEntryChange(originalIndex, 'plan', e.target.value)} />
-                                        </td>
-                                        <td className="border border-black">
-                                            <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.actual} onChange={e => handleEntryChange(originalIndex, 'actual', e.target.value)} />
-                                        </td>
-                                        <td className="border border-black">
-                                            <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.status} onChange={e => handleEntryChange(originalIndex, 'status', e.target.value)} />
-                                        </td>
-                                        <td className="border border-black"></td>
-                                    </tr>
-                                )
-                            })}
-                            {/* Fill empty rows to make it look full? Optional */}
+                                            <td className="border border-black">
+                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.plan} onChange={e => handleEntryChange(originalIndex, 'plan', e.target.value)} />
+                                            </td>
+                                            <td className="border border-black font-bold bg-gray-50">{entry.actual}</td>
+                                            <td className="border border-black">
+                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.status} onChange={e => handleEntryChange(originalIndex, 'status', e.target.value)} />
+                                            </td>
+                                            <td className="border border-black font-bold text-blue-600">
+                                                {((entry.actual / (entry.plan || 1)) * 100).toFixed(0)}%
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
                         </tbody>
                         <tfoot>
                             <tr>
@@ -990,6 +1317,10 @@ const SkillMatrix = () => {
                             </tr>
                         </tfoot>
                     </table>
+
+                    <div className="no-print mt-6">
+                        <PaginationControls />
+                    </div>
 
                     {/* Footer Info */}
                     <div className="flex justify-between text-[10px] mt-2 border-t border-black pt-1">

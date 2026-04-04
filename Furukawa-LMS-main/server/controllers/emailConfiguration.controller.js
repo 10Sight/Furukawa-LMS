@@ -17,7 +17,7 @@ const getConfigurationById = asyncHandler(async (req, res) => {
 });
 
 const createConfiguration = asyncHandler(async (req, res) => {
-    const { formName, departmentId, toEmails, ccEmails, includeTrainer, isActive } = req.body;
+    const { formName, departmentId, sectionId, toEmails, ccEmails, includeTrainer, isActive } = req.body;
     if (!formName) {
         return res.status(400).json(new ApiResponse(400, null, "Form name is required"));
     }
@@ -25,6 +25,7 @@ const createConfiguration = asyncHandler(async (req, res) => {
     const config = await EmailConfiguration.create({
         formName,
         departmentId,
+        sectionId,
         toEmails,
         ccEmails,
         includeTrainer,

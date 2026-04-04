@@ -7,10 +7,10 @@ export const userApi = createApi({
     tagTypes: ['User', 'ImportLog'],
     endpoints: (builder) => ({
         getAllUsers: builder.query({
-            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", excludeCustomRoles = "", excludeTrainers = "" } = {}) => ({
+            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", isStaff = "", excludeCustomRoles = "", excludeTrainers = "", departmentId = "", sectionId = "", lineId = "", subSectionId = "", stationId = "" } = {}) => ({
                 url: "/api/users",
                 method: "GET",
-                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, excludeCustomRoles, excludeTrainers }
+                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, isStaff, excludeCustomRoles, excludeTrainers, departmentId, sectionId, lineId, subSectionId, stationId }
             }),
             providesTags: ['User'],
         }),
@@ -137,10 +137,10 @@ export const userApi = createApi({
         }),
 
         exportStudents: builder.query({
-            query: ({ format = 'excel', search = '', status = '', departmentId = '' } = {}) => ({
+            query: ({ format = 'excel', search = '', status = '', departmentId = '', sectionId = '', lineId = '', subSectionId = '', stationId = '' } = {}) => ({
                 url: `/api/exports/students`,
                 method: "GET",
-                params: { format, search, status, departmentId },
+                params: { format, search, status, departmentId, sectionId, lineId, subSectionId, stationId },
                 responseHandler: (response) => response.data
             }),
             keepUnusedDataFor: 0,
@@ -196,6 +196,7 @@ export const userApi = createApi({
 
 export const {
     useGetAllUsersQuery,
+    useLazyGetAllUsersQuery,
     useGetUserByIdQuery,
     useUpdateProfileMutation,
     useUpdateAvatarMutation,

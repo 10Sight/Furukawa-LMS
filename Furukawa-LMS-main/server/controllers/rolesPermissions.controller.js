@@ -92,7 +92,10 @@ const SYSTEM_PERMISSIONS = {
   ROLE_READ: "role:read",
   ROLE_UPDATE: "role:update",
   ROLE_DELETE: "role:delete",
-  ROLE_ASSIGN: "role:assign"
+  ROLE_ASSIGN: "role:assign",
+
+  // CMS Management
+  DAILY_5M_APPROVE: "daily5m:approve"
 };
 
 // Define default role permissions
@@ -170,8 +173,7 @@ const DEFAULT_ROLES = {
     permissions: [
       ...Object.values(SYSTEM_PERMISSIONS).filter(p =>
         !p.includes('system:') &&
-        !p.includes('role:') &&
-        p !== SYSTEM_PERMISSIONS.USER_DELETE
+        !p.includes('role:')
       ),
       SYSTEM_PERMISSIONS.AUDIT_READ,
       SYSTEM_PERMISSIONS.ROLE_READ,
@@ -281,6 +283,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.ROLE_UPDATE, name: "Update Roles", description: "Edit role permissions" },
         { id: SYSTEM_PERMISSIONS.ROLE_DELETE, name: "Delete Roles", description: "Delete custom roles" },
         { id: SYSTEM_PERMISSIONS.ROLE_ASSIGN, name: "Assign Roles", description: "Assign roles to users" }
+      ],
+      "CMS Management": [
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_APPROVE, name: "Approve Daily 5M", description: "Approve or decline daily 5M recording sessions" }
       ]
     };
 

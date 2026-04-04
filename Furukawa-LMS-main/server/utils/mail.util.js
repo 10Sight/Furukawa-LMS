@@ -25,7 +25,7 @@ const sendMail = async function (email, subject, message, attachments = [], cc =
 
     // Create mail options
     const mailOptions = {
-        from: `10Sight Technologies <${ENV.SMTP_USERNAME}>`,
+        from: `Furukawa Minda <${ENV.SMTP_USERNAME}>`,
         to: email,
         cc: cc,
         subject: subject,

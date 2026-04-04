@@ -17,8 +17,8 @@ const DEFAULT_CONFIG = {
             { text: "Retroactive Inspection (To be filled by Leader / Supervisor Before Change)", colSpan: 6, className: "bg-gray-100" },
             { text: "First part Approval After Change (To be filled by Quality dept., Pick 5 samples for judgement)", colSpan: 12, className: "bg-gray-100" },
             { text: "Containment Action if required", colSpan: 7, className: "bg-gray-100" },
-            { text: "Process Owner", rowSpan: 3, width: "w-16" },
-            { text: "Approved By (QA Incharge)", rowSpan: 3, width: "w-16" }
+            { text: "Process Owner", rowSpan: 3, width: "w-20" },
+            { text: "Approved By (QA Incharge)", rowSpan: 3, width: "w-20" }
         ],
         // Row 4
         [
@@ -64,7 +64,7 @@ const DEFAULT_CONFIG = {
             // Retro Sub
             { text: "", className: "min-w-[50px]" }, { text: "", className: "min-w-[50px]" }, { text: "", className: "min-w-[50px]" }, { text: "", className: "min-w-[50px]" },
             // FP Result Sub
-            { text: "1", width: "w-8" }, { text: "2", width: "w-8" }, { text: "3", width: "w-8" }, { text: "4", width: "w-8" }, { text: "5", width: "w-8" },
+            { text: "1", width: "w-16" }, { text: "2", width: "w-16" }, { text: "3", width: "w-16" }, { text: "4", width: "w-16" }, { text: "5", width: "w-16" },
             // Containment Sub
             { text: "Produced Qty.", width: "w-12" }, { text: "NG Qty.", width: "w-12" },
             { text: "1st Check", width: "w-12" }, { text: "2nd Check", width: "w-12" }, { text: "3rd Check", width: "w-12" }
@@ -131,7 +131,7 @@ export const send5MPDF = asyncHandler(async (req, res) => {
             <h2>Daily 5M Recording Sheet</h2>
             <p>Please find the attached Daily 5M Recording sheet for <b>${departmentName}</b> on <b>${date}</b>.</p>
             <hr />
-            <p style="font-size: 12px; color: #666;">This is an automated email from 10Sight LMS.</p>
+            <p style="font-size: 12px; color: #666;">This is an automated email from Furukawa Minda LMS.</p>
         </div>
     `;
 

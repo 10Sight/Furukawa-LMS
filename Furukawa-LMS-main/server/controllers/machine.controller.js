@@ -35,7 +35,10 @@ export const createMachine = asyncHandler(async (req, res) => {
         [name, lineId, subSectionId, description, true]
     );
 
-    const [newMachine] = await executeQuery("SELECT * FROM machines WHERE id = ?", [result[0].id]);
+    const [newMachine] = await executeQuery(`
+        SELECT m.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        FROM machines m WHERE m.id = ?`, [result[0].id]);
 
     res.status(201).json(
         new ApiResponse(201, newMachine[0], "Station created successfully")
@@ -52,7 +55,10 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
     }
 
-    const [machines] = await executeQuery("SELECT * FROM machines WHERE subSectionId = ? ORDER BY createdAt DESC", [subSectionId]);
+    const [machines] = await executeQuery(`
+        SELECT m.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        FROM machines m WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [subSectionId]);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Stations fetched successfully")
@@ -70,7 +76,8 @@ export const getMachinesByLine = asyncHandler(async (req, res) => {
     }
 
     const [machines] = await executeQuery(`
-        SELECT m.*, ss.name as subSectionName 
+        SELECT m.*, ss.name as subSectionName,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
         FROM machines m
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
         WHERE m.line = ? 
@@ -79,6 +86,56 @@ export const getMachinesByLine = asyncHandler(async (req, res) => {
 
     res.status(200).json(
         new ApiResponse(200, machines, "Machines fetched successfully")
+    );
+});
+
+// @desc    Get all machines for a section
+// @route   GET /api/machines/section/:sectionId
+// @access  Private
+export const getMachinesBySection = asyncHandler(async (req, res) => {
+    const { sectionId } = req.params;
+
+    if (isNaN(sectionId)) {
+        throw new ApiError(400, "Invalid Section ID parameter. Must be numeric.");
+    }
+
+    const [machines] = await executeQuery(`
+        SELECT m.*, l.name as lineName, ss.name as subSectionName,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        FROM machines m
+        JOIN [lines] l ON m.line = l.id
+        LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+        WHERE l.sectionId = ? 
+        ORDER BY l.name ASC, ss.name ASC, m.name ASC
+    `, [sectionId]);
+
+    res.status(200).json(
+        new ApiResponse(200, machines, "Section machines fetched successfully")
+    );
+});
+
+// @desc    Get all machines for a department
+// @route   GET /api/machines/department/:departmentId
+// @access  Private
+export const getMachinesByDepartment = asyncHandler(async (req, res) => {
+    const { departmentId } = req.params;
+
+    if (isNaN(departmentId)) {
+        throw new ApiError(400, "Invalid Department ID parameter. Must be numeric.");
+    }
+
+    const [machines] = await executeQuery(`
+        SELECT m.*, l.name as lineName, ss.name as subSectionName,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        FROM machines m
+        JOIN [lines] l ON m.line = l.id
+        LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+        WHERE l.department = ? 
+        ORDER BY l.name ASC, ss.name ASC, m.name ASC
+    `, [departmentId]);
+
+    res.status(200).json(
+        new ApiResponse(200, machines, "Department machines fetched successfully")
     );
 });
 
@@ -112,7 +169,10 @@ export const updateMachine = asyncHandler(async (req, res) => {
         await executeQuery(`UPDATE machines SET ${updateFields.join(', ')} WHERE id = ?`, [...updateValues, id]);
     }
 
-    const [updatedMachine] = await executeQuery("SELECT * FROM machines WHERE id = ?", [id]);
+    const [updatedMachine] = await executeQuery(`
+        SELECT m.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        FROM machines m WHERE m.id = ?`, [id]);
 
     res.status(200).json(
         new ApiResponse(200, updatedMachine[0], "Machine updated successfully")
@@ -150,7 +210,10 @@ export const getMachineById = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid Machine ID parameter. Must be numeric.");
     }
 
-    const [machines] = await executeQuery("SELECT * FROM machines WHERE id = ?", [id]);
+    const [machines] = await executeQuery(`
+        SELECT m.*, 
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        FROM machines m WHERE m.id = ?`, [id]);
 
     if (machines.length === 0) {
         throw new ApiError(404, "Machine not found");
@@ -238,7 +301,7 @@ export const assignEmployee = asyncHandler(async (req, res) => {
 
     if (!isDepartmentMatch) {
         // Fallback 3: Special departments (Maintenance, Utility, etc.)
-        const globalDepts = ['maintenance', 'utility', 'quality', 'admin', 'hr'];
+        const globalDepts = ['maintenance', 'utility', 'quality', 'admin', 'hr', 'src'];
         if (user.department && globalDepts.includes(user.department.toLowerCase())) {
             console.log(`[MachineAssignment] Match Found via Global Department: ${user.department}`);
             isDepartmentMatch = true;

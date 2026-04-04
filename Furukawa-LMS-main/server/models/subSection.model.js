@@ -8,6 +8,7 @@ class SubSection {
         this.lineId = data.lineId;
         this.description = data.description;
         this.isActive = data.isActive !== undefined ? data.isActive : true;
+        this.subSectionCount = data.subSectionCount || 0;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -106,13 +107,30 @@ class SubSection {
     }
 
     static async findById(id) {
-        const [rows] = await executeQuery("SELECT * FROM [sub_sections] WHERE id = ?", [id]);
+        const query = `
+            SELECT ss.*, 
+            (SELECT COUNT(DISTINCT ma.user_id) 
+             FROM machine_assignments ma
+             JOIN machines m ON ma.machine_id = m.id
+             WHERE m.subSectionId = ss.id) as subSectionCount
+            FROM [sub_sections] ss 
+            WHERE ss.id = ?`;
+        const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
         return new SubSection(rows[0]);
     }
 
     static async findByLine(lineId) {
-        const [rows] = await executeQuery("SELECT * FROM [sub_sections] WHERE lineId = ? ORDER BY createdAt DESC", [lineId]);
+        const query = `
+            SELECT ss.*, 
+            (SELECT COUNT(DISTINCT ma.user_id) 
+             FROM machine_assignments ma
+             JOIN machines m ON ma.machine_id = m.id
+             WHERE m.subSectionId = ss.id) as subSectionCount
+            FROM [sub_sections] ss 
+            WHERE ss.lineId = ? 
+            ORDER BY ss.createdAt DESC`;
+        const [rows] = await executeQuery(query, [lineId]);
         return rows.map(row => new SubSection(row));
     }
 

@@ -133,6 +133,7 @@ const Students = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastToastId, setLastToastId] = useState(null);
   const [customRoles, setCustomRoles] = useState([]);
+  const [courseLevels, setCourseLevels] = useState([]);
   const [formData, setFormData] = useState({
     empId: "",
     idCard: "",
@@ -207,6 +208,26 @@ const Students = () => {
     };
     fetchCustomRoles();
   }, []);
+
+  // Fetch Course Levels
+  useEffect(() => {
+    const fetchLevels = async () => {
+      try {
+        const res = await axiosInstance.get("/api/course-level-config/active");
+        if (res.data?.data?.levels) {
+          const sortedLevels = [...res.data.data.levels].sort((a, b) => a.order - b.order);
+          setCourseLevels(sortedLevels);
+          // Set default level if it's a new form
+          if (!isEditDialogOpen && !formData.currentLevel) {
+            setFormData(prev => ({ ...prev, currentLevel: sortedLevels[0]?.name || "L1" }));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch course levels", e);
+      }
+    };
+    fetchLevels();
+  }, [isEditDialogOpen]);
 
 
   // API Hooks
@@ -403,7 +424,7 @@ const Students = () => {
       busRoute: "",
       email: "",
       phoneNumber: "",
-      currentLevel: "L1",
+      currentLevel: courseLevels[0]?.name || "L1",
       status: "PRESENT",
       leavingDate: "",
       reasonOfLeaving: "",
@@ -2018,10 +2039,20 @@ const Students = () => {
                   <SelectValue placeholder="Select Level" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="L1">L1 (Lowest)</SelectItem>
-                  <SelectItem value="L2">L2</SelectItem>
-                  <SelectItem value="L3">L3</SelectItem>
-                  <SelectItem value="L4">L4 (Highest)</SelectItem>
+                  {courseLevels.length > 0 ? (
+                    courseLevels.map((level) => (
+                      <SelectItem key={level.name} value={level.name}>
+                        {level.name} {level.order === 0 ? "(Lowest)" : level.order === courseLevels.length - 1 ? "(Highest)" : ""}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <>
+                      <SelectItem value="L1">L1 (Lowest)</SelectItem>
+                      <SelectItem value="L2">L2</SelectItem>
+                      <SelectItem value="L3">L3</SelectItem>
+                      <SelectItem value="L4">L4 (Highest)</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -2476,10 +2507,20 @@ const Students = () => {
                   <SelectValue placeholder="Select Level" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="L1">L1 (Lowest)</SelectItem>
-                  <SelectItem value="L2">L2</SelectItem>
-                  <SelectItem value="L3">L3</SelectItem>
-                  <SelectItem value="L4">L4 (Highest)</SelectItem>
+                  {courseLevels.length > 0 ? (
+                    courseLevels.map((level) => (
+                      <SelectItem key={level.name} value={level.name}>
+                        {level.name} {level.order === 0 ? "(Lowest)" : level.order === courseLevels.length - 1 ? "(Highest)" : ""}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <>
+                      <SelectItem value="L1">L1 (Lowest)</SelectItem>
+                      <SelectItem value="L2">L2</SelectItem>
+                      <SelectItem value="L3">L3</SelectItem>
+                      <SelectItem value="L4">L4 (Highest)</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>

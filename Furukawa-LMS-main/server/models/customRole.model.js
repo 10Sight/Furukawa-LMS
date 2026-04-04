@@ -11,9 +11,16 @@ class CustomRole {
         this.allowedPages = typeof data.allowedPages === "string"
             ? JSON.parse(data.allowedPages || "[]")
             : (data.allowedPages || []);
-        this.permissions = typeof data.permissions === "string"
+        
+        // Handle both simple string arrays and accidental object arrays
+        const rawPermissions = typeof data.permissions === "string"
             ? JSON.parse(data.permissions || "[]")
             : (data.permissions || []);
+        
+        this.permissions = Array.isArray(rawPermissions)
+            ? rawPermissions.map(p => typeof p === 'object' && p !== null ? (p.id || p) : p)
+            : [];
+
         this.generateManagementPage = !!data.generateManagementPage;
         this.targetLayout = data.targetLayout || null;
         this.isSystem = !!data.isSystem;
@@ -68,13 +75,13 @@ class CustomRole {
             const [rows] = await executeQuery("SELECT COUNT(*) as cnt FROM custom_roles");
             if (rows[0].cnt === 0) {
                 const defaults = [
-                    { name: "Operator", description: "Basic operator access", color: "#3B82F6", pages: [], isSystem: 0 },
-                    { name: "Trainer", description: "Custom trainer access", color: "#10B981", pages: [], isSystem: 0 },
+                    { name: "Operator", description: "Basic operator access", color: "#3B82F6", pages: [], isSystem: 0, permissions: [] },
+                    { name: "Trainer", description: "Custom trainer access", color: "#10B981", pages: [], isSystem: 0, permissions: [] },
                 ];
                 for (const r of defaults) {
                     await executeQuery(
-                        `INSERT INTO custom_roles (name, description, color, allowedPages, isSystem) VALUES (?, ?, ?, ?, ?)`,
-                        [r.name, r.description, r.color, JSON.stringify(r.pages), r.isSystem]
+                        `INSERT INTO custom_roles (name, description, color, allowedPages, permissions, isSystem) VALUES (?, ?, ?, ?, ?, ?)`,
+                        [r.name, r.description, r.color, JSON.stringify(r.pages), JSON.stringify(r.permissions), r.isSystem]
                     ).catch(() => { });
                 }
             }

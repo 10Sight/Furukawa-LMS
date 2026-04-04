@@ -267,6 +267,7 @@ class User {
         if (dataToInsert.isDeleted === undefined) dataToInsert.isDeleted = 0;
         if (dataToInsert.isVerified === undefined) dataToInsert.isVerified = 0;
         if (dataToInsert.isTemporary === undefined) dataToInsert.isTemporary = 0;
+        if (dataToInsert.currentLevel === undefined || dataToInsert.currentLevel === null) dataToInsert.currentLevel = 'L1';
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
@@ -309,14 +310,28 @@ class User {
 
         const userData = rows[0];
         const user = new User(userData);
+        
         if (userData.customRoleId) {
+            // Helper to parse safely since some SQL drivers may automatically parse JSON
+            const safeParse = (data) => {
+                if (typeof data === 'string') {
+                    try { return JSON.parse(data || "[]"); } catch (e) { return []; }
+                }
+                return data || [];
+            };
+
+            const rawPermissions = safeParse(userData.cr_permissions);
+            const rawPages = safeParse(userData.cr_allowedPages);
+
             user.customRole = {
                 id: userData.customRoleId,
                 name: userData.cr_name,
                 description: userData.cr_description,
                 color: userData.cr_color,
-                allowedPages: JSON.parse(userData.cr_allowedPages || "[]"),
-                permissions: JSON.parse(userData.cr_permissions || "[]"),
+                allowedPages: Array.isArray(rawPages) ? rawPages : [],
+                permissions: Array.isArray(rawPermissions) 
+                    ? rawPermissions.map(p => typeof p === 'object' && p !== null ? (p.id || p) : p)
+                    : [],
                 generateManagementPage: !!userData.cr_generateManagementPage,
                 targetLayout: userData.cr_targetLayout
             };
@@ -341,13 +356,25 @@ class User {
         const userData = rows[0];
         const user = new User(userData);
         if (userData.customRoleId) {
+            const safeParse = (data) => {
+                if (typeof data === 'string') {
+                    try { return JSON.parse(data || "[]"); } catch (e) { return []; }
+                }
+                return data || [];
+            };
+
+            const rawPermissions = safeParse(userData.cr_permissions);
+            const rawPages = safeParse(userData.cr_allowedPages);
+
             user.customRole = {
                 id: userData.customRoleId,
                 name: userData.cr_name,
                 description: userData.cr_description,
                 color: userData.cr_color,
-                allowedPages: JSON.parse(userData.cr_allowedPages || "[]"),
-                permissions: JSON.parse(userData.cr_permissions || "[]"),
+                allowedPages: Array.isArray(rawPages) ? rawPages : [],
+                permissions: Array.isArray(rawPermissions) 
+                    ? rawPermissions.map(p => typeof p === 'object' && p !== null ? (p.id || p) : p)
+                    : [],
                 generateManagementPage: !!userData.cr_generateManagementPage,
                 targetLayout: userData.cr_targetLayout
             };

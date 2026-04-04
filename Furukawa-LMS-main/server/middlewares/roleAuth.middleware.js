@@ -11,13 +11,16 @@ export const authorizeRole = (requiredPermissions) => {
     try {
       // Ensure user is authenticated
       if (!req.user) {
+        console.log(`[AUTH_DEBUG] User not authenticated for route: ${req.originalUrl}`);
         throw new ApiError("User not authenticated", 401);
       }
 
       const userRole = req.user.role;
+      const userId = req.user.id || req.user._id;
 
       // Check if user role exists
       if (!userRole || (!DEFAULT_ROLES[userRole] && userRole !== 'CUSTOM')) {
+        console.log(`[AUTH_DEBUG] User ${userId} has invalid role: ${userRole}`);
         throw new ApiError("Invalid user role", 403);
       }
 
@@ -26,6 +29,8 @@ export const authorizeRole = (requiredPermissions) => {
         return next();
       }
 
+      // Merge default system permissions with custom role permissions
+      // This allows both Role-based and User-specific (Custom) permissions to co-exist
       const defaultPermissions = userRole !== 'CUSTOM' ? (DEFAULT_ROLES[userRole]?.permissions || []) : [];
       const customPermissions = req.user.customRole?.permissions || [];
       const allPermissions = [...new Set([...defaultPermissions, ...customPermissions])];
@@ -40,13 +45,27 @@ export const authorizeRole = (requiredPermissions) => {
           !allPermissions.includes(permission)
         );
 
+        console.log(`[AUTH_DEBUG] Authorization Failed:
+          User ID: ${userId}
+          Role: ${userRole}
+          Custom Role: ${req.user.customRole?.name || 'None'} (${req.user.customRole?.id || 'N/A'})
+          isEmployee: ${!!req.user.isEmployee}, isTrainer: ${!!req.user.isTrainer}
+          Required: ${requiredPermissions.join(', ')}
+          Missing: ${missingPermissions.join(', ')}
+          Available Count: ${allPermissions.length}
+        `);
+
         throw new ApiError(
           `Insufficient permissions. Missing: ${missingPermissions.join(', ')}`,
           403
         );
       }
 
-      // User has required permissions, proceed
+      // Log success for debugging (can be removed in production)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[AUTH_DEBUG] Authorization Success for User ${userId} on ${req.originalUrl}`);
+      }
+
       next();
 
     } catch (error) {

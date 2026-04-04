@@ -6,6 +6,7 @@ class Daily5MRecord {
     constructor(data) {
         this.id = data.id;
         this.departmentId = data.departmentId;
+        this.sectionId = data.sectionId;
         this.date = data.date;
         this.shift = data.shift;
         this.line = data.line;
@@ -88,6 +89,7 @@ class Daily5MRecord {
             await migrationHelper.ensureColumnExists('daily_5m_records', 'sessionId', "INT");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'status', "NVARCHAR(20) DEFAULT 'PENDING'");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'approvedBy', "INT");
+            await migrationHelper.ensureColumnExists('daily_5m_records', 'sectionId', "NVARCHAR(255)");
 
             // Remove unique constraints to allow full history (every save = new row)
             const dropConstraintsQuery = `
@@ -115,17 +117,17 @@ class Daily5MRecord {
     }
 
     static async upsert(recordData) {
-        const { departmentId, date, shift, line, formType, recordData: data, submittedBy, sessionId } = recordData;
+        const { departmentId, sectionId, date, shift, line, formType, recordData: data, submittedBy, sessionId } = recordData;
         const dataJson = JSON.stringify(data);
-
+ 
         const query = `
-            INSERT INTO daily_5m_records (departmentId, date, shift, line, formType, recordData, submittedBy, sessionId, status, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', GETUTCDATE(), GETUTCDATE());
+            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', GETUTCDATE(), GETUTCDATE());
             SELECT SCOPE_IDENTITY() as id;
         `;
-
+ 
         const [rows] = await executeQuery(query, [
-            departmentId, date, shift, line, formType, dataJson, submittedBy, sessionId || null
+            departmentId, sectionId || null, date, shift, line, formType, dataJson, submittedBy, sessionId || null
         ]);
 
         const newId = rows[0].id;
@@ -138,10 +140,10 @@ class Daily5MRecord {
         return this.findById(newId);
     }
 
-    static async findAll({ departmentId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false }) {
+    static async findAll({ departmentId, sectionId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false }) {
         let sql = "";
         let params = [];
-
+ 
         if (groupBySession) {
             // Pick only the latest record for each sessionId
             sql = `
@@ -154,6 +156,11 @@ class Daily5MRecord {
                     WHERE r.departmentId = ?
             `;
             params.push(departmentId);
+
+            if (sectionId) {
+                sql += " AND r.sectionId = ?";
+                params.push(sectionId);
+            }
 
             if (submittedBy) {
                 sql += " AND r.submittedBy = ?";
@@ -185,6 +192,11 @@ class Daily5MRecord {
                 WHERE r.departmentId = ?
             `;
             params.push(departmentId);
+
+            if (sectionId) {
+                sql += " AND r.sectionId = ?";
+                params.push(sectionId);
+            }
 
             if (submittedBy) {
                 sql += " AND r.submittedBy = ?";
@@ -236,15 +248,22 @@ class Daily5MRecord {
         return true;
     }
 
-    static async findByDateDeptAndUser(departmentId, date, userId) {
-        const query = `
+    static async findByDateDeptAndUser(departmentId, date, userId, sectionId) {
+        let query = `
             SELECT r.*, u.fullName as submittedByName 
             FROM daily_5m_records r
             LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
             WHERE r.departmentId = ? AND r.date = ? AND r.submittedBy = ?
-            ORDER BY r.createdAt DESC
         `;
-        const [rows] = await executeQuery(query, [departmentId, date, userId]);
+        const params = [departmentId, date, userId];
+
+        if (sectionId) {
+            query += " AND r.sectionId = ?";
+            params.push(sectionId);
+        }
+
+        query += " ORDER BY r.createdAt DESC";
+        const [rows] = await executeQuery(query, params);
         if (rows.length === 0) return null;
         return new Daily5MRecord(rows[0]);
     }

@@ -44,7 +44,9 @@ export const getSectionsByDepartment = asyncHandler(async (req, res) => {
 // @route   GET /api/sections
 // @access  Private
 export const getAllSections = asyncHandler(async (req, res) => {
-    const sections = await Section.findAll();
+    const [sections] = await executeQuery(
+        "SELECT id, name, uniCode, description, category, departmentId, isActive FROM [sections] ORDER BY name ASC"
+    );
 
     res.status(200).json(
         new ApiResponse(200, sections, "All sections fetched successfully")

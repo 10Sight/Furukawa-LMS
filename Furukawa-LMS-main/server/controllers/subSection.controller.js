@@ -118,24 +118,32 @@ export const deleteSubSection = asyncHandler(async (req, res) => {
     );
 });
 
-// @desc    Get all sub-sections
-// @route   GET /api/sub-sections
-// @access  Private
 export const getAllSubSections = asyncHandler(async (req, res) => {
-    const { lineId } = req.query;
+    const { lineId, departmentId } = req.query;
 
     let querySQL = `
-        SELECT ss.*, 
+        SELECT ss.*, l.name as lineName,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
-        FROM [sub_sections] ss`;
+        FROM [sub_sections] ss
+        LEFT JOIN [lines] l ON ss.lineId = l.id`;
     let params = [];
+    let conditions = [];
 
     if (lineId) {
-        querySQL += " WHERE lineId = ?";
+        conditions.push("ss.lineId = ?");
         params.push(lineId);
     }
 
-    querySQL += " ORDER BY createdAt DESC";
+    if (departmentId) {
+        conditions.push("l.department = ?");
+        params.push(departmentId);
+    }
+
+    if (conditions.length > 0) {
+        querySQL += " WHERE " + conditions.join(" AND ");
+    }
+
+    querySQL += " ORDER BY ss.createdAt DESC";
 
     const [subSections] = await executeQuery(querySQL, params);
 

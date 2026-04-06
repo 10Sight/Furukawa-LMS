@@ -16,7 +16,17 @@ export const SubSectionApi = createApi({
             invalidatesTags: ["SubSection"],
         }),
 
-        // Get Sub-Sections by Line
+        // Get Sub-Sections (with optional filters)
+        getSubSections: builder.query({
+            query: (params) => ({
+                url: "/api/sub-sections",
+                method: "GET",
+                params,
+            }),
+            providesTags: ["SubSection"],
+        }),
+
+        // Get Sub-Sections by Line (Legacy)
         getSubSectionsByLine: builder.query({
             query: (lineId) => ({
                 url: `/api/sub-sections/line/${lineId}`,
@@ -48,6 +58,7 @@ export const SubSectionApi = createApi({
 
 export const {
     useCreateSubSectionMutation,
+    useGetSubSectionsQuery,
     useGetSubSectionsByLineQuery,
     useUpdateSubSectionMutation,
     useDeleteSubSectionMutation,

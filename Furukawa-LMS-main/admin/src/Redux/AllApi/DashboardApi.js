@@ -13,13 +13,26 @@ export const dashboardApi = createApi({
                     section,
                     line,
                     machine,
-                    // Parse dateRange if passed to compatible format if needed
-                    // For now, dateRange is handled loosely or not in controller yet
                 },
             }),
-            keepUnusedDataFor: 0, // Disable caching for real-time updates or manage tags
+            keepUnusedDataFor: 0,
+        }),
+
+        getDashboardAttendance: builder.query({
+            query: ({ section, line } = {}) => ({
+                url: "/api/dashboard/attendance",
+                method: "GET",
+                params: {
+                    section: section || 'ALL',
+                    line:    line    || 'ALL',
+                },
+            }),
+            keepUnusedDataFor: 0,
         }),
     }),
 });
 
-export const { useGetDashboardStatsQuery } = dashboardApi;
+export const {
+    useGetDashboardStatsQuery,
+    useGetDashboardAttendanceQuery,
+} = dashboardApi;

@@ -1,8 +1,7 @@
-import { pool } from "../db/connectDB.js";
+import { poolPromise } from "../db/connectDB.js";
 import ExcelJS from "exceljs";
 import nodemailer from "nodemailer";
 
-// 1. Transporter (Pooling Enabled)
 const transporter = nodemailer.createTransport({
     pool: true,
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -12,205 +11,193 @@ const transporter = nodemailer.createTransport({
         user: process.env.SMTP_USERNAME,
         pass: process.env.SMTP_PASSWORD
     },
-    tls: { rejectUnauthorized: false },
-    maxConnections: 5,
-    maxMessages: 100
+    tls: { rejectUnauthorized: false }
 });
 
 export const getReportData = async () => {
     try {
-        const querySql = `
+        const dbPool = await poolPromise;
+        
+        // Yesterday's Date Calculation (Target Date)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const targetDateStr = yesterday.toISOString().slice(0, 10); 
+
+        const mainQuery = `
+            -- Step 1: Snapshots se employee aur unke section ki mapping nikalna
+            WITH EmployeeSectionMap AS (
+                SELECT DISTINCT 
+                    LTRIM(RTRIM(employeeid)) AS empId,
+                    LTRIM(RTRIM(UPPER(section_unicode))) AS secUni
+                FROM user_hierarchy_snapshots
+                WHERE employeeid IS NOT NULL 
+                  AND section_unicode IS NOT NULL 
+                  AND LTRIM(RTRIM(section_unicode)) <> ''
+            ),
+
+            -- Step 2: Attendance logs ko snapshots ke sath join karke section-wise count nikalna
+            AttendanceStats AS (
+                SELECT
+                    esm.secUni,
+                    SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS totalPresent,
+                    COUNT(*) AS totalActual
+                FROM attendance_logs al
+                -- Join condition: attendance_logs.payCode = snapshots.employeeid
+                INNER JOIN EmployeeSectionMap esm 
+                    ON LTRIM(RTRIM(al.payCode)) = esm.empId
+                WHERE CAST(al.[date] AS DATE) = @param0
+                  AND UPPER(LTRIM(RTRIM(al.status))) IN ('PRESENT', 'ABSENT')
+                GROUP BY esm.secUni
+            )
+
+            -- Step 3: Final Selection: Sections, Requirements, aur Mapped Attendance
             SELECT 
-                s.name AS section_name,
+                base.section_unicode AS uniCode,
+                base.section AS section_name,
                 COALESCE(req.totalRequired, 0) AS totalRequired,
-                COALESCE(usr.totalActual, 0) AS totalActual
-            FROM sections s
+                COALESCE(att.totalPresent, 0)  AS totalPresent,
+                COALESCE(att.totalActual, 0)   AS totalActual,
+                -- Gap = Required - Available (Present)
+                (COALESCE(req.totalRequired, 0) - COALESCE(att.totalPresent, 0)) AS gap
+            FROM (
+                -- Sabhi Sections ki master list snapshots se
+                SELECT DISTINCT 
+                    LTRIM(RTRIM(section)) AS section,
+                    LTRIM(RTRIM(section_unicode)) AS section_unicode
+                FROM user_hierarchy_snapshots
+                WHERE section_unicode IS NOT NULL AND LTRIM(RTRIM(section_unicode)) <> ''
+            ) base
             LEFT JOIN (
-                SELECT section_name, SUM(prod_plan) as totalRequired 
-                FROM requirements 
-                WHERE month_name = DATENAME(month, GETDATE()) 
-                AND year_val = YEAR(GETDATE())
-                GROUP BY section_name
-            ) req ON s.name = req.section_name
-            LEFT JOIN (
-                -- Using users table to count actual M/P if sectionId maps. Wait!
-                -- users table has sectionId.
-                SELECT sectionId, COUNT(*) as totalActual 
-                FROM users u 
-                WHERE u.isDeleted = 0 AND u.role != 'admin'
-                GROUP BY sectionId
-            ) usr ON s.id = usr.sectionId
-            ORDER BY s.name
+                -- Requirements data
+                SELECT 
+                    LTRIM(RTRIM(UPPER(sectionCode))) AS sec_code,
+                    SUM(prodPlan) AS totalRequired
+                FROM requirements
+                WHERE monthName = DATENAME(month, GETDATE())
+                  AND year = YEAR(GETDATE())
+                GROUP BY LTRIM(RTRIM(UPPER(sectionCode)))
+            ) req ON UPPER(base.section_unicode) = req.sec_code
+            LEFT JOIN AttendanceStats att ON UPPER(base.section_unicode) = att.secUni
+            ORDER BY base.section_unicode
         `;
 
-        const result = await pool.query(querySql);
+        const result = await dbPool.request()
+            .input('param0', targetDateStr)
+            .query(mainQuery);
+
         return result.recordset || [];
     } catch (error) {
-        console.error("Database Query Error:", error);
+        console.error("[Report] Error fetching data:", error.message);
         return [];
     }
 };
 
 export const generateAndSend = async (emails, subjectSuffix = "") => {
     try {
-        console.log("Starting Report Generation...");
-
         const reportData = await getReportData();
-
-        // CHANGE: Ab yahan 'return' nahi hai, process continue hoga
-        if (!reportData || reportData.length === 0) {
-            console.warn("⚠️ No data found in database. Generating an empty report.");
-        }
-
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Manpower Report', {
-            views: [{ showGridLines: true }]
-        });
-
-        // Setup Columns matching image
-        worksheet.columns = [
-            { key: 'section', width: 45 },
-            { key: 'required', width: 22 },
-            { key: 'available', width: 22 },
-            { key: 'actual', width: 22 },
-            { key: 'gap', width: 15 },
-            { key: 'ot', width: 18 }
-        ];
+        const worksheet = workbook.addWorksheet('Manpower Report');
 
         const BLUE_BG = 'FFB4C6E7';
         const YELLOW_BG = 'FFFFFF00';
-
-        // Add 2 spacer rows at start (to match image starting from Row 1 with dates)
-        // Row 1: Merged cell for "9 Feb" over Available, Actual, Gap.
-        // Full date "09-02-2026" on OT mandays cell.
+        
+        // Date formatting for Excel headers (Report ki date - Yesterday)
         const d = new Date();
+        d.setDate(d.getDate() - 1);
         const shortDate = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
         const exactDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
 
-        const row1 = worksheet.getRow(1);
-        row1.height = 20;
+        worksheet.columns = [
+            { key: 'unicode', width: 20 },
+            { key: 'section', width: 40 },
+            { key: 'required', width: 18 },
+            { key: 'available', width: 18 },
+            { key: 'actual', width: 18 },
+            { key: 'gap', width: 12 }
+        ];
 
-        // Merge Columns C, D, E for short date text
-        worksheet.mergeCells('C1:E1');
-        const c1 = worksheet.getCell('C1');
-        c1.value = shortDate;
-        c1.font = { bold: true };
-        c1.alignment = { horizontal: 'center', vertical: 'middle' };
-        c1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE_BG } };
-        // Apply borders to merged cells
-        ['C1', 'D1', 'E1'].forEach(cell => {
-            worksheet.getCell(cell).border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-        });
+        // Row 1 Setup
+        worksheet.getRow(1).height = 25;
+        worksheet.mergeCells('D1:E1');
+        const d1 = worksheet.getCell('D1');
+        d1.value = `Attendance: ${shortDate}`;
+        d1.font = { bold: true };
+        d1.alignment = { horizontal: 'center', vertical: 'middle' };
+        d1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE_BG } };
 
         const f1 = worksheet.getCell('F1');
         f1.value = exactDate;
         f1.font = { bold: true };
         f1.alignment = { horizontal: 'center', vertical: 'middle' };
         f1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YELLOW_BG } };
-        f1.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 
         // Row 2: Headers
         const headerRow = worksheet.getRow(2);
-        headerRow.height = 30; // taller header to fit text
-        headerRow.values = [
-            'Section',
-            'Total required\nM/P',
-            'Total\nAvailable\nM/P',
-            'Total\nActual\nM/P',
-            'Gap',
-            'OT\nmandays'
-        ];
-
+        headerRow.height = 35;
+        headerRow.values = ['Unicode', 'Section Name', 'Total Required', 'Total Available (Prev Day)', 'Total Actual', 'Gap'];
+        
         headerRow.eachCell((cell, colNumber) => {
             cell.font = { bold: true };
             cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-            cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+            cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
             
-            if (colNumber === 2) {
+            if (colNumber === 3) {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YELLOW_BG } };
-            } else if (colNumber > 2) {
+            } else if (colNumber > 3) {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE_BG } };
             }
         });
 
         // Data Population
-        let grandRequired = 0, grandAvailable = 0, grandActual = 0, grandGap = 0, grandOt = 0;
-        let contentStartRow = 3;
+        let totals = { req: 0, avail: 0, act: 0, gap: 0 };
+        
+        reportData.forEach((item) => {
+            const row = worksheet.addRow({
+                unicode: item.uniCode,
+                section: item.section_name,
+                required: Math.round(item.totalRequired),
+                available: Math.round(item.totalPresent), // Fourth Column
+                actual: Math.round(item.totalActual),
+                gap: Math.round(item.gap)
+            });
 
-        reportData.forEach((item, i) => {
-            const currentRow = contentStartRow + i;
-            const required = Math.round(Number(item.totalRequired)) || 0;
-            const available = required; // As per existing logic/image
-            const actualVal = Number(item.totalActual) || 0;
-            const gapVal = actualVal - required;
-            const otVal = 0; // Default OT mandays
+            totals.req += Number(item.totalRequired);
+            totals.avail += Number(item.totalPresent);
+            totals.act += Number(item.totalActual);
+            totals.gap += Number(item.gap);
 
-            grandRequired += required;
-            grandAvailable += available;
-            grandActual += actualVal;
-            grandGap += gapVal;
-            grandOt += otVal;
-
-            const row = worksheet.getRow(currentRow);
-            row.values = { 
-                section: item.section_name, 
-                required: required, 
-                available: available, 
-                actual: actualVal, 
-                gap: gapVal, 
-                ot: otVal 
-            };
-            
             row.eachCell((cell, colNumber) => {
-                cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-                // Center align all numbers
-                if (colNumber > 1) cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                
-                // Set Column background colors
-                if (colNumber === 2) {
+                cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+                cell.alignment = { horizontal: colNumber <= 2 ? 'left' : 'center', vertical: 'middle' };
+                if (colNumber === 3) {
                     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YELLOW_BG } };
-                } else if (colNumber > 2) {
+                } else if (colNumber > 3) {
                     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE_BG } };
                 }
             });
         });
 
-        // Footer Row
-        const totalRowIndex = contentStartRow + (reportData.length || 0);
-        const totalRow = worksheet.getRow(totalRowIndex);
-        
-        totalRow.values = ["", grandRequired, grandAvailable, grandActual, grandGap, grandOt];
-        
-        totalRow.eachCell((cell, colNumber) => {
+        // Grand Total Row
+        const footer = worksheet.addRow(["", "GRAND TOTAL", totals.req, totals.avail, totals.act, totals.gap]);
+        footer.eachCell((cell) => {
             cell.font = { bold: true };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE_BG } };
+            cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-            
-            // In the image, the total row is entirely light blue, except the last cell (OT) is Yellow
-            if (colNumber === 6) {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YELLOW_BG } };
-            } else if (colNumber > 1) {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE_BG } };
-            } else {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE_BG } };
-            }
         });
 
-        // Send Email
         const buffer = await workbook.xlsx.writeBuffer();
         await transporter.sendMail({
             from: `"Manpower System" <${process.env.SMTP_USERNAME}>`,
             to: Array.isArray(emails) ? emails.join(',') : emails,
-            subject: `Production Manpower Report - ${exactDate} ${subjectSuffix}`,
-            html: `<h3>Manpower Daily Report</h3><p>Attached is the Excel manpower report grouped by sections.</p>`,
+            subject: `Production Manpower Report (Previous Day) - ${exactDate}`,
+            html: `<h3>Daily Manpower Report</h3><p>Attached is the report showing attendance count for <b>${exactDate}</b> mapped by Section.</p>`,
             attachments: [{ filename: `Manpower_Report_${exactDate}.xlsx`, content: buffer }]
         });
 
-        console.log(`✅ Email sent successfully`);
-
+        console.log("✅ Previous Day Report Sent Successfully");
     } catch (error) {
-        console.error("❌ FATAL ERROR in generateAndSend:", error.message);
-        throw error;
+        console.error("❌ generateAndSend Error:", error);
     }
 };
 

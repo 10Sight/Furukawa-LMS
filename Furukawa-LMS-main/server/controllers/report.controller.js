@@ -3,8 +3,8 @@ import NotificationService from '../services/notification.service.js';
 import { executeQuery } from '../db/mssqlHelper.js';
 import ExcelJS from 'exceljs';
 import HeadcountReport from '../models/headcountReport.model.js';
+import UserHierarchySnapshot from '../models/userHierarchySnapshot.model.js';
 import Mail from '../models/mail.model.js';
-import sendMail from '../utils/mail.util.js';
 
 /**
  * Controller to handle manual Excel report exports for configured sheets.
@@ -166,11 +166,11 @@ export const saveHeadcountReport = asyncHandler(async (req, res) => {
 
     // Trigger Email Notification
     const reportDate = new Date(year, month - 1, 1);
-    NotificationService.sendFormReport("Associates Headcount Report", null, {
-        tableData,
-        month,
+    NotificationService.sendFormReport("Associates Headcount Report", null, { 
+        tableData, 
+        month, 
         year,
-        date: reportDate.toISOString().split('T')[0]
+        date: reportDate.toISOString().split('T')[0] 
     }).catch(err => console.error("[Headcount] Notification failed:", err));
 
     res.status(200).json({
@@ -218,7 +218,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     const totalDays = lastDay;
 
-    // Fetch existing report to preserve manual fields (like Expected Separations)
+    // Fetch existing report to preserve manual fields
     const existingReport = await HeadcountReport.findOne({
         departmentId: departmentId || 0,
         month,
@@ -226,26 +226,10 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     });
     const tableData = existingReport?.tableData || {};
 
-    // 1. Fetch reporting-enabled departments (or all active departments if needed)
-    // Changing to include all active departments to ensure Hiring Actual etc. don't miss users
-    const [reportingDepts] = await executeQuery("SELECT id, name FROM departments WHERE (isDeleted = 0 OR isDeleted IS NULL)");
+    // 1. Fetch active report clubs
+    const [reportingClubs] = await executeQuery("SELECT id, name, sectionIds FROM report_clubs WHERE showInReport = 1");
 
-    // 2. Fetch Attendance Stats
-    let attWhere = "";
-    let attParams = [];
-
-    if (departmentId) {
-        const [deptRows] = await executeQuery("SELECT name FROM departments WHERE id = ?", [departmentId]);
-        const deptName = deptRows[0]?.name;
-        attWhere = "(u.[departmentId] = ? OR u.[department] = ? OR u.[department] LIKE ?)";
-        attParams = [departmentId, deptName, `%${deptName}%`].filter(x => x !== undefined);
-    } else {
-        // Global: Include all employees regardless of whether their department exists in the departments table
-        attWhere = "u.[isEmployee] = 1";
-        attParams = [];
-    }
-
-    // Attendance and Net Headcount (Daily) - Global: Include ALL employees regardless of department
+    // 2. Global Attendance Stats (Net Headcount)
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
@@ -262,33 +246,28 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     const [netHeadcountData] = await executeQuery(netHeadcountSql, [start, end]);
 
     const dailyTotalsMap = {};
-
     netHeadcountData.forEach(row => {
         if (!row.dateKey) return;
         const present = row.totalPresentEmployees || 0;
         const absent = row.totalAbsent || 0;
-        const totalPA = present + absent; // Total Present + Absent
+        const totalPA = present + absent;
 
         dailyTotalsMap[row.dateKey] = totalPA;
-
         tableData[`Headcount available_${row.dateKey}`] = present;
         tableData[`Net Available Headcount (Total)_${row.dateKey}`] = row.totalUploaded || 0;
         tableData[`Total Headcount (Present + Absent)_${row.dateKey}`] = totalPA;
         tableData[`Net Available Headcount Above 3 Months_${row.dateKey}`] = row.totalPresentAbove3Months || 0;
         tableData[`Absent_${row.dateKey}`] = absent;
 
-        // Calculate Global Absenteeism % based on Present + Absent roles only
         const globalAbsPercent = (totalPA > 0) ? (absent / totalPA) * 100 : 0;
         tableData[`Absenteeism %_${row.dateKey}`] = globalAbsPercent.toFixed(2);
     });
-
-
 
     // Shift-wise attendance
     const shiftAttendanceSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-            UPPER(ISNULL(al.shift, ISNULL(u.shift, ''))) AS userShift, -- Use al.shift if available
+            UPPER(ISNULL(al.shift, ISNULL(u.shift, ''))) AS userShift,
             COUNT(*) AS count
         FROM attendance_logs al
         INNER JOIN users u ON u.id = al.userId
@@ -304,17 +283,22 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         const { dateKey, userShift, count } = row;
         const shiftKey = Object.keys(shiftMap).find(k => userShift.includes(k));
         if (shiftKey) {
-            // Map count to the standard shift label key for the frontend
             tableData[`${shiftMap[shiftKey]}_${dateKey}`] = count;
         }
     });
 
-    // 3. Dynamic Department Headcount rows - Prioritize al.department from uploaded Excel
-    for (const dept of reportingDepts) {
-        const deptId = dept.id;
-        const deptName = dept.name;
+    // 3. Dynamic Club Headcount rows
+    for (const club of reportingClubs) {
+        const clubName = club.name;
+        let sectionIds = [];
+        try {
+            sectionIds = JSON.parse(club.sectionIds || "[]");
+        } catch (e) { continue; }
 
-        const deptDailySql = `
+        if (sectionIds.length === 0) continue;
+
+        const placeholders = sectionIds.map(() => "?").join(",");
+        const clubDailySql = `
             SELECT
                 CONVERT(VARCHAR, al.[date], 23) AS dateKey,
                 SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' THEN 1 ELSE 0 END) AS presentCount,
@@ -322,106 +306,71 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
                 SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) IN ('ABSENT', 'A') THEN 1 ELSE 0 END) AS absentCount
             FROM attendance_logs al
             INNER JOIN users u ON u.id = al.userId
-            WHERE (
-                LOWER(al.[department]) = LOWER(?) OR 
-                LOWER(u.[department]) = LOWER(?) OR 
-                u.[departmentId] = ?
-            )
-            AND u.[isEmployee] = 1
-            AND al.[date] >= ? AND al.[date] <= ?
+            WHERE u.sectionId IN (${placeholders})
+              AND u.[isEmployee] = 1
+              AND al.[date] >= ? AND al.[date] <= ?
             GROUP BY al.[date]
         `;
-        const [deptDailyData] = await executeQuery(deptDailySql, [deptName, deptName, deptId, start, end]);
+        const [clubDailyData] = await executeQuery(clubDailySql, [...sectionIds, start, end]);
 
-        deptDailyData.forEach(row => {
+        clubDailyData.forEach(row => {
             if (row.dateKey) {
                 const present = row.presentCount || 0;
                 const absent = row.absentCount || 0;
                 const totalPA = present + absent;
 
-                tableData[`${deptName} Headcount available_${row.dateKey}`] = present;
-                tableData[`${deptName} Net Available Headcount Above 3 Months_${row.dateKey}`] = row.presentAbove3Months;
-                tableData[`${deptName} absent_${row.dateKey}`] = absent;
+                tableData[`${clubName} Headcount available_${row.dateKey}`] = present;
+                tableData[`${clubName} Net Available Headcount Above 3 Months_${row.dateKey}`] = row.presentAbove3Months;
+                tableData[`${clubName} absent_${row.dateKey}`] = absent;
 
-                // Calculate Absenteeism % for the department based on Present + Absent
                 const absenteeismPercent = totalPA > 0 ? (absent / totalPA) * 100 : 0;
-                tableData[`${deptName} Absenteeism %_${row.dateKey}`] = absenteeismPercent.toFixed(2);
+                tableData[`${clubName} Absenteeism %_${row.dateKey}`] = absenteeismPercent.toFixed(2);
 
-                // Specific logic for DOJO (Training Cell)
-                if (deptName.toUpperCase() === 'DOJO') {
+                if (clubName.toUpperCase().includes('DOJO')) {
                     tableData[`Present in Training Cell_${row.dateKey}`] = present;
-                    // We'll add attrition later from user logs, but combining absenteeism here
                     tableData[`Attrition & Absenteeism of Training Cell (Nos)_${row.dateKey}`] = (tableData[`Attrition & Absenteeism of Training Cell (Nos)_${row.dateKey}`] || 0) + absent;
                 }
             }
         });
     }
 
-    // Adjust Training Cell Attrition (Users leaving from DOJO)
-    const dojoLeftSql = `SELECT leavingDate as dateKey, COUNT(*) as count FROM users WHERE (departmentId = 7 OR department = 'DOJO') AND leavingDate >= ? AND leavingDate <= ? GROUP BY leavingDate`;
-    const [dojoLeftData] = await executeQuery(dojoLeftSql, [start, end]);
-    dojoLeftData.forEach(row => {
-        if (row.dateKey) {
-            tableData[`Attrition & Absenteeism of Training Cell (Nos)_${row.dateKey}`] = (tableData[`Attrition & Absenteeism of Training Cell (Nos)_${row.dateKey}`] || 0) + row.count;
-        }
-    });
-
-    // 4. Hiring Actual
-    const joinSql = `SELECT joiningDate as dateKey, COUNT(*) as count FROM users u WHERE ${attWhere} AND u.[isEmployee] = 1 AND joiningDate >= ? AND joiningDate <= ? GROUP BY joiningDate`;
-    const [joinData] = await executeQuery(joinSql, [...attParams, start, end]);
+    // 4. Hiring Actual (Global)
+    const joinSql = `SELECT joiningDate as dateKey, COUNT(*) as count FROM users u WHERE u.[isEmployee] = 1 AND joiningDate >= ? AND joiningDate <= ? GROUP BY joiningDate`;
+    const [joinData] = await executeQuery(joinSql, [start, end]);
     joinData.forEach(row => { if (row.dateKey) tableData[`Hiring Actual_${row.dateKey}`] = row.count; });
 
-    // 5. Handover Actual (From handover_sheets - count number of entries in JSON)
+    // 5. Handover Actual
     const handoverSql = `
         SELECT CONVERT(VARCHAR, [date], 23) as dateKey, entries 
         FROM handover_sheets 
         WHERE [date] >= ? AND [date] <= ?
     `;
     const [handoverRows] = await executeQuery(handoverSql, [start, end]);
-
     const handoverDailyCounts = {};
     handoverRows.forEach(row => {
         let count = 0;
-        try {
-            const entries = JSON.parse(row.entries || "[]");
-            count = entries.length;
-        } catch (e) {
-            console.error("Error parsing handover entries:", e);
-        }
-        if (row.dateKey) {
-            handoverDailyCounts[row.dateKey] = (handoverDailyCounts[row.dateKey] || 0) + count;
-        }
+        try { count = JSON.parse(row.entries || "[]").length; } catch (e) {}
+        if (row.dateKey) handoverDailyCounts[row.dateKey] = (handoverDailyCounts[row.dateKey] || 0) + count;
     });
 
     let cumulativeHandover = 0;
-    // Iterate through days to calculate cumulative
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dayHandover = handoverDailyCounts[dKey] || 0;
         cumulativeHandover += dayHandover;
-
         tableData[`Handover Actual_${dKey}`] = dayHandover;
         tableData[`Handed-over after training (Cumulative)_${dKey}`] = cumulativeHandover;
     }
 
     // 6. Separations (Actual Separations and Cumulative)
-    let deptNameForFilter = null;
-    if (departmentId) {
-        const [deptRows] = await executeQuery("SELECT name FROM departments WHERE id = ?", [departmentId]);
-        deptNameForFilter = deptRows[0]?.name;
-    }
-
     const nextMonthStart = new Date(year, month, 1).toISOString().split('T')[0];
-    const leftSql = `SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, department, shift, CONVERT(VARCHAR, leavingDate, 23) as dateKey 
+    const leftSql = `SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, CONVERT(VARCHAR, leavingDate, 23) as dateKey 
                      FROM users u 
-                     WHERE (leavingDate >= ? AND leavingDate < ?)
-                     ${departmentId ? "AND (u.[departmentId] = ? OR u.[department] = ? OR u.[department] LIKE ?)" : ""}
+                     WHERE (leavingDate >= ? AND leavingDate < ?) AND u.[isEmployee] = 1
     `;
-    const leftParams = [start, nextMonthStart];
-    if (departmentId) leftParams.push(departmentId, deptNameForFilter, `%${deptNameForFilter}%`);
-    const [leftUsers] = await executeQuery(leftSql, leftParams);
+    const [leftUsers] = await executeQuery(leftSql, [start, nextMonthStart]);
 
-    // Automatically create/update attendance log for separations
+    // Upsert separation logs
     for (const u of leftUsers) {
         if (u.dateKey) {
             const upsertLogSql = `
@@ -431,18 +380,17 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
                 WHEN MATCHED THEN
                     UPDATE SET status = 'Separated', updatedAt = GETDATE()
                 WHEN NOT MATCHED THEN
-                    INSERT (userId, payCode, cardNo, employeeName, [date], department, shift, status, updatedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'Separated', GETDATE());
+                    INSERT (userId, payCode, cardNo, employeeName, [date], shift, status, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, 'Separated', GETDATE());
             `;
-            await executeQuery(upsertLogSql, [u.id, u.dateKey, u.id, u.payCode, u.cardNo, u.employeeName, u.dateKey, u.department, u.shift]);
+            await executeQuery(upsertLogSql, [u.id, u.dateKey, u.id, u.payCode, u.cardNo, u.employeeName, u.dateKey, u.shift]);
         }
     }
 
     let cumulativeLeft = 0;
-    const deptCumulativeLeft = {};
-    reportingDepts.forEach(d => deptCumulativeLeft[d.name] = 0);
+    const clubCumulativeLeft = {};
+    reportingClubs.forEach(c => clubCumulativeLeft[c.id] = 0);
 
-    // Find the average headcount for the month as a fallback for days with 0 attendance (e.g. Sundays)
     const counts = Object.values(dailyTotalsMap).filter(v => v > 0);
     const avgHeadcount = counts.length > 0 ? counts.reduce((a, b) => a + b, 0) / counts.length : 0;
     let lastKnownTotal = avgHeadcount;
@@ -452,101 +400,70 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         const dayLeftCount = leftUsers.filter(l => l.dateKey === dKey).length;
         cumulativeLeft += dayLeftCount;
 
-        // Use the total uploaded headcount as the base for attrition (includes Off/Holiday)
         const dayStats = netHeadcountData.find(r => r.dateKey === dKey);
-        const currentUploaded = dayStats?.totalUploaded || 0;
-        if (currentUploaded > 0) lastKnownTotal = currentUploaded;
-
-        const denom = lastKnownTotal || 1; // Avoid division by zero
+        if (dayStats?.totalUploaded > 0) lastKnownTotal = dayStats.totalUploaded;
+        const denom = lastKnownTotal || 1;
 
         tableData[`Left in nos (Daily)_${dKey}`] = dayLeftCount;
         tableData[`Actual Separations (Cumulative)_${dKey}`] = cumulativeLeft;
-        tableData[`Separated (Cumulative)_${dKey}`] = cumulativeLeft;
+        tableData[`Gap_${dKey}`] = (cumulativeLeft - (parseFloat(tableData[`Expected Separations (Cumulative)_${dKey}`]) || 0)).toFixed(0);
 
-        // Calculate Attrition % Daily
-        tableData[`Attrition % Daily_${dKey}`] = ((dayLeftCount / denom) * 100).toFixed(2);
-
-        // Calculate Attrition % Cumulative
-        tableData[`Attrition % Cumulative_${dKey}`] = ((cumulativeLeft / denom) * 100).toFixed(2);
-
-        // Calculate Attrition % Weekly (Rolling 7 days)
-        let weeklyLeftSum = 0;
-        for (let i = Math.max(1, d - 6); i <= d; i++) {
-            const prevDKey = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-            weeklyLeftSum += leftUsers.filter(l => l.dateKey === prevDKey).length;
-        }
-        tableData[`Weekly Attrition %_${dKey}`] = ((weeklyLeftSum / denom) * 100).toFixed(2);
-
-        // Gap calculation (Actual - Expected)
-        // Since sync resets data, we try to preserve existing Expected Separations if they were already in tableData or DB
-        const actual = cumulativeLeft;
-        const expected = parseFloat(tableData[`Expected Separations (Cumulative)_${dKey}`]) || 0;
-        tableData[`Gap_${dKey}`] = (actual - expected).toFixed(0);
-
-        // Departmental cumulative
-        reportingDepts.forEach(dept => {
-            const deptDayCount = leftUsers.filter(l =>
-                l.dateKey === dKey &&
-                (l.departmentId === dept.id || (l.department && String(l.department).toLowerCase() === String(dept.name).toLowerCase()))
-            ).length;
-            deptCumulativeLeft[dept.name] = (deptCumulativeLeft[dept.name] || 0) + deptDayCount;
-            tableData[`${dept.name} Separated (Cumulative)_${dKey}`] = deptCumulativeLeft[dept.name];
+        // Club-level separations
+        reportingClubs.forEach(club => {
+            let sectionIds = [];
+            try { sectionIds = JSON.parse(club.sectionIds || "[]"); } catch (e) {}
+            const clubDayCount = leftUsers.filter(l => l.dateKey === dKey && sectionIds.includes(l.sectionId)).length;
+            clubCumulativeLeft[club.id] = (clubCumulativeLeft[club.id] || 0) + clubDayCount;
+            tableData[`${club.name} Separated (Cumulative)_${dKey}`] = clubCumulativeLeft[club.id];
+            
+            if (club.name.toUpperCase().includes('DOJO')) {
+                tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`] = (tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`] || 0) + clubDayCount;
+            }
         });
     }
 
-    // 7. Hiring Plan
+    // 7. Hiring Plan (Global/Clubs)
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const monthName = monthNames[parseInt(month) - 1];
-    let planSql = "";
-    let planParams = [];
-    if (departmentId) {
-        planSql = `SELECT SUM(prod_plan) as count FROM requirements WHERE (section_id = ? OR section_name = ?) AND month_name = ? AND year_val = ?`;
-        planParams = [departmentId, deptNameForFilter || departmentId, monthName, year];
-    } else {
-        const deptIds = reportingDepts.map(d => d.id);
-        if (deptIds.length > 0) {
-            const placeholders = deptIds.map(() => "?").join(",");
-            planSql = `SELECT SUM(prod_plan) as count FROM requirements WHERE section_id IN (${placeholders}) AND month_name = ? AND year_val = ?`;
-            planParams = [...deptIds, monthName, year];
-        }
-    }
-    if (planSql) {
-        const [planRows] = await executeQuery(planSql, planParams);
-        const monthlyHiringPlan = planRows[0]?.count || 0;
-        for (let d = 1; d <= totalDays; d++) {
-            const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            tableData[`Hiring Plan_${dKey}`] = monthlyHiringPlan;
-        }
+    const [planRows] = await executeQuery(`SELECT SUM(prod_plan) as count FROM requirements WHERE month_name = ? AND year_val = ?`, [monthName, year]);
+    const monthlyHiringPlan = planRows[0]?.count || 0;
+    for (let d = 1; d <= totalDays; d++) {
+        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        tableData[`Hiring Plan_${dKey}`] = monthlyHiringPlan;
     }
 
-    // 8. Shift-wise Breakdown of Assigned Manpower (From users table)
-    const assignedManpowerSql = `
-        SELECT 
-            UPPER(ISNULL(shift, '')) as userShift,
-            COUNT(*) as count
-        FROM users u
-        WHERE ${attWhere}
-          AND u.[isEmployee] = 1
-        GROUP BY UPPER(ISNULL(shift, ''))
-    `;
-    const [assignedManpowerData] = await executeQuery(assignedManpowerSql, attParams);
-
+    // 8. Shift Manpower
+    const assignedManpowerSql = `SELECT UPPER(ISNULL(shift, '')) as userShift, COUNT(*) as count FROM users WHERE isEmployee = 1 GROUP BY UPPER(ISNULL(shift, ''))`;
+    const [assignedManpowerData] = await executeQuery(assignedManpowerSql);
     assignedManpowerData.forEach(row => {
-        const { userShift, count } = row;
-        const shiftKey = Object.keys(shiftMap).find(k => userShift.includes(k));
+        const shiftKey = Object.keys(shiftMap).find(k => row.userShift.includes(k));
         if (shiftKey) {
-            // Assigned manpower is usually static for the month or reflects current state
-            // We'll populate it for all days in the month for visibility
             for (let d = 1; d <= totalDays; d++) {
                 const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                tableData[`Shift-wise Breakdown of Assigned Manpower_${shiftMap[shiftKey]}_${dKey}`] = count;
+                tableData[`Shift-wise Breakdown of Assigned Manpower_${shiftMap[shiftKey]}_${dKey}`] = row.count;
             }
         }
     });
 
+    res.status(200).json({ success: true, data: { tableData } });
+});
+
+/**
+ * Sync User Hierarchy Snapshot data from real sources
+ */
+export const syncUserHierarchySnapshot = asyncHandler(async (req, res) => {
+    const result = await UserHierarchySnapshot.syncFromUsers();
+    res.status(200).json(result);
+});
+
+/**
+ * Get User Hierarchy Snapshot data
+ */
+export const getUserHierarchySnapshot = asyncHandler(async (req, res) => {
+    const data = await UserHierarchySnapshot.getAll();
     res.status(200).json({
         success: true,
-        data: { tableData }
+        data
     });
 });
 

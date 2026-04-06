@@ -12,7 +12,7 @@ import {
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "react-hot-toast";
 import axiosInstance from '@/Helper/axiosInstance';
-import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
+import { useGetAllClubsQuery } from '@/Redux/AllApi/ReportClubApi';
 
 const Report = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -20,10 +20,11 @@ const Report = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Fetch Departments from API
-    const { data: deptData } = useGetAllDepartmentsQuery();
-    const departments = deptData?.data?.departments || [];
-
+    // Fetch Clubs from API
+    const { data: clubsData } = useGetAllClubsQuery();
+    const clubs = clubsData?.data || [];
+    const activeClubs = clubs.filter(c => c.showInReport);
+    
     const handleMonthChange = (offset) => {
         setCurrentDate(prev => {
             const nextDate = new Date(prev);
@@ -172,16 +173,14 @@ const Report = () => {
         });
     };
 
-    const reportingEnabledDepts = departments.filter(d => d.isReportingEnabled);
-
     const rows = useMemo(() => {
         const baseRows = [
             { label: "Particulars", type: "header", bold: true },
             { type: "spacer" },
             { label: "Headcount required as per production plan", bold: true },
             { label: "Headcount required as per sale plan", bold: true },
-            ...reportingEnabledDepts.map(dept => ({
-                label: `${dept.name} Headcount required`,
+            ...activeClubs.map(club => ({
+                label: `${club.name} Headcount required`,
                 bg: "bg-blue-50"
             })),
             { type: "spacer" },
@@ -195,9 +194,9 @@ const Report = () => {
             { label: "Headcount available", bold: true },
         ];
 
-        // Add dynamic department rows
-        reportingEnabledDepts.forEach(dept => {
-            baseRows.push({ label: `${dept.name} Headcount available`, bg: "bg-blue-50" });
+        // Add dynamic club rows
+        activeClubs.forEach(club => {
+            baseRows.push({ label: `${club.name} Headcount available`, bg: "bg-blue-50" });
         });
 
         baseRows.push(
@@ -205,15 +204,15 @@ const Report = () => {
             { label: "Present in Training Cell", bold: true, align: "center", borderY: true },
             { label: "Attrition & Absenteeism of Training Cell (Nos)", align: "right" },
             { label: "Handed-over after training (Cumulative)", align: "right" },
-            ...reportingEnabledDepts.map(dept => ({
-                label: `${dept.name} Handed-over after training (Cumulative)`,
+            ...activeClubs.map(club => ({
+                label: `${club.name} Handed-over after training (Cumulative)`,
                 bg: "bg-blue-50"
             })),
             { type: "spacer" },
             { label: "Separated (Cumulative)", align: "right" },
-            // Add dynamic departmental separated rows
-            ...reportingEnabledDepts.map(dept => ({
-                label: `${dept.name} Separated (Cumulative)`,
+            // Add dynamic club separated rows
+            ...activeClubs.map(club => ({
+                label: `${club.name} Separated (Cumulative)`,
                 bg: "bg-blue-50"
             })),
             { label: "Actual Separations (Cumulative)", bg: "bg-amber-300", align: "right" },
@@ -221,25 +220,25 @@ const Report = () => {
             { label: "Gap", bg: "bg-amber-300", align: "right" },
             { type: "spacer" },
             { label: "Absent", align: "right" },
-            // Add dynamic departmental absent rows
-            ...reportingEnabledDepts.map(dept => ({
-                label: `${dept.name} absent`,
+            // Add dynamic club absent rows
+            ...activeClubs.map(club => ({
+                label: `${club.name} absent`,
                 bg: "bg-blue-50"
             })),
             { type: "spacer" },
             { label: "Net Available Headcount (Total)", bold: true },
             { type: "spacer" },
             { label: "Net Available Headcount Above 3 Months", bold: true },
-            // Add dynamic departmental 3-month headcount rows
-            ...reportingEnabledDepts.map(dept => ({
-                label: `${dept.name} Net Available Headcount Above 3 Months`,
+            // Add dynamic club 3-month headcount rows
+            ...activeClubs.map(club => ({
+                label: `${club.name} Net Available Headcount Above 3 Months`,
                 bg: "bg-blue-50"
             })),
             { type: "spacer" },
             { label: "Absenteeism %", bold: true },
-            // Add dynamic departmental absenteeism % rows
-            ...reportingEnabledDepts.map(dept => ({
-                label: `${dept.name} Absenteeism %`,
+            // Add dynamic club absenteeism % rows
+            ...activeClubs.map(club => ({
+                label: `${club.name} Absenteeism %`,
                 bg: "bg-blue-50"
             })),
             { type: "spacer" },
@@ -270,7 +269,7 @@ const Report = () => {
         );
 
         return baseRows;
-    }, [reportingEnabledDepts]);
+    }, [activeClubs]);
 
     return (
         <div className="p-4 space-y-4">

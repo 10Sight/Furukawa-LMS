@@ -931,7 +931,6 @@ const Departments = () => {
                 <TableHead>Operators</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
-                <TableHead>Reporting</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1056,23 +1055,6 @@ const Departments = () => {
                           {new Date(department.createdAt).toLocaleTimeString()}
                         </span>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={!!department.isReportingEnabled}
-                        onClick={(e) => e.stopPropagation()}
-                        onCheckedChange={async (checked) => {
-                          try {
-                            await updateDepartment({
-                              id: department.id || department._id,
-                              data: { isReportingEnabled: checked }
-                            }).unwrap();
-                            toast.success(`Reporting ${checked ? 'enabled' : 'disabled'} for ${department.name}`);
-                          } catch (err) {
-                            toast.error("Failed to update reporting status");
-                          }
-                        }}
-                      />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -36,6 +36,7 @@ import { dashboardApi } from "./AllApi/DashboardApi";
 import { DailyProductionReportApi } from "./AllApi/DailyProductionReportApi";
 import { sectionApi } from "./AllApi/SectionApi";
 import { SubSectionApi } from "./AllApi/SubSectionApi";
+import { reportClubApi } from "./AllApi/ReportClubApi";
 
 
 const store = configureStore({
@@ -76,6 +77,7 @@ const store = configureStore({
         [DailyProductionReportApi.reducerPath]: DailyProductionReportApi.reducer,
         [sectionApi.reducerPath]: sectionApi.reducer,
         [SubSectionApi.reducerPath]: SubSectionApi.reducer,
+        [reportClubApi.reducerPath]: reportClubApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(
@@ -107,6 +109,7 @@ const store = configureStore({
             DailyProductionReportApi.middleware,
             sectionApi.middleware,
             SubSectionApi.middleware,
+            reportClubApi.middleware,
         ),
 });
 

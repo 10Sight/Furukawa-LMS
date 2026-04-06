@@ -289,7 +289,7 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
         whereSql += " AND name LIKE ?";
         params.push(`%${search}%`);
     }
-    if (!req.query.includeDeleted || (req.user.role !== "SUPERADMIN" && !req.user.isAdmin)) {
+    if (!req.query.includeDeleted || (req.user.role !== "SUPERADMIN" && !req.user.isAdmin && !req.user.isEmployee)) {
         whereSql += " AND (isDeleted IS NULL OR isDeleted = 0)";
     }
     const [countRows] = await executeQuery(`SELECT COUNT(*) as total FROM departments ${whereSql}`, params);
@@ -297,7 +297,7 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
     const [rows] = await executeQuery(`SELECT * FROM departments ${whereSql} ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`, [...params, offset, limit]);
     const departments = await Promise.all(rows.map(d => {
         const dept = new Department(d);
-        return populateDepartment(dept, ['instructor', 'courses', 'course', 'students']);
+        return populateDepartment(dept, ['instructor', 'courses', 'course']);
     }));
     res.json(new ApiResponse(200, { departments, totalDepartments: total, totalPages: Math.ceil(total / limit), currentPage: page, limit }, "Departments fetched successfully"));
 });
@@ -374,7 +374,7 @@ export const deleteDepartment = asyncHandler(async (req, res) => {
             if (subSectionIds.length > 0) {
                 // 4. Delete all Machines
                 await executeQuery(`DELETE FROM machines WHERE subSectionId IN (${subSectionIds.join(",")})`);
-                
+
                 // 5. Delete all Sub-Sections
                 await executeQuery(`DELETE FROM [sub_sections] WHERE lineId IN (${lineIds.join(",")})`);
             }

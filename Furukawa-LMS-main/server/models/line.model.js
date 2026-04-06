@@ -203,11 +203,21 @@ class Line {
     static async findById(id) {
         const query = `
             SELECT l.*, 
-            (SELECT COUNT(DISTINCT ma.user_id) 
-             FROM machine_assignments ma
-             JOIN machines m ON ma.machine_id = m.id
-             JOIN sub_sections ss ON m.subSectionId = ss.id
-             WHERE ss.lineId = l.id) as lineCount
+            (SELECT COUNT(DISTINCT u.id) 
+             FROM users u
+             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+             AND (
+                u.lineId = l.id 
+                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = l.id)
+                OR u.id IN (
+                    SELECT ma.user_id 
+                    FROM machine_assignments ma 
+                    JOIN machines m ON ma.machine_id = m.id 
+                    JOIN sub_sections ss ON m.subSectionId = ss.id 
+                    WHERE ss.lineId = l.id
+                )
+             )
+            ) as lineCount
             FROM [lines] l 
             WHERE l.id = ?`;
         const [rows] = await executeQuery(query, [id]);
@@ -218,11 +228,21 @@ class Line {
     static async findBySection(sectionId) {
         const query = `
             SELECT l.*, 
-            (SELECT COUNT(DISTINCT ma.user_id) 
-             FROM machine_assignments ma
-             JOIN machines m ON ma.machine_id = m.id
-             JOIN sub_sections ss ON m.subSectionId = ss.id
-             WHERE ss.lineId = l.id) as lineCount
+            (SELECT COUNT(DISTINCT u.id) 
+             FROM users u
+             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+             AND (
+                u.lineId = l.id 
+                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = l.id)
+                OR u.id IN (
+                    SELECT ma.user_id 
+                    FROM machine_assignments ma 
+                    JOIN machines m ON ma.machine_id = m.id 
+                    JOIN sub_sections ss ON m.subSectionId = ss.id 
+                    WHERE ss.lineId = l.id
+                )
+             )
+            ) as lineCount
             FROM [lines] l 
             WHERE l.sectionId = ? 
             ORDER BY l.createdAt DESC`;

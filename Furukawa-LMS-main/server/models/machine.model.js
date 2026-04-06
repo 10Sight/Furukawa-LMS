@@ -174,9 +174,14 @@ class Machine {
     static async findById(id) {
         const query = `
             SELECT m.*, 
-            (SELECT COUNT(DISTINCT ma.user_id) 
-             FROM machine_assignments ma
-             WHERE ma.machine_id = m.id) as machineCount
+            (SELECT COUNT(DISTINCT u.id) 
+             FROM users u
+             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+             AND (
+                u.stationId = m.id 
+                OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = m.id)
+             )
+            ) as machineCount
             FROM machines m 
             WHERE m.id = ?`;
         const [rows] = await executeQuery(query, [id]);
@@ -200,9 +205,14 @@ class Machine {
         const keys = Object.keys(query).filter(key => query[key] !== undefined);
         let sql = `
             SELECT m.*, 
-            (SELECT COUNT(DISTINCT ma.user_id) 
-             FROM machine_assignments ma
-             WHERE ma.machine_id = m.id) as machineCount
+            (SELECT COUNT(DISTINCT u.id) 
+             FROM users u
+             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+             AND (
+                u.stationId = m.id 
+                OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = m.id)
+             )
+            ) as machineCount
             FROM machines m`;
         let values = [];
 

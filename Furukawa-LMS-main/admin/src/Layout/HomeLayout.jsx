@@ -127,7 +127,7 @@ export function HomeLayout() {
     const currentTab = tabs.find(
       (tab) =>
         pathname === tab.link ||
-        (tab.link !== "/admin" && pathname.startsWith(tab.link)),
+        (tab.link !== "/admin" && (pathname === tab.link || pathname.startsWith(tab.link + "/"))),
     );
 
     if (currentTab) {
@@ -145,7 +145,7 @@ export function HomeLayout() {
 
   useEffect(() => {
     if (isPathAllowed) return;
-    
+
     const fallback = tabs[0]?.link;
     const currentPath = pathname.replace(/\/$/, '');
     const normalizedFallback = fallback?.replace(/\/$/, '');
@@ -283,7 +283,7 @@ export function HomeLayout() {
             const isActive =
               pathname === item.link ||
               (item.link === "/admin" && pathname === "/admin") ||
-              (item.link !== "/admin" && pathname.startsWith(item.link));
+              (item.link !== "/admin" && (pathname === item.link || pathname.startsWith(item.link + "/")));
 
             return (
               <div

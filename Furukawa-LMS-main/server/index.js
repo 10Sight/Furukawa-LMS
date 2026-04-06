@@ -58,6 +58,7 @@ import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
 import sixteenDayMonitoringRoutes from "./routes/sixteenDayMonitoring.routes.js";
 import tenCycleSheetRoutes from "./routes/tenCycleSheet.routes.js";
+import reportClubRoutes from "./routes/reportClub.routes.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
 
 import machineRoutes from "./routes/machine.routes.js";
@@ -82,11 +83,12 @@ import HandoverSheetConfig from "./models/handoverSheetConfig.model.js";
 import MultiSkillingPlanConfig from "./models/multiSkillingPlanConfig.model.js";
 import SkillMatrixDashboardConfig from "./models/skillMatrixDashboardConfig.model.js";
 import Requirement from "./models/requirement.model.js";
-import Mail from "./models/mail.model.js";
 import SubSection from "./models/subSection.model.js";
 import SectionHead from "./models/sectionHead.model.js";
 import LineRequirement from "./models/lineRequirement.model.js";
 import LineRequirementHistory from "./models/lineRequirementHistory.model.js";
+import ReportClub from "./models/reportClub.model.js";
+import UserHierarchySnapshot from "./models/userHierarchySnapshot.model.js";
 
 const app = express();
 const allowedOrigins = [
@@ -115,14 +117,6 @@ const io = new Server(server, {
     }
 });
 
-// Performance optimizations
-app.use(compression()); // Enable gzip/deflate compression
-
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' })); // Increased limit for file uploads
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(cookieParser()); // Add cookie parser middleware
-
 // CORS with caching for preflight
 const corsOptions = {
     origin: (origin, callback) => {
@@ -134,6 +128,14 @@ const corsOptions = {
     maxAge: 86400, // Cache preflight for 24 hours
 };
 app.use(cors(corsOptions));
+
+// Performance optimizations
+app.use(compression()); // Enable gzip/deflate compression
+
+// Body parsing middleware
+app.use(express.json({ limit: '500mb' })); // Increased limit for file uploads (e.g. large PDFs)
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
+app.use(cookieParser()); // Add cookie parser middleware
 
 // Serve static files from uploads directory
 const uploadPath = path.join(process.cwd(), "uploads");
@@ -236,6 +238,7 @@ app.use("/api/ten-cycle-sheets", tenCycleSheetRoutes);
 app.use("/api/section-heads", sectionHeadRoutes);
 app.use("/api/sections", sectionRoutes);
 app.use("/api/sub-sections", subSectionRoutes);
+app.use("/api/report-clubs", reportClubRoutes);
 
 
 // Initialize Socket.IO service
@@ -409,10 +412,11 @@ const startServer = async () => {
         await HandoverSheetConfig.init();
         await MultiSkillingPlanConfig.init();
         await SkillMatrixDashboardConfig.init();
-        await Mail.init();
         await Line.init();
         await LineRequirement.init();
         await LineRequirementHistory.init();
+        await ReportClub.init();
+        await UserHierarchySnapshot.init();
 
         server.listen(PORT, () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);

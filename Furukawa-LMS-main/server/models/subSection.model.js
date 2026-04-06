@@ -109,10 +109,19 @@ class SubSection {
     static async findById(id) {
         const query = `
             SELECT ss.*, 
-            (SELECT COUNT(DISTINCT ma.user_id) 
-             FROM machine_assignments ma
-             JOIN machines m ON ma.machine_id = m.id
-             WHERE m.subSectionId = ss.id) as subSectionCount
+            (SELECT COUNT(DISTINCT u.id) 
+             FROM users u
+             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+             AND (
+                u.subSectionId = ss.id 
+                OR u.id IN (
+                    SELECT ma.user_id 
+                    FROM machine_assignments ma 
+                    JOIN machines m ON ma.machine_id = m.id 
+                    WHERE m.subSectionId = ss.id
+                )
+             )
+            ) as subSectionCount
             FROM [sub_sections] ss 
             WHERE ss.id = ?`;
         const [rows] = await executeQuery(query, [id]);
@@ -123,10 +132,19 @@ class SubSection {
     static async findByLine(lineId) {
         const query = `
             SELECT ss.*, 
-            (SELECT COUNT(DISTINCT ma.user_id) 
-             FROM machine_assignments ma
-             JOIN machines m ON ma.machine_id = m.id
-             WHERE m.subSectionId = ss.id) as subSectionCount
+            (SELECT COUNT(DISTINCT u.id) 
+             FROM users u
+             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+             AND (
+                u.subSectionId = ss.id 
+                OR u.id IN (
+                    SELECT ma.user_id 
+                    FROM machine_assignments ma 
+                    JOIN machines m ON ma.machine_id = m.id 
+                    WHERE m.subSectionId = ss.id
+                )
+             )
+            ) as subSectionCount
             FROM [sub_sections] ss 
             WHERE ss.lineId = ? 
             ORDER BY ss.createdAt DESC`;

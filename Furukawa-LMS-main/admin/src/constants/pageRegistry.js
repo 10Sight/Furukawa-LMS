@@ -94,21 +94,21 @@ export const isPathAllowedForUser = (pathname, layout, user) => {
     // For specific system layouts, check if restricted
     if (pathname === `/${layout}`) {
         if (!hasRestrictions(user)) return true;
-        
+
         // Custom roles: If they have ANY allowed page that belongs to this layout,
         // we allow them to enter the layout root. The layout component itself 
         // will then redirect them to the first actually allowed tab.
         const allowed = normalizeAllowedPages(user);
         const layoutPages = PAGE_REGISTRY.filter(p => p.layout === layout && p.key);
         const hasAnyAllowedPageInLayout = layoutPages.some(p => allowed.includes(p.key));
-        
+
         if (hasAnyAllowedPageInLayout) return true;
 
         // Fallback for specific dashboard keys
-        return allowed.includes(layout) || 
-               allowed.includes(`${layout}-home`) || 
-               allowed.includes(`${layout}-dashboard`) || 
-               allowed.includes('dashboard');
+        return allowed.includes(layout) ||
+            allowed.includes(`${layout}-home`) ||
+            allowed.includes(`${layout}-dashboard`) ||
+            allowed.includes('dashboard');
     }
 
     const pageKey = getKeyByPath(pathname, layout);
@@ -197,6 +197,7 @@ export const PAGE_REGISTRY = [
     { key: "supervisors", label: "Supervisors", labelKey: "nav.supervisors", layout: "admin", link: "/admin/supervisors", icon: "IconUserShield" },
     { key: "incharges", label: "Incharges", labelKey: "nav.incharges", layout: "admin", link: "/admin/incharges", icon: "IconUserCheck" },
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
+    { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
 
     // Dashboard-specific pages (often considered core Admin functions)
     { key: "dashboard-home", label: "Dashboard", labelKey: "nav.dashboard", layout: "dashboard", link: "/dashboard", icon: "IconLayoutDashboardFilled" },
@@ -219,6 +220,7 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/add-resource/", key: "courses" },
     { layout: "admin", prefix: "/admin/add-quiz/", key: "courses" },
     { layout: "admin", prefix: "/admin/edit-quiz/", key: "courses" },
+    { layout: "admin", prefix: "/admin/report-clubbing/", key: "report-clubbing" },
     { layout: "admin", prefix: "/admin/trainers/", key: "trainers" },
     { layout: "admin", prefix: "/admin/employees/", key: "employees" },
     { layout: "admin", prefix: "/admin/departments/", key: "departments" },
@@ -271,3 +273,4 @@ export const PAGE_REGISTRY = [
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
     { key: "cms-approval-status", label: "5M Approval Status", layout: "cms", link: "/cms/approvals/status", icon: "IconCircleCheck" },
 ];
+

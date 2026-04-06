@@ -22,6 +22,7 @@ const DashboardHome = lazy(() => import("./pages/Dashboard/DashboardHome.jsx"));
 const Attendance = lazy(() => import("./pages/Dashboard/Attendance.jsx"));
 const UserManagement = lazy(() => import("./pages/Dashboard/UserManagement.jsx"));
 const SetRequirements = lazy(() => import("./pages/Dashboard/SetRequirements.jsx"));
+const ReportClubbing = lazy(() => import("./pages/Dashboard/ReportClubbing.jsx"));
 const EmailReports = lazy(() => import("./pages/Dashboard/EmailReports.jsx"));
 const RequirementUpdateLogs = lazy(() => import("./pages/Dashboard/RequirementUpdateLogs.jsx"));
 
@@ -251,6 +252,7 @@ const App = () => {
             <Route path="incharges" element={<Incharge />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
+            <Route path="report-clubbing" element={<ReportClubbing />} />
             <Route path="settings" element={<AdminSettings />} />
           </Route>
 

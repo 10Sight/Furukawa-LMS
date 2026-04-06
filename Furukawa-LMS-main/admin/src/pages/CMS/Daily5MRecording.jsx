@@ -12,12 +12,27 @@ import {
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetLinesBySectionQuery, useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
-import { useGetMachinesByLineQuery } from '@/Redux/AllApi/MachineApi';
+import { useGetMachinesByLineQuery, useGetMachinesBySubSectionQuery } from '@/Redux/AllApi/MachineApi';
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
 import { useLazyGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { useLazyGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
+import { useGetSubSectionsQuery } from '@/Redux/AllApi/SubSectionApi';
 import { Button } from "@/components/ui/button";
-import { IconSettings, IconPrinter, IconClipboardList, IconPlus, IconArrowLeft, IconSearch, IconTrash, IconExternalLink, IconCheck, IconX } from "@tabler/icons-react";
+import { 
+    IconSettings, 
+    IconPrinter, 
+    IconClipboardList, 
+    IconPlus, 
+    IconArrowLeft, 
+    IconSearch, 
+    IconTrash, 
+    IconExternalLink, 
+    IconCheck, 
+    IconX,
+    IconScissors,
+    IconLayout2,
+    IconCpu 
+} from "@tabler/icons-react";
 import AssignmentSelect from "@/components/common/AssignmentSelect";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -220,6 +235,66 @@ const LineSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
             {lines.map((line, idx) => (
                 <option key={line.id || line._id || idx} value={line.name}>
                     {line.name} {line.sectionName ? `(${line.sectionName})` : ''}
+                </option>
+            ))}
+        </select>
+    );
+};
+
+const SubSectionSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
+    const { data: subSectionsData, isLoading } = useGetSubSectionsQuery({ departmentId }, { skip: !departmentId });
+    const subSections = subSectionsData?.data || [];
+
+    return (
+        <select
+            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+            value={formData[`rec_${recIndex}_StationMC`] || ""}
+            onChange={(e) => {
+                const val = e.target.value;
+                onInputChange(recIndex, 'StationMC', val);
+                // Clear process when station/mc changes
+                onInputChange(recIndex, 'Process', "");
+            }}
+            disabled={!departmentId}
+        >
+            <option value="">{isLoading ? "Loading..." : "Select Station M/C"}</option>
+            {subSections.map((ss, idx) => {
+                const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name;
+                return (
+                    <option key={ss.id || ss._id || idx} value={displayName}>
+                        {displayName}
+                    </option>
+                );
+            })}
+        </select>
+    );
+};
+
+const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, formData, onInputChange }) => {
+    const { data: subSectionsData } = useGetSubSectionsQuery({ departmentId }, { skip: !departmentId });
+    const subSections = subSectionsData?.data || [];
+
+    // Find the subSection object to get its ID
+    const subSection = subSections.find(ss => {
+        const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name;
+        return displayName === selectedSubSectionDisplayName;
+    });
+    const subSectionId = subSection?.id || subSection?._id;
+
+    const { data: machinesData, isLoading } = useGetMachinesBySubSectionQuery(subSectionId, { skip: !subSectionId });
+    const machines = machinesData?.data || [];
+
+    return (
+        <select
+            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+            value={formData[`rec_${recIndex}_Process`] || ""}
+            onChange={(e) => onInputChange(recIndex, 'Process', e.target.value)}
+            disabled={!subSectionId}
+        >
+            <option value="">{isLoading ? "Loading..." : "Select Process"}</option>
+            {machines.map((m, idx) => (
+                <option key={m.id || m._id || idx} value={m.name}>
+                    {m.name}
                 </option>
             ))}
         </select>
@@ -455,11 +530,11 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 <td rowSpan="5" className="border border-black p-0.5 text-center">{recIndex + 1}</td>
                 <td rowSpan="5" className="border border-black p-0.5"><input type="date" className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
                 <td rowSpan="5" className="border border-black p-0.5">
-                    <AutoResizeTextarea
-                        className="text-center"
-                        placeholder="Station M/C No"
-                        value={formData[`rec_${recIndex}_StationMC`] || ""}
-                        onChange={(e) => handleInputChange(recIndex, 'StationMC', e.target.value)}
+                    <SubSectionSelect
+                        recIndex={recIndex}
+                        departmentId={departmentId}
+                        formData={formData}
+                        onInputChange={handleInputChange}
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
@@ -487,17 +562,17 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     </select>
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
-                    <ProcessSelect
+                    <StationSelect
                         recIndex={recIndex}
-                        selectedLineName={formData[`rec_${recIndex}_Line`] || formData[`rec_${recIndex}_StationMC`]}
-                        allLines={lines}
+                        selectedSubSectionDisplayName={formData[`rec_${recIndex}_StationMC`]}
+                        departmentId={departmentId}
                         formData={formData}
                         onInputChange={handleInputChange}
                     />
                 </td>
 
                 {/* Auth Person (Operator/Inspector Name, Career Skill Level) */}
-                <td rowSpan="5" className="border border-black p-0.5 text-center font-mono text-[9px]">
+                <td rowSpan="5" className="border border-black p-0.5 text-center font-mono text-[16px]">
                     {formData[`rec_${recIndex}_OperatorId`] || ""}
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5 min-w-[100px]">
@@ -632,7 +707,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 <td className="border border-black p-0.5 text-center font-bold bg-gray-50">
                     <div className="flex flex-col items-center leading-tight">
                         <span>{params[0]}</span>
-                        <span className="text-[9px] text-gray-500 font-normal">W/H</span>
+                        <span className="text-[16px] text-gray-500 font-normal">W/H</span>
                     </div>
                 </td>
                 <td className="border border-black p-0.5">
@@ -754,7 +829,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     <td className="border border-black p-0.5 text-center font-bold bg-gray-50">
                         <div className="flex flex-col items-center leading-tight">
                             <span>{p}</span>
-                            {p === 'I/H' && <span className="text-[9px] text-gray-500 font-normal">W/W</span>}
+                            {p === 'I/H' && <span className="text-[16px] text-gray-500 font-normal">W/W</span>}
                         </div>
                     </td>
                     {p === 'Visual' ? (
@@ -876,8 +951,8 @@ const Daily5MRecording = () => {
             return allDepts;
         }
         // User has specific department assignments
-        return allDepts.filter(dept => 
-            authUser.departments.includes(dept.id) || 
+        return allDepts.filter(dept =>
+            authUser.departments.includes(dept.id) ||
             authUser.departments.includes(dept._id) ||
             authUser.departments.includes(String(dept.id)) ||
             authUser.departments.includes(String(dept._id))
@@ -1607,12 +1682,13 @@ const Daily5MRecording = () => {
                                             <TableCell className="p-4">
                                                 <Badge
                                                     variant="secondary"
-                                                    className={`uppercase text-[16px] px-3 py-1 font-bold ${record.formType === 'crimping'
-                                                        ? 'bg-orange-100 text-orange-700 hover:bg-orange-100 border-orange-200'
-                                                        : 'bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200'
-                                                        }`}
+                                                    className={`uppercase text-[16px] px-3 py-1 font-bold ${
+                                                        record.formType === 'crimping' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                        record.formType === 'src' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                                        'bg-blue-100 text-blue-700 border-blue-200'
+                                                    }`}
                                                 >
-                                                    {record.formType === 'standard' ? 'Assembly' : 'Cutting & Crimping'}
+                                                    {record.formType === 'standard' ? 'Assembly' : record.formType === 'src' ? 'SRC' : 'Cutting & Crimping'}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell className="font-semibold p-4">
@@ -1666,21 +1742,87 @@ const Daily5MRecording = () => {
                             <div className="grid gap-6 py-4">
                                 <div className="space-y-2">
                                     <Label>Form Type</Label>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <Card
-                                            className={`p-4 cursor-pointer border-2 transition-all ${addDialogType === 'standard' ? 'border-blue-500 bg-blue-50' : 'hover:border-slate-300'}`}
+                                    <div className="grid grid-cols-3 gap-4">
+                                        {/* Assembly Card */}
+                                        <div
+                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${
+                                                addDialogType === 'standard' 
+                                                ? 'border-blue-500 bg-blue-50/50 ring-4 ring-blue-500/10' 
+                                                : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                                            }`}
                                             onClick={() => setAddDialogType('standard')}
                                         >
-                                            <div className="text-center font-bold">Assembly</div>
-                                            <p className="text-[16px] text-center text-slate-500 mt-1">Regular 5M Sheet</p>
-                                        </Card>
-                                        <Card
-                                            className={`p-4 cursor-pointer border-2 transition-all ${addDialogType === 'crimping' ? 'border-orange-500 bg-orange-50' : 'hover:border-slate-300'}`}
+                                            <div className="flex flex-col items-center text-center space-y-2">
+                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'standard' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-500'}`}>
+                                                    <IconLayout2 size={24} />
+                                                </div>
+                                                <div>
+                                                    <div className={`font-bold transition-colors ${addDialogType === 'standard' ? 'text-blue-700' : 'text-slate-700'}`}>Assembly</div>
+                                                    <p className="text-xs text-slate-500 mt-0.5">Regular 5M Sheet</p>
+                                                </div>
+                                            </div>
+                                            {addDialogType === 'standard' && (
+                                                <div className="absolute top-2 right-2">
+                                                    <div className="bg-blue-500 text-white rounded-full p-0.5 shadow-sm">
+                                                        <IconCheck size={12} strokeWidth={3} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Crimping Card */}
+                                        <div
+                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${
+                                                addDialogType === 'crimping' 
+                                                ? 'border-orange-500 bg-orange-50/50 ring-4 ring-orange-500/10' 
+                                                : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
+                                            }`}
                                             onClick={() => setAddDialogType('crimping')}
                                         >
-                                            <div className="text-center font-bold">Cutting & Crimping</div>
-                                            <p className="text-[16px] text-center text-slate-500 mt-1">Crimping Machine Fix</p>
-                                        </Card>
+                                            <div className="flex flex-col items-center text-center space-y-2">
+                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'crimping' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-orange-100 group-hover:text-orange-500'}`}>
+                                                    <IconScissors size={24} />
+                                                </div>
+                                                <div>
+                                                    <div className={`font-bold transition-colors ${addDialogType === 'crimping' ? 'text-orange-700' : 'text-slate-700'}`}>Cutting & Crimping</div>
+                                                    <p className="text-xs text-slate-500 mt-0.5">Crimping Machine Fix</p>
+                                                </div>
+                                            </div>
+                                            {addDialogType === 'crimping' && (
+                                                <div className="absolute top-2 right-2">
+                                                    <div className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm">
+                                                        <IconCheck size={12} strokeWidth={3} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* SRC Card */}
+                                        <div
+                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${
+                                                addDialogType === 'src' 
+                                                ? 'border-emerald-500 bg-emerald-50/50 ring-4 ring-emerald-500/10' 
+                                                : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                                            }`}
+                                            onClick={() => setAddDialogType('src')}
+                                        >
+                                            <div className="flex flex-col items-center text-center space-y-2">
+                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'src' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-500'}`}>
+                                                    <IconCpu size={24} />
+                                                </div>
+                                                <div>
+                                                    <div className={`font-bold transition-colors ${addDialogType === 'src' ? 'text-emerald-700' : 'text-slate-700'}`}>SRC</div>
+                                                    <p className="text-xs text-slate-500 mt-0.5">SRC Machine Fix</p>
+                                                </div>
+                                            </div>
+                                            {addDialogType === 'src' && (
+                                                <div className="absolute top-2 right-2">
+                                                    <div className="bg-emerald-500 text-white rounded-full p-0.5 shadow-sm">
+                                                        <IconCheck size={12} strokeWidth={3} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="space-y-2">
@@ -1762,8 +1904,8 @@ const Daily5MRecording = () => {
 
                             <div className="text-right">
                                 <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active Session</div>
-                                <div className="text-2xl font-black text-slate-900">
-                                    {formType === 'standard' ? 'Assembly form' : 'cutting & crimping'}
+                                <div className="text-2xl font-black text-slate-900 uppercase">
+                                    {formType === 'standard' ? 'Assembly form' : formType === 'src' ? 'SRC machine fix' : 'cutting & crimping'}
                                 </div>
                             </div>
                         </div>
@@ -1791,30 +1933,41 @@ const Daily5MRecording = () => {
                             <div className="border-2 border-black inline-block min-w-full">
                                 <table className="w-max min-w-full border-collapse text-[16px] sm:text-xs">
                                     <thead>
-                                        {(formType === 'crimping' ? CRIMPING_CONFIG : tableConfig).headers.map((row, rowIndex) => (
-                                            <tr key={rowIndex}>
-                                                {row.map((header, colIndex) => (
-                                                    <th
-                                                        key={colIndex}
-                                                        colSpan={header.colSpan}
-                                                        rowSpan={header.rowSpan}
-                                                        className={getClassName(header)}
-                                                    >
-                                                        {header.isSplit ? (
-                                                            <div className="flex flex-col h-full min-h-[40px]">
-                                                                {header.splitLabels?.map((label, idx) => (
-                                                                    <div key={idx} className={`flex-1 flex items-center justify-center ${idx < header.splitLabels.length - 1 ? 'border-b border-black' : ''}`}>
-                                                                        {label}
+                                        {(() => {
+                                            const activeConfig = formType === 'crimping' ? CRIMPING_CONFIG : tableConfig;
+                                            return activeConfig.headers.map((row, rowIndex) => (
+                                                <tr key={rowIndex}>
+                                                    {row.map((header, colIndex) => {
+                                                        let headerText = processText(header.text);
+                                                        // Override title for SRC
+                                                        if (formType === 'src' && rowIndex === 0 && colIndex === 0) {
+                                                            headerText = "Daily 5M Recording Man - SRC section";
+                                                        }
+                                                        
+                                                        return (
+                                                            <th
+                                                                key={colIndex}
+                                                                colSpan={header.colSpan}
+                                                                rowSpan={header.rowSpan}
+                                                                className={getClassName(header)}
+                                                            >
+                                                                {header.isSplit ? (
+                                                                    <div className="flex flex-col h-full min-h-[40px]">
+                                                                        {header.splitLabels?.map((label, idx) => (
+                                                                            <div key={idx} className={`flex-1 flex items-center justify-center ${idx < header.splitLabels.length - 1 ? 'border-b border-black' : ''}`}>
+                                                                                {label}
+                                                                            </div>
+                                                                        ))}
                                                                     </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            processText(header.text)
-                                                        )}
-                                                    </th>
-                                                ))}
-                                            </tr>
-                                        ))}
+                                                                ) : (
+                                                                    headerText
+                                                                )}
+                                                            </th>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ));
+                                        })()}
                                     </thead>
                                     <tbody>
                                         {/* Loop for Body Rows (e.g. 5 records) */}
@@ -1907,7 +2060,7 @@ const Daily5MRecording = () => {
                                                                 onChange={handleInputChange}
                                                             />
                                                         </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5 text-center font-mono text-[9px]">
+                                                        <td rowSpan="3" className="border border-black p-0.5 text-center font-mono text-[16px]">
                                                             {formData[`rec_${recIndex}_OpCode`] || ""}
                                                         </td>
                                                         <td rowSpan="3" className="border border-black p-0.5">
@@ -1965,7 +2118,7 @@ const Daily5MRecording = () => {
                                                         <td rowSpan="3" className="border border-black p-0.5">
                                                             <div className="flex flex-col gap-1 items-center justify-center h-full">
                                                                 {formData[`rec_${recIndex}_DeputedDeptName`] && (
-                                                                    <span className="text-[9px] text-gray-500 font-bold uppercase">{formData[`rec_${recIndex}_DeputedDeptName`]}</span>
+                                                                    <span className="text-[16px] text-gray-500 font-bold uppercase">{formData[`rec_${recIndex}_DeputedDeptName`]}</span>
                                                                 )}
                                                                 <LineSelect
                                                                     recIndex={recIndex}

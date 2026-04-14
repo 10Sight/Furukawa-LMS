@@ -405,7 +405,7 @@ const startServer = async () => {
         reportScheduler.init();
 
         // Initialize Tables
-        HeadcountReport.init();
+        await HeadcountReport.init();
         await import("./models/skillMatrixConfig.model.js").then(m => m.SkillMatrixConfig.init());
         await import("./models/skillMatrixEvaluation.model.js").then(m => m.SkillMatrixEvaluation.init());
         await MonitoringConfig.init();

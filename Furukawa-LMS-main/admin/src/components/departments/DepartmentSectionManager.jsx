@@ -28,7 +28,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import SectionLineManager from "./SectionLineManager";
+
+const FORM_TYPES = [
+    { id: 'standard', label: 'Assembly' },
+    { id: 'crimping', label: 'Cutting & Crimping' },
+    { id: 'src', label: 'SRC' }
+];
 
 const DepartmentSectionManager = ({ departmentId }) => {
     const { data: sectionsData, isLoading, error } = useGetSectionsByDepartmentQuery(departmentId);
@@ -40,6 +47,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [newSectionUniCode, setNewSectionUniCode] = useState("");
     const [newSectionDescription, setNewSectionDescription] = useState("");
     const [newSectionCategory, setNewSectionCategory] = useState("Direct");
+    const [newSectionFormTypes, setNewSectionFormTypes] = useState(["standard"]);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingSection, setEditingSection] = useState(null);
@@ -49,12 +57,24 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [editUniCode, setEditUniCode] = useState("");
     const [editDescription, setEditDescription] = useState("");
     const [editCategory, setEditCategory] = useState("Direct");
+    const [editFormTypes, setEditFormTypes] = useState([]);
 
     const [expandedSectionId, setExpandedSectionId] = useState(null);
     const [categoryFilter, setCategoryFilter] = useState("All");
 
     const toggleExpand = (sectionId) => {
         setExpandedSectionId(expandedSectionId === sectionId ? null : sectionId);
+    };
+
+    const toggleFormType = (type, mode = 'create') => {
+        const currentTypes = mode === 'create' ? newSectionFormTypes : editFormTypes;
+        const setTypes = mode === 'create' ? setNewSectionFormTypes : setEditFormTypes;
+
+        if (currentTypes.includes(type)) {
+            setTypes(currentTypes.filter(t => t !== type));
+        } else {
+            setTypes([...currentTypes, type]);
+        }
     };
 
     const handleCreateSection = async () => {
@@ -69,13 +89,15 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 uniCode: newSectionUniCode,
                 departmentId,
                 description: newSectionDescription,
-                category: newSectionCategory
+                category: newSectionCategory,
+                daily5mFormType: newSectionFormTypes.join(",")
             }).unwrap();
             toast.success("Section created successfully");
             setNewSectionName("");
             setNewSectionUniCode("");
             setNewSectionDescription("");
             setNewSectionCategory("Direct");
+            setNewSectionFormTypes(["standard"]);
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create section");
@@ -101,6 +123,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
         setEditUniCode(section.uniCode || "");
         setEditDescription(section.description || "");
         setEditCategory(section.category || "Direct");
+        setEditFormTypes(section.daily5mFormType ? section.daily5mFormType.split(",") : ["standard"]);
         setIsEditDialogOpen(true);
     };
 
@@ -116,7 +139,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 name: editName,
                 uniCode: editUniCode,
                 description: editDescription,
-                category: editCategory
+                category: editCategory,
+                daily5mFormType: editFormTypes.join(",")
             }).unwrap();
             toast.success("Section updated successfully");
             setIsEditDialogOpen(false);
@@ -200,6 +224,26 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         </SelectContent>
                                     </Select>
                                 </div>
+                                <div className="space-y-4 pt-2 border-t">
+                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">Daily 5M Form Types (Select Multiple)</Label>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {FORM_TYPES.map(type => (
+                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                <Checkbox 
+                                                    id={`new-${type.id}`} 
+                                                    checked={newSectionFormTypes.includes(type.id)}
+                                                    onCheckedChange={() => toggleFormType(type.id, 'create')}
+                                                />
+                                                <Label htmlFor={`new-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                    {type.label}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {newSectionFormTypes.length === 0 && (
+                                        <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
+                                    )}
+                                </div>
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
@@ -257,6 +301,26 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         </SelectContent>
                                     </Select>
                                 </div>
+                                <div className="space-y-4 pt-2 border-t">
+                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">Daily 5M Form Types (Select Multiple)</Label>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {FORM_TYPES.map(type => (
+                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                <Checkbox 
+                                                    id={`edit-${type.id}`} 
+                                                    checked={editFormTypes.includes(type.id)}
+                                                    onCheckedChange={() => toggleFormType(type.id, 'edit')}
+                                                />
+                                                <Label htmlFor={`edit-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                    {type.label}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {editFormTypes.length === 0 && (
+                                        <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
+                                    )}
+                                </div>
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => {
@@ -288,6 +352,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                     <TableHead className="w-12 text-center">#</TableHead>
                                     <TableHead>Section Name</TableHead>
                                     <TableHead>Category</TableHead>
+                                    <TableHead>Form Type</TableHead>
                                     <TableHead className="text-center">Section Count (Users)</TableHead>
                                     <TableHead className="text-right px-6">Actions</TableHead>
                                 </TableRow>
@@ -321,6 +386,22 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                         <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
                                                             {section.category || "Not Applicable"}
                                                         </Badge>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {section.daily5mFormType ? section.daily5mFormType.split(",").map(type => (
+                                                                <Badge key={type} variant="secondary" className={`text-[9px] uppercase font-bold py-0 h-4 border-none shadow-none ${
+                                                                    type === 'crimping' ? 'bg-orange-100 text-orange-700' :
+                                                                    type === 'src' ? 'bg-emerald-100 text-emerald-700' :
+                                                                    'bg-blue-100 text-blue-700'
+                                                                }`}>
+                                                                    {type === 'standard' ? 'Assembly' : 
+                                                                     type === 'src' ? 'SRC' : 'Crimping'}
+                                                                </Badge>
+                                                            )) : (
+                                                                <span className="text-xs text-slate-400">None</span>
+                                                            )}
+                                                        </div>
                                                     </TableCell>
                                                     <TableCell className="text-center">
                                                         <div className="flex flex-col items-center">

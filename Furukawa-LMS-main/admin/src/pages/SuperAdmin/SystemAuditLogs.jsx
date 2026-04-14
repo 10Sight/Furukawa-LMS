@@ -34,7 +34,7 @@ const SystemAuditLogs = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLogs, setSelectedLogs] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [showLogDetail, setShowLogDetail] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
   const [sortBy, setSortBy] = useState("createdAt");

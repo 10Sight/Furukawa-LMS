@@ -9,15 +9,15 @@ const dbConfig = {
     server: ENV.DB_HOST,
     port: parseInt(ENV.DB_PORT) || 1433,
     pool: {
-        max: 10,
+        max: 20,
         min: 0,
         idleTimeoutMillis: 30000
     },
     options: {
         encrypt: false,
         trustServerCertificate: true,
-        requestTimeout: 60000, // 60 seconds
-        connectionTimeout: 30000 // 30 seconds
+        requestTimeout: 120000, // 120 seconds
+        connectionTimeout: 60000 // 60 seconds
     }
 };
 

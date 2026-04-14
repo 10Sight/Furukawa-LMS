@@ -42,11 +42,11 @@ class User {
         this.joiningDate = data.joiningDate || null;
         this.leavingDate = data.leavingDate || null;
         this.isTemporary = !!data.isTemporary;
-        this.sectionId = data.sectionId || null;
+        this.sectionId = data.resolvedSectionId || data.sectionId || null;
         this.subSectionId = data.subSectionId || null;
-        this.lineId = data.lineId || null;
+        this.lineId = data.resolvedLineId || data.lineId || null;
         this.stationId = data.stationId || null;
-        this.departmentId = data.departmentId || null;
+        this.departmentId = data.resolvedDeptId || data.departmentId || null;
         this.fatherHusbandName = data.fatherHusbandName || null;
         this.gender = data.gender || null;
         this.dob = data.dob || null;
@@ -198,18 +198,18 @@ class User {
                 `);
 
                 // Hardcode drop for the known index just in case the query misses it
-                try { await executeQuery("DROP INDEX [UQ_users_phoneNumber_Filtered] ON [users]"); } catch(e) {}
-                try { await executeQuery("ALTER TABLE [users] DROP CONSTRAINT [UQ_users_phoneNumber]"); } catch(e) {}
+                try { await executeQuery("DROP INDEX [UQ_users_phoneNumber_Filtered] ON [users]"); } catch (e) { }
+                try { await executeQuery("ALTER TABLE [users] DROP CONSTRAINT [UQ_users_phoneNumber]"); } catch (e) { }
 
                 for (const row of idxRows) {
                     try {
                         await executeQuery(`DROP INDEX [${row.name}] ON [users]`);
                     } catch (e) {
-                         try { 
-                             await executeQuery(`ALTER TABLE [users] DROP CONSTRAINT [${row.name}]`); 
-                         } catch(e2) {
-                             console.error(`Failed to drop constraint/index ${row.name}:`, e2.message);
-                         }
+                        try {
+                            await executeQuery(`ALTER TABLE [users] DROP CONSTRAINT [${row.name}]`);
+                        } catch (e2) {
+                            console.error(`Failed to drop constraint/index ${row.name}:`, e2.message);
+                        }
                     }
                 }
 
@@ -223,6 +223,37 @@ class User {
                 }
             } catch (err) {
                 console.error("Migration error for phoneNumber:", err);
+            }
+
+            // Ensure email is not unique
+            try {
+                // Find all unique indexes/constraints on email column
+                const [emailIdxRows] = await executeQuery(`
+                    SELECT i.name 
+                    FROM sys.indexes i
+                    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                    WHERE i.object_id = OBJECT_ID('users') 
+                    AND i.is_unique = 1
+                    AND i.name IS NOT NULL
+                    AND i.name NOT LIKE 'PK_%'
+                    AND c.name = 'email'
+                `);
+
+                for (const row of emailIdxRows) {
+                    try {
+                        logger.info(`Migration: Dropping unique constraint/index '${row.name}' on users(email)...`);
+                        await executeQuery(`DROP INDEX [${row.name}] ON [users]`);
+                    } catch (e) {
+                        try {
+                            await executeQuery(`ALTER TABLE [users] DROP CONSTRAINT [${row.name}]`);
+                        } catch (e2) {
+                            console.error(`Failed to drop email constraint/index ${row.name}:`, e2.message);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Migration error for email uniqueness:", err);
             }
 
             console.log("Users table verified/created in MSSQL.");
@@ -296,11 +327,36 @@ class User {
         const values = keys.map(key => query[key]);
 
         const sql = `
-            SELECT u.*, cr.name as cr_name, cr.description as cr_description, 
+            SELECT u.*, 
+                   d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+                   COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId) as resolvedDeptId,
+                   COALESCE(u.sectionId, l_res.lSectionId) as resolvedSectionId,
+                   COALESCE(u.lineId, ss_res.ssLineId) as resolvedLineId,
+                   cr.name as cr_name, cr.description as cr_description, 
                    cr.color as cr_color, cr.allowedPages as cr_allowedPages,
                    cr.permissions as cr_permissions, cr.generateManagementPage as cr_generateManagementPage,
                    cr.targetLayout as cr_targetLayout
             FROM users u
+            OUTER APPLY (
+                SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 
+                FROM sub_sections ss WHERE ss.id = u.subSectionId
+            ) ss_res
+            OUTER APPLY (
+                SELECT TOP 1 l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
+                FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
+            ) l_res
+            OUTER APPLY (
+                SELECT TOP 1 s.name as sectionName, s.departmentId as sDeptId, s.id as sectionId
+                FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
+            ) s_res
+            OUTER APPLY (
+                SELECT TOP 1 d.id, d.name as deptName
+                FROM departments d 
+                WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
+            ) d
+            OUTER APPLY (
+                SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
+            ) st
             LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
             WHERE ${whereClause}
         `;
@@ -310,7 +366,7 @@ class User {
 
         const userData = rows[0];
         const user = new User(userData);
-        
+
         if (userData.customRoleId) {
             // Helper to parse safely since some SQL drivers may automatically parse JSON
             const safeParse = (data) => {
@@ -329,7 +385,7 @@ class User {
                 description: userData.cr_description,
                 color: userData.cr_color,
                 allowedPages: Array.isArray(rawPages) ? rawPages : [],
-                permissions: Array.isArray(rawPermissions) 
+                permissions: Array.isArray(rawPermissions)
                     ? rawPermissions.map(p => typeof p === 'object' && p !== null ? (p.id || p) : p)
                     : [],
                 generateManagementPage: !!userData.cr_generateManagementPage,
@@ -342,11 +398,36 @@ class User {
     static async findById(id) {
         if (!id || isNaN(id)) return null;
         const query = `
-            SELECT u.*, cr.name as cr_name, cr.description as cr_description, 
+            SELECT u.*, 
+                   d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+                   COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId) as resolvedDeptId,
+                   COALESCE(u.sectionId, l_res.lSectionId) as resolvedSectionId,
+                   COALESCE(u.lineId, ss_res.ssLineId) as resolvedLineId,
+                   cr.name as cr_name, cr.description as cr_description, 
                    cr.color as cr_color, cr.allowedPages as cr_allowedPages,
                    cr.permissions as cr_permissions, cr.generateManagementPage as cr_generateManagementPage,
                    cr.targetLayout as cr_targetLayout
             FROM users u
+            OUTER APPLY (
+                SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 
+                FROM sub_sections ss WHERE ss.id = u.subSectionId
+            ) ss_res
+            OUTER APPLY (
+                SELECT TOP 1 l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
+                FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
+            ) l_res
+            OUTER APPLY (
+                SELECT TOP 1 s.name as sectionName, s.departmentId as sDeptId, s.id as sectionId
+                FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
+            ) s_res
+            OUTER APPLY (
+                SELECT TOP 1 d.id, d.name as deptName
+                FROM departments d 
+                WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
+            ) d
+            OUTER APPLY (
+                SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
+            ) st
             LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
             WHERE u.id = ?
         `;
@@ -372,7 +453,7 @@ class User {
                 description: userData.cr_description,
                 color: userData.cr_color,
                 allowedPages: Array.isArray(rawPages) ? rawPages : [],
-                permissions: Array.isArray(rawPermissions) 
+                permissions: Array.isArray(rawPermissions)
                     ? rawPermissions.map(p => typeof p === 'object' && p !== null ? (p.id || p) : p)
                     : [],
                 generateManagementPage: !!userData.cr_generateManagementPage,
@@ -596,7 +677,7 @@ class User {
                 for (const [key, val] of Object.entries(update.$addToSet)) {
                     let currentArr = user[key];
                     if (typeof currentArr === 'string') {
-                        try { currentArr = JSON.parse(currentArr); } catch(e) { currentArr = []; }
+                        try { currentArr = JSON.parse(currentArr); } catch (e) { currentArr = []; }
                     }
                     if (!Array.isArray(currentArr)) {
                         currentArr = [];

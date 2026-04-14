@@ -81,3 +81,12 @@
 [14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mChecked/Created sections table and migrated columns in MSSQL[39m
 [14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mSubSection table initialized[39m
 [14 Mar, 2026 - 00:36:06:366] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 12:55:37:5537] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 13:31:31:3131] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 13:31:48:3148] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 13:32:10:3210] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 13:32:43:3243] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 13:33:30:3330] [31merror[39m: [31mMSSQL Connection Failed[39m
+[11 Apr, 2026 - 13:34:58:3458] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 13:37:36:3736] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 13:37:51:3751] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m

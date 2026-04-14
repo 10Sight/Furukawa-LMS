@@ -271,6 +271,5 @@ export const PAGE_REGISTRY = [
     { key: "cms-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "cms", link: "/cms", icon: "IconLayoutDashboardFilled" },
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
-    { key: "cms-approval-status", label: "5M Approval Status", layout: "cms", link: "/cms/approvals/status", icon: "IconCircleCheck" },
 ];
 

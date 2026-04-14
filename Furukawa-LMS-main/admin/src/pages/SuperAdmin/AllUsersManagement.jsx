@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
+import { useNavigate } from "react-router-dom";
 import {
   IconUsers,
   IconPlus,
@@ -19,7 +20,8 @@ import {
   IconSortDescending,
   IconX,
   IconAlertTriangle,
-  IconInfoCircle
+  IconInfoCircle,
+  IconPlayerPlay
 } from "@tabler/icons-react";
 import {
   useGetAllUsersQuery as useSuperAdminGetAllUsersQuery,
@@ -53,11 +55,12 @@ import { Separator } from "@/components/ui/separator";
 
 const AllUsersManagement = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { user: currentUser } = useSelector((state) => state.auth);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -92,6 +95,11 @@ const AllUsersManagement = () => {
     status: "ACTIVE",
     unit: "UNIT_1",
     customRoleId: "",
+    departmentId: "",
+    sectionId: "",
+    lineId: "",
+    subSectionId: "",
+    stationId: "",
   });
 
   // API hooks
@@ -134,6 +142,28 @@ const AllUsersManagement = () => {
   const subSections = subSectionData?.data || [];
   const stations = machineData?.data || [];
 
+  // Edit User Hierarchy Hooks
+  const { data: editSectionData } = useGetSectionsByDepartmentQuery(selectedUser?.departmentId, { skip: !selectedUser?.departmentId || !showEditModal });
+  const { data: editLineData } = useGetLinesBySectionQuery(selectedUser?.sectionId, { skip: !selectedUser?.sectionId || !showEditModal });
+  const { data: editSubSectionData } = useGetSubSectionsByLineQuery(selectedUser?.lineId, { skip: !selectedUser?.lineId || !showEditModal });
+  const { data: editMachineData } = useGetMachinesBySubSectionQuery(selectedUser?.subSectionId, { skip: !selectedUser?.subSectionId || !showEditModal });
+
+  const editSections = editSectionData?.data || [];
+  const editLines = editLineData?.data || [];
+  const editSubSections = editSubSectionData?.data || [];
+  const editStations = editMachineData?.data || [];
+
+  // Create User Hierarchy Hooks
+  const { data: createSectionData } = useGetSectionsByDepartmentQuery(newUser?.departmentId, { skip: !newUser?.departmentId || !showCreateModal });
+  const { data: createLineData } = useGetLinesBySectionQuery(newUser?.sectionId, { skip: !newUser?.sectionId || !showCreateModal });
+  const { data: createSubSectionData } = useGetSubSectionsByLineQuery(newUser?.lineId, { skip: !newUser?.lineId || !showCreateModal });
+  const { data: createMachineData } = useGetMachinesBySubSectionQuery(newUser?.subSectionId, { skip: !newUser?.subSectionId || !showCreateModal });
+
+  const createSections = createSectionData?.data || [];
+  const createLines = createLineData?.data || [];
+  const createSubSections = createSubSectionData?.data || [];
+  const createStations = createMachineData?.data || [];
+
   // Fetch Custom Roles
   useEffect(() => {
     const fetchCustomRoles = async () => {
@@ -175,7 +205,11 @@ const AllUsersManagement = () => {
         password: "",
         status: "ACTIVE",
         unit: "UNIT_1",
-        customRoleId: "",
+        departmentId: "",
+        sectionId: "",
+        lineId: "",
+        subSectionId: "",
+        stationId: "",
       });
       refetch();
     } catch (error) {
@@ -452,6 +486,91 @@ const AllUsersManagement = () => {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  <Separator className="my-2" />
+
+                  <div className="space-y-4 pt-2">
+                    <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                      <IconShield className="w-4 h-4 text-blue-600" />
+                      Organizational Assignment
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">Department</Label>
+                        <Select
+                          value={newUser.departmentId ? String(newUser.departmentId) : "unassigned"}
+                          onValueChange={(val) => setNewUser({ ...newUser, departmentId: val === "unassigned" ? "" : val, sectionId: "", lineId: "", subSectionId: "", stationId: "" })}
+                        >
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Dept" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">None</SelectItem>
+                            {departments.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">Section</Label>
+                        <Select
+                          value={newUser.sectionId ? String(newUser.sectionId) : "unassigned"}
+                          onValueChange={(val) => setNewUser({ ...newUser, sectionId: val === "unassigned" ? "" : val, lineId: "", subSectionId: "", stationId: "" })}
+                          disabled={!newUser.departmentId}
+                        >
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Section" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">None</SelectItem>
+                            {createSections.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">Line</Label>
+                        <Select
+                          value={newUser.lineId ? String(newUser.lineId) : "unassigned"}
+                          onValueChange={(val) => setNewUser({ ...newUser, lineId: val === "unassigned" ? "" : val, subSectionId: "", stationId: "" })}
+                          disabled={!newUser.sectionId}
+                        >
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Line" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">None</SelectItem>
+                            {createLines.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">Sub-Section</Label>
+                        <Select
+                          value={newUser.subSectionId ? String(newUser.subSectionId) : "unassigned"}
+                          onValueChange={(val) => setNewUser({ ...newUser, subSectionId: val === "unassigned" ? "" : val, stationId: "" })}
+                          disabled={!newUser.lineId}
+                        >
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Select SubSection" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">None</SelectItem>
+                            {createSubSections.map((ss) => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label className="text-xs font-medium text-gray-500">Station (Machine)</Label>
+                        <Select
+                          value={newUser.stationId ? String(newUser.stationId) : "unassigned"}
+                          onValueChange={(val) => setNewUser({ ...newUser, stationId: val === "unassigned" ? "" : val })}
+                          disabled={!newUser.subSectionId}
+                        >
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Station" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">None</SelectItem>
+                            {createStations.map((st) => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
@@ -572,6 +691,91 @@ const AllUsersManagement = () => {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    <Separator className="my-2" />
+
+                    <div className="space-y-4 pt-2">
+                      <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <IconShield className="w-4 h-4 text-blue-600" />
+                        Organizational Assignment
+                      </h4>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium text-gray-500">Department</Label>
+                          <Select
+                            value={selectedUser.departmentId ? String(selectedUser.departmentId) : "unassigned"}
+                            onValueChange={(val) => setSelectedUser({ ...selectedUser, departmentId: val === "unassigned" ? "" : val, sectionId: "", lineId: "", subSectionId: "", stationId: "" })}
+                          >
+                            <SelectTrigger className="h-9"><SelectValue placeholder="Select Dept" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">None</SelectItem>
+                              {departments.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium text-gray-500">Section</Label>
+                          <Select
+                            value={selectedUser.sectionId ? String(selectedUser.sectionId) : "unassigned"}
+                            onValueChange={(val) => setSelectedUser({ ...selectedUser, sectionId: val === "unassigned" ? "" : val, lineId: "", subSectionId: "", stationId: "" })}
+                            disabled={!selectedUser.departmentId}
+                          >
+                            <SelectTrigger className="h-9"><SelectValue placeholder="Select Section" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">None</SelectItem>
+                              {editSections.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium text-gray-500">Line</Label>
+                          <Select
+                            value={selectedUser.lineId ? String(selectedUser.lineId) : "unassigned"}
+                            onValueChange={(val) => setSelectedUser({ ...selectedUser, lineId: val === "unassigned" ? "" : val, subSectionId: "", stationId: "" })}
+                            disabled={!selectedUser.sectionId}
+                          >
+                            <SelectTrigger className="h-9"><SelectValue placeholder="Select Line" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">None</SelectItem>
+                              {editLines.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium text-gray-500">Sub-Section</Label>
+                          <Select
+                            value={selectedUser.subSectionId ? String(selectedUser.subSectionId) : "unassigned"}
+                            onValueChange={(val) => setSelectedUser({ ...selectedUser, subSectionId: val === "unassigned" ? "" : val, stationId: "" })}
+                            disabled={!selectedUser.lineId}
+                          >
+                            <SelectTrigger className="h-9"><SelectValue placeholder="Select SubSection" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">None</SelectItem>
+                              {editSubSections.map((ss) => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label className="text-xs font-medium text-gray-500">Station (Machine)</Label>
+                          <Select
+                            value={selectedUser.stationId ? String(selectedUser.stationId) : "unassigned"}
+                            onValueChange={(val) => setSelectedUser({ ...selectedUser, stationId: val === "unassigned" ? "" : val })}
+                            disabled={!selectedUser.subSectionId}
+                          >
+                            <SelectTrigger className="h-9"><SelectValue placeholder="Select Station" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">None</SelectItem>
+                              {editStations.map((st) => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -594,6 +798,60 @@ const AllUsersManagement = () => {
             </DialogContent>
           </Dialog>
         </div>
+      </div>
+
+      {/* Attendance Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-emerald-50/50 border-emerald-100 shadow-sm hover:shadow-md transition-all duration-300">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Present Users</p>
+              <h3 className="text-2xl font-black text-emerald-900 leading-none">
+                {isLoading ? "..." : (usersData?.data?.presentCount || 0)}
+              </h3>
+              <div className="flex items-center mt-2 text-[10px] text-emerald-600/70 font-bold bg-emerald-100/50 w-fit px-2 py-0.5 rounded-full border border-emerald-200/50">
+                <IconCalendar className="w-3 h-3 mr-1" />
+                {filters.date || format(new Date(), "yyyy-MM-dd")}
+              </div>
+            </div>
+            <div className="bg-emerald-600 p-2.5 rounded-xl shadow-lg shadow-emerald-200/50 text-white">
+              <IconUserCheck className="w-6 h-6" strokeWidth={2.5} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-rose-50/50 border-rose-100 shadow-sm hover:shadow-md transition-all duration-300">
+          <CardContent className="p-4 flex items-center justify-between text-rose-900">
+            <div>
+              <p className="text-xs font-bold text-rose-600 uppercase tracking-wider mb-1">Absent Users</p>
+              <h3 className="text-2xl font-black leading-none">
+                {isLoading ? "..." : (usersData?.data?.absentCount || 0)}
+              </h3>
+              <div className="flex items-center mt-2 text-[10px] text-rose-600/70 font-bold bg-rose-100/50 w-fit px-2 py-0.5 rounded-full border border-rose-200/50">
+                <IconCalendar className="w-3 h-3 mr-1" />
+                {filters.date || format(new Date(), "yyyy-MM-dd")}
+              </div>
+            </div>
+            <div className="bg-rose-600 p-2.5 rounded-xl shadow-lg shadow-rose-200/50 text-white">
+              <IconUserX className="w-6 h-6" strokeWidth={2.5} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-blue-50/50 border-blue-100 shadow-sm hover:shadow-md transition-all duration-300">
+          <CardContent className="p-4 flex items-center justify-between text-blue-900">
+            <div>
+              <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">Total Result</p>
+              <h3 className="text-2xl font-black leading-none">
+                {isLoading ? "..." : (usersData?.data?.totalUsers || 0)}
+              </h3>
+              <p className="text-[10px] text-blue-600/70 font-bold mt-2">Filtered Users List</p>
+            </div>
+            <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-200/50 text-white">
+              <IconUsers className="w-6 h-6" strokeWidth={2.5} />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Debug Information Panel */}
@@ -707,8 +965,8 @@ const AllUsersManagement = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
               <Select
                 value={filters.departmentId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
+                onValueChange={(val) => setFilters({
+                  ...filters,
                   departmentId: val === "all" ? "" : val,
                   sectionId: "", lineId: "", subSectionId: "", stationId: ""
                 })}
@@ -727,8 +985,8 @@ const AllUsersManagement = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Section</label>
               <Select
                 value={filters.sectionId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
+                onValueChange={(val) => setFilters({
+                  ...filters,
                   sectionId: val === "all" ? "" : val,
                   lineId: "", subSectionId: "", stationId: ""
                 })}
@@ -748,8 +1006,8 @@ const AllUsersManagement = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Line</label>
               <Select
                 value={filters.lineId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
+                onValueChange={(val) => setFilters({
+                  ...filters,
                   lineId: val === "all" ? "" : val,
                   subSectionId: "", stationId: ""
                 })}
@@ -769,8 +1027,8 @@ const AllUsersManagement = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Sub-Section</label>
               <Select
                 value={filters.subSectionId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
+                onValueChange={(val) => setFilters({
+                  ...filters,
                   subSectionId: val === "all" ? "" : val,
                   stationId: ""
                 })}
@@ -864,9 +1122,9 @@ const AllUsersManagement = () => {
             </div>
 
             <div className="flex items-end">
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 className="w-full h-9"
                 onClick={() => setFilters({
                   role: "", status: "", dateFrom: "", dateTo: "",
@@ -968,6 +1226,9 @@ const AllUsersManagement = () => {
                     Emp ID
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Name
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1002,7 +1263,7 @@ const AllUsersManagement = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {isLoading ? (
                   <tr>
-                    <td colSpan="8" className="px-6 py-8 text-center">
+                    <td colSpan="13" className="px-6 py-8 text-center">
                       <div className="flex justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                       </div>
@@ -1010,7 +1271,7 @@ const AllUsersManagement = () => {
                   </tr>
                 ) : isError ? (
                   <tr>
-                    <td colSpan="8" className="px-6 py-8 text-center">
+                    <td colSpan="13" className="px-6 py-8 text-center">
                       <div className="text-red-600">
                         Error loading users: {error?.data?.message || error?.message}
                       </div>
@@ -1018,7 +1279,7 @@ const AllUsersManagement = () => {
                   </tr>
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="px-6 py-8 text-center">
+                    <td colSpan="13" className="px-6 py-8 text-center">
                       <div className="text-gray-500">No users found</div>
                     </td>
                   </tr>
@@ -1042,6 +1303,9 @@ const AllUsersManagement = () => {
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {user.empId || "-"}
                       </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                        {user.logDate ? format(new Date(user.logDate), "dd MMM yyyy") : (filters.date ? format(new Date(filters.date), "dd MMM yyyy") : "-")}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center">
                           <img
@@ -1064,19 +1328,19 @@ const AllUsersManagement = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
-                        {user.deptName || "-"}
+                        {(user.deptName && user.deptName.toLowerCase() !== "none") ? user.deptName : "-"}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
-                        {user.sectionName || "-"}
+                        {(user.sectionName && user.sectionName.toLowerCase() !== "none") ? user.sectionName : "-"}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
-                        {user.lineName || "-"}
+                        {(user.lineName && user.lineName.toLowerCase() !== "none") ? user.lineName : "-"}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
-                        {user.subSectionName || "-"}
+                        {(user.subSectionName && user.subSectionName.toLowerCase() !== "none") ? user.subSectionName : "-"}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
-                        {user.stationName || "-"}
+                        {(user.stationName && user.stationName.toLowerCase() !== "none") ? user.stationName : "-"}
                       </td>
                       <td className="px-6 py-4">
                         <Badge className={`${getRoleColor(user.role)} whitespace-nowrap`}>
@@ -1094,6 +1358,13 @@ const AllUsersManagement = () => {
                             title="Edit User"
                           >
                             <IconEdit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => navigate('/cms/daily-5m-recording', { state: { playUser: user } })}
+                            className="p-1.5 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 rounded transition-colors"
+                            title="Start Action"
+                          >
+                            <IconPlayerPlay className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user._id, true)}
@@ -1163,6 +1434,13 @@ const AllUsersManagement = () => {
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                           >
                             <IconEdit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => navigate('/cms/daily-5m-recording', { state: { playUser: user } })}
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                            title="Start Action"
+                          >
+                            <IconPlayerPlay className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user._id, true)}

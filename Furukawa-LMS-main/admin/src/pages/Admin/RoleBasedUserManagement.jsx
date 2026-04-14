@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { format } from "date-fns";
 import {
   useUpdateUserMutation,
   useDeleteUserMutation,
@@ -215,6 +216,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
               <TableRow>
                 <TableHead>User</TableHead>
                 <TableHead>Emp ID</TableHead>
+                <TableHead>Date</TableHead>
                 <TableHead>Designation</TableHead>
                 <TableHead>Department</TableHead>
                 <TableHead>Status</TableHead>
@@ -224,13 +226,13 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-10">
+                  <TableCell colSpan={7} className="text-center py-10">
                     <IconLoader className="w-6 h-6 animate-spin mx-auto text-blue-600" />
                   </TableCell>
                 </TableRow>
               ) : usersData?.data?.users?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-10 text-gray-500">
+                  <TableCell colSpan={7} className="text-center py-10 text-gray-500">
                     No {roleName.toLowerCase()}s found.
                   </TableCell>
                 </TableRow>
@@ -250,6 +252,9 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                       </div>
                     </TableCell>
                     <TableCell>{user.empId || "N/A"}</TableCell>
+                    <TableCell className="text-xs text-gray-500">
+                      {user.logDate ? format(new Date(user.logDate), "dd MMM yyyy") : "-"}
+                    </TableCell>
                     <TableCell>{user.designation || "N/A"}</TableCell>
                     <TableCell>{user.department?.name || "N/A"}</TableCell>
                     <TableCell>

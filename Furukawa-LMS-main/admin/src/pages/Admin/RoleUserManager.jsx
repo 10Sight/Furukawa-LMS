@@ -43,7 +43,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Shield, Users, Search, RefreshCw, Trash2, Edit2, UserPlus, ChevronLeft } from "lucide-react";
+import { Shield, Users, Search, RefreshCw, Trash2, Edit2, UserPlus, ChevronLeft, Eye } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
@@ -58,11 +58,13 @@ export default function RoleUserManager() {
     const [addTab, setAddTab] = useState("existing");
     const [searchExisting, setSearchExisting] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
-    
+
     // Bulk Selection State
     const [selectedIds, setSelectedIds] = useState([]);
     const [isAllSelectedAcrossPages, setIsAllSelectedAcrossPages] = useState(false);
-    const [isBulkUnassignOpen, setIsBulkUnassignOpen] = useState(false);
+    const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+    const [isEditUserOpen, setIsEditUserOpen] = useState(false);
+    const [userToEdit, setUserToEdit] = useState(null);
 
     // Fetch Role Details
     useEffect(() => {
@@ -88,39 +90,39 @@ export default function RoleUserManager() {
         page,
         limit: 20,
         customRoleId: roleId,
-        search: searchTerm
+        search: searchTerm,
+        excludeRoles: "ADMIN,SUPERADMIN",
+        roleManagerFilters: "true"
     });
 
     const [deleteUser] = useDeleteUserMutation();
 
     const handleDelete = async (user) => {
-        if (!confirm(`Are you sure you want to remove ${user.fullName} from this role? This will unassign the role but not delete the user account.`)) return;
+        if (!confirm(`Are you sure you want to PERMANENTLY DELETE ${user.fullName}? This action cannot be undone and will remove the user's account from the entire system.`)) return;
         try {
-            await axiosInstance.patch(`/api/users/${user.id}`, { customRoleId: null });
-            toast.success("User unassigned successfully");
+            await deleteUser(user.id).unwrap();
+            toast.success("User deleted permanently");
             refetch();
             setSelectedIds(prev => prev.filter(id => id !== user.id));
         } catch (e) {
-            toast.error("Failed to unassign user");
+            toast.error(e?.data?.message || "Failed to delete user");
         }
     };
 
-    const handleBulkUnassign = async () => {
+    const handleBulkDelete = async () => {
         setIsSubmitting(true);
         try {
-            // Using Promise.all to patch multiple users 
-            // In a real prod-env, a dedicated bulk-update endpoint is better
             await Promise.all(
-                selectedIds.map(id => axiosInstance.patch(`/api/users/${id}`, { customRoleId: null }))
+                selectedIds.map(id => deleteUser(id).unwrap())
             );
-            toast.success(`${selectedIds.length} users removed from role`);
+            toast.success(`${selectedIds.length} users deleted permanently`);
             setSelectedIds([]);
             setIsAllSelectedAcrossPages(false);
-            setIsBulkUnassignOpen(false);
+            setIsBulkDeleteOpen(false);
             refetch();
         } catch (error) {
-            console.error("Bulk unassign error:", error);
-            toast.error("Failed to unassign some users");
+            console.error("Bulk delete error:", error);
+            toast.error("Failed to delete some users");
         } finally {
             setIsSubmitting(false);
         }
@@ -183,11 +185,11 @@ export default function RoleUserManager() {
                             <Button
                                 variant="destructive"
                                 size="sm"
-                                onClick={() => setIsBulkUnassignOpen(true)}
+                                onClick={() => setIsBulkDeleteOpen(true)}
                                 className="shadow-sm"
                             >
-                                <Users className="w-4 h-4 mr-2" />
-                                Remove Selected
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete Selected
                             </Button>
                         </div>
                     )}
@@ -228,7 +230,7 @@ export default function RoleUserManager() {
                         <TableHeader>
                             <TableRow className="bg-gray-50/50">
                                 <TableHead className="w-12 text-center">
-                                    <Checkbox 
+                                    <Checkbox
                                         checked={isAllSelectedAcrossPages || isAllSelectedOnPage || (isIndeterminate ? "indeterminate" : false)}
                                         onCheckedChange={handleSelectAllOnPage}
                                         aria-label="Select all on page"
@@ -266,7 +268,7 @@ export default function RoleUserManager() {
                                 data?.data?.users?.map((user) => (
                                     <TableRow key={user.id} className="hover:bg-gray-50/50">
                                         <TableCell className="text-center cursor-pointer" onClick={(e) => { e.stopPropagation(); handleSelectUser(user.id, !selectedIds.includes(user.id)); }}>
-                                            <Checkbox 
+                                            <Checkbox
                                                 checked={selectedIds.includes(user.id)}
                                                 onCheckedChange={(checked) => handleSelectUser(user.id, checked)}
                                                 aria-label={`Select ${user.fullName}`}
@@ -299,16 +301,16 @@ export default function RoleUserManager() {
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-sm">
-                                            {user.department?.name ? (
+                                            {user.deptName && user.deptName.toLowerCase() !== "none" ? (
                                                 <div className="flex flex-col gap-0.5">
-                                                    <span className="font-medium text-gray-900">{user.department.name}</span>
+                                                    <span className="font-medium text-gray-900">{user.deptName}</span>
                                                     <span className="text-xs text-gray-500">
                                                         {[
-                                                            user.section?.name,
-                                                            user.line?.name,
-                                                            user.subSection?.name,
-                                                            user.station?.name
-                                                        ].filter(Boolean).join(" ➔ ") || "No further assignment"}
+                                                            user.sectionName,
+                                                            user.lineName,
+                                                            user.subSectionName,
+                                                            user.stationName
+                                                        ].filter(val => val && val.toLowerCase() !== "none").join(" ➔ ") || "No further assignment"}
                                                     </span>
                                                 </div>
                                             ) : (
@@ -324,6 +326,18 @@ export default function RoleUserManager() {
                                                     onClick={() => navigate(`/admin/employees/${user.slug || user.id}`)}
                                                     title="View Profile"
                                                 >
+                                                    <Eye className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                                    onClick={() => {
+                                                        setUserToEdit(user);
+                                                        setIsEditUserOpen(true);
+                                                    }}
+                                                    title="Edit User"
+                                                >
                                                     <Edit2 className="w-4 h-4" />
                                                 </Button>
                                                 <Button
@@ -331,7 +345,7 @@ export default function RoleUserManager() {
                                                     size="icon"
                                                     className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
                                                     onClick={() => handleDelete(user)}
-                                                    title="Remove from Role"
+                                                    title="Delete User Permanently"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </Button>
@@ -343,6 +357,56 @@ export default function RoleUserManager() {
                         </TableBody>
                     </Table>
                 </CardContent>
+                {/* Pagination */}
+                {data?.data?.totalPages > 1 && (
+                    <div className="px-6 py-4 border-t bg-gray-50/30 flex items-center justify-between">
+                        <div className="text-sm text-gray-500">
+                            Showing {((page - 1) * 20) + 1} to {Math.min(page * 20, data?.data?.totalUsers)} of {data?.data?.totalUsers} users
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                                className="h-8 px-3"
+                            >
+                                Previous
+                            </Button>
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: Math.min(5, data?.data?.totalPages) }, (_, i) => {
+                                    let pageNum;
+                                    const totalPages = data?.data?.totalPages;
+                                    if (totalPages <= 5) pageNum = i + 1;
+                                    else if (page <= 3) pageNum = i + 1;
+                                    else if (page >= totalPages - 2) pageNum = totalPages - 4 + i;
+                                    else pageNum = page - 2 + i;
+
+                                    return (
+                                        <Button
+                                            key={pageNum}
+                                            variant={page === pageNum ? "default" : "outline"}
+                                            size="sm"
+                                            onClick={() => setPage(pageNum)}
+                                            className="w-8 h-8 p-0"
+                                        >
+                                            {pageNum}
+                                        </Button>
+                                    );
+                                })}
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.min(data?.data?.totalPages, p + 1))}
+                                disabled={page === data?.data?.totalPages}
+                                className="h-8 px-3"
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </Card>
 
             <AddUserDialog
@@ -355,32 +419,44 @@ export default function RoleUserManager() {
                 }}
             />
 
-            {/* Bulk Unassign Dialog */}
-            <Dialog open={isBulkUnassignOpen} onOpenChange={setIsBulkUnassignOpen}>
+            <EditUserDialog
+                isOpen={isEditUserOpen}
+                setIsOpen={setIsEditUserOpen}
+                user={userToEdit}
+                currentRoleId={roleId}
+                onSuccess={() => {
+                    refetch();
+                    setIsEditUserOpen(false);
+                    setUserToEdit(null);
+                }}
+            />
+
+            {/* Bulk Delete Dialog */}
+            <Dialog open={isBulkDeleteOpen} onOpenChange={setIsBulkDeleteOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <span className="p-2 bg-red-100 text-red-600 rounded-full">
                                 <Trash2 className="w-5 h-5" />
                             </span>
-                            Bulk Remove Roles
+                            Bulk Delete Users
                         </DialogTitle>
-                        <DialogDescription className="pt-4">
-                            Are you sure you want to remove the <strong>{role?.name}</strong> role from <strong>{selectedIds.length}</strong> users? 
-                            This action will update their profiles but will not delete their accounts.
+                        <DialogDescription className="pt-4 text-red-600 font-medium">
+                            CAUTION: This will PERMANENTLY DELETE the <strong>{selectedIds.length}</strong> selected users from the system. 
+                            This action cannot be undone.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter className="mt-6">
-                        <Button variant="outline" onClick={() => setIsBulkUnassignOpen(false)}>Cancel</Button>
+                        <Button variant="outline" onClick={() => setIsBulkDeleteOpen(false)}>Cancel</Button>
                         <Button
                             variant="destructive"
-                            onClick={handleBulkUnassign}
+                            onClick={handleBulkDelete}
                             disabled={isSubmitting}
                         >
                             {isSubmitting ? (
-                                <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Processing...</>
+                                <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Deleting...</>
                             ) : (
-                                "Yes, Remove Role"
+                                "Yes, Delete Permanently"
                             )}
                         </Button>
                     </DialogFooter>
@@ -440,22 +516,10 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
 
     // Hierarchy Queries
     const { data: deptRes } = useGetAllDepartmentsQuery({ page: 1, limit: 100 });
-    const { data: sectionRes } = useGetSectionsByDepartmentQuery(
-        { departmentId: newUser.departmentId, page: 1, limit: 100 },
-        { skip: !newUser.departmentId }
-    );
-    const { data: lineRes } = useGetLinesBySectionQuery(
-        { sectionId: newUser.sectionId, page: 1, limit: 100 },
-        { skip: !newUser.sectionId }
-    );
-    const { data: subSectionRes } = useGetSubSectionsByLineQuery(
-        { lineId: newUser.lineId, page: 1, limit: 100 },
-        { skip: !newUser.lineId }
-    );
-    const { data: machineRes } = useGetMachinesBySubSectionQuery(
-        { subSectionId: newUser.subSectionId, page: 1, limit: 100 },
-        { skip: !newUser.subSectionId }
-    );
+    const { data: sectionRes } = useGetSectionsByDepartmentQuery(newUser.departmentId, { skip: !newUser.departmentId });
+    const { data: lineRes } = useGetLinesBySectionQuery(newUser.sectionId, { skip: !newUser.sectionId });
+    const { data: subSectionRes } = useGetSubSectionsByLineQuery(newUser.lineId, { skip: !newUser.lineId });
+    const { data: machineRes } = useGetMachinesBySubSectionQuery(newUser.subSectionId, { skip: !newUser.subSectionId });
 
     // Fetch potential users (not already in this role)
     const { data: usersRes, isLoading } = useGetAllUsersQuery({
@@ -621,7 +685,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
 
                     <TabsContent value="new" className="flex-1 overflow-y-auto p-6 pt-2">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            
+
                             {/* Column 1: Core Details */}
                             <div className="flex flex-col space-y-4">
                                 <h3 className="text-sm font-semibold text-blue-800 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100 flex items-center">
@@ -676,7 +740,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                                 </h3>
                                 <div className="flex-1 space-y-3 p-4 border rounded-xl bg-white shadow-sm">
                                     <div className="grid grid-cols-2 gap-3">
-                                         <div className="grid gap-1.5">
+                                        <div className="grid gap-1.5">
                                             <Label htmlFor="empId" className="text-xs font-semibold text-gray-600">Employee ID</Label>
                                             <Input id="empId" value={newUser.empId} onChange={e => setNewUser({ ...newUser, empId: e.target.value, password: newUser.password || e.target.value })} className="h-9 focus-visible:ring-1" />
                                         </div>
@@ -686,7 +750,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
-                                         <div className="grid gap-1.5">
+                                        <div className="grid gap-1.5">
                                             <Label className="text-xs font-semibold text-gray-600">Status</Label>
                                             <Select value={newUser.status} onValueChange={val => setNewUser({ ...newUser, status: val })}>
                                                 <SelectTrigger className="h-9"><SelectValue placeholder="Select Status" /></SelectTrigger>
@@ -733,7 +797,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                                     Hierarchy Assignment
                                 </h3>
                                 <div className="flex-1 space-y-3 p-4 border rounded-xl bg-white shadow-sm">
-                                     <div className="grid gap-1.5">
+                                    <div className="grid gap-1.5">
                                         <Label className="text-xs font-semibold text-gray-600">Department</Label>
                                         <Select
                                             value={newUser.departmentId ? String(newUser.departmentId) : "unassigned"}
@@ -758,7 +822,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Section" /></SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="unassigned">None</SelectItem>
-                                                {sectionRes?.data?.sections?.map((sec) => (
+                                                {sectionRes?.data?.map((sec) => (
                                                     <SelectItem key={sec.id} value={String(sec.id)}>{sec.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -774,7 +838,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Line" /></SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="unassigned">None</SelectItem>
-                                                {lineRes?.data?.lines?.map((line) => (
+                                                {lineRes?.data?.map((line) => (
                                                     <SelectItem key={line.id} value={String(line.id)}>{line.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -790,7 +854,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Sub-section" /></SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="unassigned">None</SelectItem>
-                                                {subSectionRes?.data?.subSections?.map((sub) => (
+                                                {subSectionRes?.data?.map((sub) => (
                                                     <SelectItem key={sub.id} value={String(sub.id)}>{sub.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -806,7 +870,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Station" /></SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="unassigned">None</SelectItem>
-                                                {machineRes?.data?.machines?.map((mac) => (
+                                                {machineRes?.data?.map((mac) => (
                                                     <SelectItem key={mac.id} value={String(mac.id)}>{mac.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -829,6 +893,254 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                         </Button>
                     )}
                 </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function EditUserDialog({ isOpen, setIsOpen, user, currentRoleId, onSuccess }) {
+    const [updateUser] = useUpdateUserMutation();
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [editUser, setEditUser] = useState({
+        fullName: "",
+        userName: "",
+        empId: "",
+        email: "",
+        phoneNumber: "",
+        role: "",
+        customRoleId: "",
+        status: "",
+        departmentId: "",
+        sectionId: "",
+        lineId: "",
+        subSectionId: "",
+        stationId: ""
+    });
+
+    const [customRoles, setCustomRoles] = useState([]);
+
+    useEffect(() => {
+        const fetchCustomRoles = async () => {
+            try {
+                const res = await axiosInstance.get("/api/roles-permissions");
+                setCustomRoles(res.data.data.roles || []);
+            } catch (e) {
+                console.error("Failed to fetch custom roles", e);
+            }
+        };
+        if (isOpen) fetchCustomRoles();
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (user && isOpen) {
+            setEditUser({
+                fullName: user.fullName || "",
+                userName: user.userName || "",
+                empId: user.empId || "",
+                email: user.email || "",
+                phoneNumber: user.phoneNumber || "",
+                role: user.role || "STUDENT",
+                customRoleId: user.customRoleId ? String(user.customRoleId) : "none",
+                status: user.systemStatus || user.status || "PRESENT",
+                departmentId: user.departmentId ? String(user.departmentId) : "unassigned",
+                sectionId: user.sectionId ? String(user.sectionId) : "unassigned",
+                lineId: user.lineId ? String(user.lineId) : "unassigned",
+                subSectionId: user.subSectionId ? String(user.subSectionId) : "unassigned",
+                stationId: user.stationId ? String(user.stationId) : "unassigned"
+            });
+        }
+    }, [user, isOpen]);
+
+    // Hierarchy Queries
+    const { data: deptRes } = useGetAllDepartmentsQuery({ page: 1, limit: 100 });
+    const { data: sectionRes } = useGetSectionsByDepartmentQuery(
+        editUser.departmentId !== "unassigned" ? editUser.departmentId : null,
+        { skip: !editUser.departmentId || editUser.departmentId === "unassigned" }
+    );
+    const { data: lineRes } = useGetLinesBySectionQuery(
+        editUser.sectionId !== "unassigned" ? editUser.sectionId : null,
+        { skip: !editUser.sectionId || editUser.sectionId === "unassigned" }
+    );
+    const { data: subSectionRes } = useGetSubSectionsByLineQuery(
+        editUser.lineId !== "unassigned" ? editUser.lineId : null,
+        { skip: !editUser.lineId || editUser.lineId === "unassigned" }
+    );
+    const { data: machineRes } = useGetMachinesBySubSectionQuery(
+        editUser.subSectionId !== "unassigned" ? editUser.subSectionId : null,
+        { skip: !editUser.subSectionId || editUser.subSectionId === "unassigned" }
+    );
+
+    const handleSave = async () => {
+        if (!editUser.fullName || !editUser.email) {
+            return toast.error("Full Name and Email are required");
+        }
+        setIsProcessing(true);
+        try {
+            const payload = {
+                ...editUser,
+                customRoleId: editUser.customRoleId === "none" ? null : editUser.customRoleId,
+                departmentId: editUser.departmentId === "unassigned" ? null : editUser.departmentId,
+                sectionId: editUser.sectionId === "unassigned" ? null : editUser.sectionId,
+                lineId: editUser.lineId === "unassigned" ? null : editUser.lineId,
+                subSectionId: editUser.subSectionId === "unassigned" ? null : editUser.subSectionId,
+                stationId: editUser.stationId === "unassigned" ? null : editUser.stationId
+            };
+            await updateUser({ id: user.id || user._id, ...payload }).unwrap();
+            toast.success("User updated successfully");
+            onSuccess();
+        } catch (e) {
+            toast.error(e?.data?.message || "Failed to update user");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogContent className="max-w-[700px] w-full max-h-[90vh] overflow-y-auto">
+                <DialogHeader className="pb-4 border-b">
+                    <DialogTitle>Edit User: {user?.fullName}</DialogTitle>
+                    <DialogDescription>
+                        Update user profile and assignments.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-6">
+                    {/* Basic Info */}
+                    <div className="space-y-4">
+                        <h3 className="text-sm font-semibold text-blue-800 bg-blue-50 px-3 py-1.5 rounded-md">Basic Information</h3>
+                        <div className="space-y-3">
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Full Name</Label>
+                                <Input value={editUser.fullName} onChange={e => setEditUser({...editUser, fullName: e.target.value})} />
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Username</Label>
+                                <Input value={editUser.userName} onChange={e => setEditUser({...editUser, userName: e.target.value})} />
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Employee ID</Label>
+                                <Input value={editUser.empId} onChange={e => setEditUser({...editUser, empId: e.target.value})} />
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Email</Label>
+                                <Input value={editUser.email} onChange={e => setEditUser({...editUser, email: e.target.value})} />
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Phone Number</Label>
+                                <Input value={editUser.phoneNumber} onChange={e => setEditUser({...editUser, phoneNumber: e.target.value})} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Roles & Status */}
+                    <div className="space-y-4">
+                        <h3 className="text-sm font-semibold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-md">Roles & Status</h3>
+                        <div className="space-y-3">
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">System Role</Label>
+                                <Select value={editUser.role} onValueChange={val => setEditUser({...editUser, role: val})}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        {/* Show current role, Operator (STUDENT), and Custom Role User (CUSTOM) */}
+                                        <SelectItem value="STUDENT">Operator (Student)</SelectItem>
+                                        <SelectItem value="CUSTOM">Custom Role User</SelectItem>
+                                        {user && user.role !== "STUDENT" && user.role !== "CUSTOM" && (
+                                            <SelectItem value={user.role}>{user.role}</SelectItem>
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Custom Role</Label>
+                                <Select value={editUser.customRoleId} onValueChange={val => setEditUser({...editUser, customRoleId: val})}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">None (Remove from Role)</SelectItem>
+                                        {customRoles.filter(r => String(r.id) === String(currentRoleId)).map(r => (
+                                            <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Status</Label>
+                                <Select value={editUser.status} onValueChange={val => setEditUser({...editUser, status: val})}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="PRESENT">Present</SelectItem>
+                                        <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                                        <SelectItem value="LEFT">Left</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Hierarchy - Full Width */}
+                    <div className="md:col-span-2 space-y-4 pt-2">
+                        <h3 className="text-sm font-semibold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-md">Hierarchy Assignment</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Department</Label>
+                                <Select value={editUser.departmentId} onValueChange={val => setEditUser({...editUser, departmentId: val, sectionId: "unassigned", lineId: "unassigned", subSectionId: "unassigned", stationId: "unassigned"})}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="unassigned">None</SelectItem>
+                                        {deptRes?.data?.departments?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Section</Label>
+                                <Select value={editUser.sectionId} onValueChange={val => setEditUser({...editUser, sectionId: val, lineId: "unassigned", subSectionId: "unassigned", stationId: "unassigned"})} disabled={editUser.departmentId === "unassigned"}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="unassigned">None</SelectItem>
+                                        {sectionRes?.data?.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Line</Label>
+                                <Select value={editUser.lineId} onValueChange={val => setEditUser({...editUser, lineId: val, subSectionId: "unassigned", stationId: "unassigned"})} disabled={editUser.sectionId === "unassigned"}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="unassigned">None</SelectItem>
+                                        {lineRes?.data?.map(l => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Sub-Section</Label>
+                                <Select value={editUser.subSectionId} onValueChange={val => setEditUser({ ...editUser, subSectionId: val, stationId: "unassigned" })} disabled={editUser.lineId === "unassigned"}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="unassigned">None</SelectItem>
+                                        {subSectionRes?.data?.map(ss => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-semibold">Station</Label>
+                                <Select value={editUser.stationId} onValueChange={val => setEditUser({ ...editUser, stationId: val })} disabled={editUser.subSectionId === 'unassigned'}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="unassigned">None</SelectItem>
+                                        {machineRes?.data?.map(m => <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <DialogFooter className="border-t pt-4">
+                    <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+                    <Button onClick={handleSave} disabled={isProcessing} className="bg-blue-600 hover:bg-blue-700 text-white min-w-[100px]">
+                        {isProcessing ? "Saving..." : "Save Changes"}
+                    </Button>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     );

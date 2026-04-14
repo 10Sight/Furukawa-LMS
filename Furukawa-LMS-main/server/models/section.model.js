@@ -10,6 +10,7 @@ class Section {
         this.uniCode = data.uniCode;
         this.description = data.description;
         this.category = data.category || "Not Applicable";
+        this.daily5mFormType = data.daily5mFormType || "standard";
         this.departmentId = data.departmentId;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
         this.sectionCount = data.sectionCount || 0;
@@ -29,6 +30,7 @@ class Section {
                     uniCode NVARCHAR(255) NOT NULL,
                     description NVARCHAR(MAX),
                     category NVARCHAR(50) DEFAULT 'Not Applicable',
+                    daily5mFormType NVARCHAR(255) DEFAULT 'standard',
                     departmentId INT NOT NULL,
                     isActive BIT DEFAULT 1,
                     createdAt DATETIME DEFAULT GETDATE(),
@@ -51,6 +53,27 @@ class Section {
                 BEGIN
                     ALTER TABLE [sections] ADD category NVARCHAR(50) DEFAULT 'Not Applicable';
                 END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns 
+                             WHERE object_id = OBJECT_ID('sections') 
+                             AND name = 'daily5mFormType')
+                BEGIN
+                    ALTER TABLE [sections] ADD daily5mFormType NVARCHAR(255) DEFAULT 'standard';
+                END
+                ELSE
+                BEGIN
+                    -- Increase size if it exists
+                    ALTER TABLE [sections] ALTER COLUMN daily5mFormType NVARCHAR(255);
+                END
+
+                -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
+                UPDATE [sections] SET daily5mFormType = 'crimping' 
+                WHERE (category = 'CRIMPING' OR category = 'Cutting & Crimping' OR name LIKE '%Crimping%' OR name LIKE '%Cutting%') 
+                AND (daily5mFormType = 'standard' OR daily5mFormType IS NULL);
+
+                UPDATE [sections] SET daily5mFormType = 'src' 
+                WHERE (category = 'SRC' OR name LIKE '%SRC%') 
+                AND (daily5mFormType = 'standard' OR daily5mFormType IS NULL);
 
                 -- Update Unique Constraint
                 -- 1. Drop old constraint if exists
@@ -97,7 +120,7 @@ class Section {
 
     static async create(data) {
         const fields = [
-            "name", "uniCode", "description", "category", "departmentId", "isActive", "createdAt", "updatedAt"
+            "name", "uniCode", "description", "category", "daily5mFormType", "departmentId", "isActive", "createdAt", "updatedAt"
         ];
 
         const now = new Date();
@@ -106,6 +129,7 @@ class Section {
             data.uniCode || null,
             data.description || null,
             data.category || "Not Applicable",
+            data.daily5mFormType || "standard",
             data.departmentId,
             data.isActive !== undefined ? data.isActive : true,
             now,
@@ -188,6 +212,7 @@ class Section {
         if (data.uniCode !== undefined) { updateFields.push("uniCode = ?"); values.push(data.uniCode); }
         if (data.description !== undefined) { updateFields.push("description = ?"); values.push(data.description); }
         if (data.category !== undefined) { updateFields.push("category = ?"); values.push(data.category); }
+        if (data.daily5mFormType !== undefined) { updateFields.push("daily5mFormType = ?"); values.push(data.daily5mFormType); }
         if (data.isActive !== undefined) { updateFields.push("isActive = ?"); values.push(data.isActive); }
 
         if (updateFields.length === 0) return null;

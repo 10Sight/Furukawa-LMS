@@ -1,5 +1,6 @@
 import mssql from "mssql";
 import ExcelJS from "exceljs";
+import crypto from "crypto";
 import { poolPromise } from "../db/connectDB.js";
 import Audit from "../models/audit.model.js";
 import RequirementLog from "../models/requirementLogs.model.js";
@@ -455,6 +456,158 @@ export const addRequirements = asyncHandler(async (req, res) => {
         } catch (logErr) {
             console.error("Failed to log requirement upload:", logErr.message);
         }
+
+        // ── Feature 1: Send section-specific emails after upload ──────────────
+        try {
+            // Group uploaded rows by sectionName
+            const sectionDataMap = new Map();
+            for (const r of rowsToProcess) {
+                const secName = (r.sectionName || "").trim();
+                if (!secName) continue;
+                if (!sectionDataMap.has(secName)) {
+                    sectionDataMap.set(secName, { rows: [], months: new Set(), salesCount: 0, prodCount: 0 });
+                }
+                const entry = sectionDataMap.get(secName);
+                entry.rows.push(r);
+                if (r.monthName) entry.months.add(r.monthName);
+                if (r.salesPlan !== null && r.salesPlan !== undefined) entry.salesCount++;
+                if (r.prodPlan !== null && r.prodPlan !== undefined) entry.prodCount++;
+            }
+
+            const uploadedByName = req.user?.fullName || req.user?.name || req.user?.username || "Admin";
+            const uploadedByRole = req.user?.role || "Admin";
+            const uploadedAt = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+            for (const [secName, secData] of sectionDataMap.entries()) {
+                // Find section heads for this section (match by name or uniCode)
+                const [secHeads] = await executeSql(
+                    `SELECT sh.email, sh.name
+                     FROM section_heads sh
+                     LEFT JOIN sections s ON sh.sectionId = s.id
+                     WHERE s.name = ? OR s.uniCode = ?`,
+                    [secName, secName]
+                );
+
+                if (!secHeads || secHeads.length === 0) {
+                    console.log(`[UPLOAD-EMAIL] No section head found for section: ${secName}`);
+                    continue;
+                }
+
+                const monthsList = Array.from(secData.months).sort().join(", ") || "N/A";
+                const monthCount = secData.months.size;
+
+                // Build months details table rows
+                let monthRows = "";
+                const monthOrder = ["January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December"];
+                const sortedMonths = Array.from(secData.months).sort(
+                    (a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b)
+                );
+                sortedMonths.forEach(month => {
+                    const monthRows_ = secData.rows.filter(r => r.monthName === month);
+                    const totalSP = monthRows_.reduce((s, r) => s + (r.salesPlan || 0), 0);
+                    const totalPP = monthRows_.reduce((s, r) => s + (r.prodPlan || 0), 0);
+                    monthRows += `
+                    <tr>
+                      <td style="padding:8px 14px;border:1px solid #e2e8f0;font-weight:600;color:#1e293b;">${month}</td>
+                      <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#2563eb;font-weight:600;">${totalSP}</td>
+                      <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#16a34a;font-weight:600;">${totalPP}</td>
+                    </tr>`;
+                });
+
+                const subject = `📊 Requirements Uploaded — ${secName} (${monthCount} Month${monthCount !== 1 ? 's' : ''})`;
+
+                for (const head of secHeads) {
+                    const recipientName = head.name || "Section Head";
+                    const htmlMsg = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 0;">
+<tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0"
+    style="background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.09);">
+
+  <!-- Header -->
+  <tr><td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:32px 36px;text-align:center;">
+    <div style="font-size:40px;margin-bottom:10px;">📊</div>
+    <h1 style="color:#fff;font-size:22px;font-weight:700;margin:0;">Requirements Upload Summary</h1>
+    <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px;">New manpower requirements have been uploaded for your section</p>
+  </td></tr>
+
+  <!-- Greeting -->
+  <tr><td style="padding:28px 36px 8px;">
+    <p style="font-size:15px;color:#334155;margin:0 0 6px;">Dear <strong>${recipientName}</strong>,</p>
+    <p style="font-size:14px;color:#64748b;line-height:1.6;margin:0;">
+      New manpower requirements have been uploaded for your section <strong>${secName}</strong>.
+      Please review the details below.
+    </p>
+  </td></tr>
+
+  <!-- Summary Cards -->
+  <tr><td style="padding:16px 36px;">
+    <table width="100%" cellpadding="0" cellspacing="8">
+      <tr>
+        <td width="33%" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;text-align:center;">
+          <div style="font-size:26px;font-weight:700;color:#2563eb;">${monthCount}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:600;">MONTHS UPLOADED</div>
+        </td>
+        <td width="2%"></td>
+        <td width="33%" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;text-align:center;">
+          <div style="font-size:26px;font-weight:700;color:#16a34a;">${secData.salesCount}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:600;">SALES PLAN ENTRIES</div>
+        </td>
+        <td width="2%"></td>
+        <td width="30%" style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px;text-align:center;">
+          <div style="font-size:26px;font-weight:700;color:#d97706;">${secData.prodCount}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:600;">PROD PLAN ENTRIES</div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- Month Details Table -->
+  <tr><td style="padding:0 36px 24px;">
+    <p style="font-size:14px;font-weight:700;color:#1e293b;margin:0 0 10px;">Month-wise Requirement Summary:</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+      <tr>
+        <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:left;border:1px solid #1e3a5f;">Month</th>
+        <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">Sales Plan</th>
+        <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">Production Plan</th>
+      </tr>
+      ${monthRows}
+    </table>
+  </td></tr>
+
+  <!-- Uploaded By -->
+  <tr><td style="padding:0 36px 28px;">
+    <table width="100%" cellpadding="0" cellspacing="0"
+        style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr>
+        <td style="padding:10px 14px;font-size:13px;color:#64748b;">📤 <strong>Uploaded By</strong></td>
+        <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#1e293b;">${uploadedByName} (${uploadedByRole})</td>
+        <td style="padding:10px 14px;font-size:13px;color:#64748b;">🕒 <strong>Date / Time</strong></td>
+        <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#1e293b;">${uploadedAt}</td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 36px;text-align:center;">
+    <p style="font-size:12px;color:#94a3b8;margin:0;">Automated notification from <strong>Furukawa LMS</strong>. Please do not reply.</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+
+                    await sendMail(head.email, subject, htmlMsg)
+                        .then(() => console.log(`[UPLOAD-EMAIL] ✅ Sent to ${head.email} for section: ${secName}`))
+                        .catch(e => console.error(`[UPLOAD-EMAIL] ❌ Failed for ${head.email}:`, e.message));
+                }
+            }
+        } catch (emailErr) {
+            console.error("[UPLOAD-EMAIL] Error sending upload summary emails:", emailErr.message);
+        }
+        // ── End upload email block ────────────────────────────────────────────
 
         res.status(201).json(new ApiResponse(201, {
             totalExcelMonthRows: rowsToProcess.length,
@@ -979,7 +1132,8 @@ export const updateRequirement = asyncHandler(async (req, res) => {
             old_values: currentReq,
             new_values: updatedReq,
             employee_id: req.user?._id || req.user?.id || null,
-            employee_role: req.user?.role || "Admin"
+            employee_role: req.user?.role || "Admin",
+            updated_by_name: req.user?.fullName || req.user?.name || req.user?.username || null
         });
     } catch (logErr) {
         console.error("Failed to log requirement update:", logErr.message);
@@ -1326,7 +1480,8 @@ export const batchUpdateRequirements = asyncHandler(async (req, res) => {
                 old_values: currentReq,
                 new_values: updatedReq,
                 employee_id: req.user?._id || req.user?.id || null,
-                employee_role: req.user?.role || "Admin"
+                employee_role: req.user?.role || "Admin",
+                updated_by_name: req.user?.fullName || req.user?.name || req.user?.username || null
             });
         } catch (logErr) {
             console.error("Failed to log requirement batch update:", logErr.message);

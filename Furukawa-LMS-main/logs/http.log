@@ -81,3 +81,4 @@
 [14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mChecked/Created sections table and migrated columns in MSSQL[39m
 [14 Mar, 2026 - 00:35:51:3551] [34minfo[39m: [34mSubSection table initialized[39m
 [14 Mar, 2026 - 00:36:06:366] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[11 Apr, 2026 - 01:38:51:3851] [34minfo[39m: [34mMSSQL Connected to 'dojo'[39m

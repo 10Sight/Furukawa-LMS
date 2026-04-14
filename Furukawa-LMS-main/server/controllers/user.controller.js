@@ -60,28 +60,31 @@ const getHierarchyJoinSQL = `
     FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
   ) s_res
   OUTER APPLY (
-    SELECT TOP 1 id, name as deptName, instructor as deptInstructor
+    -- Optimize by checking ID directly first, then falling back to name/string comparison if needed
+    SELECT TOP 1 d.id, d.name as deptName, d.instructor as deptInstructor
     FROM departments d 
     WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
-       OR (u.departmentId IS NULL AND (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name))
+       OR (u.departmentId IS NULL AND (u.department = d.name OR TRY_CAST(u.department AS INT) = d.id))
   ) d
   OUTER APPLY (
     SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
   ) st
 `;
 
-const formatUser = (u) => {
+const sanitize = (val) => (val && val !== "N/A" && val.toLowerCase() !== "none") ? val : null;
+
+export const formatUser = (u) => {
   const formatted = {
     ...u,
     _id: u.id,
     avatar: parseJSON(u.avatar),
-    department: u.deptName ? { _id: String(u.actualDeptId || u.departmentId), name: u.deptName, instructor: u.deptInstructor } : (u.department ? { _id: String(u.department), name: u.department } : null),
-    deptName: u.deptName || u.department || "",
-    sectionName: u.sectionName || u.section || "",
-    lineName: u.lineName || u.line || "",
-    subSectionName: u.subSectionName || u.sub_section || "",
-    stationName: u.stationName || u.stationNo || "",
-    fromInfo: [u.deptName || u.department, u.sectionName || u.section, u.lineName || u.line, u.subSectionName || u.sub_section, u.stationName || u.stationNo].filter(Boolean).join(' / ')
+    department: u.deptName ? { _id: String(u.actualDeptId || u.departmentId), name: u.deptName, instructor: u.deptInstructor } : (sanitize(u.department) ? { _id: String(u.department), name: u.department } : null),
+    deptName: u.deptName || sanitize(u.department) || "",
+    sectionName: u.sectionName || sanitize(u.section) || "",
+    lineName: u.lineName || sanitize(u.line) || "",
+    subSectionName: u.subSectionName || sanitize(u.sub_section) || "",
+    stationName: u.stationName || sanitize(u.stationNo) || "",
+    fromInfo: [u.deptName || sanitize(u.department), u.sectionName || sanitize(u.section), u.lineName || sanitize(u.line), u.subSectionName || sanitize(u.sub_section), u.stationName || sanitize(u.stationNo)].filter(Boolean).join(' / ')
   };
   delete formatted.password;
   delete formatted.refreshToken;
@@ -106,25 +109,41 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     whereClauses.push("(u.fullName LIKE ? OR u.email LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
     params.push(t, t, t, t);
   }
-  if (req.query.status) { whereClauses.push("u.status = ?"); params.push(req.query.status); }
+
   if (req.query.unit) { whereClauses.push("u.unit = ?"); params.push(req.query.unit); }
   if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
-  if (req.query.sectionId) { 
-    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))"); 
-    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId); 
+  if (req.query.sectionId) {
+    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))");
+    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId);
   }
-  if (req.query.lineId) { 
-    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))"); 
-    params.push(req.query.lineId, req.query.lineId); 
+  if (req.query.lineId) {
+    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))");
+    params.push(req.query.lineId, req.query.lineId);
   }
   if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
   if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
   if (req.query.role) { whereClauses.push("u.role = ?"); params.push(req.query.role); }
+  if (req.query.customRoleId) { whereClauses.push("u.customRoleId = ?"); params.push(req.query.customRoleId); }
+  if (req.query.isEmployee === "true") { whereClauses.push("u.isEmployee = 1"); }
+  if (req.query.isTrainer === "true") { whereClauses.push("u.isTrainer = 1"); }
+  
+  if (req.query.excludeRoles) {
+    const roles = req.query.excludeRoles.split(",");
+    whereClauses.push(`u.role NOT IN (${roles.map(() => "?").join(",")})`);
+    params.push(...roles);
+  }
+
   if (req.query.isStaff === "true") {
     whereClauses.push("(u.isMentor = 1 OR u.isSupervisor = 1 OR u.isIncharge = 1 OR u.isTrainer = 1)");
   }
 
+  if (req.query.roleManagerFilters === "true") {
+    whereClauses.push("(u.isEmployee = 1 OR u.isTrainer = 1 OR u.role = 'CUSTOM')");
+  }
+
   const { dateFrom, dateTo, status, shift, date } = req.query;
+
+  const upperStatus = (status || "").toUpperCase();
 
   let attendanceJoinSQL = "";
   let attendanceParams = [];
@@ -133,14 +152,18 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     let start = dateFrom || date || dateTo;
     let end = dateTo || date || dateFrom;
 
+    // Optimization: If filtering for 'PRESENT', push the filter into the subquery
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+
     attendanceJoinSQL = `
       LEFT JOIN (
         SELECT userId, 
                MAX(status) as logStatus, 
                MAX(shift) as logShift,
+               MAX([date]) as logDate,
                COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
         FROM attendance_logs 
-        WHERE [date] BETWEEN ? AND ?
+        WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
       ) al ON u.id = al.userId
     `;
@@ -149,18 +172,18 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     // Ensure al alias exists even if no date filter is applied to avoid SQL errors in WHERE clause
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT NULL as logStatus, NULL as logShift, 0 as presentDaysCount, NULL as userId
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
       ) al ON 1=0
     `;
   }
 
-  if (status === "Present") {
+  if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) {
       whereClauses.push("al.presentDaysCount > 0");
     } else {
       whereClauses.push("al.logStatus = 'Present'");
     }
-  } else if (status === "Absent") {
+  } else if (upperStatus === "ABSENT") {
     if (dateFrom && dateTo) {
       whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
     } else {
@@ -182,6 +205,29 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
+  // --- NEW: Calculate Present/Absent counts for the cards ---
+  // Create a version of where clauses that omits the specific status filter
+  const countsWhereClauses = whereClauses.filter(c =>
+    !c.includes("al.logStatus") &&
+    !c.includes("al.presentDaysCount") &&
+    !c.includes("(al.userId IS NULL")
+  );
+  const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
+
+  const [countsData] = await executeQuery(`
+    SELECT 
+      SUM(CASE WHEN al.logStatus = 'Present' THEN 1 ELSE 0 END) as presentCount,
+      SUM(CASE WHEN al.logStatus != 'Present' OR al.userId IS NULL THEN 1 ELSE 0 END) as absentCount
+    FROM users u 
+    ${getHierarchyJoinSQL} 
+    ${attendanceJoinSQL}
+    ${countsWhereSQL}
+  `, [...attendanceParams, ...params]); // We use the same params as the filters built so far
+
+  const presentCount = countsData[0]?.presentCount || 0;
+  const absentCount = countsData[0]?.absentCount || 0;
+  // ----------------------------------------------------------
+
   const [cnt] = await executeQuery(`
     SELECT COUNT(*) as total 
     FROM users u ${getHierarchyJoinSQL} 
@@ -196,7 +242,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
            s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
            cr.name as customRoleName,
            al.logShift,
-           al.logStatus
+           al.logStatus,
+           al.logDate
     FROM users u
     ${getHierarchyJoinSQL}
     LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
@@ -209,6 +256,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),
     totalUsers,
+    presentCount,
+    absentCount,
     totalPages: Math.ceil(totalUsers / limit),
     currentPage: page,
     limit
@@ -492,25 +541,67 @@ export const getAllInstructors = asyncHandler(async (req, res) => {
 
   let whereClauses = ["u.isTrainer = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
   let params = [];
-  if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
-  if (req.query.sectionId) { 
-    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))"); 
-    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId); 
+  const { dateFrom, dateTo, status, shift, date } = req.query;
+
+  const upperStatus = (status || "").toUpperCase();
+
+  let attendanceJoinSQL = "";
+  let attendanceParams = [];
+
+  if (dateFrom || dateTo || (date && date !== "all")) {
+    let start = dateFrom || date || dateTo;
+    let end = dateTo || date || dateFrom;
+
+    // Optimization: Push status filter into subquery
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT userId, 
+               MAX(status) as logStatus, 
+               MAX(shift) as logShift,
+               MAX([date]) as logDate,
+               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+        FROM attendance_logs 
+        WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
+        GROUP BY userId
+      ) al ON u.id = al.userId
+    `;
+    attendanceParams = [start, end];
+  } else {
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
+      ) al ON 1=0
+    `;
   }
-  if (req.query.lineId) { 
-    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))"); 
-    params.push(req.query.lineId, req.query.lineId); 
+
+  if (upperStatus === "PRESENT") {
+    if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
+    else whereClauses.push("al.logStatus = 'Present'");
+  } else if (upperStatus === "ABSENT") {
+    if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+  } else if (status) {
+    whereClauses.push("u.status = ?");
+    params.push(status);
   }
-  if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
-  if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
+
+  if (shift) {
+    if (dateFrom || date) whereClauses.push("al.logShift = ?");
+    else whereClauses.push("u.shift = ?");
+    params.push(shift);
+  }
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${whereSQL}`, params);
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params]);
   const [instructors] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
-    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           al.logShift, al.logStatus, al.logDate
+    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit]);
 
   res.json(new ApiResponse(200, {
     users: instructors.map(formatUser),
@@ -535,16 +626,69 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     params.push(t, t, t);
   }
   if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
-  if (req.query.sectionId) { 
-    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))"); 
-    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId); 
+  if (req.query.sectionId) {
+    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))");
+    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId);
   }
-  if (req.query.lineId) { 
-    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))"); 
-    params.push(req.query.lineId, req.query.lineId); 
+  if (req.query.lineId) {
+    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))");
+    params.push(req.query.lineId, req.query.lineId);
   }
   if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
   if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
+
+  const { dateFrom, dateTo, status, shift, date } = req.query;
+
+  const upperStatus = (status || "").toUpperCase();
+
+  let attendanceJoinSQL = "";
+  let attendanceParams = [];
+
+  if (dateFrom || dateTo || (date && date !== "all")) {
+    let start = dateFrom || date || dateTo;
+    let end = dateTo || date || dateFrom;
+
+    // Optimization: Push status filter into subquery
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT userId, 
+               MAX(status) as logStatus, 
+               MAX(shift) as logShift,
+               MAX([date]) as logDate,
+               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+        FROM attendance_logs 
+        WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
+        GROUP BY userId
+      ) al ON u.id = al.userId
+    `;
+    attendanceParams = [start, end];
+  } else {
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
+      ) al ON 1=0
+    `;
+  }
+
+  if (upperStatus === "PRESENT") {
+    if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
+    else whereClauses.push("al.logStatus = 'Present'");
+  } else if (upperStatus === "ABSENT") {
+    if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+  } else if (status) {
+    whereClauses.push("u.status = ?");
+    params.push(status);
+  }
+
+  if (shift) {
+    if (dateFrom || date) whereClauses.push("al.logShift = ?");
+    else whereClauses.push("u.shift = ?");
+    params.push(shift);
+  }
+
   if (req.user.role === "INSTRUCTOR") {
     const [iDepts] = await executeQuery("SELECT id FROM departments WHERE instructor = ?", [req.user.id]);
     if (iDepts.length) {
@@ -557,13 +701,17 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   const [cnt] = await executeQuery(`
     SELECT COUNT(*) as total 
     FROM users u ${getHierarchyJoinSQL} 
+    ${attendanceJoinSQL}
     ${whereSQL}
-  `, params);
+  `, [...attendanceParams, ...params]);
   const [students] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
-    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           al.logShift, al.logStatus, al.logDate
+    FROM users u ${getHierarchyJoinSQL} 
+    ${attendanceJoinSQL}
+    ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit]);
 
   res.json(new ApiResponse(200, {
     users: students.map(formatUser),
@@ -587,13 +735,66 @@ export const getAllMentors = asyncHandler(async (req, res) => {
     params.push(t, t, t);
   }
 
+  const { dateFrom, dateTo, status, shift, date } = req.query;
+
+  const upperStatus = (status || "").toUpperCase();
+
+  let attendanceJoinSQL = "";
+  let attendanceParams = [];
+
+  if (dateFrom || dateTo || (date && date !== "all")) {
+    let start = dateFrom || date || dateTo;
+    let end = dateTo || date || dateFrom;
+
+    // Optimization: Push status filter into subquery
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT userId, 
+               MAX(status) as logStatus, 
+               MAX(shift) as logShift,
+               MAX([date]) as logDate,
+               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+        FROM attendance_logs 
+        WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
+        GROUP BY userId
+      ) al ON u.id = al.userId
+    `;
+    attendanceParams = [start, end];
+  } else {
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
+      ) al ON 1=0
+    `;
+  }
+
+  if (upperStatus === "PRESENT") {
+    if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
+    else whereClauses.push("al.logStatus = 'Present'");
+  } else if (upperStatus === "ABSENT") {
+    if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+  } else if (status) {
+    whereClauses.push("u.status = ?");
+    params.push(status);
+  }
+
+  if (shift) {
+    if (dateFrom || date) whereClauses.push("al.logShift = ?");
+    else whereClauses.push("u.shift = ?");
+    params.push(shift);
+  }
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${whereSQL}`, params);
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params]);
   const [users] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
-    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           al.logShift, al.logStatus, al.logDate
+    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit]);
 
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),
@@ -617,13 +818,66 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
     params.push(t, t, t);
   }
 
+  const { dateFrom, dateTo, status, shift, date } = req.query;
+
+  const upperStatus = (status || "").toUpperCase();
+
+  let attendanceJoinSQL = "";
+  let attendanceParams = [];
+
+  if (dateFrom || dateTo || (date && date !== "all")) {
+    let start = dateFrom || date || dateTo;
+    let end = dateTo || date || dateFrom;
+
+    // Optimization: Push status filter into subquery
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT userId, 
+               MAX(status) as logStatus, 
+               MAX(shift) as logShift,
+               MAX([date]) as logDate,
+               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+        FROM attendance_logs 
+        WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
+        GROUP BY userId
+      ) al ON u.id = al.userId
+    `;
+    attendanceParams = [start, end];
+  } else {
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
+      ) al ON 1=0
+    `;
+  }
+
+  if (upperStatus === "PRESENT") {
+    if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
+    else whereClauses.push("al.logStatus = 'Present'");
+  } else if (upperStatus === "ABSENT") {
+    if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+  } else if (status) {
+    whereClauses.push("u.status = ?");
+    params.push(status);
+  }
+
+  if (shift) {
+    if (dateFrom || date) whereClauses.push("al.logShift = ?");
+    else whereClauses.push("u.shift = ?");
+    params.push(shift);
+  }
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${whereSQL}`, params);
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params]);
   const [users] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
-    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           al.logShift, al.logStatus, al.logDate
+    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit]);
 
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),
@@ -647,13 +901,66 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
     params.push(t, t, t);
   }
 
+  const { dateFrom, dateTo, status, shift, date } = req.query;
+
+  const upperStatus = (status || "").toUpperCase();
+
+  let attendanceJoinSQL = "";
+  let attendanceParams = [];
+
+  if (dateFrom || dateTo || (date && date !== "all")) {
+    let start = dateFrom || date || dateTo;
+    let end = dateTo || date || dateFrom;
+
+    // Optimization: Push status filter into subquery
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT userId, 
+               MAX(status) as logStatus, 
+               MAX(shift) as logShift,
+               MAX([date]) as logDate,
+               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+        FROM attendance_logs 
+        WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
+        GROUP BY userId
+      ) al ON u.id = al.userId
+    `;
+    attendanceParams = [start, end];
+  } else {
+    attendanceJoinSQL = `
+      LEFT JOIN (
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
+      ) al ON 1=0
+    `;
+  }
+
+  if (upperStatus === "PRESENT") {
+    if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
+    else whereClauses.push("al.logStatus = 'Present'");
+  } else if (upperStatus === "ABSENT") {
+    if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+  } else if (status) {
+    whereClauses.push("u.status = ?");
+    params.push(status);
+  }
+
+  if (shift) {
+    if (dateFrom || date) whereClauses.push("al.logShift = ?");
+    else whereClauses.push("u.shift = ?");
+    params.push(shift);
+  }
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${whereSQL}`, params);
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params]);
   const [users] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
-    FROM users u ${getHierarchyJoinSQL} ${whereSQL}
+    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           al.logShift, al.logStatus, al.logDate
+    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit]);
 
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),

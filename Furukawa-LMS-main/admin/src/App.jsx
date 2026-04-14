@@ -16,7 +16,6 @@ const CmsLayout = lazy(() => import("./Layout/CmsLayout.jsx").then(m => ({ defau
 
 const AddQuestionPaper = lazy(() => import("./pages/CMS/AddQuestionPaper.jsx"));
 const Daily5MRecording = lazy(() => import("./pages/CMS/Daily5MRecording.jsx"));
-const Daily5MApprovalStatus = lazy(() => import("./pages/CMS/Daily5MApprovalStatus.jsx"));
 const Daily5MDashboard = lazy(() => import("./pages/CMS/Daily5MDashboard.jsx"));
 const DashboardHome = lazy(() => import("./pages/Dashboard/DashboardHome.jsx"));
 const Attendance = lazy(() => import("./pages/Dashboard/Attendance.jsx"));
@@ -265,7 +264,7 @@ const App = () => {
             <Route index element={<Daily5MDashboard />} />
             <Route path="add-question-paper" element={<AddQuestionPaper />} />
             <Route path="daily-5m-recording" element={<Daily5MRecording />} />
-            <Route path="approvals/status" element={<Daily5MApprovalStatus />} />
+            <Route path="approvals/status" element={<Navigate to="/cms/daily-5m-recording" replace />} />
           </Route>
 
           {/* Instructor routes */}

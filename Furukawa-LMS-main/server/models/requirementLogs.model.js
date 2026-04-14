@@ -54,6 +54,8 @@ const RequirementLog = {
                     ALTER TABLE [dbo].[RequirementUpdateLogs] ADD employee_id INT NULL;
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'employee_role')
                     ALTER TABLE [dbo].[RequirementUpdateLogs] ADD employee_role NVARCHAR(100);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('RequirementUpdateLogs') AND name = 'updated_by_name')
+                    ALTER TABLE [dbo].[RequirementUpdateLogs] ADD updated_by_name NVARCHAR(255) NULL;
             END
         `;
 
@@ -67,7 +69,7 @@ const RequirementLog = {
     },
 
     async create(logData) {
-        let { requirement_id, section_id, subsection_id, old_values, new_values, employee_id, employee_role } = logData;
+        let { requirement_id, section_id, subsection_id, old_values, new_values, employee_id, employee_role, updated_by_name } = logData;
 
         const safeJson = (val) => (typeof val === 'string' ? val : JSON.stringify(val || {}));
 
@@ -76,9 +78,9 @@ const RequirementLog = {
 
         const query = `
             INSERT INTO RequirementUpdateLogs 
-            (requirement_id, section_id, subsection_id, old_values, new_values, employee_id, employee_role, created_at)
+            (requirement_id, section_id, subsection_id, old_values, new_values, employee_id, employee_role, updated_by_name, created_at)
             OUTPUT INSERTED.log_id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         try {
@@ -90,6 +92,7 @@ const RequirementLog = {
                 safeJson(new_values),
                 employee_id,
                 employee_role,
+                updated_by_name || null,
                 utcIsoString
             ]);
 
@@ -109,7 +112,7 @@ const RequirementLog = {
         let query = `
             SELECT 
                 l.*,
-                u.fullName as user_name,
+                COALESCE(u.fullName, l.updated_by_name) as user_name,
                 u.email as user_email,
                 u.avatar as user_avatar,
                 d.name as section_name,

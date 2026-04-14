@@ -676,6 +676,7 @@ const Instructor = () => {
                 <TableHead className="w-[40px] px-4"><Checkbox checked={instructors.length > 0 && selectedIds.length === instructors.length} onCheckedChange={toggleSelectAll} /></TableHead>
                 <TableHead>Instructor</TableHead>
                 <TableHead>Emp Code</TableHead>
+                <TableHead>Date</TableHead>
                 <TableHead>Hierarchy Path</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Contact</TableHead>
@@ -700,6 +701,9 @@ const Instructor = () => {
                       </div>
                     </TableCell>
                     <TableCell><Badge variant="outline" className="font-mono bg-blue-50/50">{instructor.empId || "N/A"}</Badge></TableCell>
+                    <TableCell className="text-sm text-gray-500 whitespace-nowrap">
+                      {instructor.logDate ? format(new Date(instructor.logDate), "dd MMM yyyy") : "-"}
+                    </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-0.5 max-w-[200px]">
                         <p className="text-[11px] font-medium text-blue-800 truncate">{instructor.deptName || "No Dept"}</p>
@@ -722,7 +726,7 @@ const Instructor = () => {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={7} className="h-64 text-center text-muted-foreground">No instructors found</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-64 text-center text-muted-foreground">No instructors found</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

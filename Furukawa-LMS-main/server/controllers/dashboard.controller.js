@@ -5,256 +5,288 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
-    // line param now carries subSectionId from frontend
-    const { section, line, machine } = req.query;
+    const { section, line } = req.query;
 
     const currentYear  = new Date().getFullYear();
-    const currentMonth = new Date().toLocaleString('en-US', { month: 'long' }); // e.g. 'April'
-    const monthsOrder  = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const currentMonth = new Date().toLocaleString('en-US', { month: 'long' });
+    const monthsOrder  = ['January','February','March','April','May','June',
+                          'July','August','September','October','November','December'];
 
-    let reqSql = `
-        SELECT month_name as month, CAST(SUM(prod_plan) AS BIGINT) as required_count 
-        FROM requirements 
-        WHERE year_val = ? 
-    `;
-    const reqParams = [currentYear];
-
-    if (section && section !== 'ALL') {
-        reqSql += " AND section_name = (SELECT name FROM [sections] WHERE id = ?)";
-        reqParams.push(section);
-    }
-    if (line && line !== 'ALL') {
-        reqSql += " AND description_line = (SELECT name FROM [lines] WHERE id = ?)";
-        reqParams.push(line);
-    }
-    // Ignoring machine filter as requested effectively
-
-    reqSql += " GROUP BY month_name";
-
-    let reqResults = [];
-    try {
-        const [rows] = await executeQuery(reqSql, reqParams);
-        reqResults = rows;
-    } catch (e) {
-        console.warn("Requirements table error:", e.message);
-    }
-
-    let userWhereClause = "WHERE isEmployee = 1 AND isDeleted = 0 AND YEAR(createdAt) = ?";
-    let userParams = [currentYear];
-
-    if (section && section !== 'ALL') {
-        userWhereClause += " AND sectionId = ?";
-        userParams.push(section);
-    }
-    if (line && line !== 'ALL') {
-        userWhereClause += " AND lineId = ?";
-        userParams.push(line);
-    }
-
-    const userSql = `
-        SELECT 
-            DATENAME(month, createdAt) as month, 
-            COUNT(*) as added_count 
-        FROM users 
-        ${userWhereClause}
-        GROUP BY MONTH(createdAt), DATENAME(month, createdAt)
-    `;
-
-    const [userResults] = await executeQuery(userSql, userParams);
-
-    // Initial count (users created before current year)
-    let initialSql = "SELECT COUNT(*) as total FROM users WHERE isEmployee = 1 AND isDeleted = 0 AND YEAR(createdAt) < ?";
-    let initialParams = [currentYear];
-
-    if (section && section !== 'ALL') {
-        initialSql += " AND sectionId = ?";
-        initialParams.push(section);
-    }
-    if (line && line !== 'ALL') {
-        initialSql += " AND lineId = ?";
-        initialParams.push(line);
-    }
-
-    const [initialCountRes] = await executeQuery(initialSql, initialParams);
-    let runningTotal = initialCountRes[0].total;
-
-    const manpowerData = monthsOrder.map(m => {
-        const reqItem  = reqResults.find(r => r.month === m);
-        const userItem = userResults.find(u => u.month === m);
-
-        if (userItem) runningTotal += userItem.added_count;
-
-        const isFuture = new Date(`${m} 1, ${currentYear}`) > new Date();
-
-        return {
-            month:    m.substring(0, 3),
-            required: reqItem ? reqItem.required_count : 0,
-            current:  isFuture ? null : runningTotal,
-            actual:   null, // filled in below for the current month
-        };
-    });
-
-    // ── Yesterday's Actual Present (via payCode → employeeid join) ────────────
-    // Resolve section / line to names so we can filter via user_hierarchy_snapshots
-    let sectionNameHier = null;
-    let lineNameHier    = null;
+    // ── Step 1: Resolve section/line IDs → names ──────────────────────────────
+    // user_hierarchy_snapshots columns: section, lines  (NOT section_name / line_name)
+    let sectionName = null;
+    let lineName    = null;
 
     if (section && section !== 'ALL' && !isNaN(section)) {
         try {
-            const [sRows] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [section]);
-            if (sRows.length > 0) sectionNameHier = sRows[0].name;
-        } catch (e) { /* ignore */ }
+            const [r] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [section]);
+            if (r.length > 0) sectionName = r[0].name.trim();
+        } catch(e) { console.warn("[DASHBOARD] section lookup failed:", e.message); }
     }
     if (line && line !== 'ALL' && !isNaN(line)) {
         try {
-            const [lRows] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [line]);
-            if (lRows.length > 0) lineNameHier = lRows[0].name;
-        } catch (e) { /* ignore */ }
+            const [r] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [line]);
+            if (r.length > 0) lineName = r[0].name.trim();
+        } catch(e) { console.warn("[DASHBOARD] line lookup failed:", e.message); }
     }
 
-    const yesterday    = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().slice(0, 10); // YYYY-MM-DD
+    const safeName = (s) => s.replace(/'/g, "''");
 
-    // Build optional hierarchy WHERE additions (no user-supplied strings go into ?)
-    const useHierJoin = !!(sectionNameHier || lineNameHier);
-    let hierFilter    = '';
-    if (sectionNameHier) hierFilter += ` AND LTRIM(RTRIM(UPPER(uhs.section_name))) = UPPER('${sectionNameHier.replace(/'/g, "''")}')` ;
-    if (lineNameHier)    hierFilter += ` AND LTRIM(RTRIM(UPPER(uhs.line_name)))    = UPPER('${lineNameHier.replace(/'/g, "''")}')` ;
+    // ── Step 2: Build hierarchy WHERE condition ───────────────────────────────
+    // TABLE COLUMNS: uhs.section  and  uhs.lines  (as per user_hierarchy_snapshots schema)
+    let hierCondition = '';
+    if (sectionName) hierCondition += ` AND UPPER(LTRIM(RTRIM(uhs.[section]))) = UPPER('${safeName(sectionName)}')`;
+    if (lineName)    hierCondition += ` AND UPPER(LTRIM(RTRIM(uhs.[lines])))   = UPPER('${safeName(lineName)}')`;
 
-    let yesterdayPresent = 0;
+    console.log(`[DASHBOARD] Filter → section: "${sectionName}", line: "${lineName}"`);
+    console.log(`[DASHBOARD] hierCondition: ${hierCondition}`);
+
+    // ── Step 3: Requirements ──────────────────────────────────────────────────
+    let reqResults = [];
+    const buildReqFilter = (secCol, lineCol, secId, lineId) => {
+        let extra = '';
+        if (secId && secId !== 'ALL') extra += ` AND ${secCol} = (SELECT name FROM [sections] WHERE id = ${parseInt(secId)})`;
+        if (lineId && lineId !== 'ALL') extra += ` AND ${lineCol} = (SELECT name FROM [lines] WHERE id = ${parseInt(lineId)})`;
+        return extra;
+    };
+
+    // Try camelCase columns first
     try {
-        const ySql = useHierJoin
-            ? `SELECT COUNT(*) AS cnt
-               FROM   attendance_logs al
-               INNER JOIN user_hierarchy_snapshots uhs
-                   ON LTRIM(RTRIM(UPPER(CAST(al.payCode AS VARCHAR)))) =
-                      LTRIM(RTRIM(UPPER(CAST(uhs.employeeid AS VARCHAR))))
-               WHERE CONVERT(DATE, al.[date]) = ?
-                 AND UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT'
-                 ${hierFilter}`
-            : `SELECT COUNT(*) AS cnt
-               FROM   attendance_logs al
-               WHERE CONVERT(DATE, al.[date]) = ?
-                 AND UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT'`;
-
-        const [yRows] = await executeQuery(ySql, [yesterdayStr]);
-        yesterdayPresent = Number(yRows[0]?.cnt) || 0;
-    } catch (e) {
-        console.warn("Yesterday present count error:", e.message);
+        const filter = buildReqFilter('sectionName', 'lineDescription', section, line);
+        const sql1 = `
+            SELECT monthName AS month, CAST(SUM(ISNULL(prodPlan,0)) AS BIGINT) AS required_count
+            FROM requirements
+            WHERE [year] = ${currentYear} ${filter}
+            GROUP BY monthName
+        `;
+        const [rows] = await executeQuery(sql1, []);
+        reqResults = rows;
+        console.log(`[DASHBOARD] camelCase req query OK, rows: ${rows.length}`);
+    } catch (e1) {
+        console.warn("[DASHBOARD] camelCase req query failed:", e1.message);
+        try {
+            const filter = buildReqFilter('section_name', 'description_line', section, line);
+            const sql2 = `
+                SELECT month_name AS month, CAST(SUM(ISNULL(prod_plan,0)) AS BIGINT) AS required_count
+                FROM requirements
+                WHERE year_val = ${currentYear} ${filter}
+                GROUP BY month_name
+            `;
+            const [rows] = await executeQuery(sql2, []);
+            reqResults = rows;
+            console.log(`[DASHBOARD] snake_case req query OK, rows: ${rows.length}`);
+        } catch (e2) {
+            console.warn("[DASHBOARD] snake_case req query also failed:", e2.message);
+        }
     }
 
-    // Attach `actual` to the current-month slot (only slot that has real yesterday data)
-    const curMonthEntry = manpowerData.find(m => m.month === currentMonth.substring(0, 3));
-    if (curMonthEntry) curMonthEntry.actual = yesterdayPresent;
-
-    const attritionData = monthsOrder.slice(0, 6).map(m => ({
-        month: m.substring(0, 3),
-        actual: Math.random() * 2,
-        target: 2.0
-    }));
-
-
-    const absenteeismData = [];
-
-    // Skill Gap Logic
-    let skillSql = "SELECT currentLevel as skill_level, COUNT(*) as avail FROM users WHERE role != 'admin' AND isDeleted = 0";
-    const skillParams = [];
-
-    if (section && section.toLowerCase() !== 'all') {
-        skillSql += " AND sectionId = ?";
-        skillParams.push(section);
-    }
-    if (line && line.toLowerCase() !== 'all') {
-        skillSql += " AND lineId = ?";
-        skillParams.push(line);
+    // ── Step 4: Headcount from user_hierarchy_snapshots ───────────────────────
+    // Correct columns: [section] and [lines]
+    let snapshotTotal = 0;
+    try {
+        const [snapRows] = await executeQuery(
+            `SELECT COUNT(DISTINCT employeeid) AS total
+             FROM user_hierarchy_snapshots uhs
+             WHERE 1=1 ${hierCondition}`,
+            []
+        );
+        snapshotTotal = Number(snapRows[0]?.total) || 0;
+        console.log(`[DASHBOARD] Snapshot headcount: ${snapshotTotal}`);
+    } catch(e) {
+        console.warn("[DASHBOARD] Snapshot headcount query failed:", e.message);
     }
 
-    skillSql += " GROUP BY currentLevel";
-    const [skillRes] = await executeQuery(skillSql, skillParams);
+    // ── Step 5: Daily attendance — join attendance_logs ↔ user_hierarchy_snapshots ──
+    // attendance_logs.payCode  matches  user_hierarchy_snapshots.employeeid
+    // Then filter by uhs.[section] and uhs.[lines]
+    let dailyAttendance = [];
+    const currentMonthNum = new Date().getMonth() + 1;
+    const daysInMonth = new Date(currentYear, currentMonthNum, 0).getDate();
 
-    // Map DB levels (e.g. 'L1', 'Level 1') to standardized L0-L4
-    const skillGapData = [
-        { level: 'L0', label: 'Trainee', avail: 0, req: 0, color: 'bg-zinc-500' }, // Req is hard to know without data
-        { level: 'L1', label: 'Operator', avail: 0, req: 0, color: 'bg-blue-500' },
-        { level: 'L2', label: 'Skilled', avail: 0, req: 0, color: 'bg-green-500' },
-        { level: 'L3', label: 'Expert', avail: 0, req: 0, color: 'bg-purple-500' },
-        { level: 'L4', label: 'Master', avail: 0, req: 0, color: 'bg-amber-500' },
-    ];
+    try {
+        const attSql = `
+            SELECT
+                DAY(al.[date])               AS dayNum,
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT'  THEN 1 ELSE 0 END) AS presentCount,
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE') THEN 1 ELSE 0 END) AS absentCount,
+                COUNT(*)                     AS totalCount
+            FROM attendance_logs al
+            INNER JOIN user_hierarchy_snapshots uhs
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
+            WHERE YEAR(al.[date]) = ${currentYear}
+              AND MONTH(al.[date]) = ${currentMonthNum}
+              ${hierCondition}
+            GROUP BY DAY(al.[date])
+            ORDER BY DAY(al.[date])
+        `;
+        const [attRows] = await executeQuery(attSql, []);
+        dailyAttendance = attRows;
+        console.log(`[DASHBOARD] Daily attendance rows: ${attRows.length}`);
+    } catch(e) {
+        console.warn("[DASHBOARD] Daily attendance query failed:", e.message);
+    }
 
-    skillRes.forEach(row => {
-        // match row.skill_level to skillGapData
-        // simple parsing
-        const lvl = row.skill_level; // e.g. "L1" or "1"
-        if (!lvl) return;
-        const idx = skillGapData.findIndex(s => s.level === lvl || s.level === `L${lvl}`);
-        if (idx !== -1) skillGapData[idx].avail = row.avail;
+    // ── Step 6: Build manpowerData array ──────────────────────────────────────
+    const currentReqItem = reqResults.find(r =>
+        (r.month || '').toString().trim().toLowerCase() === currentMonth.toLowerCase()
+    );
+    const monthlyRequirement = currentReqItem ? (Number(currentReqItem.required_count) || 0) : 0;
+
+    const manpowerData = Array.from({ length: daysInMonth }, (_, index) => {
+        const day = index + 1;
+        const attItem = dailyAttendance.find(a => Number(a.dayNum) === day);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const iterDate = new Date(currentYear, currentMonthNum - 1, day);
+        iterDate.setHours(0, 0, 0, 0);
+        const isFuture = iterDate > today;
+
+        return {
+            month:    `${day} ${currentMonth.substring(0, 3)}`,
+            day:      day,
+            required: monthlyRequirement,
+            current:  isFuture ? null : snapshotTotal,
+            present:  attItem ? (Number(attItem.presentCount) || 0) : (isFuture ? null : 0),
+            absent:   attItem ? (Number(attItem.absentCount)  || 0) : (isFuture ? null : 0),
+        };
     });
 
+    console.log(`[DASHBOARD] manpowerData sample:`, manpowerData.slice(0, 3));
+
+    // ── Step 7: Attrition (placeholder) ──────────────────────────────────────
+    const attritionData = monthsOrder.slice(0, 6).map(m => ({
+        month:  m.substring(0, 3),
+        actual: 0,
+        target: 2.0,
+    }));
+
+    // ── Step 8: Absenteeism — 7-day rolling ──────────────────────────────────
+    let absenteeismData = [
+        { day: 'Mon', actual: 0, limit: 10 },
+        { day: 'Tue', actual: 0, limit: 10 },
+        { day: 'Wed', actual: 0, limit: 10 },
+        { day: 'Thu', actual: 0, limit: 10 },
+        { day: 'Fri', actual: 0, limit: 10 },
+    ];
+    try {
+        const absSql = `
+            SELECT
+                DATENAME(WEEKDAY, al.[date]) AS dayName,
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN 1 ELSE 0 END) AS absent_count
+            FROM attendance_logs al
+            INNER JOIN user_hierarchy_snapshots uhs
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
+            WHERE CONVERT(DATE, al.[date]) >= DATEADD(DAY, -6, CONVERT(DATE, GETDATE()))
+              AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, GETDATE())
+              ${hierCondition}
+            GROUP BY DATENAME(WEEKDAY, al.[date]), DATEPART(WEEKDAY, al.[date])
+            ORDER BY DATEPART(WEEKDAY, al.[date])
+        `;
+        const [absRows] = await executeQuery(absSql, []);
+        if (absRows.length > 0) {
+            const dayMap = {
+                'Monday':'Mon','Tuesday':'Tue','Wednesday':'Wed',
+                'Thursday':'Thu','Friday':'Fri','Saturday':'Sat','Sunday':'Sun'
+            };
+            absenteeismData = absRows.map(r => ({
+                day:    dayMap[r.dayName] || r.dayName.substring(0, 3),
+                actual: Number(r.absent_count) || 0,
+                limit:  10,
+            }));
+        }
+    } catch(e) {
+        console.warn("[DASHBOARD] Absenteeism query failed:", e.message);
+    }
+
+    // ── Step 9: Skill Gap ─────────────────────────────────────────────────────
+    const skillGapData = [
+        { level: 'L0', label: 'Trainee',  avail: 0, req: 0, color: 'bg-zinc-500' },
+        { level: 'L1', label: 'Operator', avail: 0, req: 0, color: 'bg-blue-500' },
+        { level: 'L2', label: 'Skilled',  avail: 0, req: 0, color: 'bg-green-500' },
+        { level: 'L3', label: 'Expert',   avail: 0, req: 0, color: 'bg-purple-500' },
+        { level: 'L4', label: 'Master',   avail: 0, req: 0, color: 'bg-amber-500' },
+    ];
+    try {
+        let skillSql = "SELECT currentLevel as skill_level, COUNT(*) as avail FROM users WHERE role != 'admin' AND isDeleted = 0";
+        const skillParams = [];
+        if (section && section.toLowerCase() !== 'all') {
+            skillSql += " AND sectionId = ?";
+            skillParams.push(section);
+        }
+        skillSql += " GROUP BY currentLevel";
+        const [skillRes] = await executeQuery(skillSql, skillParams);
+        skillRes.forEach(row => {
+            const lvl = row.skill_level;
+            if (!lvl) return;
+            const idx = skillGapData.findIndex(s => s.level === lvl || s.level === `L${lvl}`);
+            if (idx !== -1) skillGapData[idx].avail = row.avail;
+        });
+    } catch(e) {
+        console.warn("[DASHBOARD] Skill gap query failed:", e.message);
+    }
+
+    // ── Final Response ────────────────────────────────────────────────────────
     res.status(200).json(
         new ApiResponse(200, {
             manpowerData,
-            attritionData, // Keeping this placeholder/0 for now
-            absenteeismData: [
-                { day: 'Mon', actual: 2, limit: 10 }, // Placeholder until attendance is populated
-                { day: 'Tue', actual: 5, limit: 10 },
-                { day: 'Wed', actual: 1, limit: 10 },
-                { day: 'Thu', actual: 3, limit: 10 },
-                { day: 'Fri', actual: 4, limit: 10 },
-            ],
-            skillGapData
+            attritionData,
+            absenteeismData,
+            skillGapData,
+            filters: { sectionName, lineName, snapshotTotal },
         }, "Dashboard stats fetched")
     );
 });
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/dashboard/attendance
-// Returns today's attendance summary KPIs + 7-day trend
-// filtered by section and/or line via user_hierarchy_snapshots join
 // ─────────────────────────────────────────────────────────────────────────────
 export const getDashboardAttendance = asyncHandler(async (req, res) => {
     const { section, line } = req.query;
 
-    // ── 1. Resolve section name from id if provided ──────────────────────────
+    // ── 1. Resolve section name ───────────────────────────────────────────────
     let sectionName = null;
     if (section && section !== 'ALL') {
         if (!isNaN(section)) {
             const [rows] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [section]);
-            if (rows.length > 0) sectionName = rows[0].name;
+            if (rows.length > 0) sectionName = rows[0].name.trim();
         } else {
-            sectionName = section; // already a name
+            sectionName = section.trim();
         }
     }
 
-    // ── 2. Resolve line name from id if provided ─────────────────────────────
+    // ── 2. Resolve line name ──────────────────────────────────────────────────
     let lineName = null;
     if (line && line !== 'ALL') {
         if (!isNaN(line)) {
             const [rows] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [line]);
-            if (rows.length > 0) lineName = rows[0].name;
+            if (rows.length > 0) lineName = rows[0].name.trim();
         } else {
-            lineName = line;
+            lineName = line.trim();
         }
     }
 
     const pool = await poolPromise;
+    const safeName = (s) => s.replace(/'/g, "''");
 
-    // ── 3. Build dynamic WHERE clauses for hierarchy filter ──────────────────
-    // Join: attendance_logs.payCode = user_hierarchy_snapshots.employeeid
-    // Then filter by section_name and/or line_name in the snapshot table
+    // ── 3. Build WHERE clause ─────────────────────────────────────────────────
+    // Correct column names: uhs.[section]  and  uhs.[lines]
     const buildHierarchyFilter = (sectionName, lineName) => {
         const conditions = [];
-        if (sectionName) conditions.push(`LTRIM(RTRIM(UPPER(uhs.section_name))) = UPPER('${sectionName.replace(/'/g, "''")}')`);
-        if (lineName)    conditions.push(`LTRIM(RTRIM(UPPER(uhs.line_name)))    = UPPER('${lineName.replace(/'/g, "''")}')`);
+        if (sectionName) conditions.push(`UPPER(LTRIM(RTRIM(uhs.[section]))) = UPPER('${safeName(sectionName)}')`);
+        if (lineName)    conditions.push(`UPPER(LTRIM(RTRIM(uhs.[lines])))   = UPPER('${safeName(lineName)}')`);
         return conditions.length > 0 ? 'AND ' + conditions.join(' AND ') : '';
     };
 
     const hierarchyFilter = buildHierarchyFilter(sectionName, lineName);
     const useHierarchyJoin = !!(sectionName || lineName);
 
-    // ── 4. Today's KPI summary ───────────────────────────────────────────────
-    const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const todayStr = new Date().toISOString().slice(0, 10);
 
+    // ── 4. Today's KPI summary ────────────────────────────────────────────────
     let summarySQL;
     if (useHierarchyJoin) {
         summarySQL = `
@@ -266,8 +298,8 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
                 COUNT(*) AS total
             FROM attendance_logs al
             INNER JOIN user_hierarchy_snapshots uhs
-                ON LTRIM(RTRIM(UPPER(CAST(al.payCode AS VARCHAR)))) =
-                   LTRIM(RTRIM(UPPER(CAST(uhs.employeeid AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
             WHERE CONVERT(DATE, al.[date]) = @todayStr
               ${hierarchyFilter}
         `;
@@ -289,19 +321,19 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
     const summaryResult = await summaryReq.query(summarySQL);
     const summaryRow = summaryResult.recordset[0] || { present: 0, absent: 0, halfDay: 0, onLeave: 0, total: 0 };
 
-    // ── 5. 7-day rolling trend ───────────────────────────────────────────────
+    // ── 5. 7-day rolling trend ────────────────────────────────────────────────
     let trendSQL;
     if (useHierarchyJoin) {
         trendSQL = `
             SELECT
-                CONVERT(VARCHAR(10), al.[date], 23)                                                      AS [date],
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END)              AS present,
+                CONVERT(VARCHAR(10), al.[date], 23) AS [date],
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS present,
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE') THEN 1 ELSE 0 END) AS absent,
-                COUNT(*)                                                                                  AS total
+                COUNT(*) AS total
             FROM attendance_logs al
             INNER JOIN user_hierarchy_snapshots uhs
-                ON LTRIM(RTRIM(UPPER(CAST(al.payCode AS VARCHAR)))) =
-                   LTRIM(RTRIM(UPPER(CAST(uhs.employeeid AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
             WHERE CONVERT(DATE, al.[date]) >= DATEADD(DAY, -6, CONVERT(DATE, @todayStr2))
               AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, @todayStr2)
               ${hierarchyFilter}
@@ -311,10 +343,10 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
     } else {
         trendSQL = `
             SELECT
-                CONVERT(VARCHAR(10), al.[date], 23)                                                      AS [date],
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END)              AS present,
+                CONVERT(VARCHAR(10), al.[date], 23) AS [date],
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS present,
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE') THEN 1 ELSE 0 END) AS absent,
-                COUNT(*)                                                                                  AS total
+                COUNT(*) AS total
             FROM attendance_logs al
             WHERE CONVERT(DATE, al.[date]) >= DATEADD(DAY, -6, CONVERT(DATE, @todayStr2))
               AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, @todayStr2)
@@ -328,37 +360,38 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
     const trendResult = await trendReq.query(trendSQL);
     const trendRows = trendResult.recordset || [];
 
-    // ── 6. Attendance by Section breakdown (for today, useful for section-level detail) ──
+    // ── 6. Section breakdown (for today) ─────────────────────────────────────
+    // Use uhs.[section] as the grouping column
     let sectionBreakdownSQL;
     if (useHierarchyJoin) {
         sectionBreakdownSQL = `
             SELECT
-                ISNULL(LTRIM(RTRIM(uhs.section_name)), 'Unknown') AS sectionName,
+                ISNULL(LTRIM(RTRIM(uhs.[section])), 'Unknown') AS sectionName,
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS present,
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'ABSENT'  THEN 1 ELSE 0 END) AS absent,
                 COUNT(*) AS total
             FROM attendance_logs al
             INNER JOIN user_hierarchy_snapshots uhs
-                ON LTRIM(RTRIM(UPPER(CAST(al.payCode AS VARCHAR)))) =
-                   LTRIM(RTRIM(UPPER(CAST(uhs.employeeid AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
             WHERE CONVERT(DATE, al.[date]) = @todayStr3
               ${hierarchyFilter}
-            GROUP BY LTRIM(RTRIM(uhs.section_name))
+            GROUP BY LTRIM(RTRIM(uhs.[section]))
             ORDER BY present DESC
         `;
     } else {
         sectionBreakdownSQL = `
             SELECT
-                ISNULL(LTRIM(RTRIM(uhs.section_name)), 'Unknown') AS sectionName,
+                ISNULL(LTRIM(RTRIM(uhs.[section])), 'Unknown') AS sectionName,
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS present,
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'ABSENT'  THEN 1 ELSE 0 END) AS absent,
                 COUNT(*) AS total
             FROM attendance_logs al
             LEFT JOIN user_hierarchy_snapshots uhs
-                ON LTRIM(RTRIM(UPPER(CAST(al.payCode AS VARCHAR)))) =
-                   LTRIM(RTRIM(UPPER(CAST(uhs.employeeid AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
             WHERE CONVERT(DATE, al.[date]) = @todayStr3
-            GROUP BY LTRIM(RTRIM(uhs.section_name))
+            GROUP BY LTRIM(RTRIM(uhs.[section]))
             ORDER BY present DESC
         `;
     }
@@ -368,15 +401,14 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
     const breakdownResult = await breakdownReq.query(sectionBreakdownSQL);
     const sectionBreakdown = breakdownResult.recordset || [];
 
-    // ── 7. Build response ────────────────────────────────────────────────────
+    // ── 7. Build response ─────────────────────────────────────────────────────
     const summary = {
-        present: Number(summaryRow.present) || 0,
-        absent:  Number(summaryRow.absent)  || 0,
-        halfDay: Number(summaryRow.halfDay) || 0,
-        onLeave: Number(summaryRow.onLeave) || 0,
-        total:   Number(summaryRow.total)   || 0,
+        present:  Number(summaryRow.present)  || 0,
+        absent:   Number(summaryRow.absent)   || 0,
+        halfDay:  Number(summaryRow.halfDay)  || 0,
+        onLeave:  Number(summaryRow.onLeave)  || 0,
+        total:    Number(summaryRow.total)    || 0,
     };
-    // Compute attendance rate
     summary.attendanceRate = summary.total > 0
         ? Math.round((summary.present / summary.total) * 100)
         : 0;
@@ -397,8 +429,8 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
 
     res.status(200).json(
         new ApiResponse(200, {
-            date:      todayStr,
-            filters:   { sectionName, lineName },
+            date: todayStr,
+            filters: { sectionName, lineName },
             summary,
             trend,
             breakdown,

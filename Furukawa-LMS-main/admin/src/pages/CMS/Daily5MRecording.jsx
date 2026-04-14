@@ -18,20 +18,21 @@ import { useLazyGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { useLazyGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { useGetSubSectionsQuery } from '@/Redux/AllApi/SubSectionApi';
 import { Button } from "@/components/ui/button";
-import { 
-    IconSettings, 
-    IconPrinter, 
-    IconClipboardList, 
-    IconPlus, 
-    IconArrowLeft, 
-    IconSearch, 
-    IconTrash, 
-    IconExternalLink, 
-    IconCheck, 
+import {
+    IconSettings,
+    IconPrinter,
+    IconClipboardList,
+    IconPlus,
+    IconArrowLeft,
+    IconSearch,
+    IconTrash,
+    IconExternalLink,
+    IconCheck,
     IconX,
     IconScissors,
     IconLayout2,
-    IconCpu 
+    IconCpu,
+    IconFilter
 } from "@tabler/icons-react";
 import AssignmentSelect from "@/components/common/AssignmentSelect";
 import { Badge } from "@/components/ui/badge";
@@ -49,11 +50,9 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [trigger, { data: searchResults, isFetching: isSearching }] = useLazyGetAllUsersQuery();
-    const [selectedRole, setSelectedRole] = useState("PROCESS_OWNER");
+    const [selectedRole, setSelectedRole] = useState("QA_SHIFT_INCHARGE");
 
     const roles = [
-        { id: "PROCESS_OWNER", label: "Process Owner" },
-        { id: "APPROVED_BY", label: "Approved By (QA Incharge)" },
         { id: "QA_SHIFT_INCHARGE", label: "QA Shift In-charge" }
     ];
 
@@ -79,7 +78,7 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
     const handleSearch = (val) => {
         setSearchTerm(val);
         if (val.length >= 2) {
-            trigger({ search: val, limit: 10, isStaff: "true" });
+            trigger({ search: val, limit: 10 });
         }
     };
 
@@ -156,9 +155,11 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
                                         className="p-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center border-b last:border-0"
                                         onClick={() => handleAdd(u)}
                                     >
-                                        <div>
-                                            <div className="font-bold text-sm">{u.fullName}</div>
-                                            <div className="text-[16px] text-slate-500">ID: {u.empId}</div>
+                                        <div className="flex-1 min-w-0 mr-2">
+                                            <div className="font-bold text-sm truncate">{u.fullName}</div>
+                                            <div className="text-[11px] text-slate-500 truncate">
+                                                ID: {u.empId} {u.deptName ? `| ${u.deptName}` : ''} {u.role && u.role !== 'USER' ? `| ${u.role}` : ''}
+                                            </div>
                                         </div>
                                         <Button size="xs" variant="ghost" className="text-blue-600">Add</Button>
                                     </div>
@@ -208,7 +209,7 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
 import { Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -224,11 +225,16 @@ const LineSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
     const { data: linesData, isLoading } = useGetLinesByDepartmentQuery(departmentId, { skip: !departmentId });
     const lines = linesData?.data || [];
 
+    const handleChange = (e) => {
+        const val = e.target.value;
+        onInputChange(recIndex, 'From', val);
+    };
+
     return (
         <select
             className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
             value={formData[`rec_${recIndex}_From`] || ""}
-            onChange={(e) => onInputChange(recIndex, 'From', e.target.value)}
+            onChange={handleChange}
             disabled={!departmentId}
         >
             <option value="">{isLoading ? "Loading..." : "Select Line"}</option>
@@ -456,55 +462,59 @@ const DaysInput = ({ value, onChange }) => {
 const CRIMPING_CONFIG = {
     headers: [
         // Row 1
-        [{ text: "Daily 5M Recording Man -Crimping section", colSpan: 40, className: "bg-blue-50 text-lg font-bold" }],
+        [{ text: "Daily 5M Recording Man -Crimping section", colSpan: 42, className: "bg-blue-50 text-lg font-bold" }],
         // Row 2
-        [{ text: "*If any part NG during retroactive and containment inspection then 100% parts to be check since last OK (Set up / In-process)", colSpan: 40, className: "bg-yellow-50 text-red-600 font-semibold text-[16px]" }],
+        [{ text: "*If any part NG during retroactive and containment inspection then 100% parts to be check since last OK (Set up / In-process)", colSpan: 42, className: "bg-yellow-50 text-red-600 font-semibold text-[16px]" }],
         // Row 3
         [
-            { text: "(To be filled by Leader / Supervisor)", colSpan: 16, className: "bg-gray-100" },
+            { text: "(To be filled by Leader / Supervisor)", colSpan: 7, className: "bg-gray-100" },
+            { text: "Auth. Person", colSpan: 3, className: "bg-emerald-50 text-emerald-800 font-bold border-black" },
+            { text: "(To be filled by Leader / Supervisor)", colSpan: 7, className: "bg-gray-100" },
             { text: "Retroactive Inspection (To be filled by Leader / Supervisor Before Change)", colSpan: 6, className: "bg-gray-100" },
             { text: "Set up Approval After Change (To be filled by Quality dept., Pick 5 samples for judgement)", colSpan: 9, className: "bg-gray-100" },
             { text: "Containment Action if required", colSpan: 7, className: "bg-gray-100" },
             { text: "Process Owner", rowSpan: 3, width: "w-20" },
-            { text: "Approved By (QA Incharge)", rowSpan: 3, width: "w-20" }
+            { text: "Approved By (QA Incharge)", rowSpan: 3, width: "w-32" },
+            { text: "Approve or Reject", rowSpan: 3, width: "w-28", className: "bg-slate-100 font-bold" }
         ],
         // Row 4
         [
-            { text: "Sr. No.", rowSpan: 2, width: "w-8" },
-            { text: "Date", rowSpan: 2, width: "w-20" },
-            { text: "Station M/C No", rowSpan: 2, width: "w-24" },
-            { text: "Shift", rowSpan: 2, width: "w-10" },
-            { text: "Planned / Un-Planned", rowSpan: 2, width: "w-16" },
-            { text: "Process Name", rowSpan: 2, width: "w-32" },
-            { text: "Process Operator ID / Inspector ID", rowSpan: 2, width: "w-20" },
-            { text: "Process Operator / Inspector Name", rowSpan: 2 },
-            { text: "Owner Skill Level", rowSpan: 2 },
-            { text: "Req. Min Skill Level", rowSpan: 2, width: "w-10" },
-            { text: "Deputy Person Name (If req.)", rowSpan: 2, width: "w-20" },
-            { text: "Employee Code", rowSpan: 2, width: "w-16" },
-            { text: "Actual Skill Level", rowSpan: 2, width: "w-10" },
-            { text: "Deputed From (Line/Process/Station)", rowSpan: 2, width: "w-16" },
-            { text: "Deputed on Plan", rowSpan: 2, width: "w-20" },
-            { text: "OJT Status (Attended/Not Attended) [Attached OJT sheet]", rowSpan: 2, width: "w-12" },
+            { text: "Sr. No.", rowSpan: 2, width: "w-12" },
+            { text: "Date", rowSpan: 2, width: "w-28" },
+            { text: "Station M/C No", rowSpan: 2, width: "w-32" },
+            { text: "Shift", rowSpan: 2, width: "w-14" },
+            { text: "Planned / Un-Planned", rowSpan: 2, width: "w-24" },
+            { text: "Problem", rowSpan: 2, width: "w-40" },
+            { text: "Process Name", rowSpan: 2, width: "w-40" },
+            { text: "Operator / Inspector Name", rowSpan: 2, width: "w-40" },
+            { text: "Operator / Inspector ID", rowSpan: 2, width: "w-28" },
+            { text: "Current Skill Level", rowSpan: 2, width: "w-20" },
+            { text: "Req. Min Skill Level", rowSpan: 2, width: "w-16" },
+            { text: "Deputy Person Name (If req.)", rowSpan: 2, width: "w-28" },
+            { text: "Employee Code", rowSpan: 2, width: "w-24" },
+            { text: "Actual Skill Level", rowSpan: 2, width: "w-16" },
+            { text: "Deputed From (Line/Process/Station)", rowSpan: 2, width: "w-24" },
+            { text: "Deputed on Plan", rowSpan: 2, width: "w-28" },
+            { text: "OJT Status (Attended/Not Attended) [Attached OJT sheet]", rowSpan: 2, width: "w-20" },
 
-            { text: "Last Produced Part Status (Parameters)", rowSpan: 2, width: "w-20" },
+            { text: "Last Produced Part Status (Parameters)", rowSpan: 2, width: "w-28" },
             { text: "Standard", colSpan: 2 },
             { text: "Result", colSpan: 2 },
             { text: "Status", rowSpan: 2, isSplit: true, splitLabels: ["Status", "Prod Supr Sign"] },
 
-            { text: "Inspector Name", rowSpan: 2, width: "w-20" },
-            { text: "Part No.", rowSpan: 2, width: "w-16" },
-            { text: "Lot No.", rowSpan: 2, width: "w-16" },
-            { text: "Circuit No.", rowSpan: 2, width: "w-12" },
-            { text: "Set up Verification (Parameters)", rowSpan: 2, width: "w-24" },
+            { text: "Inspector Name", rowSpan: 2, width: "w-28" },
+            { text: "Part No.", rowSpan: 2, width: "w-24" },
+            { text: "Lot No.", rowSpan: 2, width: "w-24" },
+            { text: "Circuit No.", rowSpan: 2, width: "w-20" },
+            { text: "Set up Verification (Parameters)", rowSpan: 2, width: "w-32" },
             { text: "Result (After Change)", colSpan: 2 },
-            { text: "QA Shift In-charge name", rowSpan: 2, width: "w-20" },
-            { text: "Status", rowSpan: 2, width: "w-10" },
+            { text: "QA Shift In-charge name", rowSpan: 2, width: "w-28" },
+            { text: "Status", rowSpan: 2, width: "w-16" },
 
-            { text: "Support Person Name", rowSpan: 2, width: "w-20" },
+            { text: "Support Person Name", rowSpan: 2, width: "w-28" },
             { text: "Visual Check (100%)", colSpan: 2 },
             { text: "Dimension Check (Every 2 hours)", colSpan: 3 },
-            { text: "Remarks", rowSpan: 2, width: "w-24" }
+            { text: "Remarks", rowSpan: 2, width: "w-32" }
         ],
         // Row 5
         [
@@ -520,21 +530,23 @@ const CRIMPING_CONFIG = {
     bodyRows: 5
 };
 
-const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLevels, departmentId }) => {
+const CrimpingRecord = ({ recIndex, formData, handleInputChange, departmentId, canApprove, authUser, isLocked, isSubmitter, skillLevels }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
+    const rowStatus = formData[`rec_${recIndex}_RowStatus`];
 
     return (
         <>
             {/* Row 1: Common fields and first parameter */}
             <tr className="hover:bg-slate-50">
                 <td rowSpan="5" className="border border-black p-0.5 text-center">{recIndex + 1}</td>
-                <td rowSpan="5" className="border border-black p-0.5"><input type="date" className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <SubSectionSelect
                         recIndex={recIndex}
                         departmentId={departmentId}
                         formData={formData}
                         onInputChange={handleInputChange}
+                        disabled={isLocked}
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
@@ -542,6 +554,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_Shift`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'Shift', e.target.value)}
+                        disabled={isLocked}
                     >
                         <option value="">Select Shift</option>
                         <option value="A">A</option>
@@ -555,11 +568,20 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_Type`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'Type', e.target.value)}
+                        disabled={isLocked}
                     >
                         <option value="">Select Type</option>
                         <option value="Planned">Planned</option>
                         <option value="Un-Planned">Un-Planned</option>
                     </select>
+                </td>
+                <td rowSpan="5" className="border border-black p-0.5">
+                    <ProblemSelect
+                        recIndex={recIndex}
+                        value={formData[`rec_${recIndex}_Problem`] || ""}
+                        onChange={handleInputChange}
+                        disabled={isLocked}
+                    />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <StationSelect
@@ -568,13 +590,11 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         departmentId={departmentId}
                         formData={formData}
                         onInputChange={handleInputChange}
+                        disabled={isLocked}
                     />
                 </td>
 
-                {/* Auth Person (Operator/Inspector Name, Career Skill Level) */}
-                <td rowSpan="5" className="border border-black p-0.5 text-center font-mono text-[16px]">
-                    {formData[`rec_${recIndex}_OperatorId`] || ""}
-                </td>
+                {/* Auth Person (Operator/Inspector Name, ID, Current Skill Level) */}
                 <td rowSpan="5" className="border border-black p-0.5 min-w-[100px]">
                     <UserAutocomplete
                         compact
@@ -584,17 +604,21 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                             handleInputChange(recIndex, 'OperatorName', user.fullName);
                             handleInputChange(recIndex, 'CSL', user.currentLevel || "L1");
                             handleInputChange(recIndex, 'OperatorId', user.empId || "");
-                            handleInputChange(recIndex, 'EmpCode', user.empId || "");
                         }}
                         placeholder="Operator..."
+                        disabled={isLocked}
                     />
+                </td>
+                <td rowSpan="5" className="border border-black p-0.5 text-center font-mono text-[16px]">
+                    {formData[`rec_${recIndex}_OperatorId`] || ""}
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5 text-center">
                     <AutoResizeTextarea
                         className="text-center"
-                        placeholder="Owner Skill"
+                        placeholder="CSL"
                         value={formData[`rec_${recIndex}_CSL`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'CSL', e.target.value)}
+                        disabled={isLocked}
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
@@ -602,9 +626,10 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_ReqSkill`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'ReqSkill', e.target.value)}
+                        disabled={isLocked}
                     >
                         <option value="">Req Skill</option>
-                        {skillLevels.map((level, idx) => (
+                        {(skillLevels || []).map((level, idx) => (
                             <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                         ))}
                     </select>
@@ -622,6 +647,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         }}
                         placeholder="Deputed Person"
                         compact={true}
+                        disabled={isLocked}
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5 text-center">
@@ -630,6 +656,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         placeholder="Emp Code"
                         value={formData[`rec_${recIndex}_EmpCode`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'EmpCode', e.target.value)}
+                        disabled={isLocked}
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
@@ -637,9 +664,10 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_ActSkill`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'ActSkill', e.target.value)}
+                        disabled={isLocked}
                     >
                         <option value="">Act Skill</option>
-                        {skillLevels.map((level, idx) => (
+                        {(skillLevels || []).map((level, idx) => (
                             <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                         ))}
                     </select>
@@ -650,12 +678,14 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         departmentId={formData[`rec_${recIndex}_DeputedDeptId`]}
                         formData={formData}
                         onInputChange={handleInputChange}
+                        disabled={isLocked}
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
                     <DaysInput
                         value={formData[`rec_${recIndex}_DeputedOnPlan`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'DeputedOnPlan', e.target.value)}
+                        disabled={isLocked}
                     />
                 </td>
                 <td rowSpan="5" className="border border-black p-0.5">
@@ -663,6 +693,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_OJT`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'OJT', e.target.value)}
+                        disabled={isLocked}
                     >
                         <option value="">Select</option>
                         <option value="Yes">Yes</option>
@@ -671,37 +702,32 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                 </td>
 
                 {/* Retro Parameters (First of 5) */}
-                <td className="border border-black p-0.5 text-center font-bold bg-gray-50"><AutoResizeTextarea className="text-center font-bold bg-transparent" value={formData[`rec_${recIndex}_Param_${params[0]}`] !== undefined ? formData[`rec_${recIndex}_Param_${params[0]}`] : params[0]} onChange={(e) => handleInputChange(recIndex, `Param_${params[0]}`, e.target.value)} /></td>
-                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_F`, e.target.value)} /></td>
-                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_R`, e.target.value)} /></td>
-                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_F`, e.target.value)} /></td>
-                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_R`, e.target.value)} /></td>
+                <td className="border border-black p-0.5 text-center font-bold bg-gray-50"><AutoResizeTextarea className="text-center font-bold bg-transparent" value={formData[`rec_${recIndex}_Param_${params[0]}`] !== undefined ? formData[`rec_${recIndex}_Param_${params[0]}`] : params[0]} onChange={(e) => handleInputChange(recIndex, `Param_${params[0]}`, e.target.value)} disabled={isLocked} /></td>
+                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_F`, e.target.value)} disabled={isLocked} /></td>
+                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_R`, e.target.value)} disabled={isLocked} /></td>
+                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_F`, e.target.value)} disabled={isLocked} /></td>
+                <td className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_R`, e.target.value)} disabled={isLocked} /></td>
                 <td rowSpan="2" className="border border-black p-0.5 text-center align-middle">
                     <div className="flex flex-col h-full items-center justify-center gap-1">
                         <select
                             className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                             value={formData[`rec_${recIndex}_Retro_Status_Top`] !== undefined ? formData[`rec_${recIndex}_Retro_Status_Top`] : "OK"}
                             onChange={(e) => handleInputChange(recIndex, 'Retro_Status_Top', e.target.value)}
+                            disabled={isLocked}
                         >
                             <option value="OK">OK</option>
                             <option value="Rework">Rework</option>
                             <option value="Scrap">Scrap</option>
                         </select>
                         <div className="w-full h-px bg-black/10" />
-                        <AutoResizeTextarea
-                            className="text-[8px] text-center"
-                            placeholder="Sign"
-                            value={formData[`rec_${recIndex}_Retro_Sign_Top`] || ""}
-                            onChange={(e) => handleInputChange(recIndex, 'Retro_Sign_Top', e.target.value)}
-                        />
                     </div>
                 </td>
 
                 {/* Setup Part Info */}
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_InspectorName`] || ""} onChange={(e) => handleInputChange(recIndex, 'InspectorName', e.target.value)} /></td>
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'PartNo', e.target.value)} /></td>
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'LotNo', e.target.value)} /></td>
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_CircuitNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'CircuitNo', e.target.value)} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_InspectorName`] || ""} onChange={(e) => handleInputChange(recIndex, 'InspectorName', e.target.value)} disabled={isLocked} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'PartNo', e.target.value)} disabled={isLocked} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'LotNo', e.target.value)} disabled={isLocked} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_CircuitNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'CircuitNo', e.target.value)} disabled={isLocked} /></td>
 
                 {/* Setup Verification sub-row */}
                 <td className="border border-black p-0.5 text-center font-bold bg-gray-50">
@@ -711,10 +737,10 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                     </div>
                 </td>
                 <td className="border border-black p-0.5">
-                    <AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Setup_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Setup_${params[0]}_F`, e.target.value)} />
+                    <AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Setup_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Setup_${params[0]}_F`, e.target.value)} disabled={isLocked} />
                 </td>
                 <td className="border border-black p-0.5">
-                    <AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Setup_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Setup_${params[0]}_R`, e.target.value)} />
+                    <AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Setup_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Setup_${params[0]}_R`, e.target.value)} disabled={isLocked} />
                 </td>
 
                 <td rowSpan="5" className="border border-black p-0.5 text-[16px]">
@@ -725,9 +751,10 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         onChange={(val) => handleInputChange(recIndex, 'QA_Incharge', val)}
                         placeholder="QA Shift IC"
                         className='text-[16px]'
+                        disabled={isLocked}
                     />
                 </td>
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_Status`] || ""} onChange={(e) => handleInputChange(recIndex, 'Result_Status', e.target.value)} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_Status`] || ""} onChange={(e) => handleInputChange(recIndex, 'Result_Status', e.target.value)} disabled={isLocked} /></td>
 
                 {/* Containment */}
                 <td rowSpan="5" className="border border-black p-0.5">
@@ -736,54 +763,108 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, lines, skillLev
                         onChange={({ fullName }) => handleInputChange(recIndex, 'Cont_SupportPerson', fullName)}
                         placeholder="Support Person"
                         compact={true}
+                        disabled={isLocked}
                     />
                 </td>
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_ProdQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_ProdQty', e.target.value)} /></td>
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_NGQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGQty', e.target.value)} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_ProdQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_ProdQty', e.target.value)} disabled={isLocked} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_NGQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGQty', e.target.value)} disabled={isLocked} /></td>
 
                 {/* Dimension Check 1st */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
                     <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std1', e.target.value)} /></label>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs1', e.target.value)} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std1', e.target.value)} disabled={isLocked} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs1', e.target.value)} disabled={isLocked} /></label>
                     </div>
                 </td>
                 {/* Dimension Check 2nd */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
                     <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std2', e.target.value)} /></label>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs2', e.target.value)} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std2', e.target.value)} disabled={isLocked} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs2', e.target.value)} disabled={isLocked} /></label>
                     </div>
                 </td>
                 {/* Dimension Check 3rd */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
                     <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std3', e.target.value)} /></label>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs3', e.target.value)} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std3', e.target.value)} disabled={isLocked} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs3', e.target.value)} disabled={isLocked} /></label>
                     </div>
                 </td>
-                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea placeholder="Remarks" value={formData[`rec_${recIndex}_Remarks`] || ""} onChange={(e) => handleInputChange(recIndex, 'Remarks', e.target.value)} /></td>
+                <td rowSpan="5" className="border border-black p-0.5"><AutoResizeTextarea placeholder="Remarks" value={formData[`rec_${recIndex}_Remarks`] || ""} onChange={(e) => handleInputChange(recIndex, 'Remarks', e.target.value)} disabled={isLocked} /></td>
 
                 <td rowSpan="5" className="border border-black p-0.5">
-                    <AssignmentSelect
-                        departmentId={departmentId}
-                        role="PROCESS_OWNER"
-                        value={formData[`rec_${recIndex}_Process_Owner`] || ""}
-                        onChange={(val) => handleInputChange(recIndex, 'Process_Owner', val)}
-                        placeholder="Select Owner"
-                    />
+                    <div className="flex flex-col gap-1">
+                        <AutoResizeTextarea
+                            className="text-center font-bold text-blue-700"
+                            value={formData[`rec_${recIndex}_Process_Owner`] || ""}
+                            onChange={(e) => handleInputChange(recIndex, 'Process_Owner', e.target.value)}
+                            placeholder="Owner"
+                            disabled={isLocked}
+                        />
+                    </div>
                 </td>
+
                 <td rowSpan="5" className="border border-black p-0.5">
-                    <AssignmentSelect
-                        departmentId={departmentId}
-                        role="APPROVED_BY"
-                        value={formData[`rec_${recIndex}_Approved_By`] || ""}
-                        onChange={(val) => handleInputChange(recIndex, 'Approved_By', val)}
-                        placeholder="Select QA"
-                    />
+                    <div className="flex flex-col gap-1">
+                        <AutoResizeTextarea
+                            className="text-center font-bold text-blue-700"
+                            value={formData[`rec_${recIndex}_Approved_By`] || ""}
+                            onChange={(e) => handleInputChange(recIndex, 'Approved_By', e.target.value)}
+                            placeholder="Approver"
+                            disabled={isLocked}
+                        />
+                    </div>
+                </td>
+
+                <td rowSpan="5" className="border border-black p-0.5 align-middle text-center bg-slate-50/20 w-28">
+                    <div className="flex flex-col items-center justify-center min-h-[100px]">
+                        {rowStatus ? (
+                            <div className={`p-2 rounded flex flex-col items-center gap-1 border shadow-sm ${rowStatus === 'APPROVED'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                                }`}>
+                                <div className="flex items-center gap-1 font-black text-[10px] uppercase tracking-wider">
+                                    {rowStatus === 'APPROVED' ? <IconCheck size={16} className="stroke-[3]" /> : <IconX size={16} className="stroke-[3]" />}
+                                    {rowStatus}
+                                </div>
+                                <div className="text-[12px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
+                                <div className="text-[10px] opacity-70 whitespace-nowrap">
+                                    {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
+                                </div>
+                            </div>
+                        ) : (
+                            (canApprove || authUser?.role === 'ADMIN') && formData[`rec_${recIndex}_Date`] ? (
+                                <div className="flex flex-col gap-2 p-1 w-full max-w-[90px]">
+                                    <Button
+                                        size="sm"
+                                        className="h-7 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] uppercase shadow-sm"
+                                        onClick={() => handleActionRow(recIndex, 'approve')}
+                                    >
+                                        Approve
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 w-full border-red-200 text-red-600 hover:bg-red-50 font-bold text-[10px] uppercase shadow-sm"
+                                        onClick={() => handleActionRow(recIndex, 'reject')}
+                                    >
+                                        Reject
+                                    </Button>
+                                </div>
+                            ) : isSubmitter && canApprove && formData[`rec_${recIndex}_Date`] ? (
+                                <div className="text-[10px] text-orange-600 font-bold text-center leading-tight">
+                                    Self-Approval <br /> Restricted
+                                </div>
+                            ) : (
+                                <div className="text-[10px] text-slate-400 font-medium italic">
+                                    {!formData[`rec_${recIndex}_Date`] ? "Fill Date" : "Verify-Row"}
+                                </div>
+                            )
+                        )}
+                    </div>
                 </td>
             </tr>
 
@@ -903,9 +984,9 @@ const Daily5MRecording = () => {
     const location = useLocation();
     const [searchParams] = useSearchParams();
     const urlRecordId = searchParams.get('recordId');
-    const { data: departmentsData } = useGetAllDepartmentsQuery();
-    const { data: sectionsData } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
-    const { data: linesData } = useGetLinesBySectionQuery(selectedSection, { skip: !selectedSection });
+    const { data: departmentsData, isLoading: isLoadingDepts } = useGetAllDepartmentsQuery();
+    const { data: sectionsData, isLoading: isLoadingSections } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
+    const { data: linesData, isLoading: isLoadingLines } = useGetLinesBySectionQuery(selectedSection, { skip: !selectedSection });
     const sections = sectionsData?.data || [];
     const lines = linesData?.data || [];
 
@@ -922,6 +1003,7 @@ const Daily5MRecording = () => {
     const { data: activeConfigData } = useGetActiveConfigQuery();
     const skillLevels = activeConfigData?.data?.levels || [];
     const [submittedBy, setSubmittedBy] = useState(null);
+    const [submittedById, setSubmittedById] = useState(null);
 
     // New workflow state
     const [showFormList, setShowFormList] = useState(true);
@@ -933,10 +1015,18 @@ const Daily5MRecording = () => {
     const [sessionId, setSessionId] = useState(null);
     const [recordStatus, setRecordStatus] = useState('PENDING');
 
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
     // Auth state for permissions
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin;
-    const canApprove = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:approve');
+    const hasApprovalPermission = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:approve');
+
+    // Segregation of Duties: User who filled/submitted the form CANNOT approve/reject it.
+    // Even Admins are restricted from approving their own entries for audit integrity.
+    const isSubmitter = authUser && submittedById && String(authUser.id || authUser._id) === String(submittedById);
+    const canApprove = hasApprovalPermission && !isSubmitter;
 
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
     const [isManagePeopleOpen, setIsManagePeopleOpen] = useState(false);
@@ -944,46 +1034,76 @@ const Daily5MRecording = () => {
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const tableRef = React.useRef(null);
 
-    // Filter departments based on user assignment
     const assignableDepartments = React.useMemo(() => {
         const allDepts = departmentsData?.data?.departments || [];
-        if (!authUser || isAdmin || !authUser.departments || authUser.departments.length === 0) {
-            return allDepts;
-        }
-        // User has specific department assignments
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+
+        const assignedIds = rawAssigned.map(id => String(id)).filter(id => id && id !== "null" && id !== "undefined");
+
+        if (!authUser || isAdmin || assignedIds.length === 0) return allDepts;
+
         return allDepts.filter(dept =>
-            authUser.departments.includes(dept.id) ||
-            authUser.departments.includes(dept._id) ||
-            authUser.departments.includes(String(dept.id)) ||
-            authUser.departments.includes(String(dept._id))
+            assignedIds.includes(String(dept.id || dept._id))
         );
     }, [departmentsData, authUser, isAdmin]);
 
-    const isRestricted = authUser && !isAdmin && authUser.departments && authUser.departments.length > 0;
+    const assignableSections = React.useMemo(() => {
+        const allSections = sections || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
 
-    const selectedDeptName = assignableDepartments.find(d => (d._id || d.id) === selectedDepartment)?.name || "Department";
-    const section = sections.find(s => (s._id || s.id) === selectedSection);
-    const selectedSectionName = section ? `${section.name}${section.category ? ` (${section.category})` : ''}` : "Section";
+        const assignedIds = rawAssigned.map(id => String(id)).filter(id => id && id !== "null" && id !== "undefined");
 
-    // Auto-select department if only one is available for restricted users
+        if (!authUser || isAdmin || assignedIds.length === 0) return allSections;
+
+        return allSections.filter(sec =>
+            assignedIds.includes(String(sec.id || sec._id))
+        );
+    }, [sections, authUser, isAdmin]);
+
+    const isRestricted = !isAdmin && authUser && (
+        (authUser.departments && authUser.departments.length > 0) ||
+        authUser.departmentId ||
+        (authUser.sections && authUser.sections.length > 0) ||
+        authUser.sectionId
+    );
+
+    const selectedDeptName = assignableDepartments.find(d => String(d._id || d.id) === String(selectedDepartment))?.name || (isLoadingDepts ? "Loading..." : "Department");
+    const section = sections.find(s => String(s._id || s.id) === String(selectedSection));
+    const selectedSectionName = section ? `${section.name}${section.category ? ` (${section.category})` : ''}` : (isLoadingSections ? "Loading..." : "Section");
+
+    // Auto-select department and section if only one is available for restricted users
     useEffect(() => {
-        if (isRestricted && assignableDepartments.length === 1 && !selectedDepartment) {
-            setSelectedDepartment(assignableDepartments[0]._id || assignableDepartments[0].id);
+        if (isRestricted) {
+            if (assignableDepartments.length === 1 && !selectedDepartment) {
+                const targetId = String(assignableDepartments[0]._id || assignableDepartments[0].id);
+                setSelectedDepartment(targetId);
+            }
+            if (selectedDepartment && assignableSections.length === 1 && !selectedSection) {
+                const targetId = String(assignableSections[0]._id || assignableSections[0].id);
+                setSelectedSection(targetId);
+            }
         }
-    }, [isRestricted, assignableDepartments, selectedDepartment]);
+    }, [isRestricted, assignableDepartments, assignableSections, selectedDepartment, selectedSection]);
 
     useEffect(() => {
         if (selectedDepartment) {
             fetchConfig(selectedDepartment);
-            // Only reset section if we're not loading from a URL/deep link
-            if (!urlRecordId && !location.state?.recordId) {
+
+            // Only reset section if:
+            // 1. We're not loading from a URL/deep link
+            // 2. AND the user IS NOT restricted to a single section (to avoid fighting the auto-selection)
+            const isSectionPreDetermined = isRestricted && assignableSections.length === 1;
+
+            if (!urlRecordId && !location.state?.recordId && !location.state?.playUser && !isSectionPreDetermined) {
                 setSelectedSection("");
             }
         } else {
             setTableConfig(null);
             setConfigError(null);
         }
-    }, [selectedDepartment, urlRecordId, location.state?.recordId]);
+    }, [selectedDepartment, urlRecordId, location.state?.recordId, isRestricted, assignableSections.length]);
 
     useEffect(() => {
         // Priority 1: Check for recordId in URL search params
@@ -1195,6 +1315,11 @@ const Daily5MRecording = () => {
     const [formData, setFormData] = useState({});
     const [formType, setFormType] = useState('standard'); // 'standard' or 'crimping'
 
+    // Play Mode state for automated workflows
+    const [isPlayMode, setIsPlayMode] = useState(false);
+    const [playUserData, setPlayUserData] = useState(null);
+    const [isAutoCreating, setIsAutoCreating] = useState(false);
+
     // Load data if viewing/editing an existing record from dashboard
     useEffect(() => {
         if (location.state?.recordData) {
@@ -1228,25 +1353,95 @@ const Daily5MRecording = () => {
         }
     };
 
-    const handleAddForm = async () => {
+    const handleAddForm = async (typeOverride = null) => {
+        const activeType = typeOverride || addDialogType;
+        if (!activeType) {
+            toast.error("Please select a form type");
+            return;
+        }
+
         try {
             // Create an initial stub record in the database so it appears in the list 
             // and has a persistent ID for sessions.
+            // Data Pre-filling for Play Mode
+            let initialRecordData = {};
+            if (isPlayMode && playUserData) {
+                const user = playUserData;
+                const recIndex = 0;
+                initialRecordData[`rec_${recIndex}_Date`] = new Date().toLocaleDateString('en-CA');
+                if (user.logShift || user.shift) {
+                    initialRecordData[`rec_${recIndex}_Shift`] = user.logShift || user.shift;
+                }
+
+                // Set Skill Level (Automated Fetch)
+                const level = user.currentLevel || "L1";
+                if (activeType === 'crimping') {
+                    initialRecordData[`rec_${recIndex}_CSL`] = level;
+                } else {
+                    initialRecordData[`rec_${recIndex}_CurSkill`] = level;
+                }
+
+                // Robust line matching (case-insensitive, trimmed) to get metadata like Line Leader
+                const userLName = (user.lineName || user.subSectionName || "").trim().toLowerCase();
+                const matchedLine = lines.find(l =>
+                    (l.name && l.name.trim().toLowerCase() === userLName) ||
+                    (l.id === user.lineId) || (l._id === user.lineId)
+                );
+
+                if (activeType === 'crimping') {
+                    // For Crimping: 
+                    // Column 3 (StationMC) expects "SubSectionName (LineName)"
+                    const lineDisp = (user.subSectionName && user.lineName)
+                        ? `${user.subSectionName} (${user.lineName})`
+                        : (user.subSectionName || user.lineName || "");
+
+                    initialRecordData[`rec_${recIndex}_StationMC`] = lineDisp;
+
+                    // Column 7 (Process) expects "MachineName" (which corresponds to stationName in user profile)
+                    initialRecordData[`rec_${recIndex}_Process`] = user.stationName || "";
+                    initialRecordData[`rec_${recIndex}_OperatorName`] = user.fullName || "";
+                    initialRecordData[`rec_${recIndex}_OperatorId`] = user.empId || "";
+                } else {
+                    // For Standard/SRC:
+                    // Set Line Leader (Automated Fetch from Line Name)
+                    if (matchedLine) {
+                        initialRecordData[`rec_${recIndex}_Line`] = matchedLine.name;
+                        const leader = matchedLine.lineLeader || "";
+                        initialRecordData[`rec_${recIndex}_FP_Leader`] = leader;
+                        initialRecordData[`rec_${recIndex}_FP_1`] = leader;
+                    } else {
+                        // Fallback to raw names from user profile
+                        initialRecordData[`rec_${recIndex}_Line`] = user.lineName || user.subSectionName || "";
+                    }
+
+                    initialRecordData[`rec_${recIndex}_Process`] = user.stationName || "";
+                    initialRecordData[`rec_${recIndex}_OpName`] = user.fullName || "";
+                    initialRecordData[`rec_${recIndex}_OpCode`] = user.empId || "";
+                }
+            }
+
+            // PRODUCTION-LEVEL AUTOFILL: Set the Process Owner for the first row (index 0) 
+            // as soon as the session is created. This ensures the initiator is marked as the owner by default.
+            const ownerField = activeType === 'crimping' ? 'Process_Owner' : 'Owner_Sign';
+            if (authUser?.fullName) {
+                initialRecordData[`rec_0_${ownerField}`] = authUser.fullName;
+            }
+
             const payload = {
                 departmentId: selectedDepartment,
                 sectionId: selectedSection,
                 date: addDialogDate,
-                shift: "",
-                line: "",
-                formType: addDialogType,
-                recordData: {} // Empty initial data
+                shift: initialRecordData['rec_0_Shift'] || "",
+                line: initialRecordData['rec_0_Line'] || initialRecordData['rec_0_StationMC'] || "",
+                formType: activeType,
+                recordData: initialRecordData
             };
 
             const response = await axiosInstance.post('/api/daily-5m/record/create', payload);
             if (response.data.success) {
                 const newRecord = response.data.data;
                 setFormData({});
-                setFormType(addDialogType);
+                setFormType(activeType);
                 setSelectedDate(addDialogDate);
                 setSubmittedBy(null);
                 setCurrentRecordId(newRecord.id);
@@ -1260,13 +1455,92 @@ const Daily5MRecording = () => {
 
                 setShowFormList(false);
                 setIsAddDialogOpen(false);
-                toast.success(`${addDialogType.toUpperCase()} form session created`);
+                toast.success(`${activeType.toUpperCase()} form session created`);
+
+                // Clear Play Mode after successful creation and pre-fill
+                setIsPlayMode(false);
+                setPlayUserData(null);
+                setIsAutoCreating(false);
             }
         } catch (error) {
             console.error("Error creating new form session:", error);
             toast.error("Failed to create recording session");
         }
     };
+
+    // Handle "Play Mode" from All Users page
+    useEffect(() => {
+        if (location.state?.playUser) {
+            const user = location.state.playUser;
+            setIsPlayMode(true);
+            setPlayUserData(user);
+
+            // Auto-select department and section
+            if (user.departmentId) setSelectedDepartment(String(user.departmentId));
+            if (user.sectionId) setSelectedSection(String(user.sectionId));
+
+            // Clear state so we don't re-trigger on refresh
+            window.history.replaceState({}, document.title);
+        }
+    }, [location.state]);
+
+    // Auto-open form if in Play Mode and single form type
+    useEffect(() => {
+        // Wait for sections to be loaded
+        if (selectedSection && sections && sections.length > 0) {
+            const section = sections.find(s => String(s._id || s.id) === String(selectedSection));
+            if (!section) return;
+
+            if (isPlayMode && showFormList && !isAutoCreating) {
+                // In Play Mode, we want to be as automated as possible.
+                const daily5mFormType = section?.daily5mFormType || "";
+                const allowedTypes = daily5mFormType.split(",").map(t => t.trim()).filter(Boolean);
+                const sName = (section?.name || "").toLowerCase();
+
+                // Determine the auto-type based on config or keywords (matching visibility rules)
+                let autoType = "";
+                if (allowedTypes.length > 0) {
+                    autoType = allowedTypes[0];
+                } else if (sName.includes("crimping") || sName.includes("cutting")) {
+                    autoType = "crimping";
+                } else if (sName.includes("src")) {
+                    autoType = "src";
+                } else {
+                    autoType = "standard";
+                }
+
+                if (autoType) {
+                    setIsAutoCreating(true);
+                    setAddDialogType(autoType);
+                    // Direct call instead of timeout
+                    handleAddForm(autoType);
+                }
+            } else if (!isPlayMode && showFormList) {
+                // Standard non-play mode behavior: auto-select single type IF explicitly configured
+                const daily5mFormType = section?.daily5mFormType || "";
+                const types = daily5mFormType.split(",").map(t => t.trim()).filter(Boolean);
+                if (types.length === 1) {
+                    setAddDialogType(types[0]);
+                }
+            }
+        }
+    }, [isPlayMode, selectedSection, sections, showFormList, isAutoCreating]);
+
+    // Auto-set the dialog form type when the dialog or section changes
+    useEffect(() => {
+        if (isAddDialogOpen && selectedSection) {
+            const currentSection = sections.find(s => (s._id || s.id) === selectedSection);
+            if (currentSection?.daily5mFormType) {
+                const types = currentSection.daily5mFormType.split(",");
+                if (types.length === 1) {
+                    setAddDialogType(types[0]);
+                } else {
+                    // Reset if multiple options exist, so user must choose
+                    setAddDialogType("");
+                }
+            }
+        }
+    }, [isAddDialogOpen, selectedSection, sections]);
 
     const fetchRecordById = async (id) => {
         try {
@@ -1279,9 +1553,10 @@ const Daily5MRecording = () => {
 
                 setSelectedDepartment(deptId);
                 setSelectedSection(sectId);
-                setSelectedDate(record.date ? record.date.split('T')[0] : new Date().toLocaleDateString('en-CA'));
+                setSelectedDate(record.date ? new Date(record.date).toISOString().split('T')[0] : new Date().toLocaleDateString('en-CA'));
                 setFormData(recordData);
                 setSubmittedBy(record.submittedByName || "User");
+                setSubmittedById(record.submittedBy);
                 setCurrentRecordId(record.id);
                 setSessionId(record.sessionId);
                 setRecordStatus(record.status || 'PENDING');
@@ -1298,37 +1573,6 @@ const Daily5MRecording = () => {
         }
     };
 
-    const fetchRecordForDate = async (deptId, queryDate, targetUserId) => {
-        try {
-            let url = `/api/daily-5m/record/date?departmentId=${deptId}&date=${queryDate}`;
-            if (targetUserId) url += `&userId=${targetUserId}`;
-
-            const response = await axiosInstance.get(url);
-            if (response.data.success && response.data.data) {
-                // Record exists for this date
-                const record = response.data.data;
-                const recordData = record.recordData || {};
-                setFormData(recordData);
-                setSubmittedBy(record.submittedByName || "User");
-                setCurrentRecordId(record.id);
-                if (record.formType) {
-                    setFormType(record.formType);
-                }
-                updateRowCountFromData(recordData);
-            } else {
-                // No record found, clear form for a new day
-                setFormData({});
-                setSubmittedBy(null);
-                if (tableConfig?.bodyRows) setRowCount(tableConfig.bodyRows);
-            }
-        } catch (error) {
-            console.error("Error fetching record for date:", error);
-            toast.error("Failed to fetch data for the selected date.");
-            setFormData({});
-            setSubmittedBy(null);
-        }
-    };
-
     const updateRowCountFromData = (recordData) => {
         const keys = Object.keys(recordData);
         let maxIndex = tableConfig?.bodyRows ? tableConfig.bodyRows - 1 : 4;
@@ -1342,6 +1586,12 @@ const Daily5MRecording = () => {
         setRowCount(maxIndex + 1);
     };
 
+    /**
+     * Helper to get the correct database field name for the Process Owner
+     * based on the active form type. 
+     */
+    const getOwnerField = (type) => type === 'crimping' ? 'Process_Owner' : 'Owner_Sign';
+
     const handleInputChange = (recIndex, field, value) => {
         setFormData(prev => {
             const newFormData = {
@@ -1349,15 +1599,12 @@ const Daily5MRecording = () => {
                 [`rec_${recIndex}_${field}`]: value
             };
 
-            // Auto-populate Leader Name if Line is changed
-            if (field === 'Line' || field === 'From') {
-                const selectedLine = lines.find(l => l.name === value);
-                if (selectedLine && selectedLine.lineLeader) {
-                    // FP_Leader is used in the table UI
-                    newFormData[`rec_${recIndex}_FP_Leader`] = selectedLine.lineLeader;
-                    // Also update FP_1 for backward compatibility/other forms if needed
-                    newFormData[`rec_${recIndex}_FP_1`] = selectedLine.lineLeader;
-                }
+            // PRODUCTION-LEVEL AUTOFILL: Automatically fetch and set the logged-in user's name
+            // as the Process Owner for the row if it's currently empty.
+            // This triggers as soon as the user starts filling ANY field in that row.
+            const ownerField = getOwnerField(formType);
+            if (!newFormData[`rec_${recIndex}_${ownerField}`] && authUser?.fullName) {
+                newFormData[`rec_${recIndex}_${ownerField}`] = authUser.fullName;
             }
 
             // Auto-populate 'N/A' in Support Person Name if OJT is 'No'
@@ -1369,41 +1616,146 @@ const Daily5MRecording = () => {
         });
     };
 
-    const handleSaveRecord = async () => {
+    const handleSaveRecord = async (currentData = null, options = {}) => {
         if (!selectedDepartment) {
             toast.error("Please select a department");
             return;
         }
 
-        // Basic Validation: Check if at least one row has data? 
-        // For now, just allow saving whatever is there.
+        const isEvent = currentData && (currentData.nativeEvent || currentData.target);
+        const dataToSave = (currentData && !isEvent) ? currentData : formData;
+        const skipNavigate = options?.skipNavigate || false;
+        const showPreview = options?.showPreview || false;
 
         try {
             const payload = {
                 departmentId: selectedDepartment,
                 sectionId: selectedSection,
                 date: selectedDate,
-                // Extract Shift/Line from the first record if available:
-                shift: formData['rec_0_Shift'] || "",
-                line: formData['rec_0_Line'] || formData['rec_0_StationMC'] || "",
+                shift: dataToSave['rec_0_Shift'] || "",
+                line: dataToSave['rec_0_Line'] || dataToSave['rec_0_StationMC'] || "",
                 formType: formType,
-                recordData: formData,
-                sessionId: sessionId // Group this save under the existing session
+                recordData: dataToSave,
+                sessionId: sessionId
             };
 
-            await axiosInstance.post('/api/daily-5m/record/create', payload);
+            const response = await axiosInstance.post('/api/daily-5m/record/create', payload);
+            if (response.data.success && response.data.data) {
+                setCurrentRecordId(response.data.data.id);
+            }
+
             toast.success("Record saved successfully!");
 
-            // Clear the URL when returning to the list
-            navigate(location.pathname, { replace: true });
-
-            // Go back to the list
-            setShowFormList(true);
-            fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+            if (showPreview) {
+                setIsPreviewOpen(true);
+            } else if (!skipNavigate) {
+                navigate(location.pathname, { replace: true });
+                setShowFormList(true);
+                fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+            } else {
+                fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+            }
         } catch (error) {
             console.error("Save error:", error);
             toast.error(error.response?.data?.message || "Failed to save record");
         }
+    };
+
+    const handleSubmitSession = async () => {
+        if (!currentRecordId) {
+            toast.error("No record found to submit. Please save first.");
+            return;
+        }
+
+        // --- VALIDATION: Ensure all active rows have mandatory fields filled ---
+        let hasActiveRows = false;
+        const activeRowsWithMissingFields = [];
+        for (let i = 0; i < rowCount; i++) {
+            const lineValue = formData[`rec_${i}_Line`];
+            const stationValue = formData[`rec_${i}_StationMC`];
+            const opName = formData[`rec_${i}_OpName`];
+
+            // A row is "active" if it has a Line, Station, or Operator name
+            if (lineValue || stationValue || opName) {
+                hasActiveRows = true;
+                // Fields to check using helper for consistency
+                const ownerField = getOwnerField(formType);
+                const processOwner = formData[`rec_${i}_${ownerField}`];
+                const qaShiftIC = isCrimping ? formData[`rec_${i}_QA_Incharge`] : formData[`rec_${i}_Result_1`];
+                const approvedBy = formData[`rec_${i}_Approved_By`]; // Same for both layouts
+
+                if (!processOwner || !qaShiftIC || !approvedBy) {
+                    activeRowsWithMissingFields.push(i + 1);
+                }
+            }
+        }
+
+        if (!hasActiveRows) {
+            toast.error("The form is empty. Please fill at least one row before submitting.");
+            return;
+        }
+
+        if (activeRowsWithMissingFields.length > 0) {
+            toast.error(
+                `Row(s) [${activeRowsWithMissingFields.join(', ')}] are incomplete. ` +
+                `Please fill Process Owner, QA Shift In-charge, and Approved By before submitting.`,
+                { duration: 5000 }
+            );
+            return;
+        }
+        // ----------------------------------------------------------------------
+
+        setIsSubmitting(true);
+        try {
+            const response = await axiosInstance.post(`/api/daily-5m/record/${currentRecordId}/submit`);
+            if (response.data.success) {
+                toast.success("Form submitted and email sent successfully!");
+                setIsPreviewOpen(false);
+                // Redirect back to list after successful submission
+                navigate(location.pathname, { replace: true });
+                setShowFormList(true);
+                fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+            }
+        } catch (error) {
+            console.error("Submission error:", error);
+            toast.error(error.response?.data?.message || "Failed to submit form");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleActionRow = (recIndex, action) => {
+        if (!canApprove) {
+            toast.error("You do not have permission to perform this action.");
+            return;
+        }
+
+        const date = formData[`rec_${recIndex}_Date`];
+        if (!date) {
+            toast.error("Please fill the date for this row before approving/rejecting.");
+            return;
+        }
+
+        const status = action === 'approve' ? 'APPROVED' : 'REJECTED';
+        const actionAt = new Date().toISOString();
+
+        // Prepare updated data object
+        const updatedData = {
+            ...formData,
+            [`rec_${recIndex}_RowStatus`]: status,
+            [`rec_${recIndex}_ActionBy`]: authUser.fullName,
+            [`rec_${recIndex}_ActionById`]: authUser.empId,
+            [`rec_${recIndex}_ActionAt`]: actionAt,
+            [`rec_${recIndex}_Approved_By`]: authUser.fullName
+        };
+
+        // Update local state
+        setFormData(updatedData);
+
+        toast.success(`Row ${recIndex + 1} ${status.toLowerCase()} successfully! Saving...`);
+
+        // Trigger auto-save in background
+        handleSaveRecord(updatedData, { skipNavigate: true });
     };
 
     // Helper to process text (existing)
@@ -1513,13 +1865,13 @@ const Daily5MRecording = () => {
                         </DialogContent>
                     </Dialog>
 
-                    <Button onClick={handleSaveRecord} disabled={!selectedDepartment || loadingConfig}>
+                    <Button onClick={() => handleSaveRecord(null, { showPreview: true })} disabled={!selectedDepartment || loadingConfig}>
                         <IconClipboardList className="w-5 h-5 mr-2" />
-                        Save Record
+                        Save & Preview
                     </Button>
                     <Button onClick={() => setIsPrintDialogOpen(true)} variant="outline" disabled={!tableConfig}>
                         <IconPrinter className="w-5 h-5 mr-2" />
-                        Print / Email Sheet
+                        Print Sheet
                     </Button>
 
                     <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
@@ -1572,51 +1924,164 @@ const Daily5MRecording = () => {
                             </div>
                         </DialogContent>
                     </Dialog>
+
+                    {/* Preview & Submit Dialog */}
+                    <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+                        <DialogContent className="max-w-[1000px] max-h-[90vh] flex flex-col">
+                            <DialogHeader>
+                                <DialogTitle className="text-xl font-bold flex items-center justify-between">
+                                    <span>Review Recording & Submit</span>
+                                    <Badge variant="outline" className="ml-2 uppercase bg-blue-50 text-blue-700 border-blue-200">
+                                        Level: {formType === 'standard' ? 'Assembly' : formType === 'src' ? 'SRC' : 'Crimping'}
+                                    </Badge>
+                                </DialogTitle>
+                            </DialogHeader>
+
+                            <div className="flex-1 overflow-auto py-4 px-2">
+                                <div className="space-y-4">
+                                    {/* Header Info */}
+                                    <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                        <div className="space-y-1">
+                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Department / Section</p>
+                                            <p className="font-semibold text-sm">{selectedDeptName} / {selectedSectionName}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Recording Date</p>
+                                            <p className="font-semibold text-sm">{selectedDate}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Table Summary */}
+                                    <div className="border rounded-lg overflow-hidden border-slate-200">
+                                        <Table className="w-full text-xs">
+                                            <TableHeader className="bg-slate-50">
+                                                <TableRow>
+                                                    <TableHead className="w-12">#</TableHead>
+                                                    <TableHead>Line / Station</TableHead>
+                                                    <TableHead>Shift</TableHead>
+                                                    <TableHead>Operator</TableHead>
+                                                    <TableHead>Problem/Topic</TableHead>
+                                                    <TableHead className="text-center">Status</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {[...Array(rowCount)].map((_, idx) => {
+                                                    const lineOrStation = formData[`rec_${idx}_Line`] || formData[`rec_${idx}_StationMC`];
+                                                    const hasData = lineOrStation || formData[`rec_${idx}_OpName`];
+                                                    if (!hasData) return null;
+
+                                                    return (
+                                                        <TableRow key={idx}>
+                                                            <TableCell className="font-mono text-slate-400">{idx + 1}</TableCell>
+                                                            <TableCell className="font-medium">{formData[`rec_${idx}_Line`] || formData[`rec_${idx}_StationMC`] || "-"}</TableCell>
+                                                            <TableCell>{formData[`rec_${idx}_Shift`] || "-"}</TableCell>
+                                                            <TableCell className="text-blue-600 font-medium">{formData[`rec_${idx}_OpName`] || "-"}</TableCell>
+                                                            <TableCell className="max-w-[200px] truncate" title={formData[`rec_${idx}_Problem`]}>{formData[`rec_${idx}_Problem`] || "-"}</TableCell>
+                                                            <TableCell className="text-center">
+                                                                <Badge variant="secondary" className={
+                                                                    formData[`rec_${idx}_RowStatus`] === 'APPROVED' ? "bg-emerald-100 text-emerald-700 border-none" :
+                                                                        formData[`rec_${idx}_RowStatus`] === 'REJECTED' ? "bg-red-100 text-red-700 border-none" :
+                                                                            "bg-slate-100 text-slate-600 border-none"
+                                                                }>
+                                                                    {formData[`rec_${idx}_RowStatus`] || 'PENDING'}
+                                                                </Badge>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                                {![...Array(rowCount)].some((_, idx) => formData[`rec_${idx}_Line`] || formData[`rec_${idx}_OpName`]) && (
+                                                    <TableRow>
+                                                        <TableCell colSpan={6} className="p-8 text-center text-slate-400 italic">No entries filled in this recording.</TableCell>
+                                                    </TableRow>
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+
+                                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex gap-3">
+                                        <IconClipboardList className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                                        <p className="text-[13px] text-amber-800 leading-tight">
+                                            <strong>Safety Note:</strong> Submitting this record will send the final report (Excel format) to all configured supervisors and HODs. Please ensure all critical data is verified.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <DialogFooter className="border-t border-slate-100 pt-4 gap-2 sm:gap-0">
+                                <Button variant="ghost" onClick={() => setIsPreviewOpen(false)} disabled={isSubmitting}>
+                                    Back to Edit
+                                </Button>
+                                <Button onClick={handleSubmitSession} disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 px-8">
+                                    {isSubmitting ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+                                    ) : (
+                                        <>Submit & Send Email</>
+                                    )}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </div>
 
             {/* Content Area Switching */}
-            {!selectedDepartment || !selectedSection ? (
-                /* State 1: Department & Section Selection */
-                <div className="p-8">
-                    <Card className="max-w-md mx-auto">
-                        <CardHeader>
-                            <CardTitle>Daily 5M Recording Access</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="space-y-2">
-                                <Label>1. Select Department</Label>
-                                <Select value={selectedDepartment} onValueChange={setSelectedDepartment} disabled={isRestricted && assignableDepartments.length === 1}>
-                                    <SelectTrigger className={isRestricted && assignableDepartments.length === 1 ? "bg-slate-50 cursor-not-allowed" : ""}>
-                                        <SelectValue placeholder="Select Department" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {assignableDepartments.map((dept) => (
-                                            <SelectItem key={dept._id || dept.id} value={dept._id || dept.id}>
-                                                {dept.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
+            <div className="bg-white p-4 rounded-xl border-2 shadow-sm flex flex-wrap items-end gap-6 print:hidden">
+                <div className="space-y-2 flex-1 min-w-[200px]">
+                    <Label className="text-xs uppercase font-bold text-slate-500 ml-1">1. Department</Label>
+                    <Select value={selectedDepartment} onValueChange={setSelectedDepartment} disabled={isRestricted && assignableDepartments.length === 1}>
+                        <SelectTrigger className={isRestricted && assignableDepartments.length === 1 ? "bg-slate-50 cursor-not-allowed h-11" : "h-11"}>
+                            <SelectValue placeholder="Select Department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {assignableDepartments.map((dept) => (
+                                <SelectItem key={String(dept._id || dept.id)} value={String(dept._id || dept.id)}>
+                                    {dept.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
 
-                            <div className={`space-y-2 transition-opacity ${!selectedDepartment ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-                                <Label>2. Select Section</Label>
-                                <Select value={selectedSection} onValueChange={setSelectedSection} disabled={!selectedDepartment}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select Section" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {sections.map((sec) => (
-                                            <SelectItem key={sec._id || sec.id} value={sec._id || sec.id}>
-                                                {sec.name} {sec.category ? `(${sec.category})` : ''}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </CardContent>
-                    </Card>
+                <div className={`space-y-2 flex-1 min-w-[200px] transition-all duration-300 ${!selectedDepartment ? 'opacity-40 grayscale pointer-events-none' : 'opacity-100'}`}>
+                    <Label className="text-xs uppercase font-bold text-slate-500 ml-1">2. Section</Label>
+                    <Select value={selectedSection} onValueChange={setSelectedSection} disabled={!selectedDepartment || (isRestricted && assignableSections.length === 1)}>
+                        <SelectTrigger className={isRestricted && assignableSections.length === 1 ? "bg-slate-50 cursor-not-allowed h-11" : "h-11"}>
+                            <SelectValue placeholder="Select Section" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {assignableSections.map((sec) => (
+                                <SelectItem key={String(sec._id || sec.id)} value={String(sec._id || sec.id)}>
+                                    {sec.name} {sec.category ? `(${sec.category})` : ''}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="space-y-2 flex-1 min-w-[200px]">
+                    <Label className="text-xs uppercase font-bold text-slate-500 ml-1">3. Date</Label>
+                    <div className="relative">
+                        <Input
+                            type="date"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            className="h-11 pl-10"
+                        />
+                        <IconClipboardList className="absolute left-3 top-3 text-slate-400" size={20} />
+                    </div>
+                </div>
+            </div>
+
+            {!selectedDepartment || !selectedSection ? (
+                /* Placeholder Screen */
+                <div className="flex flex-col items-center justify-center p-20 bg-white rounded-xl border-2 border-dashed border-slate-200">
+                    <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+                        <IconFilter className="text-blue-500" size={32} />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-800">Ready to record?</h3>
+                    <p className="text-slate-500 mt-2 text-center max-w-sm">
+                        Please select a department and section from the filters above to view and create recording sessions.
+                    </p>
                 </div>
             ) : loadingConfig ? (
                 /* State 2: Loading */
@@ -1631,15 +2096,7 @@ const Daily5MRecording = () => {
                 /* State 4: Form Selection List */
                 <div className="space-y-6">
                     <div className="flex justify-between items-center bg-white p-4 rounded-lg border">
-                        <div className="flex items-center gap-4">
-                            <Input
-                                type="date"
-                                value={selectedDate}
-                                onChange={(e) => setSelectedDate(e.target.value)}
-                                className="w-[200px]"
-                            />
-                            <h2 className="text-lg font-semibold text-slate-700">Records for {selectedDeptName} - {selectedSectionName}</h2>
-                        </div>
+                        <h2 className="text-lg font-semibold text-slate-700">Records for {selectedDeptName} - {selectedSectionName}</h2>
                         <Button onClick={() => setIsAddDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
                             <IconPlus className="mr-2" /> Add New Form
                         </Button>
@@ -1682,11 +2139,10 @@ const Daily5MRecording = () => {
                                             <TableCell className="p-4">
                                                 <Badge
                                                     variant="secondary"
-                                                    className={`uppercase text-[16px] px-3 py-1 font-bold ${
-                                                        record.formType === 'crimping' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                    className={`uppercase text-[16px] px-3 py-1 font-bold ${record.formType === 'crimping' ? 'bg-orange-100 text-orange-700 border-orange-200' :
                                                         record.formType === 'src' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                                        'bg-blue-100 text-blue-700 border-blue-200'
-                                                    }`}
+                                                            'bg-blue-100 text-blue-700 border-blue-200'
+                                                        }`}
                                                 >
                                                     {record.formType === 'standard' ? 'Assembly' : record.formType === 'src' ? 'SRC' : 'Cutting & Crimping'}
                                                 </Badge>
@@ -1742,87 +2198,112 @@ const Daily5MRecording = () => {
                             <div className="grid gap-6 py-4">
                                 <div className="space-y-2">
                                     <Label>Form Type</Label>
-                                    <div className="grid grid-cols-3 gap-4">
-                                        {/* Assembly Card */}
-                                        <div
-                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${
-                                                addDialogType === 'standard' 
-                                                ? 'border-blue-500 bg-blue-50/50 ring-4 ring-blue-500/10' 
-                                                : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
-                                            }`}
-                                            onClick={() => setAddDialogType('standard')}
-                                        >
-                                            <div className="flex flex-col items-center text-center space-y-2">
-                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'standard' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-500'}`}>
-                                                    <IconLayout2 size={24} />
-                                                </div>
-                                                <div>
-                                                    <div className={`font-bold transition-colors ${addDialogType === 'standard' ? 'text-blue-700' : 'text-slate-700'}`}>Assembly</div>
-                                                    <p className="text-xs text-slate-500 mt-0.5">Regular 5M Sheet</p>
-                                                </div>
-                                            </div>
-                                            {addDialogType === 'standard' && (
-                                                <div className="absolute top-2 right-2">
-                                                    <div className="bg-blue-500 text-white rounded-full p-0.5 shadow-sm">
-                                                        <IconCheck size={12} strokeWidth={3} />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
+                                    <div className="grid gap-4">
+                                        {(() => {
+                                            const section = sections?.find(s => String(s._id || s.id) === String(selectedSection));
+                                            const daily5mFormType = section?.daily5mFormType || "";
+                                            const allowedTypes = daily5mFormType.split(",").map(t => t.trim()).filter(Boolean);
+                                            const sName = (section?.name || "").toLowerCase();
 
-                                        {/* Crimping Card */}
-                                        <div
-                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${
-                                                addDialogType === 'crimping' 
-                                                ? 'border-orange-500 bg-orange-50/50 ring-4 ring-orange-500/10' 
-                                                : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
-                                            }`}
-                                            onClick={() => setAddDialogType('crimping')}
-                                        >
-                                            <div className="flex flex-col items-center text-center space-y-2">
-                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'crimping' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-orange-100 group-hover:text-orange-500'}`}>
-                                                    <IconScissors size={24} />
-                                                </div>
-                                                <div>
-                                                    <div className={`font-bold transition-colors ${addDialogType === 'crimping' ? 'text-orange-700' : 'text-slate-700'}`}>Cutting & Crimping</div>
-                                                    <p className="text-xs text-slate-500 mt-0.5">Crimping Machine Fix</p>
-                                                </div>
-                                            </div>
-                                            {addDialogType === 'crimping' && (
-                                                <div className="absolute top-2 right-2">
-                                                    <div className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm">
-                                                        <IconCheck size={12} strokeWidth={3} />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
+                                            // Strict Logic:
+                                            // 1. If Admin: Show everything
+                                            // 2. If no section selected: Show everything
+                                            // 3. If section has explicit daily5mFormType: Use those
+                                            // 4. If section has NO daily5mFormType: Fallback to keyword matching in name
+                                            const checkStandard = allowedTypes.includes('standard') || (allowedTypes.length === 0 && !sName.includes("crimping") && !sName.includes("cutting") && !sName.includes("src"));
+                                            const checkCrimping = allowedTypes.includes('crimping') || (allowedTypes.length === 0 && (sName.includes("crimping") || sName.includes("cutting")));
+                                            const checkSRC = allowedTypes.includes('src') || (allowedTypes.length === 0 && sName.includes("src"));
 
-                                        {/* SRC Card */}
-                                        <div
-                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${
-                                                addDialogType === 'src' 
-                                                ? 'border-emerald-500 bg-emerald-50/50 ring-4 ring-emerald-500/10' 
-                                                : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
-                                            }`}
-                                            onClick={() => setAddDialogType('src')}
-                                        >
-                                            <div className="flex flex-col items-center text-center space-y-2">
-                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'src' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-500'}`}>
-                                                    <IconCpu size={24} />
+                                            const visibleCount = [checkStandard, checkCrimping, checkSRC].filter(Boolean).length;
+
+                                            return (
+                                                <div className={`grid gap-4 ${visibleCount === 1 ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                                                    {/* Assembly Card */}
+                                                    {checkStandard && (
+                                                        <div
+                                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${addDialogType === 'standard'
+                                                                ? 'border-blue-500 bg-blue-50/50 ring-4 ring-blue-500/10'
+                                                                : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                                                                }`}
+                                                            onClick={() => setAddDialogType('standard')}
+                                                        >
+                                                            <div className="flex flex-col items-center text-center space-y-2">
+                                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'standard' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-500'}`}>
+                                                                    <IconLayout2 size={24} />
+                                                                </div>
+                                                                <div>
+                                                                    <div className={`font-bold transition-colors ${addDialogType === 'standard' ? 'text-blue-700' : 'text-slate-700'}`}>Assembly</div>
+                                                                    <p className="text-xs text-slate-500 mt-0.5">Regular 5M Sheet</p>
+                                                                </div>
+                                                            </div>
+                                                            {addDialogType === 'standard' && (
+                                                                <div className="absolute top-2 right-2">
+                                                                    <div className="bg-blue-500 text-white rounded-full p-0.5 shadow-sm">
+                                                                        <IconCheck size={12} strokeWidth={3} />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Crimping Card */}
+                                                    {checkCrimping && (
+                                                        <div
+                                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${addDialogType === 'crimping'
+                                                                ? 'border-orange-500 bg-orange-50/50 ring-4 ring-orange-500/10'
+                                                                : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
+                                                                }`}
+                                                            onClick={() => setAddDialogType('crimping')}
+                                                        >
+                                                            <div className="flex flex-col items-center text-center space-y-2">
+                                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'crimping' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-orange-100 group-hover:text-orange-500'}`}>
+                                                                    <IconScissors size={24} />
+                                                                </div>
+                                                                <div>
+                                                                    <div className={`font-bold transition-colors ${addDialogType === 'crimping' ? 'text-orange-700' : 'text-slate-700'}`}>Cutting & Crimping</div>
+                                                                    <p className="text-xs text-slate-500 mt-0.5">Crimping Machine Fix</p>
+                                                                </div>
+                                                            </div>
+                                                            {addDialogType === 'crimping' && (
+                                                                <div className="absolute top-2 right-2">
+                                                                    <div className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm">
+                                                                        <IconCheck size={12} strokeWidth={3} />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* SRC Card */}
+                                                    {checkSRC && (
+                                                        <div
+                                                            className={`relative group p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden ${addDialogType === 'src'
+                                                                ? 'border-emerald-500 bg-emerald-50/50 ring-4 ring-emerald-500/10'
+                                                                : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                                                                }`}
+                                                            onClick={() => setAddDialogType('src')}
+                                                        >
+                                                            <div className="flex flex-col items-center text-center space-y-2">
+                                                                <div className={`p-2 rounded-lg transition-colors ${addDialogType === 'src' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-500'}`}>
+                                                                    <IconCpu size={24} />
+                                                                </div>
+                                                                <div>
+                                                                    <div className={`font-bold transition-colors ${addDialogType === 'src' ? 'text-emerald-700' : 'text-slate-700'}`}>SRC</div>
+                                                                    <p className="text-xs text-slate-500 mt-0.5">SRC Machine Fix</p>
+                                                                </div>
+                                                            </div>
+                                                            {addDialogType === 'src' && (
+                                                                <div className="absolute top-2 right-2">
+                                                                    <div className="bg-emerald-500 text-white rounded-full p-0.5 shadow-sm">
+                                                                        <IconCheck size={12} strokeWidth={3} />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div>
-                                                    <div className={`font-bold transition-colors ${addDialogType === 'src' ? 'text-emerald-700' : 'text-slate-700'}`}>SRC</div>
-                                                    <p className="text-xs text-slate-500 mt-0.5">SRC Machine Fix</p>
-                                                </div>
-                                            </div>
-                                            {addDialogType === 'src' && (
-                                                <div className="absolute top-2 right-2">
-                                                    <div className="bg-emerald-500 text-white rounded-full p-0.5 shadow-sm">
-                                                        <IconCheck size={12} strokeWidth={3} />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                                 <div className="space-y-2">
@@ -1857,42 +2338,7 @@ const Daily5MRecording = () => {
                                     <IconArrowLeft className="mr-2" /> Back to Session List
                                 </Button>
 
-                                {/* Approval Actions */}
-                                {canApprove && recordStatus === 'PENDING' && currentRecordId && (
-                                    <div className="flex items-center gap-2 border-l pl-4">
-                                        <Button
-                                            size="sm"
-                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                                            onClick={async () => {
-                                                try {
-                                                    await axiosInstance.post(`/api/daily-5m/record/${currentRecordId}/approve`);
-                                                    setRecordStatus('APPROVED');
-                                                    toast.success("Record Approved Successfully");
-                                                } catch (e) {
-                                                    toast.error("Failed to approve record");
-                                                }
-                                            }}
-                                        >
-                                            <IconCheck size={18} className="mr-1.5" /> Approve
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="text-red-600 border-red-200 hover:bg-red-50 font-bold"
-                                            onClick={async () => {
-                                                try {
-                                                    await axiosInstance.post(`/api/daily-5m/record/${currentRecordId}/decline`);
-                                                    setRecordStatus('DECLINED');
-                                                    toast.success("Record Declined");
-                                                } catch (e) {
-                                                    toast.error("Failed to decline record");
-                                                }
-                                            }}
-                                        >
-                                            <IconX size={18} className="mr-1.5" /> Decline
-                                        </Button>
-                                    </div>
-                                )}
+
 
                                 {/* Status Badge */}
                                 {recordStatus !== 'PENDING' && (
@@ -1905,15 +2351,11 @@ const Daily5MRecording = () => {
                             <div className="text-right">
                                 <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active Session</div>
                                 <div className="text-2xl font-black text-slate-900 uppercase">
-                                    {formType === 'standard' ? 'Assembly form' : formType === 'src' ? 'SRC machine fix' : 'cutting & crimping'}
+                                    {selectedDeptName} / {selectedSectionName}
                                 </div>
                             </div>
                         </div>
                         <div className="flex gap-4 p-4 bg-white rounded-lg border shadow-sm">
-                            <div className="flex flex-col gap-1 flex-1">
-                                <Label className="text-[16px] uppercase text-slate-400 font-bold">Dept / Section</Label>
-                                <div className="font-bold">{selectedDeptName} / {selectedSectionName}</div>
-                            </div>
                             <div className="flex flex-col gap-1 flex-1">
                                 <Label className="text-[16px] uppercase text-slate-400 font-bold">Date</Label>
                                 <div className="font-bold">{selectedDate}</div>
@@ -1935,6 +2377,26 @@ const Daily5MRecording = () => {
                                     <thead>
                                         {(() => {
                                             const activeConfig = formType === 'crimping' ? CRIMPING_CONFIG : tableConfig;
+
+                                            // 1. Identify where to place the "Approve or Reject" header
+                                            // We find the first row where the last column item spans to the end of header rows
+                                            const totalHeaderRows = activeConfig.headers.length;
+                                            let targetRowIndex = totalHeaderRows - 1;
+
+                                            if (formType !== 'crimping') {
+                                                for (let i = 0; i < totalHeaderRows; i++) {
+                                                    const row = activeConfig.headers[i];
+                                                    const lastItem = row[row.length - 1];
+                                                    if (lastItem && (i + (lastItem.rowSpan || 1) === totalHeaderRows)) {
+                                                        // Check if this row is a detailed row (not just a single title/note column)
+                                                        if (row.length > 1) {
+                                                            targetRowIndex = i;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+
                                             return activeConfig.headers.map((row, rowIndex) => (
                                                 <tr key={rowIndex}>
                                                     {row.map((header, colIndex) => {
@@ -1943,11 +2405,17 @@ const Daily5MRecording = () => {
                                                         if (formType === 'src' && rowIndex === 0 && colIndex === 0) {
                                                             headerText = "Daily 5M Recording Man - SRC section";
                                                         }
-                                                        
+
+                                                        // For standard forms, we must adjust colSpan of the last item in rows ABOVE the target row to account for the added column
+                                                        const isLastInRow = colIndex === row.length - 1;
+                                                        const adjustedColSpan = (formType !== 'crimping' && rowIndex < targetRowIndex && isLastInRow)
+                                                            ? (header.colSpan || 1) + 1
+                                                            : header.colSpan;
+
                                                         return (
                                                             <th
                                                                 key={colIndex}
-                                                                colSpan={header.colSpan}
+                                                                colSpan={adjustedColSpan}
                                                                 rowSpan={header.rowSpan}
                                                                 className={getClassName(header)}
                                                             >
@@ -1965,6 +2433,15 @@ const Daily5MRecording = () => {
                                                             </th>
                                                         );
                                                     })}
+                                                    {/* Append Action column only to the identified target header row for standard forms */}
+                                                    {formType !== 'crimping' && rowIndex === targetRowIndex && (
+                                                        <th
+                                                            rowSpan={activeConfig.headers[targetRowIndex][activeConfig.headers[targetRowIndex].length - 1].rowSpan || 1}
+                                                            className="border border-black p-1 bg-slate-100 font-bold w-28 text-center text-[10px] uppercase align-middle shadow-sm"
+                                                        >
+                                                            Approve or Reject
+                                                        </th>
+                                                    )}
                                                 </tr>
                                             ));
                                         })()}
@@ -1978,333 +2455,399 @@ const Daily5MRecording = () => {
                                                     recIndex={recIndex}
                                                     formData={formData}
                                                     handleInputChange={handleInputChange}
-                                                    lines={lines}
-                                                    skillLevels={skillLevels}
                                                     departmentId={selectedDepartment}
+                                                    canApprove={canApprove}
+                                                    authUser={authUser}
+                                                    isLocked={!!formData[`rec_${recIndex}_RowStatus`] && !isAdmin}
+                                                    isSubmitter={isSubmitter}
+                                                    handleActionRow={handleActionRow}
+                                                    skillLevels={skillLevels}
                                                 />
                                                 :
                                                 <React.Fragment key={recIndex}>
-                                                    {/* Row 1 of Record */}
-                                                    <tr className="hover:bg-slate-50">
-                                                        {/* We hardcode the inputs for now as per the layout structure - genericizing this part fully would require defining INPUT types in JSON too. 
-                                                    For this iteration, we keep the inputs standard but allow the Headers to be dynamic. 
-                                                    Ideally, the 'columns' config should drive this loop.
-                                                */}
-                                                        {/* This part is tricky. If the user changes columns, the inputs below won't match. 
-                                                    To make it truly dynamic, we need to loop through a 'columns' definition in the config for the BODY as well.
-                                                    However, the body rows have complex rowSpans too (merged cells across the record).
-                                                    
-                                                    Strategy: The Default Config implies a specific structure. 
-                                                    If users want to Add Columns, they must also define how the body renders.
-                                                    For now, we will render a GENERIC grid based on the columns defined in the LAST row of headers? 
-                                                    No, that's ambiguous because of colSpans.
-                                                    
-                                                    We will use the 'columns' or 'bodyStructure' from the config if available, otherwise fallback to the hardcoded inputs.
-                                                    Since we provided a DEFAULT_CONFIG, let's map it.
-                                                */}
+                                                    {(() => {
+                                                        const rowStatus = formData[`rec_${recIndex}_RowStatus`];
+                                                        const isLocked = !!rowStatus && !isAdmin;
+                                                        const isLastRow = recIndex === rowCount - 1;
+                                                        return (
+                                                            <>
+                                                                {/* Row 1 of Record */}
+                                                                <tr className="hover:bg-slate-50">
+                                                                    <td rowSpan="3" className="border border-black p-0.5 text-center">{recIndex + 1}</td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <select
+                                                                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                                                                            value={formData[`rec_${recIndex}_Line`] || ""}
+                                                                            onChange={(e) => {
+                                                                                const val = e.target.value;
+                                                                                handleInputChange(recIndex, 'Line', val);
+                                                                                const selectedLine = lines.find(l => l.name === val);
+                                                                                const leader = selectedLine?.lineLeader || "";
+                                                                                handleInputChange(recIndex, 'FP_Leader', leader);
+                                                                                handleInputChange(recIndex, 'FP_1', leader);
+                                                                            }}
+                                                                            disabled={isLocked}
+                                                                        >
+                                                                            <option value="">Select Line</option>
+                                                                            {lines.map((line, idx) => (
+                                                                                <option key={line._id || line.id || idx} value={line.name}>
+                                                                                    {line.name} {line.sectionName ? `(${line.sectionName})` : ''}
+                                                                                </option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <select
+                                                                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                                                                            value={formData[`rec_${recIndex}_Shift`] || ""}
+                                                                            onChange={(e) => handleInputChange(recIndex, 'Shift', e.target.value)}
+                                                                            disabled={isLocked}
+                                                                        >
+                                                                            <option value="">Select Shift</option>
+                                                                            <option value="A">A</option>
+                                                                            <option value="B">B</option>
+                                                                            <option value="G">G</option>
+                                                                            <option value="C">C</option>
+                                                                        </select>
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <select
+                                                                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                                                                            value={formData[`rec_${recIndex}_Type`] || ""}
+                                                                            onChange={(e) => handleInputChange(recIndex, 'Type', e.target.value)}
+                                                                            disabled={isLocked}
+                                                                        >
+                                                                            <option value="">Select Type</option>
+                                                                            <option value="Planned">Planned</option>
+                                                                            <option value="Un-Planned">Un-Planned</option>
+                                                                        </select>
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <ProcessSelect
+                                                                            recIndex={recIndex}
+                                                                            selectedLineName={formData[`rec_${recIndex}_Line`]}
+                                                                            allLines={lines}
+                                                                            formData={formData}
+                                                                            onInputChange={handleInputChange}
+                                                                            disabled={isLocked}
+                                                                        />
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <ProblemSelect
+                                                                            recIndex={recIndex}
+                                                                            value={formData[`rec_${recIndex}_Problem`] || ""}
+                                                                            onChange={handleInputChange}
+                                                                            disabled={isLocked}
+                                                                        />
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5 text-center font-mono text-[16px]">
+                                                                        {formData[`rec_${recIndex}_OpCode`] || ""}
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <UserAutocomplete
+                                                                            departmentId={selectedDepartment}
+                                                                            value={formData[`rec_${recIndex}_OpName`] || ""}
+                                                                            onChange={({ fullName, empId, currentLevel }) => {
+                                                                                handleInputChange(recIndex, 'OpName', fullName);
+                                                                                handleInputChange(recIndex, 'OpCode', empId);
+                                                                                handleInputChange(recIndex, 'CurSkill', currentLevel || "");
+                                                                            }}
+                                                                            placeholder="Op Name"
+                                                                            compact={true}
+                                                                            disabled={isLocked}
+                                                                        />
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" placeholder="Cur Skill" value={formData[`rec_${recIndex}_CurSkill`] || ""} onChange={(e) => handleInputChange(recIndex, 'CurSkill', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <select
+                                                                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                                                                            value={formData[`rec_${recIndex}_ReqSkill`] || ""}
+                                                                            onChange={(e) => handleInputChange(recIndex, 'ReqSkill', e.target.value)}
+                                                                            disabled={isLocked}
+                                                                        >
+                                                                            <option value="">Req Skill</option>
+                                                                            {skillLevels.map((level, idx) => (
+                                                                                <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
+                                                                            ))}
+                                                                        </select></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" placeholder="Deputed" value={formData[`rec_${recIndex}_Deputed`] || ""} onChange={(e) => handleInputChange(recIndex, 'Deputed', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <UserAutocomplete
+                                                                            value={formData[`rec_${recIndex}_DeputedCode`] || ""}
+                                                                            onChange={({ fullName, empId, departmentId, deptName, lineName, currentLevel }) => {
+                                                                                handleInputChange(recIndex, 'DeputedCode', empId);
+                                                                                handleInputChange(recIndex, 'Deputed', fullName);
+                                                                                handleInputChange(recIndex, 'DeputedDeptId', departmentId);
+                                                                                handleInputChange(recIndex, 'DeputedDeptName', deptName);
+                                                                                handleInputChange(recIndex, 'From', lineName || "");
+                                                                                handleInputChange(recIndex, 'ActSkill', currentLevel || "L1");
+                                                                            }}
+                                                                            placeholder="Op Code"
+                                                                            compact={true}
+                                                                            disabled={isLocked}
+                                                                        />
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <select
+                                                                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                                                                            value={formData[`rec_${recIndex}_ActSkill`] || ""}
+                                                                            onChange={(e) => handleInputChange(recIndex, 'ActSkill', e.target.value)}
+                                                                            disabled={isLocked}
+                                                                        >
+                                                                            <option value="">Act Skill</option>
+                                                                            {skillLevels.map((level, idx) => (
+                                                                                <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
+                                                                            ))}
+                                                                        </select></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <div className="flex flex-col gap-1 items-center justify-center h-full">
+                                                                            {formData[`rec_${recIndex}_DeputedDeptName`] && (
+                                                                                <span className="text-[16px] text-gray-500 font-bold uppercase">{formData[`rec_${recIndex}_DeputedDeptName`]}</span>
+                                                                            )}
+                                                                            <LineSelect
+                                                                                recIndex={recIndex}
+                                                                                departmentId={formData[`rec_${recIndex}_DeputedDeptId`]}
+                                                                                formData={formData}
+                                                                                onInputChange={handleInputChange}
+                                                                                disabled={isLocked}
+                                                                            />
+                                                                        </div>
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <DaysInput
+                                                                            value={formData[`rec_${recIndex}_Plan`] || ""}
+                                                                            onChange={(e) => handleInputChange(recIndex, 'Plan', e.target.value)}
+                                                                            disabled={isLocked}
+                                                                        />
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <select
+                                                                            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                                                                            value={formData[`rec_${recIndex}_OJT`] || ""}
+                                                                            onChange={(e) => handleInputChange(recIndex, 'OJT', e.target.value)}
+                                                                            disabled={isLocked}
+                                                                        >
+                                                                            <option value="">Select</option>
+                                                                            <option value="Yes">Yes</option>
+                                                                            <option value="No">No</option>
+                                                                        </select>
+                                                                    </td>
 
-                                                        <td rowSpan="3" className="border border-black p-0.5 text-center">{recIndex + 1}</td>
-                                                        {/* Generic inputs for standard fields */}
-                                                        <td rowSpan="3" className="border border-black p-0.5"><input type="date" className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_Line`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'Line', e.target.value)}
-                                                            >
-                                                                <option value="">Select Line</option>
-                                                                {lines.map((line, idx) => (
-                                                                    <option key={line._id || line.id || idx} value={line.name}>
-                                                                        {line.name} {line.sectionName ? `(${line.sectionName})` : ''}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_Shift`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'Shift', e.target.value)}
-                                                            >
-                                                                <option value="">Select Shift</option>
-                                                                <option value="A">A</option>
-                                                                <option value="B">B</option>
-                                                                <option value="G">G</option>
-                                                                <option value="C">C</option>
-                                                            </select>
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_Type`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'Type', e.target.value)}
-                                                            >
-                                                                <option value="">Select Type</option>
-                                                                <option value="Planned">Planned</option>
-                                                                <option value="Un-Planned">Un-Planned</option>
-                                                            </select>
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <ProcessSelect
-                                                                recIndex={recIndex}
-                                                                selectedLineName={formData[`rec_${recIndex}_Line`]}
-                                                                allLines={lines}
-                                                                formData={formData}
-                                                                onInputChange={handleInputChange}
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <ProblemSelect
-                                                                recIndex={recIndex}
-                                                                value={formData[`rec_${recIndex}_Problem`] || ""}
-                                                                onChange={handleInputChange}
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5 text-center font-mono text-[16px]">
-                                                            {formData[`rec_${recIndex}_OpCode`] || ""}
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <UserAutocomplete
-                                                                departmentId={selectedDepartment}
-                                                                value={formData[`rec_${recIndex}_OpName`] || ""}
-                                                                onChange={({ fullName, empId, currentLevel }) => {
-                                                                    handleInputChange(recIndex, 'OpName', fullName);
-                                                                    handleInputChange(recIndex, 'OpCode', empId);
-                                                                    handleInputChange(recIndex, 'CurSkill', currentLevel || "");
-                                                                }}
-                                                                placeholder="Op Name"
-                                                                compact={true}
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" placeholder="Cur Skill" value={formData[`rec_${recIndex}_CurSkill`] || ""} onChange={(e) => handleInputChange(recIndex, 'CurSkill', e.target.value)} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_ReqSkill`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'ReqSkill', e.target.value)}
-                                                            >
-                                                                <option value="">Req Skill</option>
-                                                                {skillLevels.map((level, idx) => (
-                                                                    <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
-                                                                ))}
-                                                            </select></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" placeholder="Deputed" value={formData[`rec_${recIndex}_Deputed`] || ""} onChange={(e) => handleInputChange(recIndex, 'Deputed', e.target.value)} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <UserAutocomplete
-                                                                value={formData[`rec_${recIndex}_DeputedCode`] || ""}
-                                                                onChange={({ fullName, empId, departmentId, deptName, lineName, currentLevel }) => {
-                                                                    handleInputChange(recIndex, 'DeputedCode', empId);
-                                                                    handleInputChange(recIndex, 'Deputed', fullName);
-                                                                    handleInputChange(recIndex, 'DeputedDeptId', departmentId);
-                                                                    handleInputChange(recIndex, 'DeputedDeptName', deptName);
-                                                                    handleInputChange(recIndex, 'From', lineName || "");
-                                                                    handleInputChange(recIndex, 'ActSkill', currentLevel || "L1");
-                                                                }}
-                                                                placeholder="Op Code"
-                                                                compact={true}
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_ActSkill`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'ActSkill', e.target.value)}
-                                                            >
-                                                                <option value="">Act Skill</option>
-                                                                {skillLevels.map((level, idx) => (
-                                                                    <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
-                                                                ))}
-                                                            </select></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <div className="flex flex-col gap-1 items-center justify-center h-full">
-                                                                {formData[`rec_${recIndex}_DeputedDeptName`] && (
-                                                                    <span className="text-[16px] text-gray-500 font-bold uppercase">{formData[`rec_${recIndex}_DeputedDeptName`]}</span>
-                                                                )}
-                                                                <LineSelect
-                                                                    recIndex={recIndex}
-                                                                    departmentId={formData[`rec_${recIndex}_DeputedDeptId`]}
-                                                                    formData={formData}
-                                                                    onInputChange={handleInputChange}
-                                                                />
-                                                            </div>
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <DaysInput
-                                                                value={formData[`rec_${recIndex}_Plan`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'Plan', e.target.value)}
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_OJT`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'OJT', e.target.value)}
-                                                            >
-                                                                <option value="">Select</option>
-                                                                <option value="Yes">Yes</option>
-                                                                <option value="No">No</option>
-                                                            </select>
-                                                        </td>
+                                                                    {/* Retro Row 1 */}
+                                                                    <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro1_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro1_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro1_Visual', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td colSpan="2" className="border border-black p-0.5 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full" value={formData[`rec_${recIndex}_Retro1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_Retro1_VisualSOP`] : "Visual as per SOP"} onChange={(e) => handleInputChange(recIndex, 'Retro1_VisualSOP', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro1_NA`] !== undefined ? formData[`rec_${recIndex}_Retro1_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro1_NA', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5 text-center align-middle">
+                                                                        <div className="flex flex-col h-full items-center justify-center gap-1">
+                                                                            <select
+                                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                                                                                value={formData[`rec_${recIndex}_Retro_Status`] !== undefined ? formData[`rec_${recIndex}_Retro_Status`] : "OK"}
+                                                                                onChange={(e) => handleInputChange(recIndex, 'Retro_Status', e.target.value)}
+                                                                                disabled={isLocked}
+                                                                            >
+                                                                                <option value="OK">OK</option>
+                                                                                <option value="Rework">Rework</option>
+                                                                                <option value="Scrap">Scrap</option>
+                                                                            </select>
+                                                                            <div className="w-full h-px bg-black/10" />
+                                                                        </div>
+                                                                    </td>
 
-                                                        {/* Retro Row 1 */}
-                                                        <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro1_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro1_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro1_Visual', e.target.value)} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full" value={formData[`rec_${recIndex}_Retro1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_Retro1_VisualSOP`] : "Visual as per SOP"} onChange={(e) => handleInputChange(recIndex, 'Retro1_VisualSOP', e.target.value)} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro1_NA`] !== undefined ? formData[`rec_${recIndex}_Retro1_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro1_NA', e.target.value)} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5 text-center align-middle">
-                                                            <div className="flex flex-col h-full items-center justify-center gap-1">
-                                                                <select
-                                                                    className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                    value={formData[`rec_${recIndex}_Retro_Status`] !== undefined ? formData[`rec_${recIndex}_Retro_Status`] : "OK"}
-                                                                    onChange={(e) => handleInputChange(recIndex, 'Retro_Status', e.target.value)}
-                                                                >
-                                                                    <option value="OK">OK</option>
-                                                                    <option value="Rework">Rework</option>
-                                                                    <option value="Scrap">Scrap</option>
-                                                                </select>
-                                                                <div className="w-full h-px bg-black/10" />
-                                                                {/* <AutoResizeTextarea
-                                                                    className="text-[8px] text-center"
-                                                                    placeholder="Sign"
-                                                                    value={formData[`rec_${recIndex}_Retro_Sign`] || ""}
-                                                                    onChange={(e) => handleInputChange(recIndex, 'Retro_Sign', e.target.value)}
-                                                                /> */}
-                                                            </div>
-                                                        </td>
+                                                                    {/* FP Row 1 */}
+                                                                    <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_Leader`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_Leader', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_PartNo', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_LotNo', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5 h-full p-0">
+                                                                        <div className="flex flex-col h-full text-[8px] min-h-[60px]">
+                                                                            <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_1`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_1', e.target.value)} disabled={isLocked} /></div>
+                                                                            <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_2`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_2', e.target.value)} disabled={isLocked} /></div>
+                                                                            <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_3`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_3', e.target.value)} disabled={isLocked} /></div>
+                                                                            <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_4`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_4`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_4', e.target.value)} disabled={isLocked} /></div>
+                                                                            <div className="flex-1 flex items-center justify-center"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_5`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_5`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_5', e.target.value)} disabled={isLocked} /></div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="border border-black p-0.5 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full text-[16px]" value={formData[`rec_${recIndex}_FP1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_FP1_VisualSOP`] : "Visual(As per SOP)"} onChange={(e) => handleInputChange(recIndex, 'FP1_VisualSOP', e.target.value)} disabled={isLocked} /></td>
+                                                                    {[1, 2, 3, 4, 5].map(num => (
+                                                                        <td key={`FP1_Chk${num}`} className="border border-black p-0.5 min-w-[60px]">
+                                                                            <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]" value={formData[`rec_${recIndex}_FP1_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP1_Chk${num}`, e.target.value)} disabled={isLocked}>
+                                                                                <option value="">-</option>
+                                                                                <option value="OK">OK</option>
+                                                                                <option value="N/A">N/A</option>
+                                                                            </select>
+                                                                        </td>
+                                                                    ))}
+                                                                    <td rowSpan="3" className="border border-black p-0.5 text-[16px]">
+                                                                        <AssignmentSelect
+                                                                            departmentId={selectedDepartment}
+                                                                            role="QA_SHIFT_INCHARGE"
+                                                                            value={formData[`rec_${recIndex}_Result_1`] || ""}
+                                                                            onChange={(val) => handleInputChange(recIndex, 'Result_1', val)}
+                                                                            placeholder="QA Shift IC"
+                                                                            className='text-[16px]'
+                                                                            disabled={isLocked}
+                                                                        />
+                                                                    </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <div className="flex flex-col text-[16px] items-center justify-center p-1 font-semibold min-h-[40px]">
+                                                                            NG Detail if<br />any: <input className="w-6 text-center border-none ml-1 bg-transparent" value={formData[`rec_${recIndex}_Result_2`] !== undefined ? formData[`rec_${recIndex}_Result_2`] : "0"} onChange={(e) => handleInputChange(recIndex, 'Result_2', e.target.value)} disabled={isLocked} />
+                                                                        </div>
+                                                                    </td>
 
-                                                        {/* FP Row 1 */}
-                                                        <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_Leader`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_Leader', e.target.value)} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_PartNo', e.target.value)} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_LotNo', e.target.value)} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5 h-full p-0">
-                                                            <div className="flex flex-col h-full text-[8px] min-h-[60px]">
-                                                                <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_1`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_1', e.target.value)} /></div>
-                                                                <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_2`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_2', e.target.value)} /></div>
-                                                                <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_3`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_3', e.target.value)} /></div>
-                                                                <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_4`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_4`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_4', e.target.value)} /></div>
-                                                                <div className="flex-1 flex items-center justify-center"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_5`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_5`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_5', e.target.value)} /></div>
-                                                            </div>
-                                                        </td>
-                                                        <td className="border border-black p-0.5 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full text-[16px]" value={formData[`rec_${recIndex}_FP1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_FP1_VisualSOP`] : "Visual(As per SOP)"} onChange={(e) => handleInputChange(recIndex, 'FP1_VisualSOP', e.target.value)} /></td>
-                                                        {[1, 2, 3, 4, 5].map(num => (
-                                                            <td key={`FP1_Chk${num}`} className="border border-black p-0.5 min-w-[60px]">
-                                                                <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]" value={formData[`rec_${recIndex}_FP1_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP1_Chk${num}`, e.target.value)}>
-                                                                    <option value="">-</option>
-                                                                    <option value="OK">OK</option>
-                                                                    <option value="N/A">N/A</option>
-                                                                </select>
-                                                            </td>
-                                                        ))}
-                                                        <td rowSpan="3" className="border border-black p-0.5 text-[16px]">
-                                                            <AssignmentSelect
-                                                                departmentId={selectedDepartment}
-                                                                role="QA_SHIFT_INCHARGE"
-                                                                value={formData[`rec_${recIndex}_Result_1`] || ""}
-                                                                onChange={(val) => handleInputChange(recIndex, 'Result_1', val)}
-                                                                placeholder="QA Shift IC"
-                                                                className='text-[16px]'
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <div className="flex flex-col text-[16px] items-center justify-center p-1 font-semibold min-h-[40px]">
-                                                                NG Detail if<br />any: <input className="w-6 text-center border-none ml-1 bg-transparent" value={formData[`rec_${recIndex}_Result_2`] !== undefined ? formData[`rec_${recIndex}_Result_2`] : "0"} onChange={(e) => handleInputChange(recIndex, 'Result_2', e.target.value)} />
-                                                            </div>
-                                                        </td>
+                                                                    {/* Cont Row 1 */}
+                                                                    <td rowSpan="2" className="border border-black p-0.5">
+                                                                        <UserAutocomplete
+                                                                            value={formData[`rec_${recIndex}_Cont1_Shift`] || ""}
+                                                                            onChange={({ fullName }) => handleInputChange(recIndex, 'Cont1_Shift', fullName)}
+                                                                            placeholder="Support Person"
+                                                                            compact={true}
+                                                                            disabled={isLocked}
+                                                                        />
+                                                                    </td>
+                                                                    <td rowSpan="2" className="border border-black p-0.5"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td rowSpan="2" className="border border-black p-0.5"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} disabled={isLocked} /></td>
 
-                                                        {/* Cont Row 1 */}
-                                                        <td rowSpan="2" className="border border-black p-0.5">
-                                                            <UserAutocomplete
-                                                                value={formData[`rec_${recIndex}_Cont1_Shift`] || ""}
-                                                                onChange={({ fullName }) => handleInputChange(recIndex, 'Cont1_Shift', fullName)}
-                                                                placeholder="Support Person"
-                                                                compact={true}
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="2" className="border border-black p-0.5"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} /></td>
-                                                        <td rowSpan="2" className="border border-black p-0.5"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} /></td>
+                                                                    <td rowSpan="2" className="border border-black p-0.5 align-top">
+                                                                        <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
+                                                                            <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
+                                                                            <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_1`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_1', e.target.value)} disabled={isLocked} />
+                                                                        </div>
+                                                                    </td>
+                                                                    <td rowSpan="2" className="border border-black p-0.5 align-top">
+                                                                        <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
+                                                                            <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
+                                                                            <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_2`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_2', e.target.value)} disabled={isLocked} />
+                                                                        </div>
+                                                                    </td>
+                                                                    <td rowSpan="2" className="border border-black p-0.5 align-top">
+                                                                        <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
+                                                                            <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
+                                                                            <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_3`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_3', e.target.value)} disabled={isLocked} />
+                                                                        </div>
+                                                                    </td>
 
-                                                        <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                                            <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
-                                                                <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_1`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_1', e.target.value)} />
-                                                            </div>
-                                                        </td>
-                                                        <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                                            <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
-                                                                <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_2`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_2', e.target.value)} />
-                                                            </div>
-                                                        </td>
-                                                        <td rowSpan="2" className="border border-black p-0.5 align-top">
-                                                            <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
-                                                                <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_3`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_3', e.target.value)} />
-                                                            </div>
-                                                        </td>
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <div className="flex flex-col h-full relative min-h-[40px] items-center justify-end pb-1">
+                                                                            <AutoResizeTextarea className="text-center text-blue-600 bg-transparent" value={formData[`rec_${recIndex}_Cont1_Remarks`] || "0"} onChange={(e) => handleInputChange(recIndex, 'Cont1_Remarks', e.target.value)} disabled={isLocked} />
+                                                                        </div>
+                                                                    </td>
 
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <div className="flex flex-col h-full relative min-h-[40px] items-center justify-end pb-1">
-                                                                <AutoResizeTextarea className="text-center text-blue-600 bg-transparent" value={formData[`rec_${recIndex}_Cont1_Remarks`] || "0"} onChange={(e) => handleInputChange(recIndex, 'Cont1_Remarks', e.target.value)} />
-                                                            </div>
-                                                        </td>
+                                                                    {/* Process Owner/Incharge Selection */}
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <AutoResizeTextarea
+                                                                                className="text-center font-bold text-blue-700"
+                                                                                value={formData[`rec_${recIndex}_Owner_Sign`] || ""}
+                                                                                onChange={(e) => handleInputChange(recIndex, 'Owner_Sign', e.target.value)}
+                                                                                placeholder="Incharge"
+                                                                                disabled={isLocked}
+                                                                            />
+                                                                        </div>
+                                                                    </td>
 
-                                                        {/* Owners */}
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <AssignmentSelect
-                                                                departmentId={selectedDepartment}
-                                                                role="PROCESS_OWNER"
-                                                                value={formData[`rec_${recIndex}_Owner_Sign`] || ""}
-                                                                onChange={(val) => handleInputChange(recIndex, 'Owner_Sign', val)}
-                                                                placeholder="Owner Sign"
-                                                            />
-                                                        </td>
-                                                        <td rowSpan="3" className="border border-black p-0.5">
-                                                            <AssignmentSelect
-                                                                departmentId={selectedDepartment}
-                                                                role="APPROVED_BY"
-                                                                value={formData[`rec_${recIndex}_Approved_By`] || ""}
-                                                                onChange={(val) => handleInputChange(recIndex, 'Approved_By', val)}
-                                                                placeholder="QA Approver"
-                                                            />
-                                                        </td>
-                                                    </tr>
+                                                                    {/* QA Approver Selection */}
+                                                                    <td rowSpan="3" className="border border-black p-0.5">
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <AutoResizeTextarea
+                                                                                className="text-center font-bold text-blue-700"
+                                                                                value={formData[`rec_${recIndex}_Approved_By`] || ""}
+                                                                                onChange={(e) => handleInputChange(recIndex, 'Approved_By', e.target.value)}
+                                                                                placeholder="Approved By"
+                                                                                disabled={isLocked}
+                                                                            />
+                                                                        </div>
+                                                                    </td>
 
-                                                    {/* Row 2 of Record */}
-                                                    <tr className="hover:bg-slate-50">
-                                                        {/* Retro Row 2 */}
-                                                        <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro2_Dim`] !== undefined ? formData[`rec_${recIndex}_Retro2_Dim`] : "Dimension"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Dim', e.target.value)} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-[16px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_Retro2_Desc`] !== undefined ? formData[`rec_${recIndex}_Retro2_Desc`] : "Dim as per Dim board\n(if change at F/A process)"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Desc', e.target.value)} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro2_NA`] !== undefined ? formData[`rec_${recIndex}_Retro2_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro2_NA', e.target.value)} /></td>
+                                                                    {/* Approve or Reject Action Column */}
+                                                                    <td rowSpan="3" className="border border-black p-0.5 align-middle text-center bg-slate-50/20 w-28">
+                                                                        <div className="flex flex-col items-center justify-center min-h-[100px]">
+                                                                            {rowStatus ? (
+                                                                                <div className={`p-1.5 rounded flex flex-col items-center gap-0.5 border shadow-sm ${rowStatus === 'APPROVED'
+                                                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                                    : 'bg-red-50 text-red-700 border-red-200'
+                                                                                    }`}>
+                                                                                    <div className="flex items-center gap-1 font-black text-[9px] uppercase tracking-wider">
+                                                                                        {rowStatus === 'APPROVED' ? <IconCheck size={14} className="stroke-[3]" /> : <IconX size={14} className="stroke-[3]" />}
+                                                                                        {rowStatus}
+                                                                                    </div>
+                                                                                    <div className="text-[11px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
+                                                                                    <div className="text-[9px] opacity-70 whitespace-nowrap">
+                                                                                        {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
+                                                                                    </div>
+                                                                                </div>
+                                                                            ) : (
+                                                                                canApprove && formData[`rec_${recIndex}_Date`] ? (
+                                                                                    <div className="flex flex-col gap-1.5 p-1 w-full max-w-[80px]">
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            className="h-7 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-tight shadow-sm"
+                                                                                            onClick={() => handleActionRow(recIndex, 'approve')}
+                                                                                        >
+                                                                                            Approve
+                                                                                        </Button>
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            variant="outline"
+                                                                                            className="h-7 w-full text-red-600 border-red-200 hover:bg-red-50 font-bold text-[10px] uppercase tracking-tight shadow-sm bg-white"
+                                                                                            onClick={() => handleActionRow(recIndex, 'reject')}
+                                                                                        >
+                                                                                            Reject
+                                                                                        </Button>
+                                                                                    </div>
+                                                                                ) : isSubmitter && hasApprovalPermission && formData[`rec_${recIndex}_Date`] ? (
+                                                                                    <div className="text-[9px] text-orange-600 font-bold text-center leading-tight">
+                                                                                        Self-Approval <br /> Restricted
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="text-[9px] text-slate-400 font-medium italic">
+                                                                                        {!formData[`rec_${recIndex}_Date`] ? "Fill Date" : "Verify-Row"}
+                                                                                    </div>
+                                                                                )
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
 
-                                                        {/* FP Row 2 */}
-                                                        <td rowSpan="2" className="border border-black p-0.5 text-center text-[8px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_FP2_Desc`] !== undefined ? formData[`rec_${recIndex}_FP2_Desc`] : "Dim as per Dim board(If F/A)"} onChange={(e) => handleInputChange(recIndex, 'FP2_Desc', e.target.value)} /></td>
-                                                        {[1, 2, 3, 4, 5].map(num => (
-                                                            <td rowSpan="2" key={`FP2_Chk${num}`} className="border border-black p-0.5 min-w-[60px]">
-                                                                <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]" value={formData[`rec_${recIndex}_FP2_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP2_Chk${num}`, e.target.value)}>
-                                                                    <option value="">-</option>
-                                                                    <option value="OK">OK</option>
-                                                                    <option value="N/A">N/A</option>
-                                                                </select>
-                                                            </td>
-                                                        ))}
-                                                    </tr>
+                                                                {/* Row 2 of Record */}
+                                                                <tr className="hover:bg-slate-50">
+                                                                    {/* Retro Row 2 */}
+                                                                    <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro2_Dim`] !== undefined ? formData[`rec_${recIndex}_Retro2_Dim`] : "Dimension"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Dim', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td colSpan="2" className="border border-black p-0.5 text-center text-[16px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_Retro2_Desc`] !== undefined ? formData[`rec_${recIndex}_Retro2_Desc`] : "Dim as per Dim board\n(if change at F/A process)"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Desc', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro2_NA`] !== undefined ? formData[`rec_${recIndex}_Retro2_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro2_NA', e.target.value)} disabled={isLocked} /></td>
 
-                                                    {/* Row 3 of Record */}
-                                                    <tr className="hover:bg-slate-50">
-                                                        {/* Retro Row 3 */}
-                                                        <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro3_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro3_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro3_Visual', e.target.value)} /></td>
-                                                        <td className="border border-black p-0.5 text-center text-[16px]">Total Qty</td>
-                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_TQ`] !== undefined ? formData[`rec_${recIndex}_Retro3_TQ`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_TQ', e.target.value)} /></td>
-                                                        <td className="border border-black p-0.5 text-center text-[16px]">NG Qty</td>
-                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_NG`] !== undefined ? formData[`rec_${recIndex}_Retro3_NG`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_NG', e.target.value)} /></td>
+                                                                    {/* FP Row 2 */}
+                                                                    <td rowSpan="2" className="border border-black p-0.5 text-center text-[8px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_FP2_Desc`] !== undefined ? formData[`rec_${recIndex}_FP2_Desc`] : "Dim as per Dim board(If F/A)"} onChange={(e) => handleInputChange(recIndex, 'FP2_Desc', e.target.value)} disabled={isLocked} /></td>
+                                                                    {[1, 2, 3, 4, 5].map(num => (
+                                                                        <td rowSpan="2" key={`FP2_Chk${num}`} className="border border-black p-0.5 min-w-[60px]">
+                                                                            <select className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]" value={formData[`rec_${recIndex}_FP2_Chk${num}`] || ""} onChange={(e) => handleInputChange(recIndex, `FP2_Chk${num}`, e.target.value)} disabled={isLocked}>
+                                                                                <option value="">-</option>
+                                                                                <option value="OK">OK</option>
+                                                                                <option value="N/A">N/A</option>
+                                                                            </select>
+                                                                        </td>
+                                                                    ))}
+                                                                </tr>
 
-                                                        {/* Cont Row 3 */}
-                                                        <td colSpan="6" className="border border-black p-0.5">
-                                                            <div className="flex flex-row items-center justify-end text-[16px] w-full pr-2 text-right">
-                                                                <span className="mr-1 text-gray-700">Detail if NG:</span>
-                                                                <input className="bg-transparent outline-none flex-1 text-blue-600 max-w-[50px] text-center mb-0 border-b border-black" value={formData[`rec_${recIndex}_Cont3_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont3_NGDetail', e.target.value)} />
-                                                            </div>
-                                                        </td>
-                                                    </tr>
+                                                                {/* Row 3 of Record */}
+                                                                <tr className="hover:bg-slate-50">
+                                                                    {/* Retro Row 3 */}
+                                                                    <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro3_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro3_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro3_Visual', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td className="border border-black p-0.5 text-center text-[16px]">Total Qty</td>
+                                                                    <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_TQ`] !== undefined ? formData[`rec_${recIndex}_Retro3_TQ`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_TQ', e.target.value)} disabled={isLocked} /></td>
+                                                                    <td className="border border-black p-0.5 text-center text-[16px]">NG Qty</td>
+                                                                    <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_NG`] !== undefined ? formData[`rec_${recIndex}_Retro3_NG`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_NG', e.target.value)} disabled={isLocked} /></td>
+
+                                                                    {/* Cont Row 3 */}
+                                                                    <td colSpan="6" className="border border-black p-0.5">
+                                                                        <div className="flex flex-row items-center justify-end text-[16px] w-full pr-2 text-right">
+                                                                            <span className="mr-1 text-gray-700">Detail if NG:</span>
+                                                                            <input className="bg-transparent outline-none flex-1 text-blue-600 max-w-[50px] text-center mb-0 border-b border-black" value={formData[`rec_${recIndex}_Cont3_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont3_NGDetail', e.target.value)} disabled={isLocked} />
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </React.Fragment>
                                         )}
                                     </tbody>

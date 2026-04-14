@@ -12,12 +12,14 @@ import logAudit from "../utils/auditLogger.js";
 import { AvailableUserRoles, AvailableUnits } from "../constants.js";
 import validator from "validator";
 import { generateWelcomeEmail } from "../utils/emailTemplates.js";
-import { checkAndProcessLevelUpgrades } from "./user.controller.js";
+import { checkAndProcessLevelUpgrades, formatUser } from "./user.controller.js";
 
 // Helper to sanitize user object
 const sanitizeUser = (user) => {
-  const { password, refreshToken, resetPasswordToken, resetPasswordExpiry, ...safeUser } = user;
-  return safeUser;
+  const formatted = formatUser(user);
+  delete formatted.resetPasswordToken;
+  delete formatted.resetPasswordExpiry;
+  return formatted;
 };
 
 // Attach customRole payload (allowedPages) if assigned

@@ -66,29 +66,12 @@ class NotificationService {
             const buffer = await workbook.xlsx.writeBuffer();
             const subject = `${formName} Update - ${deptName} (${new Date().toLocaleDateString()})`;
             
-            let actionButtons = "";
-            if (formName === "Daily 5M Recording Sheet" && formData.recordId) {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
-                actionButtons = `
-                    <div style="margin: 20px 0;">
-                        <p><strong>Actions:</strong></p>
-                        <a href="${adminUrl}/cms/approvals/status?approve=${formData.recordId}" 
-                           style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px; display: inline-block;">
-                           Approve
-                        </a>
-                        <a href="${adminUrl}/cms/approvals/status?decline=${formData.recordId}" 
-                           style="background-color: #dc3545; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                           Decline
-                        </a>
-                    </div>
-                `;
-            }
+            // Quick Actions template removed as we move to row-wise approval within the form
 
             let htmlMessage = `
                 <div style="font-family: Arial, sans-serif; line-height: 1.6;">
                     <p>Hello,</p>
                     <p>The <strong>${formName}</strong> for department <strong>${deptName}</strong> has been updated.</p>
-                    ${actionButtons}
                     <p>Please find the attached Excel report for your reference.</p>
                     <br/>
                     <p>Best Regards,<br/>LMS System</p>
@@ -110,14 +93,11 @@ class NotificationService {
                         <div style="margin: 25px 0;">
                             <a href="${reviewUrl}" 
                                style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-                               Review Recording Form
+                               Review & Approve Recording
                             </a>
                         </div>
 
                         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-                        <p style="font-size: 14px; color: #666;">Quick Actions (Direct Status Change):</p>
-                        ${actionButtons}
-                        <br/>
                         <p>Regards,<br/><strong>FME Digital Portal</strong></p>
                     </div>
                 `;

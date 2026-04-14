@@ -14,6 +14,8 @@ class Daily5MRecord {
         this.recordData = typeof data.recordData === 'string' ? JSON.parse(data.recordData) : (data.recordData || {});
         this.submittedBy = data.submittedBy; // User ID
         this.submittedByName = data.submittedByName || "Unknown"; // Joined Full Name
+        this.sectionName = data.sectionName;
+        this.departmentName = data.departmentName;
         this.sessionId = data.sessionId;
         this.status = data.status || 'PENDING';
         this.approvedBy = data.approvedBy;
@@ -116,18 +118,52 @@ class Daily5MRecord {
         }
     }
 
+    static calculateAggregateStatus(recordData) {
+        if (!recordData) return 'PENDING';
+
+        const rowCount = 20; // Max rows to check (safe upper bound)
+        let activeRows = 0;
+        let approvedRows = 0;
+        let rejectedRows = 0;
+
+        for (let i = 0; i < rowCount; i++) {
+            // Check if row has any significant data
+            const hasData = recordData[`rec_${i}_Date`] || 
+                            recordData[`rec_${i}_Line`] || 
+                            recordData[`rec_${i}_StationMC`] || 
+                            recordData[`rec_${i}_OpName`];
+            
+            if (hasData) {
+                activeRows++;
+                const rowStatus = recordData[`rec_${i}_RowStatus`];
+                if (rowStatus === 'APPROVED') {
+                    approvedRows++;
+                } else if (rowStatus === 'REJECTED' || rowStatus === 'DECLINED') {
+                    rejectedRows++;
+                }
+            }
+        }
+
+        if (activeRows === 0) return 'PENDING';
+        if (rejectedRows > 0) return 'DECLINED';
+        if (approvedRows === activeRows) return 'APPROVED';
+        
+        return 'PENDING';
+    }
+
     static async upsert(recordData) {
         const { departmentId, sectionId, date, shift, line, formType, recordData: data, submittedBy, sessionId } = recordData;
         const dataJson = JSON.stringify(data);
+        const aggregateStatus = this.calculateAggregateStatus(data);
  
         const query = `
             INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', GETUTCDATE(), GETUTCDATE());
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETUTCDATE(), GETUTCDATE());
             SELECT SCOPE_IDENTITY() as id;
         `;
  
         const [rows] = await executeQuery(query, [
-            departmentId, sectionId || null, date, shift, line, formType, dataJson, submittedBy, sessionId || null
+            departmentId, sectionId || null, date, shift, line, formType, dataJson, submittedBy, sessionId || null, aggregateStatus
         ]);
 
         const newId = rows[0].id;
@@ -140,7 +176,7 @@ class Daily5MRecord {
         return this.findById(newId);
     }
 
-    static async findAll({ departmentId, sectionId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false }) {
+    static async findAll({ departmentId, sectionId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false, search = "" }) {
         let sql = "";
         let params = [];
  
@@ -149,15 +185,18 @@ class Daily5MRecord {
             sql = `
                 WITH LatestSessions AS (
                     SELECT r.*, u.fullName as submittedByName, au.fullName as approvedByName,
+                           s.name as sectionName, d.name as departmentName,
                            ROW_NUMBER() OVER (PARTITION BY r.sessionId ORDER BY r.createdAt DESC) as rn
                     FROM daily_5m_records r
                     LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
                     LEFT JOIN users au ON r.approvedBy = au.id
-                    WHERE r.departmentId = ?
+                    LEFT JOIN [sections] s ON r.sectionId = CAST(s.id AS NVARCHAR(255))
+                    LEFT JOIN departments d ON r.departmentId = CAST(d.id AS NVARCHAR(255))
+                    WHERE (r.departmentId = ? OR ? = 'all')
             `;
-            params.push(departmentId);
+            params.push(departmentId || 'all', departmentId || 'all');
 
-            if (sectionId) {
+            if (sectionId && sectionId !== 'all') {
                 sql += " AND r.sectionId = ?";
                 params.push(sectionId);
             }
@@ -177,6 +216,17 @@ class Daily5MRecord {
             if (endDate) {
                 sql += " AND r.date <= ?";
                 params.push(endDate);
+            }
+            if (search) {
+                sql += ` AND (
+                    r.line LIKE ? OR 
+                    s.name LIKE ? OR 
+                    d.name LIKE ? OR 
+                    CAST(r.id AS NVARCHAR) LIKE ? OR
+                    u.fullName LIKE ?
+                )`;
+                const searchParam = `%${search}%`;
+                params.push(searchParam, searchParam, searchParam, searchParam, searchParam);
             }
 
             sql += `
@@ -185,15 +235,18 @@ class Daily5MRecord {
             `;
         } else {
             sql = `
-                SELECT r.*, u.fullName as submittedByName, au.fullName as approvedByName
+                SELECT r.*, u.fullName as submittedByName, au.fullName as approvedByName,
+                       s.name as sectionName, d.name as departmentName
                 FROM daily_5m_records r
                 LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
                 LEFT JOIN users au ON r.approvedBy = au.id
-                WHERE r.departmentId = ?
+                LEFT JOIN [sections] s ON r.sectionId = CAST(s.id AS NVARCHAR(255))
+                LEFT JOIN departments d ON r.departmentId = CAST(d.id AS NVARCHAR(255))
+                WHERE (r.departmentId = ? OR ? = 'all')
             `;
-            params.push(departmentId);
+            params.push(departmentId || 'all', departmentId || 'all');
 
-            if (sectionId) {
+            if (sectionId && sectionId !== 'all') {
                 sql += " AND r.sectionId = ?";
                 params.push(sectionId);
             }
@@ -215,6 +268,17 @@ class Daily5MRecord {
             if (endDate) {
                 sql += " AND r.date <= ?";
                 params.push(endDate);
+            }
+            if (search) {
+                sql += ` AND (
+                    r.line LIKE ? OR 
+                    s.name LIKE ? OR 
+                    d.name LIKE ? OR 
+                    CAST(r.id AS NVARCHAR) LIKE ? OR
+                    u.fullName LIKE ?
+                )`;
+                const searchParam = `%${search}%`;
+                params.push(searchParam, searchParam, searchParam, searchParam, searchParam);
             }
         }
 
@@ -253,9 +317,14 @@ class Daily5MRecord {
             SELECT r.*, u.fullName as submittedByName 
             FROM daily_5m_records r
             LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
-            WHERE r.departmentId = ? AND r.date = ? AND r.submittedBy = ?
+            WHERE r.departmentId = ? AND r.date = ?
         `;
-        const params = [departmentId, date, userId];
+        const params = [departmentId, date];
+
+        if (userId) {
+            query += " AND r.submittedBy = ?";
+            params.push(userId);
+        }
 
         if (sectionId) {
             query += " AND r.sectionId = ?";

@@ -18,17 +18,18 @@ import {
     Filter,
     Calendar as CalendarIcon,
     RotateCw,
+    Loader2,
 } from 'lucide-react';
 import { useGetDashboardStatsQuery } from "@/Redux/AllApi/DashboardApi";
 import axiosInstance from '../../Helper/axiosInstance';
 
-// ─── Custom Tooltip for Manpower Trend ───────────────────────────────────────
+// ─── Custom Tooltip ───────────────────────────────────────────────────────────
 const ManpowerTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         return (
             <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[160px]">
                 <p className="font-bold text-slate-700 mb-2">{label}</p>
-                {payload.map((entry, i) => (
+                {payload.map((entry, i) =>
                     entry.value !== null && (
                         <div key={i} className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-1.5">
@@ -41,7 +42,7 @@ const ManpowerTooltip = ({ active, payload, label }) => {
                             <span className="font-bold text-slate-900">{entry.value}</span>
                         </div>
                     )
-                ))}
+                )}
             </div>
         );
     }
@@ -54,19 +55,19 @@ const DashboardHome = () => {
     const [sections, setSections] = useState([]);
     const [lines, setLines]       = useState([]);
     const [filterState, setFilterState] = useState({
-        section: "ALL",
-        line:    "ALL",
+        section:   "ALL",
+        line:      "ALL",
         dateRange: undefined,
     });
 
-    // ── Fetch ALL sections from sections table ────────────────────────────────
+    // ── Fetch sections ────────────────────────────────────────────────────────
     useEffect(() => {
         axiosInstance.get('/api/sections')
             .then(res => { if (res.data?.data) setSections(res.data.data); })
             .catch(err => console.error("Failed to fetch sections", err));
     }, []);
 
-    // ── Fetch ALL lines from lines table (not filtered by section) ────────────
+    // ── Fetch lines ───────────────────────────────────────────────────────────
     useEffect(() => {
         axiosInstance.get('/api/lines')
             .then(res => { if (res.data?.data) setLines(res.data.data); })
@@ -74,29 +75,49 @@ const DashboardHome = () => {
     }, []);
 
     // ── Dashboard Stats ───────────────────────────────────────────────────────
-    const { data: dashboardStats } = useGetDashboardStatsQuery({
+    const {
+        data: dashboardStats,
+        isLoading,
+        isFetching,
+    } = useGetDashboardStatsQuery({
         section: filterState.section,
         line:    filterState.line,
     });
 
     const stats = dashboardStats?.data || {
-        manpowerData: [],
-        attritionData: [],
-        skillGapData: [],
+        manpowerData:    [],
+        attritionData:   [],
+        skillGapData:    [],
+        absenteeismData: [],
     };
+
+    const isFiltered = filterState.section !== 'ALL' || filterState.line !== 'ALL';
+    const loadingChart = isLoading || isFetching;
 
     // ── Filter handler ────────────────────────────────────────────────────────
     const handleFilterChange = (key, value) => {
         setFilterState(prev => ({ ...prev, [key]: value }));
     };
 
+    // ── Chart overlay when loading ────────────────────────────────────────────
+    const ChartLoader = () => (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg z-10">
+            <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+        </div>
+    );
+
     return (
         <div className="min-h-screen bg-slate-50 p-6 space-y-6">
 
             {/* ── Header & Filters ─────────────────────────────────────────── */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                     <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
+                    {isFiltered && (
+                        <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
+                            Filtered
+                        </span>
+                    )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
@@ -105,7 +126,7 @@ const DashboardHome = () => {
                             <Filter className="w-3 h-3" /> Filters:
                         </span>
 
-                        {/* Section — all records from sections table */}
+                        {/* Section */}
                         <Select
                             value={filterState.section}
                             onValueChange={(val) => handleFilterChange("section", val)}
@@ -123,7 +144,7 @@ const DashboardHome = () => {
 
                         <div className="h-4 w-[1px] bg-slate-300" />
 
-                        {/* Line — all records from lines table, always enabled */}
+                        {/* Line */}
                         <Select
                             value={filterState.line}
                             onValueChange={(val) => handleFilterChange("line", val)}
@@ -141,7 +162,7 @@ const DashboardHome = () => {
 
                         <div className="h-4 w-[1px] bg-slate-300" />
 
-                        {/* Date Range Picker */}
+                        {/* Date Range */}
                         <Popover>
                             <PopoverTrigger asChild>
                                 <Button
@@ -181,12 +202,22 @@ const DashboardHome = () => {
                             size="icon"
                             className="h-8 w-8 text-slate-400"
                             onClick={() => setFilterState({ section: "ALL", line: "ALL", dateRange: undefined })}
+                            title="Reset filters"
                         >
                             <RotateCw className="w-4 h-4" />
                         </Button>
                     </div>
                 </div>
             </div>
+
+            {/* ── Debug bar (remove in production) ─────────────────────────── */}
+            {isFiltered && dashboardStats?.data?.filters && (
+                <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-amber-700 flex gap-4">
+                    <span>Section resolved: <strong>{dashboardStats.data.filters.sectionName || '—'}</strong></span>
+                    <span>Line resolved: <strong>{dashboardStats.data.filters.lineName || '—'}</strong></span>
+                    <span>Headcount: <strong>{dashboardStats.data.filters.snapshotTotal}</strong></span>
+                </div>
+            )}
 
             {/* ── Main Content Grid ─────────────────────────────────────────── */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -199,14 +230,21 @@ const DashboardHome = () => {
                         <CardHeader className="pb-2">
                             <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
                                 <Users className="w-5 h-5 text-blue-600" />
-                                Manpower Trend
+                                Daily Manpower Trend (Current Month)
+                                {loadingChart && <Loader2 className="w-4 h-4 animate-spin text-blue-400 ml-1" />}
                             </CardTitle>
                             <p className="text-xs text-slate-500">
-                                Required vs Current Headcount (YTD) · Actual Present (Yesterday)
+                                Required vs Current Headcount · Actual Present (Daily)
                             </p>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-[300px] w-full">
+                            <div className="h-[300px] w-full relative">
+                                {loadingChart && <ChartLoader />}
+                                {!loadingChart && stats.manpowerData.length === 0 && (
+                                    <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
+                                        No data found for selected filters
+                                    </div>
+                                )}
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart
                                         data={stats.manpowerData}
@@ -229,7 +267,7 @@ const DashboardHome = () => {
                                         <Tooltip content={<ManpowerTooltip />} />
                                         <Legend wrapperStyle={{ paddingTop: '20px' }} />
 
-                                        {/* Required headcount (blue) */}
+                                        {/* Required headcount */}
                                         <Line
                                             type="monotone"
                                             dataKey="required"
@@ -238,9 +276,10 @@ const DashboardHome = () => {
                                             strokeWidth={3}
                                             dot={{ r: 4, strokeWidth: 2 }}
                                             activeDot={{ r: 6 }}
+                                            connectNulls={false}
                                         />
 
-                                        {/* Running headcount (green) */}
+                                        {/* Current headcount from snapshots */}
                                         <Line
                                             type="monotone"
                                             dataKey="current"
@@ -249,25 +288,19 @@ const DashboardHome = () => {
                                             strokeWidth={3}
                                             dot={{ r: 4, strokeWidth: 2 }}
                                             activeDot={{ r: 6 }}
+                                            connectNulls={false}
                                         />
 
-                                        {/* Yesterday's actual present from attendance_logs
-                                            joined via user_hierarchy_snapshots (payCode = employeeid).
-                                            Only the current month has a value; all others are null
-                                            so connectNulls=false renders a single amber dot. */}
+                                        {/* Daily present from attendance_logs */}
                                         <Line
                                             type="monotone"
-                                            dataKey="actual"
-                                            name="Actual Present (Yesterday)"
+                                            dataKey="present"
+                                            name="Actual Present"
                                             stroke="#f59e0b"
                                             strokeWidth={3}
+                                            dot={{ r: 4, strokeWidth: 2 }}
+                                            activeDot={{ r: 6 }}
                                             connectNulls={false}
-                                            dot={({ cx, cy, value }) =>
-                                                value !== null && value !== undefined
-                                                    ? <circle key={`act-${cx}`} cx={cx} cy={cy} r={6} fill="#f59e0b" stroke="#fff" strokeWidth={2} />
-                                                    : null
-                                            }
-                                            activeDot={{ r: 7, fill: '#f59e0b' }}
                                         />
                                     </LineChart>
                                 </ResponsiveContainer>
@@ -290,7 +323,8 @@ const DashboardHome = () => {
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-[250px] w-full">
+                            <div className="h-[250px] w-full relative">
+                                {loadingChart && <ChartLoader />}
                                 <ResponsiveContainer width="100%" height="100%">
                                     <AreaChart data={stats.attritionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                         <defs>
@@ -330,28 +364,34 @@ const DashboardHome = () => {
                             </div>
                         </CardHeader>
                         <CardContent className="space-y-6 pt-6 bg-white rounded-b-xl">
-                            {stats.skillGapData.map((gap, index) => (
-                                <div key={index} className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold text-white ${gap.color}`}>
-                                                {gap.level}
-                                            </span>
-                                            <span className="text-sm font-semibold text-slate-700">{gap.label}</span>
-                                        </div>
-                                        <div className="flex gap-3 text-xs">
-                                            <span className="text-slate-500">Avail: <span className="font-bold text-slate-900">{gap.avail}</span></span>
-                                            <span className="text-slate-500">Req: <span className="font-bold text-slate-900">{gap.req}</span></span>
-                                        </div>
-                                    </div>
-                                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                        <div
-                                            className={`h-full ${gap.color} opacity-80 transition-all duration-500`}
-                                            style={{ width: `${Math.min((gap.avail / Math.max(gap.req, 1)) * 100, 100)}%` }}
-                                        />
-                                    </div>
+                            {loadingChart ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
                                 </div>
-                            ))}
+                            ) : (
+                                stats.skillGapData.map((gap, index) => (
+                                    <div key={index} className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold text-white ${gap.color}`}>
+                                                    {gap.level}
+                                                </span>
+                                                <span className="text-sm font-semibold text-slate-700">{gap.label}</span>
+                                            </div>
+                                            <div className="flex gap-3 text-xs">
+                                                <span className="text-slate-500">Avail: <span className="font-bold text-slate-900">{gap.avail}</span></span>
+                                                <span className="text-slate-500">Req: <span className="font-bold text-slate-900">{gap.req}</span></span>
+                                            </div>
+                                        </div>
+                                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full ${gap.color} opacity-80 transition-all duration-500`}
+                                                style={{ width: `${Math.min((gap.avail / Math.max(gap.req, 1)) * 100, 100)}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </CardContent>
                     </Card>
                 </div>

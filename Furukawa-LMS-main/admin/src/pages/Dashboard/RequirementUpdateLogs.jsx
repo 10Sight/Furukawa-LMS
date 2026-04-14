@@ -120,9 +120,10 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
             const createdAt = log.created_at || log.createdAt || log.timestamp || log.time;
             const createdDate = toDateSafe(createdAt) || new Date();
 
-            const userName = log.user_name || log.employee_name || log.name || "Unknown";
+            const userName = log.user_name || log.updated_by_name || log.employee_name || log.name || "Unknown";
             const userAvatar = log.user_avatar || log.avatar || null;
             const userRole = log.employee_role || log.role || "User";
+            const employeeId = log.employee_id || null;
 
             const sectionName =
                 log.section_name ||
@@ -182,7 +183,7 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
                 flattened.push({
                     id: `${log.log_id || log.id || createdDate.getTime()}-${key}`,
                     originalLogId: log.log_id || log.id || null,
-                    user: { name: userName, avatar: userAvatar, role: userRole },
+                    user: { name: userName, avatar: userAvatar, role: userRole, employeeId },
                     target: { section: String(sectionName), subSection: String(subSectionName) },
                     referenceMonth: refMonth || createdDate,
                     action: {
@@ -199,7 +200,7 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
                 flattened.push({
                     id: `${log.log_id || log.id || createdDate.getTime()}-generic`,
                     originalLogId: log.log_id || log.id || null,
-                    user: { name: userName, avatar: userAvatar, role: userRole },
+                    user: { name: userName, avatar: userAvatar, role: userRole, employeeId },
                     target: { section: String(sectionName), subSection: String(subSectionName) },
                     referenceMonth: refMonth || createdDate,
                     action: { field: "Count", oldValue: "-", newValue: "-" },
@@ -368,10 +369,16 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
                                                             <AvatarFallback>{initials || "U"}</AvatarFallback>
                                                         </Avatar>
 
-                                                        <div className="flex flex-col">
+                                                <div className="flex flex-col">
                                                             <span className="font-medium text-slate-900 dark:text-slate-100">
                                                                 {log.user?.name || "Unknown"}
                                                             </span>
+
+                                                            {log.user?.employeeId && (
+                                                                <span className="text-[10px] text-slate-400 mt-0.5">
+                                                                    ID: #{log.user.employeeId}
+                                                                </span>
+                                                            )}
 
                                                             <Badge
                                                                 variant="secondary"

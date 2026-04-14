@@ -25,6 +25,8 @@ export const create5MRecord = async (req, res, next) => {
             submittedBy: userId
         });
 
+        /* Automatic report sending removed as per user request to move to a Save -> Preview -> Submit flow */
+        /*
         NotificationService.sendFormReport("Daily 5M Recording Sheet", departmentId, {
             departmentId,
             sectionId,
@@ -35,6 +37,7 @@ export const create5MRecord = async (req, res, next) => {
             recordData,
             recordId: newRecord.id
         });
+        */
 
         res.status(201).json({
             success: true,
@@ -50,25 +53,23 @@ export const create5MRecord = async (req, res, next) => {
 export const get5MRecords = async (req, res, next) => {
     try {
         const { departmentId } = req.params;
-        const { sectionId, startDate, endDate, limit, offset, formType, groupBySession } = req.query;
+        const { sectionId, startDate, endDate, limit, offset, formType, groupBySession, search } = req.query;
         const { id: userId, role } = req.user;
 
         const filters = {
-            departmentId,
+            departmentId: departmentId === 'all' ? null : departmentId,
             sectionId,
             startDate,
             endDate,
+            search,
             formType,
             groupBySession: groupBySession === 'true',
             limit: parseInt(limit) || 50,
             offset: parseInt(offset) || 0
         };
 
-        // Restrict visibility: Only Admins/SuperAdmins can see all records.
-        // Others see only their own saved records.
-        if (role !== 'ADMIN' && role !== 'SUPERADMIN') {
-            filters.submittedBy = userId;
-        }
+        // Visibility restriction removed: All users can now see history for their departments
+        // Previously: filters.submittedBy = userId; for regular users
 
         const records = await Daily5MRecord.findAll(filters);
 
@@ -113,9 +114,9 @@ export const get5MRecordByDate = async (req, res, next) => {
             return next(new ApiError("Department ID and Date are required", 400));
         }
 
-        // If admin provides a userId, fetch that specific user's record.
-        // Otherwise, fetch current user's record.
-        const targetUserId = (isAdmin && queryUserId) ? queryUserId : currentUserId;
+        // Fetch the latest record for this department/section/date across all users to allow viewing history.
+        // If an admin wants a specific user's record, they can still specify it.
+        const targetUserId = (isAdmin && queryUserId) ? queryUserId : null;
 
         const record = await Daily5MRecord.findByDateDeptAndUser(departmentId, date, targetUserId, sectionId);
 
@@ -157,81 +158,32 @@ export const delete5MRecord = async (req, res, next) => {
         return next(new ApiError(error.message, 500));
     }
 };
-// Approval logic
-export const approve5MRecord = async (req, res, next) => {
+
+// Submit record (trigger final email notification)
+export const submit5MRecord = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const user = req.user;
+        const record = await Daily5MRecord.findById(id);
 
-        // Permission check: Admin or specific approval right
-        const canApprove = user.isAdmin || (user.customRole?.permissions?.includes('daily5m:approve'));
-        
-        if (!canApprove) {
-            return next(new ApiError("You do not have permission to approve records", 403));
+        if (!record) {
+            return next(new ApiError("Record not found", 404));
         }
 
-        await Daily5MRecord.updateStatus(id, 'APPROVED', user.id);
-
-        res.status(200).json({
-            success: true,
-            message: "Record approved successfully"
+        // Trigger Notification Service
+        await NotificationService.sendFormReport("Daily 5M Recording Sheet", record.departmentId, {
+            departmentId: record.departmentId,
+            sectionId: record.sectionId,
+            date: record.date ? new Date(record.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            shift: record.shift,
+            line: record.line,
+            formType: record.formType,
+            recordData: record.recordData,
+            recordId: record.id
         });
-    } catch (error) {
-        return next(new ApiError(error.message, 500));
-    }
-};
-
-export const decline5MRecord = async (req, res, next) => {
-    try {
-        const { id } = req.params;
-        const user = req.user;
-
-        // Permission check: Admin or specific approval right
-        const canApprove = user.isAdmin || (user.customRole?.permissions?.includes('daily5m:approve'));
-        
-        if (!canApprove) {
-            return next(new ApiError("You do not have permission to decline records", 403));
-        }
-
-        await Daily5MRecord.updateStatus(id, 'DECLINED', user.id);
 
         res.status(200).json({
             success: true,
-            message: "Record declined successfully"
-        });
-    } catch (error) {
-        return next(new ApiError(error.message, 500));
-    }
-};
-
-export const getApprovalStatus = async (req, res, next) => {
-    try {
-        const { departmentId, startDate, endDate, status } = req.query;
-
-        let sql = `
-            SELECT r.id, r.date, r.shift, r.line, r.status, r.departmentId, d.name as departmentName,
-                   u.fullName as submittedByName, au.fullName as approvedByName, r.createdAt
-            FROM daily_5m_records r
-            LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
-            LEFT JOIN users au ON r.approvedBy = au.id
-            LEFT JOIN departments d ON r.departmentId = d.id
-            WHERE 1=1
-        `;
-        const params = [];
-
-        if (departmentId) { sql += " AND r.departmentId = ?"; params.push(departmentId); }
-        if (startDate) { sql += " AND r.date >= ?"; params.push(startDate); }
-        if (endDate) { sql += " AND r.date <= ?"; params.push(endDate); }
-        if (status) { sql += " AND r.status = ?"; params.push(status); }
-
-        sql += " ORDER BY r.createdAt DESC";
-
-        const [rows] = await executeQuery(sql, params);
-
-        res.status(200).json({
-            success: true,
-            message: "Approval status fetched successfully",
-            data: rows
+            message: "Record submitted and email notification sent successfully"
         });
     } catch (error) {
         return next(new ApiError(error.message, 500));

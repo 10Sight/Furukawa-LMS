@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     Select,
@@ -11,11 +12,16 @@ import { Button } from "@/components/ui/button";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import axiosInstance from '@/Helper/axiosInstance';
 import { format } from "date-fns";
-import { Loader2, Eye, Trash2, Plus, History } from "lucide-react";
+import { Loader2, Eye, Trash2, Plus, History, Search, Calendar as CalendarIcon, Filter } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from '@/lib/utils';
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import {
     Table,
     TableBody,
@@ -28,29 +34,92 @@ import {
 const Daily5MDashboard = () => {
     const navigate = useNavigate();
     const { data: departmentsData } = useGetAllDepartmentsQuery();
-
     // State
     const [selectedDepartment, setSelectedDepartment] = useState("");
-    const [selectedFormType, setSelectedFormType] = useState("standard"); // 'standard' or 'crimping'
+    const [selectedSection, setSelectedSection] = useState("all");
+    const [selectedFormType, setSelectedFormType] = useState("standard");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+    const [searchTerm, setSearchTerm] = useState("");
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(false);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [globalHistory, setGlobalHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
 
-    // Fetch records when department changes
+    // Fetch sections if department is selected
+    const { data: sectionsData } = useGetSectionsByDepartmentQuery(selectedDepartment, { 
+        skip: !selectedDepartment || selectedDepartment === 'all' 
+    });
+    const sections = sectionsData?.data || [];
+
+    const authUser = useSelector(state => state.auth.user);
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+
+    // Filter departments based on user assignment
+    const assignableDepartments = React.useMemo(() => {
+        const allDepts = departmentsData?.data?.departments || [];
+        
+        // Handle both multiple assigned departments AND the primary departmentId
+        const assignedIds = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) assignedIds.push(authUser.departmentId);
+        
+        if (!authUser || assignedIds.length === 0) {
+            return allDepts;
+        }
+        
+        // User has specific department assignments
+        return allDepts.filter(dept =>
+            assignedIds.includes(dept.id) ||
+            assignedIds.includes(dept._id) ||
+            assignedIds.includes(String(dept.id)) ||
+            assignedIds.includes(String(dept._id)) ||
+            assignedIds.includes(Number(dept.id)) ||
+            assignedIds.includes(Number(dept._id))
+        );
+    }, [departmentsData, authUser]);
+
+    const isRestricted = authUser && (
+        (authUser.departments && authUser.departments.length > 0) || 
+        authUser.departmentId
+    );
+
+    // Auto-select department if ONLY one is available for restricted users
+    useEffect(() => {
+        if (isRestricted && assignableDepartments.length === 1 && !selectedDepartment) {
+            setSelectedDepartment(assignableDepartments[0]._id || assignableDepartments[0].id);
+        }
+    }, [isRestricted, assignableDepartments, selectedDepartment]);
+
+    // Fetch records when filters change
     useEffect(() => {
         if (selectedDepartment) {
             fetchRecords();
         } else {
             setRecords([]);
         }
-    }, [selectedDepartment, selectedFormType]);
+    }, [selectedDepartment, selectedSection, selectedFormType, startDate, endDate]);
+
+    // Debounced search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (selectedDepartment) fetchRecords();
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
 
     const fetchRecords = async () => {
         try {
             setLoading(true);
-            const response = await axiosInstance.get(`/api/daily-5m/records/${selectedDepartment}?formType=${selectedFormType}`);
+            const deptId = selectedDepartment === 'all' ? 'all' : selectedDepartment;
+            
+            let query = `/api/daily-5m/records/${deptId}?formType=${selectedFormType}`;
+            if (selectedSection && selectedSection !== 'all') query += `&sectionId=${selectedSection}`;
+            if (startDate) query += `&startDate=${startDate}`;
+            if (endDate) query += `&endDate=${endDate}`;
+            if (searchTerm) query += `&search=${encodeURIComponent(searchTerm)}`;
+
+            const response = await axiosInstance.get(query);
             if (response.data.success) {
                 setRecords(response.data.data);
             }
@@ -122,23 +191,8 @@ const Daily5MDashboard = () => {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Filter Records</CardTitle>
-                    <div className="flex flex-wrap items-center gap-4">
-                        <div className="w-[300px]">
-                            <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select Department" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {departmentsData?.data?.departments?.map((dept) => (
-                                        <SelectItem key={dept._id || dept.id} value={dept._id || dept.id}>
-                                            {dept.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
+                    <div className="flex justify-between items-center mb-4">
+                        <CardTitle>Filter Records</CardTitle>
                         <div className="flex bg-slate-100 p-1 rounded-lg border">
                             <button
                                 onClick={() => setSelectedFormType('standard')}
@@ -160,6 +214,99 @@ const Daily5MDashboard = () => {
                             </button>
                         </div>
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase">Department</Label>
+                            <Select value={selectedDepartment} onValueChange={(val) => { setSelectedDepartment(val); setSelectedSection("all"); }} disabled={isRestricted && assignableDepartments.length === 1}>
+                                <SelectTrigger className={isRestricted && assignableDepartments.length === 1 ? "bg-slate-50 cursor-not-allowed" : ""}>
+                                    <SelectValue placeholder="Select Department" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {isAdmin && <SelectItem value="all">All Departments</SelectItem>}
+                                    {assignableDepartments.map((dept) => (
+                                        <SelectItem key={dept._id || dept.id} value={dept._id || dept.id}>
+                                            {dept.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase">Section</Label>
+                            <Select value={selectedSection} onValueChange={setSelectedSection} disabled={selectedDepartment === 'all' || !selectedDepartment}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Sections" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Sections</SelectItem>
+                                    {sections.map((sec) => (
+                                        <SelectItem key={sec.id} value={sec.id}>
+                                            {sec.name} {sec.category && `(${sec.category})`}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase">Date Range</Label>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        className={cn(
+                                            "w-full justify-start text-left font-normal h-10 px-3",
+                                            (!startDate && !endDate) && "text-slate-400"
+                                        )}
+                                    >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {startDate ? (
+                                            endDate ? (
+                                                <>
+                                                    {format(new Date(startDate), "dd/MM/yy")} - {format(new Date(endDate), "dd/MM/yy")}
+                                                </>
+                                            ) : (
+                                                format(new Date(startDate), "dd/MM/yy")
+                                            )
+                                        ) : (
+                                            <span>Pick a date range</span>
+                                        )}
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar
+                                        initialFocus
+                                        mode="range"
+                                        defaultMonth={startDate ? new Date(startDate) : undefined}
+                                        selected={{
+                                            from: startDate ? new Date(startDate) : undefined,
+                                            to: endDate ? new Date(endDate) : undefined,
+                                        }}
+                                        onSelect={(range) => {
+                                            setStartDate(range?.from ? format(range.from, "yyyy-MM-dd") : "");
+                                            setEndDate(range?.to ? format(range.to, "yyyy-MM-dd") : "");
+                                        }}
+                                        numberOfMonths={2}
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase">Search</Label>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <Input 
+                                    placeholder="Search Line, ID, or Name..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-9 h-10"
+                                />
+                            </div>
+                        </div>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     {!selectedDepartment ? (
@@ -171,26 +318,38 @@ const Daily5MDashboard = () => {
                     ) : (
                         <Table>
                             <TableHeader>
-                                <TableRow>
+                                <TableRow className="bg-slate-50 hover:bg-slate-50 font-semibold">
+                                    <TableHead className="w-[80px]">ID</TableHead>
                                     <TableHead>Date</TableHead>
-                                    <TableHead>Shift</TableHead>
+                                    <TableHead>Department</TableHead>
+                                    <TableHead>Section</TableHead>
                                     <TableHead>Line</TableHead>
                                     <TableHead>Submitted By</TableHead>
                                     <TableHead>Created At</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {records.map((record) => (
-                                    <TableRow key={record.id}>
-                                        <TableCell>{format(new Date(record.date), "PPP")}</TableCell>
-                                        <TableCell>{record.shift || "-"}</TableCell>
-                                        <TableCell>{record.line || "-"}</TableCell>
+                                    <TableRow key={record.id} className="group hover:bg-slate-50/50 transition-colors">
+                                        <TableCell className="font-mono text-xs text-blue-600 font-bold">#{record.id}</TableCell>
+                                        <TableCell className="whitespace-nowrap">{format(new Date(record.date), "PPP")}</TableCell>
+                                        <TableCell>
+                                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-semibold">
+                                                {record.departmentName || "Dept"}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell>
+                                            <span className="text-slate-600 font-medium">
+                                                {record.sectionName || "-"}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="font-medium text-slate-900">{record.line || "-"}</TableCell>
                                         <TableCell>{record.submittedByName || "User"}</TableCell>
-                                        <TableCell className="text-xs text-gray-400">
+                                        <TableCell className="text-[10px] text-gray-400">
                                             {format(new Date(record.createdAt), "PP p")}
                                         </TableCell>
-                                        <TableCell className="text-right space-x-2">
+                                        <TableCell className="text-right space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <Button variant="ghost" size="sm" onClick={() => handleView(record)}>
                                                 <Eye className="w-4 h-4 text-blue-600" />
                                             </Button>

@@ -798,59 +798,67 @@ const Students = () => {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Operators');
 
-      // Define columns
+      // Define columns to match Import Template exactly
       worksheet.columns = [
-        { header: 'Full Name', key: 'fullName', width: 25 },
-        { header: 'Employee Code', key: 'empId', width: 15 },
-        { header: 'Card No', key: 'idCard', width: 15 },
-        { header: 'Username', key: 'userName', width: 20 },
-        { header: 'Email', key: 'email', width: 30 },
-        { header: 'Phone Number', key: 'phoneNumber', width: 15 },
-        { header: 'Gender', key: 'gender', width: 10 },
-        { header: 'Father / Husband Name', key: 'fatherHusbandName', width: 25 },
-        { header: 'DOB', key: 'dob', width: 15 },
-        { header: 'Designation', key: 'designation', width: 20 },
-        { header: 'Education', key: 'education', width: 20 },
-        { header: 'District', key: 'district', width: 15 },
-        { header: 'State', key: 'state', width: 15 },
-        { header: 'PIN', key: 'pin', width: 10 },
-        { header: 'Status', key: 'status', width: 15 },
-        { header: 'Department', key: 'department', width: 25 },
-        { header: 'Joining Date', key: 'joiningDate', width: 15 },
-        { header: 'Unit', key: 'unit', width: 10 },
-        { header: 'Bus Route', key: 'busRoute', width: 15 },
-        { header: 'Mentor', key: 'mentor', width: 20 },
-        { header: 'Supervisor', key: 'supervisor', width: 20 },
-        { header: 'Incharge', key: 'incharge', width: 20 },
-        { header: 'Created At', key: 'createdAt', width: 20 },
+        { header: "Employee Code", key: "empId", width: 15 },
+        { header: "Card No.", key: "idCard", width: 15 },
+        { header: "Name", key: "fullName", width: 25 },
+        { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
+        { header: "Gender", key: "gender", width: 10 },
+        { header: "Department", key: "department", width: 25 },
+        { header: "Section", key: "section", width: 20 },
+        { header: "Line", key: "line", width: 15 },
+        { header: "Sub Section", key: "subSection", width: 20 },
+        { header: "Station No.", key: "stationNo", width: 15 },
+        { header: "Mentor", key: "mentor", width: 20 },
+        { header: "Designation", key: "designation", width: 20 },
+        { header: "DOB", key: "dob", width: 15 },
+        { header: "D.O.J.", key: "joiningDate", width: 15 },
+        { header: "Education", key: "education", width: 20 },
+        { header: "Distt", key: "district", width: 15 },
+        { header: "State", key: "state", width: 15 },
+        { header: "PIN", key: "pin", width: 10 },
+        { header: "Bus Route", key: "busRoute", width: 15 },
+        { header: "E-Mail ID", key: "email", width: 30 },
+        { header: "Mobile No", key: "phoneNumber", width: 15 },
+        { header: "Lavel", key: "currentLevel", width: 10 },
+        { header: "Date of Leaving", key: "leavingDate", width: 15 },
+        { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
+        { header: "Status", key: "status", width: 15 },
       ];
 
-      // Add rows
-      allStudents.forEach(student => {
+      // Add rows with correct mapping
+      allStudents.forEach((student) => {
         worksheet.addRow({
-          fullName: student.fullName,
-          empId: student.empId || '-',
-          idCard: student.idCard || '-',
-          userName: student.userName,
-          email: student.email,
-          phoneNumber: student.phoneNumber,
-          gender: student.gender || '-',
-          fatherHusbandName: student.fatherHusbandName || '-',
-          dob: student.dob ? format(new Date(student.dob), "yyyy-MM-dd") : '-',
-          designation: student.designation || '-',
-          education: student.education || '-',
-          district: student.district || '-',
-          state: student.state || '-',
-          pin: student.pin || '-',
-          status: student.status,
-          department: student.department?.name || 'No department',
-          joiningDate: student.joiningDate ? format(new Date(student.joiningDate), "yyyy-MM-dd") : '-',
-          unit: student.unit || '-',
-          busRoute: student.busRoute || '-',
-          mentor: student.mentor || '-',
-          supervisor: student.supervisor || '-',
-          incharge: student.incharge || '-',
-          createdAt: student.createdAt ? format(new Date(student.createdAt), "yyyy-MM-dd HH:mm") : '-',
+          empId: student.empId || "",
+          idCard: student.idCard || "",
+          fullName: student.fullName || "",
+          fatherHusbandName: student.fatherHusbandName || "",
+          gender: student.gender || "",
+          department: student.department?.name || "",
+          section: student.sectionName || "",
+          line: student.lineName || "",
+          subSection: student.subSectionName || "",
+          stationNo: student.stationName || "",
+          mentor: student.mentor || "",
+          designation: student.designation || "",
+          dob: student.dob ? format(new Date(student.dob), "yyyy-MM-dd") : "",
+          joiningDate: student.joiningDate
+            ? format(new Date(student.joiningDate), "yyyy-MM-dd")
+            : "",
+          education: student.education || "",
+          district: student.district || "",
+          state: student.state || "",
+          pin: student.pin || "",
+          busRoute: student.busRoute || "",
+          email: student.email || "",
+          phoneNumber: student.phoneNumber || "",
+          currentLevel: student.currentLevel || "L1",
+          leavingDate: student.leavingDate
+            ? format(new Date(student.leavingDate), "yyyy-MM-dd")
+            : "",
+          reasonOfLeaving: student.reasonOfLeaving || "",
+          status: student.status || "PRESENT",
         });
       });
 
@@ -1353,6 +1361,7 @@ const Students = () => {
                 </TableHead>
                 <TableHead className="w-[180px]">Operator</TableHead>
                 <TableHead className="w-[100px]">Emp Code</TableHead>
+                <TableHead className="w-[120px]">Date</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Department</TableHead>
@@ -1406,6 +1415,9 @@ const Students = () => {
                       <div className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 w-fit text-[11px]">
                         {student.empId || "---"}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-500 whitespace-nowrap">
+                      {student.logDate ? format(new Date(student.logDate), "dd MMM yyyy") : "-"}
                     </TableCell>
                     <TableCell>
                       <div>
@@ -1527,7 +1539,7 @@ const Students = () => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10">
+                  <TableCell colSpan={9} className="text-center py-10">
                     <div className="flex flex-col items-center space-y-3">
                       <IconUsers className="h-12 w-12 text-muted-foreground/60" />
                       <p className="text-muted-foreground font-medium">

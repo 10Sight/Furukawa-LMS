@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
-const LAYOUTS = ["admin", "trainer", "student", "cms"];
-const LAYOUT_LABELS = { 
-    admin: "Admin Pages", 
-    trainer: "Trainer Pages", 
+const LAYOUTS = ["admin", "trainer", "student", "cms", "custom"];
+const LAYOUT_LABELS = {
+    admin: "Admin Pages",
+    trainer: "Trainer Pages",
     student: "Student Pages",
-    cms: "CMS Pages"
+    cms: "CMS Pages",
+    custom: "Custom Portal"
 };
 
 const DEFAULT_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16"];
@@ -77,7 +78,7 @@ export default function RoleManager() {
         allowedPages: [],
         permissions: [],
         generateManagementPage: false,
-        targetLayout: "admin"
+        targetLayout: "custom"
     });
     const [isNew, setIsNew] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -109,7 +110,7 @@ export default function RoleManager() {
             allowedPages: [...(role.allowedPages || [])],
             permissions: [...(role.permissions || [])],
             generateManagementPage: !!role.generateManagementPage,
-            targetLayout: role.targetLayout || "admin"
+            targetLayout: role.targetLayout || "custom"
         });
     };
 
@@ -123,7 +124,7 @@ export default function RoleManager() {
             allowedPages: [],
             permissions: [],
             generateManagementPage: false,
-            targetLayout: "admin"
+            targetLayout: "custom"
         });
     };
 
@@ -197,9 +198,9 @@ export default function RoleManager() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
+            <div className="flex flex-col xl:flex-row gap-6 items-start">
                 {/* Role List */}
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[75vh]">
+                <div className="w-full xl:w-[320px] flex-shrink-0 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[60vh] xl:h-[calc(100vh-180px)] min-h-[400px]">
                     <div className="p-4 border-b border-gray-100 flex items-center justify-between">
                         <h2 className="font-semibold text-gray-700 text-sm">Roles ({manageableRoles.length})</h2>
                         <Button size="sm" onClick={startNew} variant="outline" className="h-8 gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50">
@@ -225,10 +226,10 @@ export default function RoleManager() {
 
                 {/* Role Editor */}
                 {hasChanges ? (
-                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[75vh]">
+                    <div className="w-full xl:flex-1 min-w-0 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-auto xl:h-[calc(100vh-180px)] min-h-[500px]">
                         {/* Editor Header */}
                         <div className="p-5 border-b border-gray-100 shrink-0">
-                            <div className="flex items-start justify-between gap-4">
+                            <div className="flex flex-col xl:flex-row items-start justify-between gap-6">
                                 <div className="flex-1 space-y-3">
                                     <div className="flex items-center gap-3">
                                         <div
@@ -253,7 +254,7 @@ export default function RoleManager() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-6 pt-2">
+                                    <div className="flex flex-wrap items-center gap-6 pt-2">
                                         <div className="flex flex-col gap-1.5 min-w-[140px]">
                                             <Label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Target Layout</Label>
                                             <select
@@ -298,7 +299,7 @@ export default function RoleManager() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-row items-center gap-2 w-full xl:w-auto justify-end">
                                     {!isReadOnly && selected && !isNew && (
                                         <Button variant="ghost" size="sm" onClick={handleDelete} className="text-red-500 hover:text-red-700 hover:bg-red-50">
                                             <Trash2 className="w-4 h-4 mr-1.5" /> Delete
@@ -378,7 +379,7 @@ export default function RoleManager() {
                                                 {perms.map(p => (
                                                     <label
                                                         key={p.id}
-                                                        className={`relative flex flex-col p-3 rounded-xl border transition-all cursor-pointer group
+                                                        className={`relative flex flex-col p-3 rounded-xl border transition-all cursor-pointer group h-full
                                                             ${editing.permissions.includes(p.id) ? "bg-blue-50 border-blue-200" : "bg-white border-gray-100 hover:border-gray-200"}
                                                             ${isReadOnly ? "opacity-75 cursor-default" : ""}
                                                         `}
@@ -407,7 +408,7 @@ export default function RoleManager() {
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm flex items-center justify-center h-[75vh]">
+                    <div className="w-full xl:flex-1 min-w-0 bg-white rounded-2xl border border-gray-200 shadow-sm flex items-center justify-center h-[50vh] xl:h-[calc(100vh-180px)] min-h-[500px]">
                         <div className="text-center text-gray-400">
                             <Shield className="w-16 h-16 mx-auto mb-4 opacity-20" />
                             <p className="font-medium text-gray-600">Select a role to configure</p>

@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useGetLinesByDepartmentQuery } from "@/Redux/AllApi/LineApi";
+import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
+import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesByLineQuery } from "@/Redux/AllApi/MachineApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
@@ -21,16 +23,33 @@ import { IconSettings, IconHistory } from "@tabler/icons-react";
 import { Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
-const MultiSkillingPlan = ({ students = [], departmentId }) => {
+const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
+    const authUser = useSelector(state => state.auth.user);
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+
+    const { canManage, canEditLayout, canViewHistory } = useMemo(() => {
+        const permissions = authUser?.customRole?.permissions || [];
+        return {
+            canManage: permissions.includes('multi_skilling:manage') || isAdmin,
+            canEditLayout: permissions.includes('multi_skilling:edit_layout') || isAdmin,
+            canViewHistory: permissions.includes('multi_skilling:view_history') || isAdmin
+        };
+    }, [authUser, isAdmin]);
+
     const employees = students;
 
     // 5 process slots -> select 5 lines.
     const [selectedLines, setSelectedLines] = useState(["", "", "", "", ""]);
 
-    const { data: lineData, isLoading: linesLoading } = useGetLinesByDepartmentQuery(departmentId, {
-        skip: !departmentId,
+    const { data: deptLines, isLoading: deptLinesLoading } = useGetLinesByDepartmentQuery(departmentId, {
+        skip: !departmentId || !!sectionId,
     });
-    const lines = lineData?.data || [];
+    const { data: sectLines, isLoading: sectLinesLoading } = useGetLinesBySectionQuery(sectionId, {
+        skip: !sectionId,
+    });
+    
+    const linesLoading = sectionId ? sectLinesLoading : deptLinesLoading;
+    const lines = (sectionId ? sectLines?.data : deptLines?.data) || [];
 
     const { data: machinesData0 } = useGetMachinesByLineQuery(selectedLines[0], { skip: !selectedLines[0] });
     const { data: machinesData1 } = useGetMachinesByLineQuery(selectedLines[1], { skip: !selectedLines[1] });
@@ -46,6 +65,20 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
         machinesData4?.data || [],
     ];
 
+    const { data: subSectionsData0 } = useGetSubSectionsByLineQuery(selectedLines[0], { skip: !selectedLines[0] });
+    const { data: subSectionsData1 } = useGetSubSectionsByLineQuery(selectedLines[1], { skip: !selectedLines[1] });
+    const { data: subSectionsData2 } = useGetSubSectionsByLineQuery(selectedLines[2], { skip: !selectedLines[2] });
+    const { data: subSectionsData3 } = useGetSubSectionsByLineQuery(selectedLines[3], { skip: !selectedLines[3] });
+    const { data: subSectionsData4 } = useGetSubSectionsByLineQuery(selectedLines[4], { skip: !selectedLines[4] });
+
+    const subSectionsBySlot = [
+        subSectionsData0?.data || [],
+        subSectionsData1?.data || [],
+        subSectionsData2?.data || [],
+        subSectionsData3?.data || [],
+        subSectionsData4?.data || [],
+    ];
+
     const lineNameById = useMemo(() => {
         const map = {};
         lines.forEach((line) => {
@@ -58,6 +91,7 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
         return selectedLines.map((lineId, slotIdx) => {
             const lineName = lineNameById[lineId] || `Line ${slotIdx + 1}`;
             const machines = machinesBySlot[slotIdx] || [];
+            const subSections = subSectionsBySlot[slotIdx] || [];
 
             if (!lineId) {
                 return [{
@@ -65,35 +99,113 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
                     slotIdx,
                     lineId: "",
                     lineName: "",
+                    subSectionId: "",
+                    subSectionName: "",
                     machineId: "",
                     machineName: "",
                 }];
             }
 
-            if (machines.length === 0) {
-                return [{
-                    key: `slot-${slotIdx}-no-machine`,
-                    slotIdx,
-                    lineId,
-                    lineName,
-                    machineId: "",
-                    machineName: "-",
-                }];
+            // Group machines by sub-section
+            const columns = [];
+            
+            // If no sub-sections found but there are machines, show machines directly
+            if (subSections.length === 0) {
+                if (machines.length === 0) {
+                    columns.push({
+                        key: `slot-${slotIdx}-no-sub-no-machine`,
+                        slotIdx,
+                        lineId,
+                        lineName,
+                        subSectionId: "",
+                        subSectionName: "-",
+                        machineId: "",
+                        machineName: "-",
+                    });
+                } else {
+                    machines.forEach(m => {
+                        columns.push({
+                            key: `slot-${slotIdx}-no-sub-machine-${m.id}`,
+                            slotIdx,
+                            lineId,
+                            lineName,
+                            subSectionId: "",
+                            subSectionName: "-",
+                            machineId: String(m.id || m._id),
+                            machineName: m.name,
+                        });
+                    });
+                }
+                return columns;
             }
 
-            return machines.map((machine) => ({
-                key: `slot-${slotIdx}-machine-${String(machine._id || machine.id)}`,
-                slotIdx,
-                lineId,
-                lineName,
-                machineId: String(machine._id || machine.id),
-                machineName: machine.name || "-",
-            }));
+            subSections.forEach(ss => {
+                const ssMachines = machines.filter(m => String(m.subSectionId) === String(ss.id || ss._id));
+                if (ssMachines.length === 0) {
+                    columns.push({
+                        key: `slot-${slotIdx}-sub-${ss.id}-no-machine`,
+                        slotIdx,
+                        lineId,
+                        lineName,
+                        subSectionId: String(ss.id || ss._id),
+                        subSectionName: ss.name,
+                        machineId: "",
+                        machineName: "-",
+                    });
+                } else {
+                    ssMachines.forEach(m => {
+                        columns.push({
+                            key: `slot-${slotIdx}-sub-${ss.id}-machine-${m.id}`,
+                            slotIdx,
+                            lineId,
+                            lineName,
+                            subSectionId: String(ss.id || ss._id),
+                            subSectionName: ss.name,
+                            machineId: String(m.id || m._id),
+                            machineName: m.name,
+                        });
+                    });
+                }
+            });
+
+            return columns;
         });
-    }, [selectedLines, lineNameById, machinesBySlot]);
+    }, [selectedLines, lineNameById, machinesBySlot, subSectionsBySlot]);
 
     const machineColumns = useMemo(() => slotColumns.flat(), [slotColumns]);
     const totalProcessCols = machineColumns.length || 1;
+
+    // Calculate spans for headers
+    const headerSpans = useMemo(() => {
+        return selectedLines.map((lineId, slotIdx) => {
+            const cols = slotColumns[slotIdx] || [];
+            const subSectionGroups = [];
+            
+            let currentSS = null;
+            let currentCount = 0;
+            
+            cols.forEach((col, idx) => {
+                if (col.subSectionId !== currentSS || idx === 0) {
+                    if (currentSS !== null || idx === 0) {
+                        if (idx > 0) subSectionGroups.push({ id: currentSS, name: cols[idx-1].subSectionName, count: currentCount });
+                    }
+                    currentSS = col.subSectionId;
+                    currentCount = 1;
+                } else {
+                    currentCount++;
+                }
+                if (idx === cols.length - 1) {
+                    subSectionGroups.push({ id: currentSS, name: col.subSectionName, count: currentCount });
+                }
+            });
+
+            return {
+                lineId,
+                totalCount: cols.length,
+                subSections: subSectionGroups
+            };
+        });
+    }, [slotColumns, selectedLines]);
     const machineIdsForLookup = useMemo(
         () => [...new Set(machineColumns.map((col) => col.machineId).filter(Boolean))],
         [machineColumns]
@@ -189,8 +301,9 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
         setTableData((prev) => {
             const next = { ...prev };
             employees.forEach((emp) => {
-                if (!next[emp._id]) {
-                    next[emp._id] = { plan: {}, actual: {} };
+                const id = emp._id || emp.id;
+                if (id && !next[id]) {
+                    next[id] = { plan: {}, actual: {} };
                 }
             });
             return next;
@@ -204,7 +317,9 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
         const loadSavedPlan = async () => {
             try {
                 setIsLoadingPlan(true);
-                const response = await axiosInstance.get(`/api/multi-skilling-plan/department/${departmentId}`);
+                const response = await axiosInstance.get(`/api/multi-skilling-plan/department/${departmentId}`, {
+                    params: { sectionId }
+                });
                 const data = response?.data?.data;
                 if (!cancelled && data) {
                     if (Array.isArray(data.selectedLines)) {
@@ -316,6 +431,7 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
         try {
             setIsSaving(true);
             await axiosInstance.post(`/api/multi-skilling-plan/department/${departmentId}`, {
+                sectionId,
                 selectedLines,
                 tableData,
             });
@@ -340,68 +456,51 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
                         Training plan for multi skilling
                     </h2>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={fetchHistory}>
-                            <IconHistory className="h-4 w-4 mr-2" />
-                            History
-                        </Button>
-                        <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
-                            <IconSettings className="h-4 w-4 mr-2" />
-                            Edit Layout
-                        </Button>
+                        {canViewHistory && (
+                            <Button variant="outline" onClick={fetchHistory}>
+                                <IconHistory className="h-4 w-4 mr-2" />
+                                History
+                            </Button>
+                        )}
+                        {canEditLayout && (
+                            <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
+                                <IconSettings className="h-4 w-4 mr-2" />
+                                Edit Layout
+                            </Button>
+                        )}
                         <Button variant="outline" onClick={handlePrint}>
                             <IconPrinter className="h-4 w-4 mr-2" />
                             Print
                         </Button>
-                        <Button onClick={handleSave} disabled={isSaving || isLoadingPlan}>
-                            <IconDeviceFloppy className="h-4 w-4 mr-2" />
-                            {isSaving ? "Saving..." : "Save"}
-                        </Button>
+                        {canManage && (
+                            <Button onClick={handleSave} disabled={isSaving || isLoadingPlan}>
+                                <IconDeviceFloppy className="h-4 w-4 mr-2" />
+                                {isSaving ? "Saving..." : "Save"}
+                            </Button>
+                        )}
                     </div>
                 </div>
             </CardHeader>
             <CardContent className="overflow-x-auto">
                 <table className="w-full min-w-[1200px] border-collapse border border-black text-sm">
                     <thead>
-                        {tableConfig && tableConfig.headers ? (
-                            tableConfig.headers.map((row, rowIndex) => (
-                                <tr key={`header-row-${rowIndex}`} className="bg-white">
-                                    {row.map((header, colIndex) => {
-                                        // Special case for Process colSpan if not defined
-                                        const colSpan = header.text === "Process" ? totalProcessCols : (header.colSpan || 1);
-                                        return (
-                                            <th
-                                                key={`header-${rowIndex}-${colIndex}`}
-                                                rowSpan={header.rowSpan || 1}
-                                                colSpan={colSpan}
-                                                className={`border border-black p-2 align-middle text-center ${header.className || ""}`}
-                                            >
-                                                {header.text}
-                                            </th>
-                                        );
-                                    })}
-                                </tr>
-                            ))
-                        ) : (
-                            <>
-                                <tr className="bg-white">
-                                    <th rowSpan="3" className="border border-black p-2 w-12 align-middle">Sr. No</th>
-                                    <th rowSpan="3" className="border border-black p-2 w-48 align-middle">Associates Name</th>
-                                    <th rowSpan="3" className="border border-black p-2 w-32 align-middle">Card No</th>
-                                    <th rowSpan="3" className="border border-black p-2 w-24 align-middle">Plan/Actual</th>
-                                    <th colSpan={totalProcessCols} className="border border-black p-2 text-center font-bold text-lg">Process</th>
-                                </tr>
-                            </>
-                        )}
-
-                        {/* Line dropdown row (5 slots, each can span based on machine count in that slot). */}
+                        {/* Line dropdown row */}
+                        <tr className="bg-white">
+                            <th rowSpan="4" className="border border-black p-2 w-12 align-middle">Sr. No</th>
+                            <th rowSpan="4" className="border border-black p-2 w-48 align-middle">Associates Name</th>
+                            <th rowSpan="4" className="border border-black p-2 w-32 align-middle">Card No</th>
+                            <th rowSpan="4" className="border border-black p-2 w-24 align-middle">Plan/Actual</th>
+                            <th colSpan={totalProcessCols} className="border border-black p-1 text-center font-bold bg-slate-100">Process (Line)</th>
+                        </tr>
                         <tr>
-                            {slotColumns.map((cols, slotIdx) => (
-                                <th key={`slot-${slotIdx}`} colSpan={cols.length} className="border border-black p-0 h-8">
+                            {headerSpans.map((span, slotIdx) => (
+                                <th key={`slot-${slotIdx}`} colSpan={span.totalCount} className="border border-black p-0 h-10">
                                     <Select
                                         value={selectedLines[slotIdx]}
                                         onValueChange={(value) => handleLineSelectChange(slotIdx, value)}
+                                        disabled={!canManage}
                                     >
-                                        <SelectTrigger className="w-full h-full rounded-none border-0 px-2 text-center justify-center">
+                                        <SelectTrigger className="w-full h-full rounded-none border-0 px-2 text-center justify-center font-bold bg-white disabled:opacity-100 disabled:cursor-default">
                                             <SelectValue placeholder={`Select Line ${slotIdx + 1}`} />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -422,10 +521,27 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
                             ))}
                         </tr>
 
-                        {/* Machine name row: each machine has its own single column. */}
-                        <tr>
+                        {/* Sub-Section Name row */}
+                        <tr className="bg-slate-50">
+                            {headerSpans.map((span, slotIdx) => (
+                                <React.Fragment key={`ss-slot-${slotIdx}`}>
+                                    {span.subSections.map((ss, ssIdx) => (
+                                        <th 
+                                            key={`ss-${slotIdx}-${ssIdx}`} 
+                                            colSpan={ss.count} 
+                                            className="border border-black p-1 text-center text-[10px] font-bold uppercase text-slate-600"
+                                        >
+                                            {ss.name || "-"}
+                                        </th>
+                                    ))}
+                                </React.Fragment>
+                            ))}
+                        </tr>
+
+                        {/* Station/Machine name row */}
+                        <tr className="bg-white">
                             {machineColumns.map((col) => (
-                                <th key={col.key} className="border border-black p-1 text-center text-xs font-normal">
+                                <th key={col.key} className="border border-black p-1 text-center text-[9px] font-medium text-slate-500">
                                     {col.machineName}
                                 </th>
                             ))}
@@ -443,23 +559,24 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
                                             {emp.fullName}
                                         </td>
                                         <td rowSpan="2" className="border border-black p-2 text-center font-bold text-blue-700">
-                                            {emp.username || emp.userName || "-"}
+                                            {emp.username || emp.userName || emp.empId || "-"}
                                         </td>
-                                        <td className="border border-black p-1 text-center bg-gray-50 text-xs font-semibold">Plan</td>
+                                        <td className="border border-black p-1 text-center bg-gray-50 text-[10px] font-bold">Plan</td>
                                         {machineColumns.map((col) => (
                                             <td key={`plan-${emp._id}-${col.key}`} className="border border-black p-0">
                                                 <input
                                                     type="date"
-                                                    className="w-full h-full text-center outline-none bg-transparent p-1 text-xs"
+                                                    className="w-full h-full text-center outline-none bg-transparent p-1 text-[10px] disabled:opacity-80"
                                                     value={data.plan?.[col.key] || ""}
                                                     onChange={(e) => handleDataChange(emp._id, "plan", col.key, e.target.value)}
+                                                    disabled={!canManage}
                                                 />
                                             </td>
                                         ))}
                                     </tr>
 
                                     <tr className="hover:bg-gray-50">
-                                        <td className="border border-black p-1 text-center bg-gray-50 text-xs font-semibold">Actual</td>
+                                        <td className="border border-black p-1 text-center bg-gray-50 text-[10px] font-bold">Actual</td>
                                         {machineColumns.map((col) => {
                                             const studentId = String(emp._id || emp.id || "");
                                             const assignedDate = col.machineId
@@ -471,10 +588,10 @@ const MultiSkillingPlan = ({ students = [], departmentId }) => {
                                                 <td key={`actual-${emp._id}-${col.key}`} className="border border-black p-0">
                                                     <input
                                                         type="date"
-                                                        className="w-full h-full text-center outline-none bg-transparent p-1 text-xs"
+                                                        className="w-full h-full text-center outline-none bg-transparent p-1 text-[10px] disabled:opacity-80"
                                                         value={cellValue}
                                                         onChange={(e) => handleDataChange(emp._id, "actual", col.key, e.target.value)}
-                                                        disabled={!!assignedDate}
+                                                        disabled={!!assignedDate || !canManage}
                                                     />
                                                 </td>
                                             );

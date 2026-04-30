@@ -467,56 +467,73 @@ const StudentDetail = () => {
                 <div className="space-y-3">
                   <div className="col-span-1 md:col-span-2 mt-2 pt-3 border-t border-slate-100">
                     <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-semibold">Organizational Assignment Flow</p>
-                    <div className="flex flex-wrap items-center gap-y-3 gap-x-1 sm:gap-x-2">
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-md border border-blue-100 shadow-sm transition-all hover:bg-blue-100">
-                        <IconBuilding size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Dept</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">
-                            {typeof student.department === 'object' ? student.department?.name : (student.deptName || student.department || "N/A")}
-                          </span>
+                    <div className="space-y-3">
+                      {(student.assignments && student.assignments.length > 0 ? student.assignments : [
+                        {
+                          deptName: typeof student.department === 'object' ? student.department?.name : (student.deptName || student.department || "N/A"),
+                          sectionName: student.sectionName || "N/A",
+                          lineName: student.lineName || "N/A",
+                          subSectionName: student.subSectionName || "N/A",
+                          stationName: student.stationName || "N/A",
+                          machineId: student.stationId
+                        }
+                      ]).map((assignment, idx) => (
+                        <div key={idx} className={`flex flex-wrap items-center gap-y-2 gap-x-1 sm:gap-x-2 p-2 rounded-lg border relative transition-all ${assignment.machineId === student.stationId ? 'bg-blue-50/30 border-blue-200' : 'bg-slate-50/50 border-slate-100'}`}>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-blue-700 rounded-md border border-blue-100 shadow-sm">
+                            <IconBuilding size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Dept{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.deptName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-indigo-700 rounded-md border border-indigo-100 shadow-sm">
+                            <IconLayout size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Section{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.sectionName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-violet-700 rounded-md border border-violet-100 shadow-sm">
+                            <IconGitBranch size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Line{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.lineName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-purple-700 rounded-md border border-purple-100 shadow-sm">
+                            <IconGitCommit size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Sub-Sect{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.subSectionName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-rose-700 rounded-md border border-rose-100 shadow-sm">
+                            <IconSettings size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Station{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.stationName}</span>
+                            </div>
+                          </div>
+
+                          {assignment.machineId === student.stationId && (
+                            <div className="absolute -top-2 -right-1">
+                              <Badge className="bg-blue-600 text-white border-blue-700 text-[6px] px-1.5 py-0 h-4">Primary</Badge>
+                            </div>
+                          )}
                         </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100 shadow-sm transition-all hover:bg-indigo-100">
-                        <IconLayout size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Section</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.sectionName || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-50 text-violet-700 rounded-md border border-violet-100 shadow-sm transition-all hover:bg-violet-100">
-                        <IconGitBranch size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Line</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.lineName || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-50 text-purple-700 rounded-md border border-purple-100 shadow-sm transition-all hover:bg-purple-100">
-                        <IconGitCommit size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Sub-Section</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.subSectionName || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200 shadow-sm transition-all hover:bg-slate-200">
-                        <IconSettings size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Station</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.stationName || "N/A"}</span>
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                   <div className="group">

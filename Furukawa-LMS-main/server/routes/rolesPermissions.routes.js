@@ -35,11 +35,11 @@ router.get("/roles/:roleId/users", authorizeRole([SYSTEM_PERMISSIONS.ROLE_READ, 
 
 // ── Custom (page-permission) roles ──────────────────────────────────────────
 // Admin or above can manage custom roles
-router.get("/custom-roles", listCustomRoles);
-router.post("/custom-roles", createNewCustomRole);
-router.put("/custom-roles/:id", updateCustomRole);
-router.delete("/custom-roles/:id", deleteNewCustomRole);
-router.post("/custom-roles/:id/assign", assignCustomRoleToUser);
-router.delete("/custom-roles/unassign/:userId", unassignCustomRole);
+router.get("/custom-roles", authorizeRole([SYSTEM_PERMISSIONS.ROLE_READ]), listCustomRoles);
+router.post("/custom-roles", authorizeRole([SYSTEM_PERMISSIONS.ROLE_CREATE]), createNewCustomRole);
+router.put("/custom-roles/:id", authorizeRole([SYSTEM_PERMISSIONS.ROLE_UPDATE]), updateCustomRole);
+router.delete("/custom-roles/:id", authorizeRole([SYSTEM_PERMISSIONS.ROLE_DELETE]), deleteNewCustomRole);
+router.post("/custom-roles/:id/assign", authorizeRole([SYSTEM_PERMISSIONS.ROLE_ASSIGN]), assignCustomRoleToUser);
+router.delete("/custom-roles/unassign/:userId", authorizeRole([SYSTEM_PERMISSIONS.ROLE_ASSIGN]), unassignCustomRole);
 
 export default router;

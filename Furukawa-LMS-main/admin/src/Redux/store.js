@@ -37,6 +37,7 @@ import { DailyProductionReportApi } from "./AllApi/DailyProductionReportApi";
 import { sectionApi } from "./AllApi/SectionApi";
 import { SubSectionApi } from "./AllApi/SubSectionApi";
 import { reportClubApi } from "./AllApi/ReportClubApi";
+import { multiSkillingApi } from "./AllApi/MultiSkillingApi";
 
 
 const store = configureStore({
@@ -78,6 +79,7 @@ const store = configureStore({
         [sectionApi.reducerPath]: sectionApi.reducer,
         [SubSectionApi.reducerPath]: SubSectionApi.reducer,
         [reportClubApi.reducerPath]: reportClubApi.reducer,
+        [multiSkillingApi.reducerPath]: multiSkillingApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(
@@ -110,6 +112,7 @@ const store = configureStore({
             sectionApi.middleware,
             SubSectionApi.middleware,
             reportClubApi.middleware,
+            multiSkillingApi.middleware,
         ),
 });
 

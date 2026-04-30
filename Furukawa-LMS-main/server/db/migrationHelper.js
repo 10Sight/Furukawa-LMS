@@ -52,6 +52,47 @@ export const migrationHelper = {
             logger.error(`Error checking if table '${tableName}' exists:`, error.message);
             return false;
         }
+    },
+
+    /**
+     * Ensures a column has the correct data type
+     * @param {string} tableName 
+     * @param {string} columnName 
+     * @param {string} expectedType 
+     */
+    ensureColumnType: async (tableName, columnName, expectedType) => {
+        try {
+            const checkQuery = `
+                SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = '${tableName}' AND COLUMN_NAME = '${columnName}'
+            `;
+            const [rows] = await executeQuery(checkQuery);
+            
+            if (rows && rows.length > 0) {
+                const currentType = rows[0].DATA_TYPE.toLowerCase();
+                const currentLen = rows[0].CHARACTER_MAXIMUM_LENGTH;
+                
+                // Simplified check: if it's not what we expect (e.g. 'int' vs 'nvarchar')
+                if (currentType !== expectedType.split('(')[0].toLowerCase()) {
+                    logger.info(`Migration: Altering column '${columnName}' in table '${tableName}' to ${expectedType}...`);
+                    const alterQuery = `ALTER TABLE ${tableName} ALTER COLUMN ${columnName} ${expectedType}`;
+                    await executeQuery(alterQuery);
+                    
+                    // If we converted from INT to NVARCHAR, wrap existing values in brackets to make them valid JSON arrays
+                    if (currentType === 'int' && expectedType.toLowerCase().includes('nvarchar')) {
+                        logger.info(`Migration: Wrapping existing INT values in JSON arrays for column '${columnName}'...`);
+                        await executeQuery(`UPDATE ${tableName} SET ${columnName} = '[' + CAST(${columnName} AS NVARCHAR(MAX)) + ']' WHERE ${columnName} IS NOT NULL AND ${columnName} NOT LIKE '[%'`);
+                    }
+                    
+                    return true;
+                }
+            }
+            return false;
+        } catch (error) {
+            logger.error(`Migration Error altering column '${columnName}' in '${tableName}':`, error.message);
+            throw error;
+        }
     }
 };
 

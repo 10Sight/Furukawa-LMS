@@ -69,21 +69,76 @@ const getHierarchyJoinSQL = `
   OUTER APPLY (
     SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
   ) st
+   OUTER APPLY (
+    SELECT 
+        (SELECT 
+             data.machineId, data.stationName, 
+             data.subSectionId, data.subSectionName, 
+             data.lineId, data.lineName, 
+             data.sectionId, data.sectionName, 
+             data.departmentId, data.deptName,
+             data.assigned_at
+         FROM (
+            -- Current Primary Station
+            SELECT 
+                m2.id as machineId, m2.name as stationName, 
+                ss2.id as subSectionId, ss2.name as subSectionName, 
+                l2.id as lineId, l2.name as lineName, 
+                COALESCE(s_res.sectionId, s2.id) as sectionId, 
+                COALESCE(s_res.sectionName, s2.name) as sectionName, 
+                COALESCE(d.id, d2.id) as departmentId, 
+                COALESCE(d.deptName, d2.name) as deptName,
+                u.updatedAt as assigned_at
+            FROM machines m2
+            LEFT JOIN sub_sections ss2 ON m2.subSectionId = ss2.id
+            LEFT JOIN [lines] l2 ON ss2.lineId = l2.id
+            LEFT JOIN [sections] s2 ON l2.sectionId = s2.id
+            LEFT JOIN departments d2 ON s2.departmentId = d2.id
+            WHERE m2.id = u.stationId AND u.stationId IS NOT NULL
+
+            UNION ALL
+
+            -- Junction Table Assignments (Secondary stations)
+            -- For secondary stations, we stick to the machine's actual hierarchy
+            SELECT 
+                m.id as machineId, m.name as stationName, 
+                ss.id as subSectionId, ss.name as subSectionName, 
+                l.id as lineId, l.name as lineName, 
+                s.id as sectionId, s.name as sectionName, 
+                d_inner.id as departmentId, d_inner.name as deptName,
+                ma.assigned_at
+            FROM machine_assignments ma
+            JOIN machines m ON ma.machine_id = m.id
+            LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+            LEFT JOIN [lines] l ON ss.lineId = l.id
+            LEFT JOIN [sections] s ON l.sectionId = s.id
+            LEFT JOIN departments d_inner ON s.departmentId = d_inner.id
+            WHERE ma.user_id = u.id
+            -- Avoid duplicates if the stationId is already the primary
+            AND NOT (m.id = u.stationId AND u.stationId IS NOT NULL)
+         ) data
+         ORDER BY data.assigned_at ASC
+         FOR JSON PATH) as assignments
+  ) ma
 `;
 
 const sanitize = (val) => (val && val !== "N/A" && val.toLowerCase() !== "none") ? val : null;
 
 export const formatUser = (u) => {
+  const assignments = parseJSON(u.assignments, []);
   const formatted = {
     ...u,
     _id: u.id,
     avatar: parseJSON(u.avatar),
+    assignments,
     department: u.deptName ? { _id: String(u.actualDeptId || u.departmentId), name: u.deptName, instructor: u.deptInstructor } : (sanitize(u.department) ? { _id: String(u.department), name: u.department } : null),
     deptName: u.deptName || sanitize(u.department) || "",
     sectionName: u.sectionName || sanitize(u.section) || "",
     lineName: u.lineName || sanitize(u.line) || "",
     subSectionName: u.subSectionName || sanitize(u.sub_section) || "",
-    stationName: u.stationName || sanitize(u.stationNo) || "",
+    stationName: assignments?.length > 1 
+      ? assignments.map(a => a.stationName).join(', ') 
+      : (u.stationName || sanitize(u.stationNo) || ""),
     fromInfo: [u.deptName || sanitize(u.department), u.sectionName || sanitize(u.section), u.lineName || sanitize(u.line), u.subSectionName || sanitize(u.sub_section), u.stationName || sanitize(u.stationNo)].filter(Boolean).join(' / ')
   };
   delete formatted.password;
@@ -139,6 +194,14 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   if (req.query.roleManagerFilters === "true") {
     whereClauses.push("(u.isEmployee = 1 OR u.isTrainer = 1 OR u.role = 'CUSTOM')");
+  }
+
+  if (req.query.excludeTrainers === "true") {
+    whereClauses.push("(u.isTrainer = 0 OR u.isTrainer IS NULL)");
+  }
+
+  if (req.query.excludeAdmins === "true") {
+    whereClauses.push("(u.isAdmin = 0 OR u.isAdmin IS NULL) AND u.role NOT IN ('ADMIN', 'SUPERADMIN')");
   }
 
   const { dateFrom, dateTo, status, shift, date } = req.query;
@@ -239,7 +302,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const [users] = await executeQuery(`
     SELECT u.*, 
            d.id as actualDeptId, d.deptName, d.deptInstructor,
-           s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
            cr.name as customRoleName,
            al.logShift,
            al.logStatus,
@@ -274,7 +337,7 @@ export const getUserById = asyncHandler(async (req, res) => {
   let query = `
     SELECT u.*, 
            d.id as actualDeptId, d.deptName, d.deptInstructor,
-           s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+           s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
            cr.name as customRoleName, cr.color as customRoleColor, cr.allowedPages as customRoleAllowedPages
     FROM users u
     ${getHierarchyJoinSQL}
@@ -340,7 +403,7 @@ export const createUser = asyncHandler(async (req, res) => {
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId", "department",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "createdAt", "updatedAt"
+    "currentLevel", "createdAt", "updatedAt"
   ];
 
   const values = fields.map(f => {
@@ -363,7 +426,7 @@ export const createUser = asyncHandler(async (req, res) => {
 
   // Fetch created user with joins
   const [newUser] = await executeQuery(`
-    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName
+    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments
     FROM users u ${getHierarchyJoinSQL} WHERE u.id = ?
   `, [newUserId]);
 
@@ -389,7 +452,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "customRoleId"
+    "customRoleId", "currentLevel"
   ];
 
   for (const f of fieldsToUpdate) {
@@ -423,12 +486,30 @@ export const updateUser = asyncHandler(async (req, res) => {
     await executeQuery(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, [...values, userId]);
   }
 
+  // Sync stationId to machine_assignments to support multi-station assignment history
+  if (data.stationId) {
+    try {
+      const [existing] = await executeQuery(
+        "SELECT id FROM machine_assignments WHERE user_id = ? AND machine_id = ?",
+        [userId, data.stationId]
+      );
+      if (existing.length === 0) {
+        await executeQuery(
+          "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
+          [userId, data.stationId, req.user?.id || null]
+        );
+      }
+    } catch (e) {
+      console.error("Error syncing station assignment in updateUser:", e.message);
+    }
+  }
+
   if (data.departments && Array.isArray(data.departments)) {
     await handleInstructorAssignments(userId, data.departments);
   }
 
   const [updated] = await executeQuery(`
-    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
            cr.name as customRoleName, cr.color as customRoleColor, cr.allowedPages as customRoleAllowedPages
     FROM users u 
     ${getHierarchyJoinSQL}
@@ -464,6 +545,20 @@ export const deleteUser = asyncHandler(async (req, res) => {
   }
 
   if (req.user.role === "SUPERADMIN" || req.user.role === "ADMIN") {
+    // Before permanent delete, get department to cleanup
+    const [user] = await executeQuery("SELECT departmentId FROM users WHERE id = ?", [userId]);
+    if (user.length && user[0].departmentId) {
+      const deptId = user[0].departmentId;
+      const [dept] = await executeQuery("SELECT students FROM departments WHERE id = ?", [deptId]);
+      if (dept.length) {
+        let students = [];
+        try { students = JSON.parse(dept[0].students || "[]"); } catch (e) { }
+        if (Array.isArray(students)) {
+          students = students.filter(id => String(id) !== String(userId));
+          await executeQuery("UPDATE departments SET students = ? WHERE id = ?", [JSON.stringify(students), deptId]);
+        }
+      }
+    }
     await executeQuery("DELETE FROM users WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_PERMANENT", { userId });
   } else {
@@ -618,7 +713,11 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   const offset = (page - 1) * limit;
 
-  let whereClauses = ["u.isEmployee = 1", "(u.isTrainer = 0 OR u.isTrainer IS NULL)", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let whereClauses = [
+    "((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))",
+    "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
+    "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
+  ];
   let params = [];
   if (req.query.search) {
     const t = `%${req.query.search}%`;
@@ -695,6 +794,23 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       const ids = iDepts.map(d => d.id).join(',');
       whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}))`);
     } else whereClauses.push("1=0");
+  } else if (req.user.role === "CUSTOM") {
+    let allowedDepts = [];
+    if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+    
+    try {
+      const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
+      if (Array.isArray(parsedDepts)) {
+        parsedDepts.forEach(d => allowedDepts.push(String(d)));
+      }
+    } catch (e) {}
+
+    allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
+
+    if (allowedDepts.length > 0) {
+      const ids = allowedDepts.map(d => `'${d}'`).join(',');
+      whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}))`);
+    }
   }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
@@ -1030,8 +1146,34 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
 
   if (!ids?.length) throw new ApiError("No IDs provided", 400);
 
-  // MSSQL helper doesn't expand arrays for IN automatically if it uses simple placeholders
-  // We need to generate the placeholders for the IN clause
+  // Cleanup from departments students list
+  try {
+    const placeholders = ids.map(() => "?").join(",");
+    const [usersWithDepts] = await executeQuery(`SELECT id, departmentId FROM users WHERE id IN (${placeholders}) AND departmentId IS NOT NULL`, ids);
+    
+    // Group by department to minimize updates
+    const deptMap = {};
+    usersWithDepts.forEach(u => {
+      if (!deptMap[u.departmentId]) deptMap[u.departmentId] = [];
+      deptMap[u.departmentId].push(String(u.id));
+    });
+
+    for (const [deptId, userIdsToRemove] of Object.entries(deptMap)) {
+      const [dept] = await executeQuery("SELECT students FROM departments WHERE id = ?", [deptId]);
+      if (dept.length) {
+        let students = [];
+        try { students = JSON.parse(dept[0].students || "[]"); } catch (e) { }
+        if (Array.isArray(students)) {
+          const updated = students.filter(id => !userIdsToRemove.includes(String(id)));
+          await executeQuery("UPDATE departments SET students = ? WHERE id = ?", [JSON.stringify(updated), deptId]);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Bulk delete department cleanup error:", err);
+  }
+
+  // Generate the placeholders for the IN clause
   const placeholders = ids.map(() => "?").join(",");
   await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${placeholders})`, ids);
 

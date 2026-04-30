@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,10 +11,12 @@ import { Loader2, Save } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { IconSettings, IconHistory } from "@tabler/icons-react";
+import { IconSettings, IconHistory, IconPlus, IconTrash } from "@tabler/icons-react";
 import { format } from "date-fns";
+import UserAutocomplete from '../common/UserAutocomplete';
 
-const HandoverSheet = ({ departmentId, students = [], departmentName, instructorName }) => {
+const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName }) => {
+    const authUser = useSelector(state => state.auth.user);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -29,6 +32,8 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
         revDate: "30.01.2024",
         issueDate: "01.06.09"
     });
+    const [isSubmitted, setIsSubmitted] = useState(false);
+    const [submittedAt, setSubmittedAt] = useState(null);
 
     // Layout Config State
     const [tableConfig, setTableConfig] = useState(null);
@@ -39,14 +44,22 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
     const [configHistory, setConfigHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [loadingConfig, setLoadingConfig] = useState(false);
+    const hasInitialized = useRef(false);
+    const lastSessionKey = useRef("");
+
+    const currentSessionKey = `${departmentId}-${sectionId || 'all'}-${date}`;
 
     const fetchConfig = async () => {
+        if (!departmentId) return;
         try {
             setLoadingConfig(true);
-            const response = await axiosInstance.get(`/api/departments/handover-sheet/config/${departmentId}`);
+            const response = await axiosInstance.get(`/api/departments/handover-sheet/config/${departmentId}?sectionId=${sectionId || ""}`);
             if (response.data.success && response.data.data.config) {
                 setTableConfig(response.data.data.config);
                 setJsonConfigStr(JSON.stringify(response.data.data.config, null, 2));
+            } else {
+                setTableConfig(null);
+                setJsonConfigStr("");
             }
         } catch (error) {
             console.error("Error fetching handover sheet config:", error);
@@ -72,6 +85,7 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
 
             await axiosInstance.post(`/api/departments/handover-sheet/config/save`, {
                 departmentId,
+                sectionId: sectionId || null,
                 config: parsedConfig,
                 remark: layoutRemark
             });
@@ -89,7 +103,7 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
     const fetchHistory = async () => {
         try {
             setLoadingHistory(true);
-            const response = await axiosInstance.get(`/api/departments/handover-sheet/history/${departmentId}`);
+            const response = await axiosInstance.get(`/api/departments/handover-sheet/history/${departmentId}?sectionId=${sectionId || ""}`);
             if (response.data.success) {
                 setConfigHistory(response.data.data);
                 setIsHistoryOpen(true);
@@ -102,29 +116,66 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
         }
     };
 
+    // Initialize or Reset
     useEffect(() => {
-        if (departmentId) {
-            fetchConfig();
-        }
-    }, [departmentId]);
+        if (!departmentId) return;
 
-    // Initialize entries based on students if new, or fetch existing
-    useEffect(() => {
         const fetchData = async () => {
+            setLoading(true);
+            
+            // Check if we need to reset initialization because of selection change
+            if (lastSessionKey.current !== currentSessionKey) {
+                hasInitialized.current = false;
+                lastSessionKey.current = currentSessionKey;
+            }
+
+            // Only initialize once per (department + section)
+            if (hasInitialized.current) {
+                setLoading(false);
+                return;
+            }
+
             try {
-                const response = await axiosInstance.get(`/api/departments/${departmentId}/handover-sheet`);
+                // Also fetch config
+                await fetchConfig();
+
+                const response = await axiosInstance.get(`/api/departments/${departmentId}/handover-sheet?sectionId=${sectionId || ""}&date=${date}`);
                 const data = response.data?.data;
 
                 if (!data?.isNew) {
-                    setDate(data.date ? data.date.split('T')[0] : new Date().toISOString().split('T')[0]);
-                    setEntries(data.entries || []);
+                    // Use the date from the data if available, but keep our selected date
+                    // setDate(data.date ? data.date.split('T')[0] : date); 
+                    const fetchedEntries = data.entries || [];
+                    if (fetchedEntries.length === 0) {
+                        fetchedEntries.push({
+                            sn: 1,
+                            studentId: "",
+                            employeeName: "",
+                            empCode: "",
+                            marks: "0%",
+                            department: sectionName || departmentName || "",
+                            process: "",
+                            mentor: "",
+                            interview1: "",
+                            interview2: "",
+                            interviewStatus: "",
+                            statusActionBy: ""
+                        });
+                    }
+                    setEntries(fetchedEntries);
                     setSignatures(data.signatures || { educationCell: "", hod: "" });
                     if (data.metadata) setMetadata(data.metadata);
-
-                    // console.log("Fetched entries:", data.entries);
+                    setIsSubmitted(!!data.isSubmitted);
+                    setSubmittedAt(data.submittedAt);
+                    hasInitialized.current = true;
                 } else {
+                    // Reset to a clean slate for the new date
+                    setIsSubmitted(false);
+                    setSubmittedAt(null);
+                    setSignatures({ educationCell: "", hod: "" });
+                    
+                    if (students && students.length > 0) {
                     // Initial population from students list if new
-                    // Filter students who have upgraded from first level (L1) -> currentLevel != 'L1'
                     const eligibleStudents = students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
 
                     const initialEntries = eligibleStudents.map((student, index) => ({
@@ -132,31 +183,106 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                         studentId: student._id,
                         employeeName: student.fullName,
                         empCode: student.empId || "",
-                        marks: "0%", // Default or fetch if available
-                        department: departmentName || "Quality", // Default or fetch
+                        marks: "0%",
+                        department: sectionName || departmentName || "Quality",
                         process: "",
-                        mentor: instructorName || "",
+                        mentor: "",
                         interview1: "",
-                        interview2: ""
+                        interview2: "",
+                        interviewStatus: "",
+                        statusActionBy: ""
                     }));
-                    setEntries(initialEntries);
-                }
-            } catch (error) {
-                console.error("Error fetching handover sheet:", error);
-                toast.error("Failed to fetch handover sheet data");
-            } finally {
-                setLoading(false);
-            }
-        };
 
-        if (departmentId) {
-            fetchData();
+                    if (initialEntries.length === 0) {
+                        initialEntries.push({
+                            sn: 1,
+                            studentId: "",
+                            employeeName: "",
+                            empCode: "",
+                            marks: "0%",
+                            department: sectionName || departmentName || "",
+                            process: "",
+                            mentor: "",
+                            interview1: "",
+                            interview2: "",
+                            interviewStatus: "",
+                            statusActionBy: ""
+                        });
+                    }
+
+                    setEntries(initialEntries);
+                    hasInitialized.current = true;
+                } else {
+                    // Totally empty new sheet
+                    setEntries([{
+                        sn: 1,
+                        studentId: "",
+                        employeeName: "",
+                        empCode: "",
+                        marks: "0%",
+                        department: sectionName || departmentName || "",
+                        process: "",
+                        mentor: "",
+                        interview1: "",
+                        interview2: "",
+                        interviewStatus: "",
+                        statusActionBy: ""
+                    }]);
+                    hasInitialized.current = true;
+                }
+            }
+        } catch (error) {
+            console.error("Error fetching handover sheet:", error);
+            toast.error("Failed to fetch handover sheet data");
+        } finally {
+            setLoading(false);
         }
-    }, [departmentId, students, instructorName]);
+    };
+
+        fetchData();
+    }, [departmentId, sectionId, date, students.length, departmentName, instructorName]);
 
     const handleEntryChange = (index, field, value) => {
         const newEntries = [...entries];
         newEntries[index] = { ...newEntries[index], [field]: value };
+        setEntries(newEntries);
+    };
+
+    const handleUserSelect = (index, user) => {
+        const newEntries = [...entries];
+        newEntries[index] = {
+            ...newEntries[index],
+            studentId: user.id,
+            employeeName: user.fullName,
+            empCode: user.empId || "",
+            department: sectionName || user.deptName || departmentName || "",
+            process: user.machineName || ""
+        };
+        setEntries(newEntries);
+    };
+
+    const addRow = () => {
+        setEntries([...entries, {
+            sn: entries.length + 1,
+            studentId: "",
+            employeeName: "",
+            empCode: "",
+            marks: "0%",
+            department: sectionName || departmentName || "",
+            process: "",
+            mentor: "",
+            interview1: "",
+            interview2: "",
+            interviewStatus: "",
+            statusActionBy: ""
+        }]);
+    };
+
+    const removeRow = (index) => {
+        const newEntries = entries.filter((_, i) => i !== index).map((entry, i) => ({
+            ...entry,
+            sn: i + 1
+        }));
         setEntries(newEntries);
     };
 
@@ -167,20 +293,55 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
     const handleMetadataChange = (field, value) => {
         setMetadata(prev => ({ ...prev, [field]: value }));
     };
+    
+    const handleStatusAction = (index, status) => {
+        const newEntries = [...entries];
+        const userName = authUser?.fullName || authUser?.name || "Unknown User";
+        newEntries[index] = { 
+            ...newEntries[index], 
+            interviewStatus: status,
+            statusActionBy: userName,
+            statusActionAt: status ? new Date().toISOString() : null
+        };
+        setEntries(newEntries);
 
-    const handleSave = async () => {
+        // Auto-fill HOD signature when someone approves/rejects a row
+        if (status && !signatures.hod) {
+            setSignatures(prev => ({ ...prev, hod: userName }));
+        }
+    };
+
+    const handleSave = async (isSubmit = false) => {
         setSaving(true);
+        const userName = authUser?.fullName || authUser?.name || "System";
+        
+        // Auto-fill Education Cell signature if not set
+        const updatedSignatures = { ...signatures };
+        if (!updatedSignatures.educationCell) {
+            updatedSignatures.educationCell = userName;
+            setSignatures(updatedSignatures);
+        }
+
         try {
-            await axiosInstance.post(`/api/departments/${departmentId}/handover-sheet`, {
+            const response = await axiosInstance.post(`/api/departments/${departmentId}/handover-sheet`, {
+                departmentId,
+                sectionId: sectionId || null,
                 date,
                 entries,
-                signatures,
-                metadata
+                signatures: updatedSignatures,
+                metadata,
+                isSubmitted: isSubmit
             });
-            toast.success("Handover sheet saved successfully");
+            
+            if (isSubmit) {
+                setIsSubmitted(true);
+                setSubmittedAt(new Date().toISOString());
+            }
+            
+            toast.success(isSubmit ? "Handover sheet submitted and emailed successfully" : "Handover sheet progress saved successfully");
         } catch (error) {
             console.error("Error saving handover sheet:", error);
-            toast.error("Failed to save handover sheet");
+            toast.error(isSubmit ? "Failed to submit handover sheet" : "Failed to save handover sheet");
         } finally {
             setSaving(false);
         }
@@ -196,39 +357,43 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
         <>
             <Card className="w-full shadow-lg print:shadow-none">
                 <CardHeader className="border-b bg-gray-50/50">
-                    <div className="relative flex justify-center items-center py-2 min-h-[80px]">
-                        <CardTitle className="text-xl font-bold text-center uppercase max-w-[70%]">
+                    <div className="grid grid-cols-[1fr_2fr_1fr] items-start gap-4 py-4 min-h-[100px]">
+                        <div className="flex items-center h-full">
+                            {/* Logo or empty space for symmetry */}
+                            <img src="/fme_transparent.png" alt="FURUKAWA" className="h-12 w-auto object-contain" />
+                        </div>
+                        <CardTitle className="text-xl font-bold text-center uppercase self-center">
                             List of Employees Handed Over to Shop Floor After Induction Training
                         </CardTitle>
-                        <div className="absolute right-0 top-0 text-xs text-right text-muted-foreground w-48 space-y-1">
-                            <div className="flex items-center justify-end gap-2">
-                                <span>DOCUMENT NO.</span>
+                        <div className="text-[10px] text-right text-muted-foreground space-y-1 self-start">
+                            <div className="flex items-center justify-end gap-1">
+                                <span className="font-semibold whitespace-nowrap">DOCUMENT NO.</span>
                                 <Input
-                                    className="h-5 w-24 text-xs px-1 py-0"
+                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                     value={metadata.docNo}
                                     onChange={(e) => handleMetadataChange('docNo', e.target.value)}
                                 />
                             </div>
-                            <div className="flex items-center justify-end gap-2">
-                                <span>REVISION No.</span>
+                            <div className="flex items-center justify-end gap-1">
+                                <span className="font-semibold whitespace-nowrap">REVISION No.</span>
                                 <Input
-                                    className="h-5 w-24 text-xs px-1 py-0"
+                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                     value={metadata.revNo}
                                     onChange={(e) => handleMetadataChange('revNo', e.target.value)}
                                 />
                             </div>
-                            <div className="flex items-center justify-end gap-2">
-                                <span>REVISION DATE:</span>
+                            <div className="flex items-center justify-end gap-1">
+                                <span className="font-semibold whitespace-nowrap">REVISION DATE:</span>
                                 <Input
-                                    className="h-5 w-24 text-xs px-1 py-0"
+                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                     value={metadata.revDate}
                                     onChange={(e) => handleMetadataChange('revDate', e.target.value)}
                                 />
                             </div>
-                            <div className="flex items-center justify-end gap-2">
-                                <span>ISSUE DT.</span>
+                            <div className="flex items-center justify-end gap-1">
+                                <span className="font-semibold whitespace-nowrap">ISSUE DT.</span>
                                 <Input
-                                    className="h-5 w-24 text-xs px-1 py-0"
+                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                     value={metadata.issueDate}
                                     onChange={(e) => handleMetadataChange('issueDate', e.target.value)}
                                 />
@@ -248,7 +413,7 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                         <div className="space-y-4 text-right">
                             <div className="flex items-center justify-end gap-2">
                                 <span>To:</span>
-                                <span className="text-blue-600">{departmentName || "Department"}</span>
+                                <span className="text-blue-600">{(sectionName ? `${departmentName} - ${sectionName}` : departmentName) || "Department"}</span>
                             </div>
                             <div className="flex items-center justify-end gap-2">
                                 <span>Date:</span>
@@ -260,6 +425,12 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                                 />
                             </div>
                             <div className="flex items-center gap-2 justify-end no-print">
+                                {isSubmitted && (
+                                    <div className="flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold border border-green-200 animate-in fade-in zoom-in duration-300">
+                                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                                        SUBMITTED {submittedAt && `ON ${format(new Date(submittedAt), "PP")}`}
+                                    </div>
+                                )}
                                 <Button variant="outline" onClick={fetchHistory}>
                                     <IconHistory className="h-4 w-4 mr-2" />
                                     History
@@ -271,7 +442,7 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                                 <Button
                                     variant="outline"
                                     className="border-green-600 text-green-600 hover:bg-green-50"
-                                    onClick={() => exportToExcel("Handover Sheet", { departmentId })}
+                                    onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
                                 >
                                     <IconDownload className="h-4 w-4 mr-2" />
                                     Export
@@ -280,9 +451,21 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                                     <IconPrinter className="h-4 w-4 mr-2" />
                                     Print
                                 </Button>
-                                <Button onClick={handleSave} disabled={saving}>
+                                <Button 
+                                    className="bg-green-600 hover:bg-green-700 text-white border-green-700"
+                                    onClick={() => handleSave(false)} 
+                                    disabled={saving}
+                                >
                                     <IconDeviceFloppy className="h-4 w-4 mr-2" />
-                                    {saving ? "Saving..." : "Save"}
+                                    {saving ? "Saving..." : "Save Progress"}
+                                </Button>
+                                <Button 
+                                    className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all"
+                                    onClick={() => handleSave(true)} 
+                                    disabled={saving}
+                                >
+                                    <Save className="h-4 w-4 mr-2" />
+                                    {saving ? "Submitting..." : "Submit & Email"}
                                 </Button>
                             </div>
                         </div>
@@ -301,15 +484,16 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                                         ))
                                     ) : (
                                         <>
-                                            <th className="border p-2 w-10">SN.</th>
-                                            <th className="border p-2">Employee Name</th>
-                                            <th className="border p-2 w-24">Emp. Code</th>
-                                            <th className="border p-2 w-24">Marks Secured in Induction Training</th>
-                                            <th className="border p-2 w-32">Department</th>
-                                            <th className="border p-2">Process</th>
-                                            <th className="border p-2">Mentor</th>
-                                            <th className="border p-2">1st Interview Accident</th>
-                                            <th className="border p-2">2nd Interview Practical</th>
+                                            <th className="border p-2 whitespace-nowrap">SN.</th>
+                                            <th className="border p-2 whitespace-nowrap">Employee Name</th>
+                                            <th className="border p-2 whitespace-nowrap">Emp. Code</th>
+                                            <th className="border p-2 whitespace-nowrap">Marks Secured in Induction Training</th>
+                                            <th className="border p-2 whitespace-nowrap">Department</th>
+                                            <th className="border p-2 whitespace-nowrap">Process</th>
+                                            <th className="border p-2 whitespace-nowrap">Mentor</th>
+                                            <th className="border p-2 whitespace-nowrap">1st Interview Accident</th>
+                                            <th className="border p-2 whitespace-nowrap">2nd Interview Practical</th>
+                                            <th className="border p-2 whitespace-nowrap">Approve / Reject</th>
                                         </>
                                     )}
                                 </tr>
@@ -322,6 +506,31 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                                                 <td key={colIdx} className="border p-1">
                                                     {col.field === 'sn' ? (
                                                         <div className="text-center">{index + 1}</div>
+                                                    ) : col.field === 'employeeName' && !col.readOnly ? (
+                                                        <UserAutocomplete
+                                                            mode="all"
+                                                            excludeAdmins={true}
+                                                            excludeTrainers={true}
+                                                            value={entry.employeeName}
+                                                            onChange={(user) => handleUserSelect(index, user)}
+                                                            onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
+                                                            placeholder="Search..."
+                                                            compact={true}
+                                                            className="w-full"
+                                                            inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
+                                                        />
+                                                    ) : col.field === 'mentor' && !col.readOnly ? (
+                                                        <UserAutocomplete
+                                                            mode="all"
+                                                            excludeAdmins={true}
+                                                            value={entry.mentor}
+                                                            onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
+                                                            onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
+                                                            placeholder="Search..."
+                                                            compact={true}
+                                                            className="w-full"
+                                                            inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
+                                                        />
                                                     ) : col.readOnly ? (
                                                         <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
                                                             {entry[col.field]}
@@ -330,82 +539,145 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                                                         <Input
                                                             value={entry[col.field] || ""}
                                                             onChange={(e) => handleEntryChange(index, col.field, e.target.value)}
-                                                            className="h-7 text-center border-none shadow-none focus:ring-0"
+                                                            className="h-7 min-w-[20px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                            size={Math.max((entry[col.field] || "").toString().length || 1, 5)}
                                                         />
                                                     )}
                                                 </td>
                                             ))
                                         ) : (
                                             <>
-                                                <td className="border p-1 text-center">{index + 1}</td>
-                                                <td className="border p-1">
-                                                    <div className="p-1 font-medium text-blue-600">{entry.employeeName}</div>
+                                                <td className="border p-1 text-center font-medium whitespace-nowrap">
+                                                    {index + 1}
                                                 </td>
                                                 <td className="border p-1">
-                                                    <div className="p-1 text-center">{entry.empCode}</div>
+                                                    <UserAutocomplete
+                                                        mode="all"
+                                                        excludeAdmins={true}
+                                                        excludeTrainers={true}
+                                                        value={entry.employeeName}
+                                                        onChange={(user) => handleUserSelect(index, user)}
+                                                        onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
+                                                        placeholder="Search Employee..."
+                                                        compact={true}
+                                                        className="min-w-[150px]"
+                                                        inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
+                                                    />
                                                 </td>
-                                                <td className="border p-1">
+                                                <td className="border p-1 text-center">
+                                                    <Input
+                                                        value={entry.empCode || ""}
+                                                        onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
+                                                        className="h-7 min-w-[40px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                        size={Math.max((entry.empCode || "").length || 1, 8)}
+                                                    />
+                                                </td>
+                                                <td className="border p-1 text-center">
                                                     <Input
                                                         value={entry.marks}
                                                         onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
-                                                        className="h-7 text-center border-none shadow-none focus:ring-0"
+                                                        className="h-7 min-w-[30px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                        size={Math.max((entry.marks || "").toString().length || 1, 4)}
                                                     />
                                                 </td>
-                                                <td className="border p-1">
+                                                <td className="border p-1 text-center">
                                                     <Input
                                                         value={entry.department}
                                                         onChange={(e) => handleEntryChange(index, 'department', e.target.value)}
-                                                        className="h-7 text-center border-none shadow-none focus:ring-0"
+                                                        className="h-7 min-w-[80px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                        size={Math.max((entry.department || "").length || 1, 10)}
                                                     />
                                                 </td>
-                                                <td className="border p-1">
+                                                <td className="border p-1 text-center">
                                                     <Input
                                                         value={entry.process}
                                                         onChange={(e) => handleEntryChange(index, 'process', e.target.value)}
-                                                        className="h-7 text-center border-none shadow-none focus:ring-0"
+                                                        className="h-7 min-w-[80px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                        size={Math.max((entry.process || "").length || 1, 10)}
                                                     />
                                                 </td>
                                                 <td className="border p-1">
-                                                    <Input
+                                                    <UserAutocomplete
+                                                        mode="all"
+                                                        excludeAdmins={true}
                                                         value={entry.mentor}
-                                                        onChange={(e) => handleEntryChange(index, 'mentor', e.target.value)}
-                                                        className="h-7 text-center border-none shadow-none focus:ring-0"
+                                                        onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
+                                                        onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
+                                                        placeholder="Search Mentor..."
+                                                        compact={true}
+                                                        className="min-w-[120px]"
+                                                        inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
                                                     />
                                                 </td>
-                                                <td className="border p-1">
+                                                <td className="border p-1 text-center">
                                                     <Input
                                                         value={entry.interview1}
                                                         onChange={(e) => handleEntryChange(index, 'interview1', e.target.value)}
-                                                        className="h-7 text-center border-none shadow-none focus:ring-0"
+                                                        className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                        size={Math.max((entry.interview1 || "").length || 1, 10)}
                                                     />
                                                 </td>
-                                                <td className="border p-1">
+                                                <td className="border p-1 text-center">
                                                     <Input
                                                         value={entry.interview2}
                                                         onChange={(e) => handleEntryChange(index, 'interview2', e.target.value)}
-                                                        className="h-7 text-center border-none shadow-none focus:ring-0"
+                                                        className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                        size={Math.max((entry.interview2 || "").length || 1, 10)}
                                                     />
+                                                </td>
+                                                <td className="border p-1">
+                                                    {!entry.interviewStatus ? (
+                                                        <div className="flex items-center justify-center gap-2">
+                                                            <Button 
+                                                                variant="ghost" 
+                                                                className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
+                                                                onClick={() => handleStatusAction(index, 'APPROVE')}
+                                                            >
+                                                                APPROVE
+                                                            </Button>
+                                                            <Button 
+                                                                variant="ghost" 
+                                                                className="h-7 px-2 text-[10px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200"
+                                                                onClick={() => handleStatusAction(index, 'REJECT')}
+                                                            >
+                                                                REJECT
+                                                            </Button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col items-center justify-center py-1">
+                                                            <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
+                                                                {entry.interviewStatus === 'APPROVE' ? 'Approved' : 'Rejected'}
+                                                            </div>
+                                                            <div className="text-[9px] text-gray-500 leading-tight text-center">
+                                                                by: {entry.statusActionBy}
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => handleStatusAction(index, "")}
+                                                                className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
+                                                            >
+                                                                Reset
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </>
                                         )}
                                     </tr>
                                 ))}
                                 {/* Empty rows to maintain look if needed */}
-                                {Array.from({ length: Math.max(0, 10 - entries.length) }).map((_, i) => (
-                                    <tr key={`empty-${i}`} className="h-8">
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                        <td className="border p-1"></td>
-                                    </tr>
-                                ))}
+
                             </tbody>
                         </table>
+                        <div className="mt-2 flex justify-start no-print">
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={addRow}
+                                className="flex items-center gap-1 text-xs border-dashed"
+                            >
+                                <IconPlus size={14} /> Add Row
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Footer Notes */}
@@ -416,36 +688,45 @@ const HandoverSheet = ({ departmentId, students = [], departmentName, instructor
                     {/* Signatures */}
                     <div className="grid grid-cols-2 gap-8 mt-12 pt-8">
                         <div className="space-y-2">
-                            <Input
-                                placeholder="Signature Education Cell"
-                                value={signatures.educationCell}
-                                onChange={(e) => handleSignatureChange('educationCell', e.target.value)}
-                                className="border-b border-t-0 border-x-0 rounded-none shadow-none focus:ring-0 px-0 placeholder:text-gray-400"
-                            />
+                            <div className="border-b border-black min-h-[32px] flex items-end pb-1 px-1">
+                                <span className="text-sm font-bold text-blue-700 italic">
+                                    {signatures.educationCell || "____________________"}
+                                </span>
+                            </div>
                             <p className="text-sm font-bold">Signature Education Cell</p>
+                            <p className="text-[10px] text-gray-500 italic">Form Filled By</p>
                         </div>
-                        <div className="space-y-2">
-                            <Input
-                                placeholder="Signature of HOD/Incharge"
-                                value={signatures.hod}
-                                onChange={(e) => handleSignatureChange('hod', e.target.value)}
-                                className="border-b border-t-0 border-x-0 rounded-none shadow-none focus:ring-0 px-0 placeholder:text-gray-400 text-right"
-                            />
-                            <p className="text-sm font-bold text-right">Signature of HOD/Incharge</p>
+                        <div className="space-y-2 text-right">
+                            <div className="border-b border-black min-h-[32px] flex items-end justify-end pb-1 px-1">
+                                <span className="text-sm font-bold text-blue-700 italic">
+                                    {signatures.hod || "____________________"}
+                                </span>
+                            </div>
+                            <p className="text-sm font-bold">Signature of HOD/Incharge</p>
+                            <p className="text-[10px] text-gray-500 italic">Form Approved By</p>
                         </div>
                     </div>
 
                     <div className="flex justify-end mt-8 no-print gap-4">
                         <Button
                             variant="outline"
-                            onClick={() => exportToExcel("Handover Sheet", { departmentId })}
+                            onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
                             className="border-green-600 text-green-600 hover:bg-green-50"
                         >
                             Export to Excel
                         </Button>
-                        <Button onClick={handleSave} disabled={saving} className="gap-2">
+                        <Button 
+                            variant="outline"
+                            onClick={() => handleSave(false)} 
+                            disabled={saving} 
+                            className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
+                        >
+                            <IconDeviceFloppy className="h-4 w-4" />
+                            Save Progress
+                        </Button>
+                        <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
                             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                            Save Sheet
+                            Submit & Email Sheet
                         </Button>
                     </div>
                 </CardContent>

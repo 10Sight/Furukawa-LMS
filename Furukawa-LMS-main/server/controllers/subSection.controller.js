@@ -30,9 +30,12 @@ export const createSubSection = asyncHandler(async (req, res) => {
     );
 
     const [newSubSection] = await executeQuery(`
-        SELECT ss.*, 
+        SELECT ss.*, l.name as lineName, s.name as sectionName,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
-        FROM [sub_sections] ss WHERE ss.id = ?`, [result[0].id]);
+        FROM [sub_sections] ss 
+        LEFT JOIN [lines] l ON ss.lineId = l.id
+        LEFT JOIN [sections] s ON l.sectionId = s.id
+        WHERE ss.id = ?`, [result[0].id]);
 
     res.status(201).json(
         new ApiResponse(201, newSubSection[0], "Sub-Section created successfully")
@@ -50,9 +53,13 @@ export const getSubSectionsByLine = asyncHandler(async (req, res) => {
     }
 
     const [subSections] = await executeQuery(`
-        SELECT ss.*, 
+        SELECT ss.*, l.name as lineName, s.name as sectionName,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
-        FROM [sub_sections] ss WHERE ss.lineId = ? ORDER BY ss.createdAt DESC`, [lineId]);
+        FROM [sub_sections] ss 
+        LEFT JOIN [lines] l ON ss.lineId = l.id
+        LEFT JOIN [sections] s ON l.sectionId = s.id
+        WHERE ss.lineId = ? 
+        ORDER BY ss.createdAt DESC`, [lineId]);
 
     res.status(200).json(
         new ApiResponse(200, subSections, "Sub-Sections fetched successfully")
@@ -89,9 +96,12 @@ export const updateSubSection = asyncHandler(async (req, res) => {
     }
 
     const [updatedSubSection] = await executeQuery(`
-        SELECT ss.*, 
+        SELECT ss.*, l.name as lineName, s.name as sectionName,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
-        FROM [sub_sections] ss WHERE ss.id = ?`, [id]);
+        FROM [sub_sections] ss 
+        LEFT JOIN [lines] l ON ss.lineId = l.id
+        LEFT JOIN [sections] s ON l.sectionId = s.id
+        WHERE ss.id = ?`, [id]);
 
     res.status(200).json(
         new ApiResponse(200, updatedSubSection[0], "Sub-Section updated successfully")
@@ -122,10 +132,11 @@ export const getAllSubSections = asyncHandler(async (req, res) => {
     const { lineId, departmentId } = req.query;
 
     let querySQL = `
-        SELECT ss.*, l.name as lineName,
+        SELECT ss.*, l.name as lineName, s.name as sectionName,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE m.subSectionId = ss.id) as subSectionCount
         FROM [sub_sections] ss
-        LEFT JOIN [lines] l ON ss.lineId = l.id`;
+        LEFT JOIN [lines] l ON ss.lineId = l.id
+        LEFT JOIN [sections] s ON l.sectionId = s.id`;
     let params = [];
     let conditions = [];
 

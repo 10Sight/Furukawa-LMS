@@ -320,24 +320,28 @@ export const startQuiz = asyncHandler(async (req, res) => {
     if (quiz.course) quiz.course = await Course.findById(quiz.course);
     if (quiz.module) quiz.module = await Module.findById(quiz.module);
 
-    if (quiz.module && quiz.type === "MODULE") {
-        const accessCheck = await checkModuleAccessForAssessments(userId, quiz.course.id, quiz.module.id);
-        if (!accessCheck.hasAccess) {
-            throw new ApiError(accessCheck.reason || "Access denied to this quiz. Complete all lessons in the module first.", 403);
-        }
-    } else if (quiz.type === "COURSE") {
-        const [modRows] = await executeQuery("SELECT COUNT(*) as count FROM modules WHERE course = ?", [quiz.course.id]);
-        const totalModules = modRows[0].count;
+    const isAdminOrTrainer = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPERADMIN' || req.user.role === 'INSTRUCTOR' || req.user.role === 'TRAINER');
 
-        const progress = await Progress.findOne({ student: userId, course: quiz.course.id });
+    if (!isAdminOrTrainer) {
+        if (quiz.module && quiz.type === "MODULE") {
+            const accessCheck = await checkModuleAccessForAssessments(userId, quiz.course.id, quiz.module.id);
+            if (!accessCheck.hasAccess) {
+                throw new ApiError(accessCheck.reason || "Access denied to this quiz. Complete all lessons in the module first.", 403);
+            }
+        } else if (quiz.type === "COURSE") {
+            const [modRows] = await executeQuery("SELECT COUNT(*) as count FROM modules WHERE course = ?", [quiz.course.id]);
+            const totalModules = modRows[0].count;
 
-        if (!progress) {
-            throw new ApiError("No progress found. Complete all modules first.", 403);
-        }
+            const progress = await Progress.findOne({ student: userId, course: quiz.course.id });
 
-        const completedModules = progress.completedModules?.length || 0;
-        if (completedModules < totalModules) {
-            throw new ApiError(`Complete all ${totalModules} modules to access this course quiz. Currently completed: ${completedModules}`, 403);
+            if (!progress) {
+                throw new ApiError("No progress found. Complete all modules first.", 403);
+            }
+
+            const completedModules = progress.completedModules?.length || 0;
+            if (completedModules < totalModules) {
+                throw new ApiError(`Complete all ${totalModules} modules to access this course quiz. Currently completed: ${completedModules}`, 403);
+            }
         }
     }
 
@@ -402,8 +406,14 @@ export const startQuiz = asyncHandler(async (req, res) => {
 });
 
 export const submitQuiz = asyncHandler(async (req, res) => {
-    const { quizId, answers, timeTaken } = req.body;
-    const userId = req.user.id;
+    const { quizId, answers, timeTaken, studentId } = req.body;
+    let userId = req.user.id;
+
+    const isAdminOrTrainer = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPERADMIN' || req.user.role === 'INSTRUCTOR' || req.user.role === 'TRAINER');
+
+    if (isAdminOrTrainer && studentId) {
+        userId = studentId;
+    }
 
     if (!quizId) throw new ApiError("Quiz ID is required", 400);
 
@@ -448,7 +458,9 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     const attemptsAllowed = baseAllowed + Number(extraAllowed);
     const isUnlimited = quiz.attemptsAllowed === 0;
 
-    if (!isUnlimited && previousAttempts >= attemptsAllowed) {
+
+
+    if (!isAdminOrTrainer && !isUnlimited && previousAttempts >= attemptsAllowed) {
         throw new ApiError("No attempts remaining for this quiz", 400);
     }
 

@@ -22,6 +22,7 @@ class ThreeDayMonitoring {
         this.checkedBy = data.checkedBy || "";
         this.verifiedBy = data.verifiedBy || "";
         this.approvedBy = data.approvedBy || "";
+        this.status = data.status || "Draft";
 
         this.createdBy = data.createdBy;
         this.updatedBy = data.updatedBy;
@@ -40,6 +41,7 @@ class ThreeDayMonitoring {
                     lineName VARCHAR(255),
                     entries NVARCHAR(MAX),
                     evaluation NVARCHAR(MAX),
+                    status VARCHAR(50) DEFAULT 'Draft',
                     checkedBy VARCHAR(255),
                     verifiedBy VARCHAR(255),
                     approvedBy VARCHAR(255),
@@ -49,6 +51,14 @@ class ThreeDayMonitoring {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_3day FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
+            END
+            ELSE
+            BEGIN
+                -- Add status column if missing
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'status')
+                BEGIN
+                    ALTER TABLE three_day_monitorings ADD status VARCHAR(50) DEFAULT 'Draft';
+                END
             END
         `;
         await executeQuery(query);
@@ -63,14 +73,14 @@ class ThreeDayMonitoring {
     static async create(data) {
         const {
             studentId, processName, lineName, entries, evaluation,
-            checkedBy, verifiedBy, approvedBy, createdBy
+            checkedBy, verifiedBy, approvedBy, status, createdBy
         } = data;
 
         const query = `
             INSERT INTO three_day_monitorings 
-            (studentId, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, createdBy)
+            (studentId, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, status, createdBy)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -82,6 +92,7 @@ class ThreeDayMonitoring {
             checkedBy,
             verifiedBy,
             approvedBy,
+            status || "Draft",
             createdBy
         ];
 
@@ -93,7 +104,7 @@ class ThreeDayMonitoring {
         const query = `
             UPDATE three_day_monitorings SET
             processName = ?, lineName = ?, entries = ?, evaluation = ?, 
-            checkedBy = ?, verifiedBy = ?, approvedBy = ?, updatedBy = ?, updatedAt = GETDATE()
+            checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, updatedBy = ?, updatedAt = GETDATE()
             WHERE id = ?
         `;
 
@@ -105,6 +116,7 @@ class ThreeDayMonitoring {
             this.checkedBy,
             this.verifiedBy,
             this.approvedBy,
+            this.status || "Draft",
             this.updatedBy,
             this.id
         ];

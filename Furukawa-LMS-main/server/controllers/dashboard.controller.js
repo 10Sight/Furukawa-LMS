@@ -7,13 +7,12 @@ import { poolPromise, mssql as sql } from "../db/connectDB.js";
 export const getDashboardStats = asyncHandler(async (req, res) => {
     const { section, line } = req.query;
 
-    const currentYear  = new Date().getFullYear();
-    const currentMonth = new Date().toLocaleString('en-US', { month: 'long' });
-    const monthsOrder  = ['January','February','March','April','May','June',
-                          'July','August','September','October','November','December'];
+    const currentYear     = new Date().getFullYear();
+    const currentMonthNum = new Date().getMonth() + 1;           // 1-based
+    const currentMonth    = new Date().toLocaleString('en-US', { month: 'long' });
+    const daysInMonth     = new Date(currentYear, currentMonthNum, 0).getDate();
 
     // ── Step 1: Resolve section/line IDs → names ──────────────────────────────
-    // user_hierarchy_snapshots columns: section, lines  (NOT section_name / line_name)
     let sectionName = null;
     let lineName    = null;
 
@@ -33,7 +32,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const safeName = (s) => s.replace(/'/g, "''");
 
     // ── Step 2: Build hierarchy WHERE condition ───────────────────────────────
-    // TABLE COLUMNS: uhs.section  and  uhs.lines  (as per user_hierarchy_snapshots schema)
+    // TABLE COLUMNS: uhs.[section]  and  uhs.[lines]
     let hierCondition = '';
     if (sectionName) hierCondition += ` AND UPPER(LTRIM(RTRIM(uhs.[section]))) = UPPER('${safeName(sectionName)}')`;
     if (lineName)    hierCondition += ` AND UPPER(LTRIM(RTRIM(uhs.[lines])))   = UPPER('${safeName(lineName)}')`;
@@ -43,16 +42,27 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     // ── Step 3: Requirements ──────────────────────────────────────────────────
     let reqResults = [];
-    const buildReqFilter = (secCol, lineCol, secId, lineId) => {
+
+    const buildReqFilterCamel = (secId, lineId) => {
         let extra = '';
-        if (secId && secId !== 'ALL') extra += ` AND ${secCol} = (SELECT name FROM [sections] WHERE id = ${parseInt(secId)})`;
-        if (lineId && lineId !== 'ALL') extra += ` AND ${lineCol} = (SELECT name FROM [lines] WHERE id = ${parseInt(lineId)})`;
+        if (secId && secId !== 'ALL' && !isNaN(secId))
+            extra += ` AND sectionName = (SELECT name FROM [sections] WHERE id = ${parseInt(secId)})`;
+        if (lineId && lineId !== 'ALL' && !isNaN(lineId))
+            extra += ` AND lineDescription = (SELECT name FROM [lines] WHERE id = ${parseInt(lineId)})`;
         return extra;
     };
 
-    // Try camelCase columns first
+    const buildReqFilterSnake = (secId, lineId) => {
+        let extra = '';
+        if (secId && secId !== 'ALL' && !isNaN(secId))
+            extra += ` AND section_name = (SELECT name FROM [sections] WHERE id = ${parseInt(secId)})`;
+        if (lineId && lineId !== 'ALL' && !isNaN(lineId))
+            extra += ` AND description_line = (SELECT name FROM [lines] WHERE id = ${parseInt(lineId)})`;
+        return extra;
+    };
+
     try {
-        const filter = buildReqFilter('sectionName', 'lineDescription', section, line);
+        const filter = buildReqFilterCamel(section, line);
         const sql1 = `
             SELECT monthName AS month, CAST(SUM(ISNULL(prodPlan,0)) AS BIGINT) AS required_count
             FROM requirements
@@ -65,7 +75,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     } catch (e1) {
         console.warn("[DASHBOARD] camelCase req query failed:", e1.message);
         try {
-            const filter = buildReqFilter('section_name', 'description_line', section, line);
+            const filter = buildReqFilterSnake(section, line);
             const sql2 = `
                 SELECT month_name AS month, CAST(SUM(ISNULL(prod_plan,0)) AS BIGINT) AS required_count
                 FROM requirements
@@ -80,8 +90,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         }
     }
 
-    // ── Step 4: Headcount from user_hierarchy_snapshots ───────────────────────
-    // Correct columns: [section] and [lines]
+    // ── Step 4: Current headcount from snapshots ──────────────────────────────
     let snapshotTotal = 0;
     try {
         const [snapRows] = await executeQuery(
@@ -96,25 +105,20 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         console.warn("[DASHBOARD] Snapshot headcount query failed:", e.message);
     }
 
-    // ── Step 5: Daily attendance — join attendance_logs ↔ user_hierarchy_snapshots ──
-    // attendance_logs.payCode  matches  user_hierarchy_snapshots.employeeid
-    // Then filter by uhs.[section] and uhs.[lines]
+    // ── Step 5: Daily attendance (current month) ──────────────────────────────
     let dailyAttendance = [];
-    const currentMonthNum = new Date().getMonth() + 1;
-    const daysInMonth = new Date(currentYear, currentMonthNum, 0).getDate();
-
     try {
         const attSql = `
             SELECT
-                DAY(al.[date])               AS dayNum,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT'  THEN 1 ELSE 0 END) AS presentCount,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE') THEN 1 ELSE 0 END) AS absentCount,
-                COUNT(*)                     AS totalCount
+                DAY(al.[date])  AS dayNum,
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT'                          THEN 1 ELSE 0 END) AS presentCount,
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE')     THEN 1 ELSE 0 END) AS absentCount,
+                COUNT(*)        AS totalCount
             FROM attendance_logs al
             INNER JOIN user_hierarchy_snapshots uhs
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
-            WHERE YEAR(al.[date]) = ${currentYear}
+            WHERE YEAR(al.[date])  = ${currentYear}
               AND MONTH(al.[date]) = ${currentMonthNum}
               ${hierCondition}
             GROUP BY DAY(al.[date])
@@ -127,18 +131,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         console.warn("[DASHBOARD] Daily attendance query failed:", e.message);
     }
 
-    // ── Step 6: Build manpowerData array ──────────────────────────────────────
+    // ── Step 6: Build manpowerData ────────────────────────────────────────────
     const currentReqItem = reqResults.find(r =>
         (r.month || '').toString().trim().toLowerCase() === currentMonth.toLowerCase()
     );
     const monthlyRequirement = currentReqItem ? (Number(currentReqItem.required_count) || 0) : 0;
 
-    const manpowerData = Array.from({ length: daysInMonth }, (_, index) => {
-        const day = index + 1;
-        const attItem = dailyAttendance.find(a => Number(a.dayNum) === day);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+    const manpowerData = Array.from({ length: daysInMonth }, (_, index) => {
+        const day      = index + 1;
+        const attItem  = dailyAttendance.find(a => Number(a.dayNum) === day);
         const iterDate = new Date(currentYear, currentMonthNum - 1, day);
         iterDate.setHours(0, 0, 0, 0);
         const isFuture = iterDate > today;
@@ -155,12 +159,57 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     console.log(`[DASHBOARD] manpowerData sample:`, manpowerData.slice(0, 3));
 
-    // ── Step 7: Attrition (placeholder) ──────────────────────────────────────
-    const attritionData = monthsOrder.slice(0, 6).map(m => ({
-        month:  m.substring(0, 3),
-        actual: 0,
-        target: 2.0,
-    }));
+    // ── Step 7: Attrition — CURRENT MONTH DAILY ───────────────────────────────
+    // Shows daily absence rate (%) for each day of the current month only.
+    // Formula per day: (absent + leave + half-day) / total_present_in_snapshots * 100
+    // This mirrors the manpower chart — same day range, same section/line filter.
+    let attritionData = [];
+    try {
+        const attrSql = `
+            SELECT
+                DAY(al.[date])  AS dayNum,
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE') THEN 1 ELSE 0 END) AS absentCount,
+                COUNT(*)        AS totalCount
+            FROM attendance_logs al
+            INNER JOIN user_hierarchy_snapshots uhs
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
+            WHERE YEAR(al.[date])  = ${currentYear}
+              AND MONTH(al.[date]) = ${currentMonthNum}
+              ${hierCondition}
+            GROUP BY DAY(al.[date])
+            ORDER BY DAY(al.[date])
+        `;
+        const [attrRows] = await executeQuery(attrSql, []);
+        console.log(`[DASHBOARD] Attrition daily rows: ${attrRows.length}`);
+
+        // Build one entry per day of the current month (past days only)
+        attritionData = Array.from({ length: daysInMonth }, (_, index) => {
+            const day      = index + 1;
+            const iterDate = new Date(currentYear, currentMonthNum - 1, day);
+            iterDate.setHours(0, 0, 0, 0);
+            const isFuture = iterDate > today;
+
+            if (isFuture) return null; // skip future days
+
+            const row    = attrRows.find(r => Number(r.dayNum) === day);
+            const absent = row ? (Number(row.absentCount) || 0) : 0;
+            const total  = row ? (Number(row.totalCount)  || 0) : 0;
+            // Attrition rate = absent / total * 100, rounded to 1 decimal
+            const rate   = total > 0 ? Math.round((absent / total) * 1000) / 10 : 0;
+
+            return {
+                day:    `${day} ${currentMonth.substring(0, 3)}`,  // e.g. "1 Apr"
+                actual: rate,
+                target: 2.0,
+            };
+        }).filter(Boolean); // remove nulls (future days)
+
+    } catch(e) {
+        console.warn("[DASHBOARD] Attrition daily query failed:", e.message);
+        // Fallback: empty array — frontend will show "no data" state
+        attritionData = [];
+    }
 
     // ── Step 8: Absenteeism — 7-day rolling ──────────────────────────────────
     let absenteeismData = [
@@ -273,7 +322,6 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
     const safeName = (s) => s.replace(/'/g, "''");
 
     // ── 3. Build WHERE clause ─────────────────────────────────────────────────
-    // Correct column names: uhs.[section]  and  uhs.[lines]
     const buildHierarchyFilter = (sectionName, lineName) => {
         const conditions = [];
         if (sectionName) conditions.push(`UPPER(LTRIM(RTRIM(uhs.[section]))) = UPPER('${safeName(sectionName)}')`);
@@ -361,7 +409,6 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
     const trendRows = trendResult.recordset || [];
 
     // ── 6. Section breakdown (for today) ─────────────────────────────────────
-    // Use uhs.[section] as the grouping column
     let sectionBreakdownSQL;
     if (useHierarchyJoin) {
         sectionBreakdownSQL = `

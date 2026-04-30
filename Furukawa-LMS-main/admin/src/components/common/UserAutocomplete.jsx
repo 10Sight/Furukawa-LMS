@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLazyGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
+import { useLazyGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Loader2, Search, User } from 'lucide-react';
@@ -15,12 +16,21 @@ const UserAutocomplete = ({
   className = "",
   compact = false,
   inputClassName = "",
-  clearOnSelect = false
+  clearOnSelect = false,
+  mode = "student", // "student" or "all"
+  excludeTrainers = false,
+  excludeAdmins = false,
+  onTextChange = null
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
   const debouncedSearch = useDebounce(search, 500);
-  const [trigger, { data, isFetching }] = useLazyGetAllStudentsQuery();
+  
+  const [triggerStudents, { data: studentsData, isFetching: isFetchingStudents }] = useLazyGetAllStudentsQuery();
+  const [triggerAll, { data: allUsersData, isFetching: isFetchingAll }] = useLazyGetAllUsersQuery();
+
+  const isFetching = mode === "all" ? isFetchingAll : isFetchingStudents;
+  const data = mode === "all" ? allUsersData : studentsData;
 
   useEffect(() => {
     if (open && debouncedSearch.length >= 2) {
@@ -31,9 +41,16 @@ const UserAutocomplete = ({
       if (departmentId) {
         searchParams.departmentId = departmentId;
       }
-      trigger(searchParams);
+
+      if (mode === "all") {
+        if (excludeTrainers) searchParams.excludeTrainers = "true";
+        if (excludeAdmins) searchParams.excludeAdmins = "true";
+        triggerAll(searchParams);
+      } else {
+        triggerStudents(searchParams);
+      }
     }
-  }, [debouncedSearch, departmentId, open, trigger]);
+  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins]);
 
   // Sync internal search state with external value when it changes externally
   useEffect(() => {
@@ -56,7 +73,8 @@ const UserAutocomplete = ({
         departmentId: user.departmentId,
         deptName: user.deptName,
         lineName: user.lineName,
-        machineName: user.machineName,
+        machineName: user.machineName || user.stationName,
+        stationName: user.stationName || user.machineName,
         id: user.id || user._id
       });
     }
@@ -74,8 +92,10 @@ const UserAutocomplete = ({
               placeholder={placeholder}
               value={search}
               onChange={(e) => {
-                setSearch(e.target.value);
+                const val = e.target.value;
+                setSearch(val);
                 setOpen(true);
+                if (onTextChange) onTextChange(val);
               }}
               onFocus={() => setOpen(true)}
               className={cn(compact ? "h-7 py-0 px-1 text-[10px] text-center" : "h-9", inputClassName)}

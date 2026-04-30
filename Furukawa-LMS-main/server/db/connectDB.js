@@ -9,17 +9,18 @@ const dbConfig = {
     server: ENV.DB_HOST,
     port: parseInt(ENV.DB_PORT) || 1433,
     pool: {
-        max: 10,
+        max: 20,
         min: 0,
         idleTimeoutMillis: 30000
     },
     options: {
         encrypt: false,
         trustServerCertificate: true,
-        requestTimeout: 60000, // 60 seconds
-        connectionTimeout: 30000 // 30 seconds
+        requestTimeout: 300000, // 300 seconds
+        connectionTimeout: 120000 // 120 seconds
     }
 };
+
 
 // We create a global pool promise so it can be exported and used globally.
 const poolPromise = new sql.ConnectionPool(dbConfig)

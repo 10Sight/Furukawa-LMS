@@ -268,9 +268,37 @@ const Departments = () => {
     return filters;
   }, [statusFilter, searchTerm, statusOptions]);
 
-  // Filter departments based on status
+  // Filter departments based on status and role-based restrictions
   const filteredDepartments = useMemo(() => {
-    return departments.filter((department) => {
+    let result = departments;
+
+    // 1. Apply role-based filtering first
+    const isRestricted = user?.role !== 'SUPERADMIN' && user?.isAdmin !== true;
+    if (isRestricted) {
+      // Get assigned department info
+      const assignedIds = new Set();
+      if (Array.isArray(user?.departments)) {
+        user.departments.forEach(id => assignedIds.add(String(id)));
+      }
+      if (user?.departmentId) assignedIds.add(String(user.departmentId));
+      if (user?.department?._id) assignedIds.add(String(user.department._id));
+      
+      const userDeptName = user?.deptName?.trim().toLowerCase();
+
+      // ONLY FILTER if there is actually an assignment to restrict by
+      // Otherwise, the user can see everything in this layout
+      if (assignedIds.size > 0 || userDeptName) {
+        result = result.filter(dept => {
+          const dId = String(dept.id || dept._id);
+          const hasIdMatch = assignedIds.has(dId);
+          const hasNameMatch = userDeptName && dept.name?.trim().toLowerCase() === userDeptName;
+          return hasIdMatch || hasNameMatch;
+        });
+      }
+    }
+
+    // 2. Apply existing UI filters (status)
+    return result.filter((department) => {
       const statusMatch =
         statusFilter === "ALL" ||
         (statusFilter === "HAS_INSTRUCTOR" && department.instructor) ||
@@ -278,7 +306,7 @@ const Departments = () => {
         department.status === statusFilter;
       return statusMatch;
     });
-  }, [departments, statusFilter]);
+  }, [departments, statusFilter, user]);
 
   // Toast helper
   const showToast = useCallback(
@@ -560,7 +588,7 @@ const Departments = () => {
 
   const getStudentCount = (department) => {
     if (!department) return 0;
-    return department.students?.length || 0;
+    return department.studentCount || department.students?.length || 0;
   };
 
   const getCourseInfo = (department) => {
@@ -741,7 +769,7 @@ const Departments = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard
           title="Total Departments"
-          value={totalCount}
+          value={user?.role === 'SUPERADMIN' ? totalCount : filteredDepartments.length}
           description="All created departments"
           icon={IconSchool}
           iconBgColor="bg-blue-100"
@@ -755,7 +783,7 @@ const Departments = () => {
 
         <StatCard
           title="Assigned Sections"
-          value={departments.filter((d) => d.instructor).length}
+          value={filteredDepartments.filter((d) => d.instructor).length}
           description="With instructors"
           icon={IconUser}
           iconBgColor="bg-green-100"
@@ -769,7 +797,7 @@ const Departments = () => {
 
         <StatCard
           title="Total Operators"
-          value={departments.reduce(
+          value={filteredDepartments.reduce(
             (total, department) => total + getStudentCount(department),
             0
           )}
@@ -796,7 +824,7 @@ const Departments = () => {
                 setStatusFilter("ALL");
               }}
             >
-              All ({departments.length})
+              All ({filteredDepartments.length})
             </TabsTrigger>
             <TabsTrigger
               value="assigned"

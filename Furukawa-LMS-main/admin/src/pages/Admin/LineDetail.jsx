@@ -28,7 +28,7 @@ const LineDetail = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border">
                 <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="hover:bg-gray-100 rounded-full">
+                    <Button variant="ghost" size="icon" onClick={() => navigate(`/admin/departments/${departmentId}?tab=sections`)} className="hover:bg-gray-100 rounded-full">
                         <IconArrowLeft className="h-5 w-5" />
                     </Button>
                     <div>

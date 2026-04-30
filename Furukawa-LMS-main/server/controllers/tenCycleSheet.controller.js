@@ -5,13 +5,15 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const listTenCycleSheets = asyncHandler(async (req, res) => {
-    const { departmentId } = req.query;
+    const { departmentId, sectionId, lineId, subSectionId } = req.query;
 
     if (!departmentId) {
         return res.status(200).json(new ApiResponse(200, [], "No department selected"));
     }
 
-    const sheets = await TenCycleSheet.findByDepartmentId(departmentId);
+    const sheets = await TenCycleSheet.findByFilters({ departmentId, sectionId, lineId, subSectionId });
+    
+    // Fetch names for contextual info
     const [deps] = await executeQuery("SELECT id, name FROM departments WHERE id = ?", [departmentId]);
     const deptName = deps[0]?.name || "";
 
@@ -19,6 +21,9 @@ export const listTenCycleSheets = asyncHandler(async (req, res) => {
         id: s.id,
         departmentId: s.departmentId,
         departmentName: deptName,
+        sectionId: s.sectionId,
+        lineId: s.lineId,
+        subSectionId: s.subSectionId,
         formType: s.formType,
         createdDate: s.createdDate,
         createdAt: s.createdAt,
@@ -29,7 +34,7 @@ export const listTenCycleSheets = asyncHandler(async (req, res) => {
 });
 
 export const createTenCycleSheet = asyncHandler(async (req, res) => {
-    const { departmentId, formType } = req.body || {};
+    const { departmentId, sectionId, lineId, subSectionId, formType } = req.body || {};
 
     if (!departmentId) throw new ApiError("Department is required", 400);
     if (!["form1", "form2"].includes(formType)) throw new ApiError("Invalid form type", 400);
@@ -39,6 +44,9 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
 
     const sheet = await TenCycleSheet.create({
         departmentId,
+        sectionId,
+        lineId,
+        subSectionId,
         formType,
         qualityEngineer: "",
         qualityEngineerSign: "",

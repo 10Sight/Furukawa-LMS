@@ -19,6 +19,7 @@ export const translations = {
     "nav.students": "Operators",
     "nav.trainees": "Operators",
     "nav.quizMonitoring": "Test Monitoring",
+    "nav.testPaper": "Test Paper",
     "nav.attemptRequests": "Attempt Requests",
     "nav.moduleTimelines": "Module Timelines",
     "nav.courseLevelSettings": "Course Level Settings",
@@ -27,7 +28,11 @@ export const translations = {
     "nav.analytics": "Analytics",
     "nav.report": "Report",
     "nav.tenCycle": "10 Cycle",
+    "nav.sixteenDayMonitoring": "16 Day Monitoring",
+    "nav.threeDayMonitoring": "3 Day Monitoring",
+    "nav.handoverSheet": "Hand Over Sheet",
     "nav.dailyProductionReport": "DPR Report",
+    "nav.dprManage": "DPR Setup",
     "nav.mentors": "Mentors",
     "nav.supervisors": "Supervisors",
     "nav.incharges": "Incharges",
@@ -59,6 +64,7 @@ export const translations = {
     "nav.bulkOperations": "Bulk Operations",
     "nav.skillMatrix": "Skill Matrix",
     "nav.lineRequirements": "Line Requirements",
+    "nav.multiSkilling": "Multi Skilling",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "Administrator Information",
@@ -130,6 +136,7 @@ export const translations = {
     "nav.students": "छात्र",
     "nav.trainees": "प्रशिक्षु",
     "nav.quizMonitoring": "क्विज़ मॉनिटरिंग",
+    "nav.testPaper": "टेस्ट पेपर",
     "nav.attemptRequests": "प्रयास अनुरोध",
     "nav.moduleTimelines": "मॉड्यूल टाइमलाइन",
     "nav.courseLevelSettings": "कोर्स स्तर सेटिंग्स",
@@ -168,6 +175,7 @@ export const translations = {
     "nav.systemHealth": "सिस्टम स्थिति",
     "nav.dataManagement": "डेटा प्रबंधन",
     "nav.skillMatrix": "कौशल मैट्रिक्स",
+    "nav.multiSkilling": "मल्टी स्किलिंग",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "प्रशासक जानकारी",
@@ -226,6 +234,7 @@ export const translations = {
     "nav.students": "受講者",
     "nav.trainees": "研修生",
     "nav.quizMonitoring": "クイズ監視",
+    "nav.testPaper": "テストペーパー",
     "nav.attemptRequests": "受験リクエスト",
     "nav.moduleTimelines": "モジュールタイムライン",
     "nav.courseLevelSettings": "コースレベル設定",
@@ -264,6 +273,7 @@ export const translations = {
     "nav.systemHealth": "システム状態",
     "nav.dataManagement": "データ管理",
     "nav.skillMatrix": "スキルマトリックス",
+    "nav.multiSkilling": "マルチスキリング",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理者情報",
@@ -322,6 +332,7 @@ export const translations = {
     "nav.students": "学员",
     "nav.trainees": "实习生",
     "nav.quizMonitoring": "测验监控",
+    "nav.testPaper": "试卷",
     "nav.attemptRequests": "尝试请求",
     "nav.moduleTimelines": "模块时间线",
     "nav.courseLevelSettings": "课程级别设置",
@@ -360,6 +371,7 @@ export const translations = {
     "nav.systemHealth": "系统状态",
     "nav.dataManagement": "数据管理",
     "nav.skillMatrix": "技能矩阵",
+    "nav.multiSkilling": "多技能",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理员信息",
@@ -418,6 +430,7 @@ export const translations = {
     "nav.students": "Студенты",
     "nav.trainees": "Стажер",
     "nav.quizMonitoring": "Мониторинг викторин",
+    "nav.testPaper": "Тестовая бумага",
     "nav.attemptRequests": "Запросы попыток",
     "nav.moduleTimelines": "Таймлайны модулей",
     "nav.courseLevelSettings": "Настройки уровня курса",
@@ -456,6 +469,7 @@ export const translations = {
     "nav.systemHealth": "Состояние системы",
     "nav.dataManagement": "Управление данными",
     "nav.skillMatrix": "Матрица навыков",
+    "nav.multiSkilling": "Мультискиллинг",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "Информация об администраторе",

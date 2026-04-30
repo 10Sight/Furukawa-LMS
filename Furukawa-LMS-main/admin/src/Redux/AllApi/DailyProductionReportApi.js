@@ -40,13 +40,49 @@ export const DailyProductionReportApi = createApi({
             }),
             invalidatesTags: ["DailyProductionReportConfig"],
         }),
-
+        checkDailyProductionReport: builder.mutation({
+            query: (data) => ({
+                url: "/api/daily-production-report/check",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ["DailyProductionReport"],
+        }),
         getDPRConfigHistory: builder.query({
             query: (departmentId) => ({
                 url: `/api/daily-production-report/history/${departmentId}`,
                 method: "GET",
             }),
             providesTags: ["DailyProductionReportConfigHistory"],
+        }),
+        listDailyProductionReports: builder.query({
+            query: (params) => ({
+                url: "/api/daily-production-report/list",
+                method: "GET",
+                params,
+            }),
+            providesTags: ["DailyProductionReport"],
+        }),
+        deleteDailyProductionReport: builder.mutation({
+            query: (id) => ({
+                url: `/api/daily-production-report/${id}`,
+                method: "DELETE",
+            }),
+            invalidatesTags: ["DailyProductionReport"],
+        }),
+        getManpowerStats: builder.query({
+            query: (params) => ({
+                url: "/api/daily-production-report/manpower-stats",
+                method: "GET",
+                params, // { date, shift, subSectionIds }
+            }),
+        }),
+        getBatchMachineAssignments: builder.query({
+            query: (params) => ({
+                url: "/api/daily-production-report/machine-assignments",
+                method: "GET",
+                params, // { machineIds, date, shift }
+            }),
         }),
     }),
 });
@@ -55,7 +91,14 @@ export const {
     useGetDailyProductionReportQuery,
     useLazyGetDailyProductionReportQuery,
     useSaveDailyProductionReportMutation,
+    useCheckDailyProductionReportMutation,
     useGetDPRConfigQuery,
     useSaveDPRConfigMutation,
     useGetDPRConfigHistoryQuery,
+    useListDailyProductionReportsQuery,
+    useDeleteDailyProductionReportMutation,
+    useGetManpowerStatsQuery,
+    useLazyGetManpowerStatsQuery,
+    useGetBatchMachineAssignmentsQuery,
+    useLazyGetBatchMachineAssignmentsQuery,
 } = DailyProductionReportApi;

@@ -33,20 +33,31 @@ const LandingPage = () => {
     React.useEffect(() => {
         if (!user || user.role !== 'CUSTOM') return;
 
-        const layout = user.customRole?.targetLayout?.toLowerCase();
-        if (!layout) return;
+        const allowed = user.customRole?.allowedPages || [];
+        const allowedPages = typeof allowed === 'string' ? JSON.parse(allowed) : allowed;
+        const hasLandingAccess = allowedPages.includes('landing-page');
 
-        const target = {
-            'trainer': '/trainer',
-            'instructor': '/trainer',
-            'student': '/student',
-            'employee': '/student',
-            'admin': '/dashboard',
-            'cms': '/cms'
-        }[layout];
+        // If landing page is NOT allowed, redirect to workspace
+        if (!hasLandingAccess) {
+            const layout = user.customRole?.targetLayout?.toLowerCase();
+            if (!layout) {
+                navigate('/portal', { replace: true });
+                return;
+            }
 
-        if (target && pathname !== target) {
-            navigate(target, { replace: true });
+            const target = {
+                'trainer': '/trainer',
+                'instructor': '/trainer',
+                'student': '/student',
+                'employee': '/student',
+                'admin': '/admin',
+                'cms': '/cms',
+                'custom': '/portal'
+            }[layout] || '/portal';
+
+            if (pathname !== target) {
+                navigate(target, { replace: true });
+            }
         }
     }, [user, navigate, pathname]);
 

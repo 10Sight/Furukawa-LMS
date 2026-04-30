@@ -173,29 +173,63 @@ class Section {
     }
 
     static async findByDepartment(departmentId) {
-        const query = `
-            SELECT s.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.sectionId = s.id 
-                OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id)
-                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id))
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    JOIN sub_sections ss ON m.subSectionId = ss.id 
-                    JOIN [lines] l ON ss.lineId = l.id 
-                    WHERE l.sectionId = s.id
-                )
-             )
-            ) as sectionCount
-            FROM [sections] s 
-            WHERE s.departmentId = ? 
-            ORDER BY s.createdAt DESC`;
-        const [rows] = await executeQuery(query, [departmentId]);
+        let query;
+        let params = [];
+        
+        if (typeof departmentId === 'string' && departmentId.includes(',')) {
+            // Handle multiple IDs
+            const ids = departmentId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+            if (ids.length === 0) return [];
+            query = `
+                SELECT s.*, 
+                (SELECT COUNT(DISTINCT u.id) 
+                 FROM users u
+                 WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+                 AND (
+                    u.sectionId = s.id 
+                    OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id)
+                    OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id))
+                    OR u.id IN (
+                        SELECT ma.user_id 
+                        FROM machine_assignments ma 
+                        JOIN machines m ON ma.machine_id = m.id 
+                        JOIN sub_sections ss ON m.subSectionId = ss.id 
+                        JOIN [lines] l ON ss.lineId = l.id 
+                        WHERE l.sectionId = s.id
+                    )
+                 )
+                ) as sectionCount
+                FROM [sections] s 
+                WHERE s.departmentId IN (${ids.join(',')}) 
+                ORDER BY s.createdAt DESC`;
+        } else {
+            // Handle single ID
+            query = `
+                SELECT s.*, 
+                (SELECT COUNT(DISTINCT u.id) 
+                 FROM users u
+                 WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+                 AND (
+                    u.sectionId = s.id 
+                    OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id)
+                    OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id))
+                    OR u.id IN (
+                        SELECT ma.user_id 
+                        FROM machine_assignments ma 
+                        JOIN machines m ON ma.machine_id = m.id 
+                        JOIN sub_sections ss ON m.subSectionId = ss.id 
+                        JOIN [lines] l ON ss.lineId = l.id 
+                        WHERE l.sectionId = s.id
+                    )
+                 )
+                ) as sectionCount
+                FROM [sections] s 
+                WHERE s.departmentId = ? 
+                ORDER BY s.createdAt DESC`;
+            params = [departmentId];
+        }
+
+        const [rows] = await executeQuery(query, params);
         return rows.map(row => new Section(row));
     }
 

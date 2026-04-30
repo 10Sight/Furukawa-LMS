@@ -183,11 +183,21 @@ class User {
                 await migrationHelper.ensureColumnExists('users', col.name, col.type);
             }
 
+            // Create index for departmentId to optimize lookups
+            try {
+                const [existsDeptIdx] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'idx_users_departmentId'");
+                if (existsDeptIdx.length === 0) {
+                    await executeQuery("CREATE INDEX idx_users_departmentId ON users(departmentId)");
+                }
+            } catch (err) {
+                console.error("Migration error for departmentId index:", err);
+            }
+
             // Ensure phoneNumber is nullable and has filtered index
             try {
                 // 1. Drop existing unique indexes/constraints on phoneNumber first
                 const [idxRows] = await executeQuery(`
-                    SELECT i.name 
+                    SELECT i.name, i.is_unique_constraint
                     FROM sys.indexes i
                     JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
                     JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
@@ -197,21 +207,29 @@ class User {
                     AND c.name = 'phoneNumber'
                 `);
 
-                // Hardcode drop for the known index just in case the query misses it
-                try { await executeQuery("DROP INDEX [UQ_users_phoneNumber_Filtered] ON [users]"); } catch (e) { }
-                try { await executeQuery("ALTER TABLE [users] DROP CONSTRAINT [UQ_users_phoneNumber]"); } catch (e) { }
-
                 for (const row of idxRows) {
                     try {
-                        await executeQuery(`DROP INDEX [${row.name}] ON [users]`);
-                    } catch (e) {
-                        try {
+                        if (row.is_unique_constraint) {
                             await executeQuery(`ALTER TABLE [users] DROP CONSTRAINT [${row.name}]`);
-                        } catch (e2) {
-                            console.error(`Failed to drop constraint/index ${row.name}:`, e2.message);
+                        } else {
+                            await executeQuery(`DROP INDEX [${row.name}] ON [users]`);
                         }
+                    } catch (e) {
+                        console.error(`Failed to drop dependency ${row.name}:`, e.message);
                     }
                 }
+
+                // Explicitly drop any remaining index or statistics with the problematic name
+                await executeQuery(`
+                    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'UQ_users_phoneNumber_Filtered' AND object_id = OBJECT_ID('users'))
+                        DROP INDEX UQ_users_phoneNumber_Filtered ON users;
+                    IF EXISTS (SELECT * FROM sys.stats WHERE name = 'UQ_users_phoneNumber_Filtered' AND object_id = OBJECT_ID('users'))
+                        DROP STATISTICS users.UQ_users_phoneNumber_Filtered;
+                    IF EXISTS (SELECT * FROM sys.objects WHERE name = 'UQ_users_phoneNumber_Filtered' AND parent_object_id = OBJECT_ID('users') AND type = 'UQ')
+                        ALTER TABLE users DROP CONSTRAINT UQ_users_phoneNumber_Filtered;
+                `);
+                
+                try { await executeQuery("ALTER TABLE [users] DROP CONSTRAINT [UQ_users_phoneNumber]"); } catch (e) { }
 
                 // 2. Make column nullable
                 await executeQuery("ALTER TABLE users ALTER COLUMN phoneNumber NVARCHAR(50) NULL");
@@ -406,7 +424,53 @@ class User {
                    cr.name as cr_name, cr.description as cr_description, 
                    cr.color as cr_color, cr.allowedPages as cr_allowedPages,
                    cr.permissions as cr_permissions, cr.generateManagementPage as cr_generateManagementPage,
-                   cr.targetLayout as cr_targetLayout
+                   cr.targetLayout as cr_targetLayout,
+                    (SELECT 
+                         data.machineId, data.stationName, 
+                         data.subSectionId, data.subSectionName, 
+                         data.lineId, data.lineName, 
+                         data.sectionId, data.sectionName, 
+                         data.departmentId, data.deptName,
+                         data.assigned_at
+                     FROM (
+                        -- Current Primary Station from Users table
+                        SELECT 
+                            m.id as machineId, m.name as stationName, 
+                            ss.id as subSectionId, ss.name as subSectionName, 
+                            l.id as lineId, l.name as lineName, 
+                            s.id as sectionId, s.name as sectionName, 
+                            d.id as departmentId, d.name as deptName,
+                            u.updatedAt as assigned_at
+                        FROM users u2
+                        JOIN machines m ON u2.stationId = m.id
+                        LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+                        LEFT JOIN [lines] l ON ss.lineId = l.id
+                        LEFT JOIN [sections] s ON l.sectionId = s.id
+                        LEFT JOIN departments d ON s.departmentId = d.id
+                        WHERE u2.id = u.id AND u2.stationId IS NOT NULL
+
+                        UNION ALL
+
+                        -- Other Assignments from Junction Table
+                        SELECT 
+                            m.id as machineId, m.name as stationName, 
+                            ss.id as subSectionId, ss.name as subSectionName, 
+                            l.id as lineId, l.name as lineName, 
+                            s.id as sectionId, s.name as sectionName, 
+                            d.id as departmentId, d.name as deptName,
+                            ma.assigned_at
+                        FROM machine_assignments ma
+                        JOIN machines m ON ma.machine_id = m.id
+                        LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+                        LEFT JOIN [lines] l ON ss.lineId = l.id
+                        LEFT JOIN [sections] s ON l.sectionId = s.id
+                        LEFT JOIN departments d ON s.departmentId = d.id
+                        WHERE ma.user_id = u.id
+                        -- Filter out the one already added if it's the same
+                        AND NOT EXISTS (SELECT 1 FROM users u3 WHERE u3.id = u.id AND u3.stationId = ma.machine_id)
+                     ) data
+                     ORDER BY data.assigned_at ASC
+                     FOR JSON PATH) as assignments
             FROM users u
             OUTER APPLY (
                 SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 

@@ -39,6 +39,7 @@ import {
   IconUserPlus,
   IconSun,
   IconMoon,
+  IconFileText,
 } from "@tabler/icons-react";
 import { HomeIcon } from "lucide-react";
 import useTranslate from "@/hooks/useTranslate";
@@ -70,6 +71,7 @@ const tabs = [
       { link: "/superadmin/course-level-settings", labelKey: "nav.courseLevelSettings", icon: IconLayersIntersect },
       { link: "/superadmin/student-levels", labelKey: "nav.studentLevels", icon: IconSettings },
       { link: "/superadmin/certificates", labelKey: "nav.certificates", icon: IconCertificate },
+      { link: "/superadmin/test-paper", labelKey: "nav.testPaper", icon: IconFileText },
     ]
   },
   {
@@ -173,7 +175,7 @@ export function SuperAdminLayout() {
     <div className={`flex min-h-screen ${theme.mainBg}`}>
       {/* Sidebar */}
       <nav
-        className={`fixed top-0 left-0 h-screen ${theme.card} backdrop-blur-xl border-r ${theme.border} ${theme.textMain} shadow-2xl transition-all duration-300 z-20
+        className={`fixed top-0 left-0 h-screen ${theme.card} backdrop-blur-xl border-r ${theme.border} ${theme.textMain} shadow-2xl transition-all duration-300 z-20 flex flex-col
                 ${collapsed ? "w-16" : "w-64"} `}
       >
         <div
@@ -192,7 +194,7 @@ export function SuperAdminLayout() {
         </div>
 
         {/* Sidebar Tabs */}
-        <div className="px-2 flex flex-col w-full py-4 space-y-1 overflow-y-auto max-h-[calc(100vh-8rem)]">
+        <div className="px-2 flex-1 py-4 space-y-1 overflow-y-auto min-h-0">
           {translatedTabs.map((category) => (
             <div key={category.category} className="mb-4">
               {!collapsed && (
@@ -211,7 +213,7 @@ export function SuperAdminLayout() {
 
                   return (
                     <div
-                      className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-10 rounded-xl transition-all duration-300 hover:scale-[1.02]
+                      className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-10 rounded-xl transition-all duration-300 hover:scale-[1.02] shrink-0
                       ${isActive
                           ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-200"
                           : "text-gray-600 hover:bg-gradient-to-r hover:from-purple-50 hover:to-blue-50 hover:text-purple-700 hover:shadow-md"
@@ -249,7 +251,7 @@ export function SuperAdminLayout() {
         </div>
 
         {/* Logout */}
-        <div className="absolute bottom-4 w-full px-2">
+        <div className="w-full px-2 pb-4 pt-2 border-t border-gray-100 shrink-0">
           <div
             className={`p-2 flex items-center rounded-lg w-full transition-all duration-200 ${isLoading
               ? "opacity-50 cursor-not-allowed bg-gray-100"

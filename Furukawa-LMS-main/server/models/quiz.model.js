@@ -2,6 +2,8 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { slugify } from "../utils/slugify.js";
 import logger from "../logger/winston.logger.js";
 
+import migrationHelper from "../db/migrationHelper.js";
+
 class Quiz {
     constructor(data) {
         this.id = data.id;
@@ -33,6 +35,10 @@ class Quiz {
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
+
+        // Multi-department and section support
+        this.departmentId = typeof data.departmentId === 'string' ? JSON.parse(data.departmentId || "[]") : (data.departmentId || []);
+        this.sectionId = typeof data.sectionId === 'string' ? JSON.parse(data.sectionId || "[]") : (data.sectionId || []);
     }
 
     calculateType() {
@@ -63,41 +69,81 @@ class Quiz {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='quizzes' and xtype='U')
-            BEGIN
-            CREATE TABLE quizzes (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                title NVARCHAR(255) NOT NULL,
-                slug NVARCHAR(255) UNIQUE,
-                description NVARCHAR(MAX),
-                questions NVARCHAR(MAX),
-                passingScore INT NOT NULL,
-                timeLimit INT,
-                createdBy NVARCHAR(255) NOT NULL,
-                isPublished BIT DEFAULT 0,
-                attemptsAllowed INT DEFAULT 1,
-                skillUpgradation NVARCHAR(MAX),
-                issueCertificate BIT DEFAULT 1,
-                courseId NVARCHAR(255),
-                course NVARCHAR(255),
-                moduleId NVARCHAR(255),
-                module NVARCHAR(255),
-                lesson NVARCHAR(255),
-                lessonId NVARCHAR(255),
-                type NVARCHAR(50),
-                scope NVARCHAR(50),
-                createdAt DATETIME DEFAULT GETDATE(),
-                updatedAt DATETIME DEFAULT GETDATE()
-            );
-            CREATE INDEX idx_quiz_course ON quizzes(course);
-            CREATE INDEX idx_quiz_module ON quizzes(module);
-            END
-        `;
-        try {
-            await executeQuery(query);
-        } catch (error) {
-            logger.error("Failed to initialize Quiz table", error);
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                const query = `
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'quizzes')
+                    BEGIN
+                        CREATE TABLE quizzes (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            title NVARCHAR(255) NOT NULL,
+                            slug NVARCHAR(255) UNIQUE,
+                            description NVARCHAR(MAX),
+                            questions NVARCHAR(MAX),
+                            passingScore INT NOT NULL,
+                            timeLimit INT,
+                            createdBy NVARCHAR(255) NOT NULL,
+                            isPublished BIT DEFAULT 0,
+                            attemptsAllowed INT DEFAULT 1,
+                            skillUpgradation NVARCHAR(MAX),
+                            issueCertificate BIT DEFAULT 1,
+                            courseId NVARCHAR(255),
+                            course NVARCHAR(255),
+                            moduleId NVARCHAR(255),
+                            module NVARCHAR(255),
+                            lesson NVARCHAR(255),
+                            lessonId NVARCHAR(255),
+                            type NVARCHAR(50),
+                            scope NVARCHAR(50),
+                            departmentId NVARCHAR(MAX),
+                            sectionId NVARCHAR(MAX),
+                            createdAt DATETIME DEFAULT GETDATE(),
+                            updatedAt DATETIME DEFAULT GETDATE()
+                        );
+                        CREATE INDEX idx_quiz_course ON quizzes(course);
+                        CREATE INDEX idx_quiz_module ON quizzes(module);
+                    END
+                `;
+                await executeQuery(query);
+                
+                // Manual migration check for columns using INFORMATION_SCHEMA
+                const columns = [
+                    { name: 'departmentId', type: 'NVARCHAR(MAX)' },
+                    { name: 'sectionId', type: 'NVARCHAR(MAX)' }
+                ];
+
+                for (const col of columns) {
+                    const checkColQuery = `
+                        IF NOT EXISTS (
+                            SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                            WHERE TABLE_NAME = 'quizzes' AND COLUMN_NAME = '${col.name}'
+                        )
+                        BEGIN
+                            ALTER TABLE [quizzes] ADD [${col.name}] ${col.type}
+                        END
+                    `;
+                    await executeQuery(checkColQuery);
+                }
+
+                // Ensure correct types
+                await migrationHelper.ensureColumnType('quizzes', 'departmentId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('quizzes', 'sectionId', 'NVARCHAR(MAX)');
+                
+                logger.info("Quiz table initialized successfully");
+                break; // Success
+            } catch (error) {
+                if (error.message.toLowerCase().includes('deadlock') && attempts < maxAttempts) {
+                    logger.warn(`Quiz table initialization deadlock (attempt ${attempts}), retrying in 500ms...`);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } else {
+                    logger.error("Failed to initialize Quiz table", error);
+                    break;
+                }
+            }
         }
     }
 
@@ -121,14 +167,14 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "createdAt"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "createdAt"
         ];
 
         if (!quiz.createdAt) quiz.createdAt = new Date();
 
         const values = fields.map(field => {
             let val = quiz[field];
-            if (field === 'questions') return JSON.stringify(val);
+            if (field === 'questions' || field === 'departmentId' || field === 'sectionId') return JSON.stringify(val || []);
             if (val === undefined) return null;
             return val;
         });
@@ -210,13 +256,13 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope"
+            "lessonId", "type", "scope", "departmentId", "sectionId"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => {
             let val = this[field];
-            if (field === 'questions') return JSON.stringify(val);
+            if (field === 'questions' || field === 'departmentId' || field === 'sectionId') return JSON.stringify(val || []);
             return val;
         });
         values.push(this.id);

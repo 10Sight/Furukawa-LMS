@@ -7,6 +7,7 @@ import {
     getAllDepartments,
     getAllDepartmentsProgress,
     getDepartmentById,
+    getDepartmentTrainees,
     updateDepartment,
     deleteDepartment,
     removeInstructor,
@@ -65,6 +66,7 @@ router.get("/progress/all", verifyJWT, authorizeRoles("isAdmin", "isTrainer", "S
 // General routes
 router.get("/", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getAllDepartments);
 router.get("/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentById);
+router.get("/:id/trainees", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentTrainees);
 router.get("/:id/progress", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentProgress);
 router.get("/:id/submissions", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentSubmissions);
 router.get("/:id/attempts", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentAttempts);
@@ -101,10 +103,10 @@ router.post("/cleanup/scheduler/restart", verifyJWT, authorizeRoles("SUPERADMIN"
 router.post("/cleanup/warnings/send", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), sendManualCleanupWarning);
 
 // Handover Sheet
-router.get("/:id/handover-sheet", verifyJWT, authorizeRoles("isAdmin", "isTrainer", "isEmployee"), getHandoverSheet);
-router.post("/:id/handover-sheet", verifyJWT, authorizeRoles("isAdmin", "isTrainer"), saveHandoverSheet);
-router.get("/handover-sheet/config/:id", verifyJWT, authorizeRoles("isAdmin", "isTrainer"), getHandoverSheetConfig);
-router.post("/handover-sheet/config/save", verifyJWT, authorizeRoles("isAdmin", "isTrainer"), saveHandoverSheetConfig);
-router.get("/handover-sheet/history/:id", verifyJWT, authorizeRoles("isAdmin", "isTrainer"), getHandoverSheetHistory);
+router.get("/:id/handover-sheet", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheet);
+router.post("/:id/handover-sheet", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE]), saveHandoverSheet);
+router.get("/handover-sheet/config/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetConfig);
+router.post("/handover-sheet/config/save", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT]), saveHandoverSheetConfig);
+router.get("/handover-sheet/history/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetHistory);
 
 export default router;

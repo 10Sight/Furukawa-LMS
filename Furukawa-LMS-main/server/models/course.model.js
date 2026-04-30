@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import { slugify } from "../utils/slugify.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class Course {
@@ -27,6 +28,8 @@ class Course {
         this.assignments = typeof data.assignments === 'string' ? JSON.parse(data.assignments) : (data.assignments || []);
         this.resources = typeof data.resources === 'string' ? JSON.parse(data.resources) : (data.resources || []);
         this.isDeleted = !!data.isDeleted;
+        this.departmentId = typeof data.departmentId === 'string' ? JSON.parse(data.departmentId || "[]") : (data.departmentId || []);
+        this.sectionId = typeof data.sectionId === 'string' ? JSON.parse(data.sectionId || "[]") : (data.sectionId || []);
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -38,43 +41,84 @@ class Course {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'courses')
-            BEGIN
-                CREATE TABLE courses (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    title NVARCHAR(255) NOT NULL,
-                    description NVARCHAR(MAX),
-                    thumbnail NVARCHAR(MAX),
-                    category NVARCHAR(255) NOT NULL,
-                    tags NVARCHAR(MAX),
-                    instructor INT NOT NULL,
-                    students NVARCHAR(MAX),
-                    price DECIMAL(10, 2) DEFAULT 0,
-                    difficulty NVARCHAR(50) DEFAULT 'BEGGINER',
-                    status NVARCHAR(50) DEFAULT 'DRAFT',
-                    modules NVARCHAR(MAX),
-                    reviews NVARCHAR(MAX),
-                    totalEnrollments INT DEFAULT 0,
-                    averageRating DECIMAL(3, 2) DEFAULT 0,
-                    slug NVARCHAR(255) UNIQUE,
-                    createdBy INT,
-                    quizzes NVARCHAR(MAX),
-                    assignments NVARCHAR(MAX),
-                    resources NVARCHAR(MAX),
-                    isDeleted BIT DEFAULT 0,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                );
-                CREATE INDEX idx_instructor ON courses(instructor);
-                CREATE INDEX idx_category ON courses(category);
-                CREATE INDEX idx_status ON courses(status);
-            END
-        `;
-        try {
-            await executeQuery(query);
-        } catch (error) {
-            logger.error("Failed to initialize Course table", error);
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                const query = `
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'courses')
+                    BEGIN
+                        CREATE TABLE courses (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            title NVARCHAR(255) NOT NULL,
+                            description NVARCHAR(MAX),
+                            thumbnail NVARCHAR(MAX),
+                            category NVARCHAR(255) NOT NULL,
+                            tags NVARCHAR(MAX),
+                            instructor INT NOT NULL,
+                            students NVARCHAR(MAX),
+                            price DECIMAL(10, 2) DEFAULT 0,
+                            difficulty NVARCHAR(50) DEFAULT 'BEGGINER',
+                            status NVARCHAR(50) DEFAULT 'DRAFT',
+                            modules NVARCHAR(MAX),
+                            reviews NVARCHAR(MAX),
+                            totalEnrollments INT DEFAULT 0,
+                            averageRating DECIMAL(3, 2) DEFAULT 0,
+                            slug NVARCHAR(255) UNIQUE,
+                            createdBy INT,
+                            quizzes NVARCHAR(MAX),
+                            assignments NVARCHAR(MAX),
+                            resources NVARCHAR(MAX),
+                            departmentId NVARCHAR(MAX),
+                            sectionId NVARCHAR(MAX),
+                            isDeleted BIT DEFAULT 0,
+                            createdAt DATETIME DEFAULT GETDATE(),
+                            updatedAt DATETIME DEFAULT GETDATE()
+                        );
+                        CREATE INDEX idx_instructor ON courses(instructor);
+                        CREATE INDEX idx_category ON courses(category);
+                        CREATE INDEX idx_status ON courses(status);
+                    END
+                `;
+                await executeQuery(query);
+                
+                // Manual migration check for columns using INFORMATION_SCHEMA
+                const columns = [
+                    { name: 'departmentId', type: 'NVARCHAR(MAX)' },
+                    { name: 'sectionId', type: 'NVARCHAR(MAX)' },
+                    { name: 'isDeleted', type: 'BIT DEFAULT 0' }
+                ];
+
+                for (const col of columns) {
+                    const checkColQuery = `
+                        IF NOT EXISTS (
+                            SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                            WHERE TABLE_NAME = 'courses' AND COLUMN_NAME = '${col.name}'
+                        )
+                        BEGIN
+                            ALTER TABLE [courses] ADD [${col.name}] ${col.type}
+                        END
+                    `;
+                    await executeQuery(checkColQuery);
+                }
+
+                // Ensure correct types
+                await migrationHelper.ensureColumnType('courses', 'departmentId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('courses', 'sectionId', 'NVARCHAR(MAX)');
+                
+                logger.info("Course table initialized successfully");
+                break; // Success
+            } catch (error) {
+                if (error.message.toLowerCase().includes('deadlock') && attempts < maxAttempts) {
+                    logger.warn(`Course table initialization deadlock (attempt ${attempts}), retrying in 500ms...`);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } else {
+                    logger.error("Failed to initialize Course table", error);
+                    break;
+                }
+            }
         }
     }
 
@@ -97,14 +141,15 @@ class Course {
             "title", "description", "thumbnail", "category", "tags",
             "instructor", "students", "price", "difficulty", "status",
             "modules", "reviews", "totalEnrollments", "averageRating",
-            "slug", "createdBy", "quizzes", "assignments", "resources", "isDeleted", "createdAt"
+            "slug", "createdBy", "quizzes", "assignments", "resources", 
+            "departmentId", "sectionId", "isDeleted", "createdAt"
         ];
 
         if (!course.createdAt) course.createdAt = new Date();
 
         const values = fields.map(field => {
             let val = course[field];
-            if (['thumbnail', 'tags', 'students', 'modules', 'reviews', 'quizzes', 'assignments', 'resources'].includes(field)) {
+            if (['thumbnail', 'tags', 'students', 'modules', 'reviews', 'quizzes', 'assignments', 'resources', 'departmentId', 'sectionId'].includes(field)) {
                 return JSON.stringify(val);
             }
             if (val === undefined) return null;
@@ -185,13 +230,14 @@ class Course {
             "title", "description", "thumbnail", "category", "tags",
             "instructor", "students", "price", "difficulty", "status",
             "modules", "reviews", "totalEnrollments", "averageRating",
-            "slug", "createdBy", "quizzes", "assignments", "resources", "isDeleted"
+            "slug", "createdBy", "quizzes", "assignments", "resources",
+            "departmentId", "sectionId", "isDeleted"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => {
             let val = this[field];
-            if (['thumbnail', 'tags', 'students', 'modules', 'reviews', 'quizzes', 'assignments', 'resources'].includes(field)) {
+            if (['thumbnail', 'tags', 'students', 'modules', 'reviews', 'quizzes', 'assignments', 'resources', 'departmentId', 'sectionId'].includes(field)) {
                 return JSON.stringify(val);
             }
             return val;

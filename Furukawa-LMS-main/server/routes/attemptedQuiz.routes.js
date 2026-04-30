@@ -23,9 +23,9 @@ const router = Router();
 router.post("/", verifyJWT, authorizeRoles("isEmployee"), attemptQuiz);
 
 // New quiz flow routes - put specific routes BEFORE generic ones
-router.get("/start/:quizId", verifyJWT, authorizeRoles("isEmployee"), startQuiz);
-router.post("/submit", verifyJWT, authorizeRoles("isEmployee"), submitQuiz);
-router.get("/status/:quizId", verifyJWT, authorizeRoles("isEmployee"), getQuizAttemptStatus);
+router.get("/start/:quizId", verifyJWT, authorizeRoles("isEmployee", "isTrainer", "isAdmin"), startQuiz);
+router.post("/submit", verifyJWT, authorizeRoles("isEmployee", "isTrainer", "isAdmin"), submitQuiz);
+router.get("/status/:quizId", verifyJWT, authorizeRoles("isEmployee", "isTrainer", "isAdmin"), getQuizAttemptStatus);
 
 // Extra attempt requests
 router.post("/extra-requests", verifyJWT, authorizeRoles("isEmployee"), requestExtraAttempt);

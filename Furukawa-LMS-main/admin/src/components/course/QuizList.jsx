@@ -140,10 +140,43 @@ const QuizList = ({ quizzes, courseId, onRefetch, modules = [] }) => {
                     📚 {getModuleName(quiz.moduleId)}
                   </Badge>
                 )}
+                {quiz.timeLimit && (
+                  <div className="flex items-center gap-1">
+                    <IconClock className="h-4 w-4" />
+                    <span>{quiz.timeLimit} mins</span>
+                  </div>
+                )}
+                {quiz.attemptsAllowed !== undefined && (
+                  <div className="flex items-center gap-1">
+                    <span>Attempts: {quiz.attemptsAllowed === 0 ? "Unlimited" : quiz.attemptsAllowed}</span>
+                  </div>
+                )}
                 {quiz.passingScore && (
                   <Badge variant="outline">
                     Passing: {quiz.passingScore}%
                   </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {quiz.departmentId && quiz.departmentId.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-[10px] text-muted-foreground uppercase mr-1 flex items-center">Depts:</span>
+                    {quiz.departmentId.map((id, idx) => (
+                      <Badge key={idx} variant="outline" className="text-[9px] bg-blue-50/50 text-blue-700 border-blue-200">
+                        {id}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {quiz.sectionId && quiz.sectionId.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-[10px] text-muted-foreground uppercase mr-1 flex items-center">Sections:</span>
+                    {quiz.sectionId.map((id, idx) => (
+                      <Badge key={idx} variant="outline" className="text-[9px] bg-gray-50 text-gray-700 border-gray-200">
+                        {id}
+                      </Badge>
+                    ))}
+                  </div>
                 )}
               </div>
             </CardContent>

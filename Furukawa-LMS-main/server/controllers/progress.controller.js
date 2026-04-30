@@ -11,6 +11,7 @@ import TenCycleCheck from "../models/tenCycleCheck.model.js";
 import ThreeDayMonitoring from "../models/threeDayMonitoring.model.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import NotificationService from "../services/notification.service.js";
+import logger from "../logger/winston.logger.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -39,6 +40,7 @@ const resolveStudentId = async (studentId) => {
 };
 
 const getStudentAssignedMachineLine = async (studentId) => {
+    // 1. Try machine_assignments first (latest active assignment)
     const [rows] = await executeQuery(`
         SELECT TOP 1 m.name AS processName, l.name AS lineName, l.lineLeader AS lineLeader
         FROM machine_assignments ma
@@ -48,7 +50,18 @@ const getStudentAssignedMachineLine = async (studentId) => {
         ORDER BY ma.assigned_at DESC, ma.id DESC
     `, [studentId]);
 
-    return rows[0] || { processName: "", lineName: "", lineLeader: "" };
+    if (rows.length > 0) return rows[0];
+
+    // 2. Fallback: Check user profile directly (handles direct assignments)
+    const [fallbackRows] = await executeQuery(`
+        SELECT m.name AS processName, l.name AS lineName, l.lineLeader AS lineLeader
+        FROM users u
+        LEFT JOIN machines m ON u.stationId = m.id
+        LEFT JOIN [lines] l ON u.lineId = l.id
+        WHERE u.id = ?
+    `, [studentId]);
+
+    return fallbackRows[0] || { processName: "", lineName: "", lineLeader: "" };
 };
 
 export const initializeProgress = asyncHandler(async (req, res) => {
@@ -1036,6 +1049,8 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
     const student = userRows[0];
 
     if (!data) {
+        const lineLeaderStr = assignmentInfo.lineLeader || "";
+        const lineLeaderOptions = lineLeaderStr.split(',').map(s => s.trim()).filter(Boolean);
         return res.status(200).json(
             new ApiResponse(200, {
                 isNew: true,
@@ -1044,14 +1059,16 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
                 departmentId: student?.departmentId || null,
                 processName: assignmentInfo.processName || "",
                 lineName: assignmentInfo.lineName || "",
-                lineLeader: assignmentInfo.lineLeader || "",
+                lineLeader: lineLeaderStr,
+                lineLeaderOptions,
             }, "No record found")
         );
     }
 
     const resolvedProcessName = data.processName || assignmentInfo.processName || "";
     const resolvedLineName = data.lineName || assignmentInfo.lineName || "";
-    const resolvedLineLeader = assignmentInfo.lineLeader || "";
+    const lineLeaderStr = assignmentInfo.lineLeader || "";
+    const lineLeaderOptions = lineLeaderStr.split(',').map(s => s.trim()).filter(Boolean);
 
     return res.status(200).json(
         new ApiResponse(200, {
@@ -1061,7 +1078,8 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
             departmentId: student?.departmentId || null,
             processName: resolvedProcessName,
             lineName: resolvedLineName,
-            lineLeader: resolvedLineLeader,
+            lineLeader: lineLeaderStr,
+            lineLeaderOptions,
             isNew: false,
         }, "3 Day Monitoring fetched successfully")
     );
@@ -1073,12 +1091,17 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
     const {
-        processName, lineName, entries, evaluation,
-        checkedBy, verifiedBy, approvedBy
+        headerInfo, gridData, footerData, status
     } = req.body;
-    const assignmentInfo = await getStudentAssignedMachineLine(sid);
-    const finalProcessName = processName || assignmentInfo.processName || "";
-    const finalLineName = lineName || assignmentInfo.lineName || "";
+
+    const finalProcessName = headerInfo?.processName || "";
+    const finalLineName = headerInfo?.lineName || "";
+    const entries = gridData || {};
+    const evaluation = footerData || {};
+    const checkedBy = footerData?.checkedByName || "";
+    const verifiedBy = footerData?.verifiedByName || "";
+    const approvedBy = footerData?.approvedByName || "";
+    const targetStatus = status || "Draft";
 
     let sheet = await ThreeDayMonitoring.findByStudentId(sid);
 
@@ -1090,7 +1113,9 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
         sheet.checkedBy = checkedBy;
         sheet.verifiedBy = verifiedBy;
         sheet.approvedBy = approvedBy;
-        sheet.updatedBy = req.user?.name;
+        sheet.status = targetStatus;
+        sheet.updatedBy = req.user?.fullName || req.user?.userName;
+        logger.info(`[3Day] Updating existing sheet for sid: ${sid} by ${sheet.updatedBy}`);
         await sheet.save();
     } else {
         sheet = await ThreeDayMonitoring.create({
@@ -1102,8 +1127,10 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
             checkedBy,
             verifiedBy,
             approvedBy,
-            createdBy: req.user?.name
+            status: targetStatus,
+            createdBy: req.user?.fullName || req.user?.userName
         });
+        logger.info(`[3Day] Created new sheet for sid: ${sid} by ${sheet.createdBy}`);
     }
 
     // Trigger Email Notification

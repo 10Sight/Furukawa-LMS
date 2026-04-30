@@ -391,14 +391,37 @@ export const removeEmployee = asyncHandler(async (req, res) => {
         throw new ApiError("Assignment not found", 404);
     }
 
-    // Sync back to User record - clear stationId
+    // Sync back to User record - if we removed the primary station, promote another one
     try {
-        await executeQuery(
-            "UPDATE users SET stationId = NULL WHERE id = ? AND stationId = ?",
-            [userId, machineId]
-        );
+        const [userCheck] = await executeQuery("SELECT stationId FROM users WHERE id = ?", [userId]);
+        if (userCheck.length > 0 && String(userCheck[0].stationId) === String(machineId)) {
+            // Find another assignment
+            const [otherAssign] = await executeQuery(`
+                SELECT TOP 1 ma.machine_id, m.line, m.subSectionId, l.sectionId, l.department, d.name as deptName, ss.name as subSectionName
+                FROM machine_assignments ma
+                JOIN machines m ON ma.machine_id = m.id
+                JOIN [lines] l ON m.line = l.id
+                JOIN [sections] s ON l.sectionId = s.id
+                JOIN departments d ON s.departmentId = d.id
+                LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+                WHERE ma.user_id = ?
+                ORDER BY ma.assigned_at DESC
+            `, [userId]);
+
+            if (otherAssign.length > 0) {
+                const oa = otherAssign[0];
+                await executeQuery(`
+                    UPDATE users 
+                    SET departmentId = ?, department = ?, sectionId = ?, lineId = ?, subSectionId = ?, stationId = ?, sub_section = ?
+                    WHERE id = ?
+                `, [oa.department, oa.deptName, oa.sectionId, oa.line, oa.subSectionId, oa.machine_id, oa.subSectionName, userId]);
+            } else {
+                // No more assignments, clear it
+                await executeQuery("UPDATE users SET stationId = NULL WHERE id = ?", [userId]);
+            }
+        }
     } catch (error) {
-        console.error("Error clearing user stationId:", error);
+        console.error("Error syncing user hierarchy on removal:", error);
     }
 
     res.status(200).json(

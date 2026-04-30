@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Loader2, User, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { login } from '@/Redux/Slice/AuthSlice';
+import { getFirstAllowedPage } from '@/constants/pageRegistry';
 
 const loginSchema = z.object({
   userName: z
@@ -46,13 +47,26 @@ const Login = () => {
     if (!isLoggedIn || !user) return;
 
     // Redirect based on role
-    // Redirect based on role
     let targetPath = '/';
 
-    if (user.isAdmin) {
+    if (user.role === 'SUPERADMIN' || (user.isAdmin && user.role !== 'CUSTOM')) {
       targetPath = '/';
-    } else if (user.isTrainer) {
+    } else if (user.isTrainer && user.role !== 'CUSTOM') {
       targetPath = '/trainer';
+    } else if (user.role === 'CUSTOM') {
+      const allowed = user.customRole?.allowedPages || [];
+      const allowedPages = typeof allowed === 'string' ? JSON.parse(allowed) : allowed;
+      const hasLandingAccess = allowedPages.includes('landing-page');
+      
+      const layout = user.customRole?.targetLayout?.toLowerCase() || 'custom';
+      
+      if (hasLandingAccess) {
+        targetPath = '/';
+      } else {
+        // Find the first actually allowed page for this layout to prevent flash
+        const firstPage = getFirstAllowedPage(layout, user, (key, def) => def);
+        targetPath = firstPage || (layout === 'custom' ? '/portal' : `/${layout}`);
+      }
     } else {
       // Students/Employees go to Student Dashboard
       targetPath = '/student';

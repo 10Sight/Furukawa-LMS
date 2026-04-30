@@ -7,12 +7,13 @@ import NotificationService from "../services/notification.service.js";
 
 export const getMultiSkillingPlanByDepartment = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
+    const { sectionId } = req.query;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
-    const plan = await MultiSkillingPlan.findByDepartmentId(departmentId);
+    const plan = await MultiSkillingPlan.findByHierarchy(departmentId, sectionId);
     if (!plan) {
         return res.status(200).json(
-            new ApiResponse(200, { isNew: true, departmentId, selectedLines: [], tableData: {} }, "No multi skilling plan found")
+            new ApiResponse(200, { isNew: true, departmentId, sectionId, selectedLines: [], tableData: {} }, "No multi skilling plan found")
         );
     }
 
@@ -25,17 +26,18 @@ export const saveMultiSkillingPlanByDepartment = asyncHandler(async (req, res) =
     const { departmentId } = req.params;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
-    const { selectedLines, tableData } = req.body || {};
+    const { sectionId, selectedLines, tableData } = req.body || {};
 
     const saved = await MultiSkillingPlan.upsert({
         departmentId,
+        sectionId,
         selectedLines: Array.isArray(selectedLines) ? selectedLines : [],
         tableData: tableData && typeof tableData === "object" ? tableData : {},
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
     });
 
     // Trigger Email Notification
-    NotificationService.sendFormReport("Multi Skill Sheet", departmentId, { selectedLines, tableData })
+    NotificationService.sendFormReport("Multi Skill Sheet", departmentId, { sectionId, selectedLines, tableData })
         .catch(err => console.error("[Notification] Failed to trigger email:", err));
 
     return res.status(200).json(

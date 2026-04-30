@@ -12,7 +12,8 @@ const Home = lazy(() => import("./pages/Home.jsx"));
 const Login = lazy(() => import("./pages/Login.jsx"));
 const LandingPage = lazy(() => import("./pages/LandingPage.jsx"));
 const DashboardLayout = lazy(() => import("./Layout/DashboardLayout.jsx"));
-const CmsLayout = lazy(() => import("./Layout/CmsLayout.jsx").then(m => ({ default: m.CmsLayout })));
+const CmsLayout = lazy(() => import("./Layout/CmsLayout").then(m => ({ default: m.CmsLayout })));
+const CustomRoleLayout = lazy(() => import("./Layout/CustomRoleLayout").then(m => ({ default: m.CustomRoleLayout })));
 
 const AddQuestionPaper = lazy(() => import("./pages/CMS/AddQuestionPaper.jsx"));
 const Daily5MRecording = lazy(() => import("./pages/CMS/Daily5MRecording.jsx"));
@@ -62,6 +63,7 @@ const OperatorImportLogs = lazy(() => import("./pages/Admin/OperatorImportLogs")
 const Analytics = lazy(() => import("./pages/Admin/Analytics"));
 const ExamHistory = lazy(() => import("./pages/Admin/ExamHistory"));
 const AdminQuizMonitoring = lazy(() => import("./pages/Admin/QuizMonitoring"));
+const TestPaper = lazy(() => import("./pages/Admin/TestPaper"));
 const AdminAttemptRequests = lazy(() => import("./pages/Admin/AttemptRequests"));
 const StudentLevelManagement = lazy(() => import("./pages/Admin/StudentLevelManagement"));
 const CertificateTemplates = lazy(() => import("./pages/Admin/CertificateTemplates"));
@@ -78,6 +80,11 @@ const Mentor = lazy(() => import("./pages/Admin/Mentor"));
 const Supervisor = lazy(() => import("./pages/Admin/Supervisor"));
 const Incharge = lazy(() => import("./pages/Admin/Incharge"));
 const LineRequirementManager = lazy(() => import("./pages/Admin/LineRequirementManager.jsx"));
+const DPRManage = lazy(() => import("./pages/Admin/DPRManage"));
+const SixteenDayMonitoring = lazy(() => import("./pages/Admin/SixteenDayMonitoring"));
+const ThreeDayMonitoring = lazy(() => import("./pages/Admin/ThreeDayMonitoring"));
+const HandoverSheetPage = lazy(() => import("./pages/Admin/HandoverSheetPage"));
+const MultiSkilling = lazy(() => import("./pages/Admin/MultiSkilling"));
 
 
 const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
@@ -231,6 +238,8 @@ const App = () => {
             <Route path="add-resource/:courseId" element={<AddResourcePage />} />
             <Route path="edit-lesson/:moduleId/:lessonId" element={<EditLessonPage />} />
             <Route path="quiz-monitoring" element={<AdminQuizMonitoring />} />
+            <Route path="test-paper" element={<TestPaper />} />
+            <Route path="take-test/:quizId" element={<TakeQuiz />} />
             <Route path="attempt-requests" element={<AdminAttemptRequests />} />
             <Route path="analytics" element={<Analytics pageName="Analytics" />} />
             <Route path="exam-history" element={<ExamHistory />} />
@@ -243,6 +252,11 @@ const App = () => {
             <Route path="report" element={<Report />} />
             <Route path="10-cycle" element={<Cycle10 />} />
             <Route path="daily-production-report" element={<DailyProductionReport />} />
+            <Route path="dpr-manage" element={<DPRManage />} />
+            <Route path="16-day-monitoring/:studentId?" element={<SixteenDayMonitoring />} />
+            <Route path="3-day-monitoring/:studentId?" element={<ThreeDayMonitoring />} />
+            <Route path="handover-sheet" element={<HandoverSheetPage />} />
+            <Route path="multi-skilling" element={<MultiSkilling />} />
             <Route path="role-manager" element={<RoleManager />} />
             <Route path="manage-role/:roleId" element={<RoleUserManager />} />
             <Route path="all-users" element={<AllUsersManagement />} />
@@ -263,8 +277,11 @@ const App = () => {
           }>
             <Route index element={<Daily5MDashboard />} />
             <Route path="add-question-paper" element={<AddQuestionPaper />} />
-            <Route path="daily-5m-recording" element={<Daily5MRecording />} />
-            <Route path="approvals/status" element={<Navigate to="/cms/daily-5m-recording" replace />} />
+            <Route path="daily-5m-recording" element={
+              <RequireAccess allow="daily5m:read">
+                <Daily5MRecording />
+              </RequireAccess>
+            } />
           </Route>
 
           {/* Instructor routes */}
@@ -383,6 +400,45 @@ const App = () => {
             <Route path="on-job-training" element={<StudentOnJobTraining />} />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
             <Route path="feedback" element={<StudentFeedback />} />
+          </Route>
+
+          {/* Custom Role Portal routes */}
+          <Route
+            path="/portal"
+            element={
+              <ProtectedRoute>
+                <CustomRoleLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Home />} />
+
+            {/* Common Admin/Trainer Pages mapped to Portal */}
+            <Route path="daily-5m-recording" element={<Daily5MRecording />} />
+            <Route path="daily-5m-dashboard" element={<Daily5MDashboard />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="report" element={<Report />} />
+            <Route path="skill-matrix" element={<SkillMatrix />} />
+            <Route path="all-users" element={<AllUsersManagement />} />
+            <Route path="courses" element={<Course pageName="Courses" />} />
+            <Route path="courses/:courseId" element={<CourseDetailPage />} />
+            <Route path="departments" element={<Departments pageName="Departments" />} />
+            <Route path="departments/:departmentId" element={<DepartmentDetail />} />
+            <Route path="employees" element={<Students pageName="Trainees" />} />
+            <Route path="trainees" element={<Students pageName="Trainees" />} />
+            <Route path="quiz-monitoring" element={<AdminQuizMonitoring />} />
+            <Route path="test-paper" element={<TestPaper />} />
+            <Route path="take-test/:quizId" element={<TakeQuiz />} />
+            <Route path="attempt-requests" element={<AdminAttemptRequests />} />
+            <Route path="10-cycle" element={<Cycle10 />} />
+            <Route path="daily-production-report" element={<DailyProductionReport />} />
+            <Route path="onboarding-id" element={<OnboardingID />} />
+            <Route path="attendance" element={<Attendance />} />
+            <Route path="line-requirements" element={<LineRequirementManager />} />
+            <Route path="dpr-manage" element={<DPRManage />} />
+            <Route path="16-day-monitoring" element={<SixteenDayMonitoring />} />
+            <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
+            <Route path="handover-sheet" element={<HandoverSheetPage />} />
           </Route>
         </Routes>
       </Suspense>

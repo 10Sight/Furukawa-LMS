@@ -4,19 +4,21 @@ import {
     saveSixteenDayMonitoring,
     getSixteenDayMonitoringConfig,
     saveSixteenDayMonitoringConfig,
-    getSixteenDayMonitoringHistory
+    getSixteenDayMonitoringHistory,
+    sendSixteenDayMonitoringEmail
 } from "../controllers/sixteenDayMonitoring.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 
 const router = Router();
 
-router.get("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), getSixteenDayMonitoring);
-router.post("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), saveSixteenDayMonitoring);
+router.get("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "sixteen_day:manage"), getSixteenDayMonitoring);
+router.post("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "sixteen_day:manage"), saveSixteenDayMonitoring);
+router.post("/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "sixteen_day:manage"), sendSixteenDayMonitoringEmail);
 
 // 16 Day Monitoring Config
-router.get("/config/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), getSixteenDayMonitoringConfig);
-router.post("/config/save", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), saveSixteenDayMonitoringConfig);
-router.get("/history/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), getSixteenDayMonitoringHistory);
+router.get("/config/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "sixteen_day:edit_layout", "sixteen_day:manage"), getSixteenDayMonitoringConfig);
+router.post("/config/save", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "sixteen_day:edit_layout", "sixteen_day:manage"), saveSixteenDayMonitoringConfig);
+router.get("/history/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "sixteen_day:edit_layout", "sixteen_day:manage"), getSixteenDayMonitoringHistory);
 
 export default router;

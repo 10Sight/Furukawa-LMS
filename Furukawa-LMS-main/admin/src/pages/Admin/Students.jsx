@@ -1,5 +1,6 @@
 // src/pages/Admin/Students.jsx
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useSelector } from "react-redux";
 import axiosInstance from "@/Helper/axiosInstance";
 import {
   useGetAllStudentsQuery,
@@ -116,6 +117,13 @@ const normalizeStatus = (status) => {
 };
 
 const Students = () => {
+  const currentUser = useSelector((state) => state.auth.user);
+
+  const hasPermission = (permission) => {
+    if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
+    return currentUser?.customRole?.permissions?.includes(permission);
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -289,6 +297,28 @@ const Students = () => {
   const students = studentsData?.data?.users || [];
   const totalPages = studentsData?.data?.totalPages || 1;
   const departments = departmentsData?.data?.departments || [];
+
+  const availableDepartments = useMemo(() => {
+    if (currentUser?.role === 'CUSTOM') {
+      let allowedDepts = [];
+      if (currentUser.departmentId) allowedDepts.push(String(currentUser.departmentId));
+      if (Array.isArray(currentUser.departments)) {
+        currentUser.departments.forEach(d => allowedDepts.push(String(d)));
+      } else if (typeof currentUser.departments === 'string') {
+        try {
+          const parsed = JSON.parse(currentUser.departments);
+          if (Array.isArray(parsed)) parsed.forEach(d => allowedDepts.push(String(d)));
+        } catch (e) {}
+      }
+      
+      allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
+      
+      if (allowedDepts.length > 0) {
+        return departments.filter(d => allowedDepts.includes(String(d._id) || String(d.id)));
+      }
+    }
+    return departments;
+  }, [departments, currentUser]);
 
   // Filter options for reusable components
   const statusOptions = [
@@ -1202,25 +1232,29 @@ const Students = () => {
               Export Excel
             </Button>
 
-            <Button
-              variant="outline"
-              onClick={() => {
-                navigate(`import-logs`);
-              }}
-              className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
-            >
-              <IconHistory className="h-4 w-4 mr-2" />
-              Import Logs
-            </Button>
+            {hasPermission("user:import_logs") && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  navigate(`import-logs`);
+                }}
+                className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
+              >
+                <IconHistory className="h-4 w-4 mr-2" />
+                Import Logs
+              </Button>
+            )}
 
-            <Button
-              variant="outline"
-              onClick={handleImportClick}
-              className="bg-green-600 hover:bg-green-700 text-white shadow-sm border-green-700"
-            >
-              <IconUpload className="h-4 w-4 mr-2" />
-              Import Operators
-            </Button>
+            {hasPermission("user:import_excel") && (
+              <Button
+                variant="outline"
+                onClick={handleImportClick}
+                className="bg-green-600 hover:bg-green-700 text-white shadow-sm border-green-700"
+              >
+                <IconUpload className="h-4 w-4 mr-2" />
+                Import Operators
+              </Button>
+            )}
 
             <Button
               onClick={() => setIsAddDialogOpen(true)}
@@ -1825,7 +1859,7 @@ const Students = () => {
                   <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {departments.map((dept) => (
+                  {availableDepartments.map((dept) => (
                     <SelectItem key={dept._id} value={String(dept._id)}>{dept.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -2297,7 +2331,7 @@ const Students = () => {
                   <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {departments.map((dept) => (
+                  {availableDepartments.map((dept) => (
                     <SelectItem key={dept._id} value={String(dept._id)}>{dept.name}</SelectItem>
                   ))}
                 </SelectContent>

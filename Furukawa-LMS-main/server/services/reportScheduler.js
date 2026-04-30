@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import Mail from "../models/mail.model.js";
-import reportService from "./report.service.js";
+// import reportService from "./report.service.js";
 
 const init = () => {
     console.log("Initializing Report Scheduler...");

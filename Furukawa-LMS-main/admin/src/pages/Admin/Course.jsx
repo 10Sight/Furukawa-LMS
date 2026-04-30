@@ -10,6 +10,9 @@ import { useLazyExportCoursesQuery } from "@/Redux/AllApi/CourseApi";
 import {
   useGetActiveConfigQuery
 } from "@/Redux/AllApi/CourseLevelConfigApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetAllInstructorsQuery } from "@/Redux/AllApi/InstructorApi";
 import {
   Table,
   TableBody,
@@ -99,6 +102,9 @@ const Course = () => {
     category: "",
     difficulty: "BEGINNER",
     status: "DRAFT",
+    instructor: "",
+    departmentId: [],
+    sectionId: [],
   });
   const [formErrors, setFormErrors] = useState({});
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -142,6 +148,15 @@ const Course = () => {
   const [togglePublish] = useTogglePublishCourseMutation();
   const [triggerExportCourses, { isFetching: isExportingCourses }] = useLazyExportCoursesQuery();
   const { data: configData, isLoading: isConfigLoading } = useGetActiveConfigQuery();
+  
+  // New API Hooks for Edit Dialog
+  const { data: departmentsData } = useGetAllDepartmentsQuery();
+  const { data: instructorsData } = useGetAllInstructorsQuery();
+  const { data: sectionsData } = useGetSectionsByDepartmentQuery(
+    Array.isArray(formData.departmentId) ? formData.departmentId.join(',') : "", 
+    { skip: !formData.departmentId?.length }
+  );
+
   const activeLevels = configData?.data?.levels || [];
 
   const courses = coursesData?.data?.courses || [];
@@ -170,6 +185,27 @@ const Course = () => {
       .map((category) => ({ value: category, label: category }));
     return [{ value: "ALL", label: "All Categories" }, ...categoryOpts];
   }, [categories]);
+
+  const departmentOptions = useMemo(() => {
+    return (departmentsData?.data?.departments || []).map((d) => ({
+      value: String(d.id),
+      label: d.name,
+    }));
+  }, [departmentsData]);
+
+  const instructorOptions = useMemo(() => {
+    return (instructorsData?.data?.users || []).map((i) => ({
+      value: String(i.id),
+      label: i.fullName,
+    }));
+  }, [instructorsData]);
+
+  const sectionOptions = useMemo(() => {
+    return (sectionsData?.data || []).map((s) => ({
+      value: String(s.id),
+      label: s.name,
+    }));
+  }, [sectionsData]);
 
   // Active filters for FilterBar
   const activeFilters = useMemo(() => {
@@ -224,8 +260,39 @@ const Course = () => {
       category: "",
       difficulty: "BEGINNER",
       status: "DRAFT",
+      instructor: "",
+      departmentId: [],
+      sectionId: [],
     });
     setFormErrors({});
+  };
+
+  const handleSelectChange = (name, value) => {
+    setFormData((prev) => {
+      const newData = { ...prev };
+      if (name === "departmentId" || name === "sectionId") {
+        const currentValues = Array.isArray(prev[name]) ? prev[name] : [];
+        if (currentValues.includes(value)) {
+          newData[name] = currentValues.filter((v) => v !== value);
+        } else {
+          newData[name] = [...currentValues, value];
+        }
+      } else {
+        newData[name] = value;
+      }
+      return newData;
+    });
+
+    if (formErrors[name]) {
+      setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const removeItem = (name, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: (prev[name] || []).filter((v) => v !== value),
+    }));
   };
 
   const validateForm = () => {
@@ -254,6 +321,9 @@ const Course = () => {
         category: formData.category.trim(),
         difficulty: formData.difficulty,
         status: formData.status,
+        instructor: formData.instructor,
+        departmentId: formData.departmentId,
+        sectionId: formData.sectionId || [],
       }).unwrap();
 
       showToast("success", "Course updated successfully!");
@@ -309,6 +379,9 @@ const Course = () => {
       category: course.category,
       difficulty: course.difficulty,
       status: course.status,
+      instructor: typeof course.instructor === 'object' ? course.instructor.id : course.instructor,
+      departmentId: Array.isArray(course.departmentId) ? course.departmentId.map(String) : (course.departmentId ? [String(course.departmentId)] : []),
+      sectionId: Array.isArray(course.sectionId) ? course.sectionId.map(String) : (course.sectionId ? [String(course.sectionId)] : []),
     });
     setIsEditDialogOpen(true);
   };
@@ -680,6 +753,9 @@ const Course = () => {
                 <TableRow className="bg-muted/50">
                   <TableHead className="w-[250px]">Course</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Trainer</TableHead>
+                  <TableHead>Departments</TableHead>
+                  <TableHead>Sections</TableHead>
                   <TableHead>Difficulty</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -715,6 +791,54 @@ const Course = () => {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{course.category}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm">
+                            {course.instructor?.fullName || "Not Assigned"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {course.instructor?.email}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[150px]">
+                        <div className="flex flex-wrap gap-1">
+                          {course.departments && course.departments.length > 0 ? (
+                            course.departments.map((dept, idx) => (
+                              <Badge
+                                key={idx}
+                                variant="outline"
+                                className="text-[10px] py-0 px-1"
+                              >
+                                {dept}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground text-xs">
+                              {course.department || "N/A"}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[150px]">
+                        <div className="flex flex-wrap gap-1">
+                          {course.sections && course.sections.length > 0 ? (
+                            course.sections.map((sec, idx) => (
+                              <Badge
+                                key={idx}
+                                variant="outline"
+                                className="text-[10px] py-0 px-1 bg-secondary/20"
+                              >
+                                {sec}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground text-xs">
+                              {course.section || "N/A"}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {getDifficultyBadge(course.difficulty)}
@@ -785,7 +909,7 @@ const Course = () => {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-10">
+                    <TableCell colSpan={8} className="text-center py-10">
                       <div className="flex flex-col items-center space-y-3">
                         <IconBook className="h-12 w-12 text-muted-foreground/60" />
                         <p className="text-muted-foreground font-medium">
@@ -854,6 +978,33 @@ const Course = () => {
                           {getDifficultyBadge(course.difficulty)}
                           {getStatusBadge(course.status)}
                         </div>
+
+                          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <IconUsers className="h-3 w-3" />
+                              <span>Trainer: {course.instructor?.fullName || "N/A"}</span>
+                            </div>
+                            <div className="flex items-start gap-1">
+                              <IconSchool className="h-3 w-3 mt-0.5" />
+                              <div className="flex flex-wrap gap-1">
+                                {course.departments && course.departments.length > 0 ? (
+                                  course.departments.map((d, i) => (
+                                    <span key={i} className="bg-muted px-1 rounded">{d}</span>
+                                  ))
+                                ) : (
+                                  <span>{course.department || "N/A"}</span>
+                                )}
+                                {course.sections && course.sections.length > 0 && (
+                                  <>
+                                    <span className="mx-1 text-gray-300">|</span>
+                                    {course.sections.map((s, i) => (
+                                      <span key={i} className="bg-blue-50 text-blue-700 px-1 rounded">{s}</span>
+                                    ))}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
 
                         <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                           <div className="flex items-center gap-2">
@@ -1060,6 +1211,106 @@ const Course = () => {
                   <SelectItem value="ARCHIVED">Archived</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-instructor">Trainer *</Label>
+                <Select
+                  value={String(formData.instructor)}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({ ...prev, instructor: value }))
+                  }
+                >
+                  <SelectTrigger id="edit-instructor">
+                    <SelectValue placeholder="Select trainer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {instructorOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-department">Departments *</Label>
+                <Select
+                  value=""
+                  onValueChange={(value) => handleSelectChange("departmentId", value)}
+                >
+                  <SelectTrigger id="edit-department">
+                    <SelectValue placeholder={formData.departmentId.length > 0 
+                      ? `${formData.departmentId.length} departments selected` 
+                      : "Add Department"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentOptions
+                      .filter(opt => !formData.departmentId.includes(opt.value))
+                      .map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {formData.departmentId.map(id => {
+                    const dept = departmentOptions.find(opt => opt.value === id);
+                    return (
+                      <Badge key={id} variant="secondary" className="flex items-center gap-1">
+                        {dept?.label || id}
+                        <IconX 
+                          size={12} 
+                          className="cursor-pointer hover:text-destructive" 
+                          onClick={() => removeItem("departmentId", id)}
+                        />
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-section">Sections (Optional)</Label>
+              <Select
+                value=""
+                onValueChange={(value) => handleSelectChange("sectionId", value)}
+                disabled={!formData.departmentId.length}
+              >
+                <SelectTrigger id="edit-section">
+                  <SelectValue placeholder={formData.sectionId.length > 0 
+                    ? `${formData.sectionId.length} sections selected` 
+                    : (formData.departmentId.length ? "Add Section" : "Select departments first")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {sectionOptions
+                    .filter(opt => !formData.sectionId.includes(opt.value))
+                    .map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {formData.sectionId.map(id => {
+                  const sec = sectionOptions.find(opt => opt.value === id);
+                  return (
+                    <Badge key={id} variant="outline" className="flex items-center gap-1">
+                      {sec?.label || id}
+                      <IconX 
+                        size={12} 
+                        className="cursor-pointer hover:text-destructive" 
+                        onClick={() => removeItem("sectionId", id)}
+                      />
+                    </Badge>
+                  );
+                })}
+              </div>
             </div>
           </div>
           <DialogFooter>

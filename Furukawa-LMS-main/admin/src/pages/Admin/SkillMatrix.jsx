@@ -1042,7 +1042,7 @@ const SkillMatrix = () => {
                     <p>No machines/stations found for this selection.</p>
                 </div>
             ) : (
-                <div id="printable-matrix" className="bg-white p-2 min-w-[1200px] overflow-x-auto">
+                <div id="printable-matrix" className="bg-white p-2 min-w-max overflow-x-auto">
                     <PaginationControls />
                     <div className="border border-black text-center mb-1">
                         <h1 className="text-xl font-bold uppercase p-1">Skill Matrix</h1>
@@ -1051,29 +1051,29 @@ const SkillMatrix = () => {
                     {/* Header Row 1 */}
                     <div className="flex border border-black mb-1 text-[10px]">
                         <div className="flex-1 flex border-r border-black">
-                            <div className="w-20 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Dept</div>
+                            <div className="min-w-[100px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Dept</div>
                             <div className="flex-1 p-1 font-bold flex items-center justify-center">{selectedDeptName}</div>
                         </div>
                         <div className="flex-1 flex border-r border-black">
-                            <div className="w-20 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Section</div>
+                            <div className="min-w-[100px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Section</div>
                             <div className="flex-1 p-1 font-bold flex items-center justify-center">
                                 {sectionsData?.data?.find(s => String(s.id || s._id) === String(selectedSection))?.name || "All"}
                             </div>
                         </div>
                         <div className="flex-1 flex border-r border-black">
-                            <div className="w-20 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Line</div>
+                            <div className="min-w-[100px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Line</div>
                             <div className="flex-1 p-1 font-bold flex items-center justify-center">{selectedLineName || "All"}</div>
                         </div>
                         <div className="flex-1 flex border-r border-black">
-                            <div className="w-24 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Sub-Sect</div>
+                            <div className="min-w-[110px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Sub-Sect</div>
                             <div className="flex-1 p-1 font-bold flex items-center justify-center">
                                 {subSectionsData?.data?.find(ss => String(ss.id || ss._id) === String(selectedSubSection))?.name || "All"}
                             </div>
                         </div>
-                        <div className="w-24 flex border-r border-black">
-                            <div className="w-10 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Shift</div>
+                        <div className="min-w-[110px] flex border-r border-black">
+                            <div className="w-12 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Shift</div>
                             <div className="flex-1 flex items-center justify-center">
-                                <Input className="text-center font-bold text-xs h-6 border-none" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} />
+                                <Input className="text-center font-bold text-xs h-6 border-none px-2" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} />
                             </div>
                         </div>
                         {/* Signatures */}
@@ -1166,13 +1166,13 @@ const SkillMatrix = () => {
                                 <th colSpan={5} className="border border-black p-1 text-right">Responsible expert</th>
                                 {/* Generated Stations Header (Operators) */}
                                 {Array(16).fill(0).map((_, i) => (
-                                    <th key={i} className="border border-black w-8 bg-yellow-100 text-[8px] font-normal leading-tight p-0.5">
+                                    <th key={i} className="border border-black min-w-[45px] bg-yellow-100 text-[8px] font-normal leading-tight p-0.5">
                                         {i < 16 && "Operator Inspector"}
                                     </th>
                                 ))}
-                                <th rowSpan={4} className="border border-black bg-yellow-300 w-16">Number of process of per person</th>
-                                <th rowSpan={4} className="border border-black bg-yellow-300 w-8">Status</th>
-                                <th rowSpan={4} className="border border-black bg-yellow-300 w-8">%</th>
+                                <th rowSpan={4} className="border border-black bg-yellow-300 min-w-[80px]">Number of process of per person</th>
+                                <th rowSpan={4} className="border border-black bg-yellow-300 min-w-[50px]">Status</th>
+                                <th rowSpan={4} className="border border-black bg-yellow-300 min-w-[50px]">%</th>
                             </tr>
 
                             {/* Process Name Row */}
@@ -1181,7 +1181,7 @@ const SkillMatrix = () => {
                                 {Array(16).fill(0).map((_, i) => {
                                     const machineName = activeMachinesRef?.[i]?.name || "";
                                     return (
-                                        <th key={i} className="border border-black w-8 h-32 align-bottom p-1">
+                                        <th key={i} className="border border-black min-w-[45px] h-32 align-bottom p-1">
                                             <div className="flex items-center justify-center [writing-mode:vertical-rl] rotate-270 w-full h-full text-[10px] leading-tight break-words">{machineName}</div>
                                         </th>
                                     )
@@ -1195,7 +1195,7 @@ const SkillMatrix = () => {
                                     // Use config minSkills or default to L2
                                     const val = config.minSkills?.[i] || "L2";
                                     return (
-                                        <th key={i} className="border border-black w-8">
+                                        <th key={i} className="border border-black min-w-[45px]">
                                             <Input className="h-4 p-0 text-center text-[10px] bg-transparent border-none" value={val} onChange={e => handleMinSkillChange(i, e.target.value)} />
                                         </th>
                                     )
@@ -1206,23 +1206,23 @@ const SkillMatrix = () => {
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Operation sharing ( Station No & equipment name)</th>
                                 {Array(16).fill(0).map((_, i) => (
-                                    <th key={i} className="border border-black w-8">{i + 1}</th>
+                                    <th key={i} className="border border-black min-w-[45px]">{i + 1}</th>
                                 ))}
                             </tr>
 
                             {/* Actual User Columns Header */}
                             <tr>
-                                <th className="border border-black w-8">Number</th>
-                                <th className="border border-black w-32">Operator name</th>
-                                <th className="border border-black w-16">Card No.</th>
-                                <th className="border border-black w-16 text-[8px]">Year number of experience\nDate of Certificate update</th>
-                                <th className="border border-black w-16 text-[8px]">Equipment arrangement number\nPosition number</th>
+                                <th className="border border-black min-w-[50px]">Number</th>
+                                <th className="border border-black min-w-[180px] px-2">Operator name</th>
+                                <th className="border border-black min-w-[80px]">Card No.</th>
+                                <th className="border border-black min-w-[100px] text-[8px] px-1">Year number of experience\nDate of Certificate update</th>
+                                <th className="border border-black min-w-[100px] text-[8px] px-1">Equipment arrangement number\nPosition number</th>
 
                                 {Array(16).fill(0).map((_, i) => (
-                                    <th key={i} className="border border-black w-8">{i + 1}</th>
+                                    <th key={i} className="border border-black min-w-[45px]">{i + 1}</th>
                                 ))}
-                                <th className="border border-black w-8">Plan</th>
-                                <th className="border border-black w-8">Actual</th>
+                                <th className="border border-black min-w-[50px]">Plan</th>
+                                <th className="border border-black min-w-[50px]">Actual</th>
                                 <th className="border border-black" colSpan={2}></th>
                             </tr>
                         </thead>
@@ -1239,9 +1239,9 @@ const SkillMatrix = () => {
                                     return (
                                         <tr key={originalIndex} className="h-10 text-center border border-black hover:bg-gray-50">
                                             <td className="border border-black font-bold">{entry.srNo}</td>
-                                            <td className="border border-black font-bold text-left px-1">{entry.name}</td>
+                                            <td className="border border-black font-bold text-left px-2 whitespace-nowrap">{entry.name}</td>
                                             <td className="border border-black">
-                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.cardNo} onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)} />
+                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent px-1" value={entry.cardNo} onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)} />
                                             </td>
                                             <td className="border border-black p-0">
                                                 <div className="border-b border-black h-5 flex items-center justify-center">

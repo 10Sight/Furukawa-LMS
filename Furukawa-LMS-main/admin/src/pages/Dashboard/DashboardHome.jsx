@@ -23,7 +23,7 @@ import {
 import { useGetDashboardStatsQuery } from "@/Redux/AllApi/DashboardApi";
 import axiosInstance from '../../Helper/axiosInstance';
 
-// ─── Custom Tooltip ───────────────────────────────────────────────────────────
+// ─── Manpower Tooltip ─────────────────────────────────────────────────────────
 const ManpowerTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         return (
@@ -49,32 +49,71 @@ const ManpowerTooltip = ({ active, payload, label }) => {
     return null;
 };
 
+// ─── Attrition Tooltip ────────────────────────────────────────────────────────
+const AttritionTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[150px]">
+                <p className="font-bold text-slate-700 mb-2">{label}</p>
+                {payload.map((entry, i) => (
+                    <div key={i} className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-1.5">
+                            <span
+                                className="inline-block w-2.5 h-2.5 rounded-full"
+                                style={{ backgroundColor: entry.color }}
+                            />
+                            <span className="text-slate-500">{entry.name}</span>
+                        </div>
+                        <span className="font-bold text-slate-900">{entry.value}%</span>
+                    </div>
+                ))}
+            </div>
+        );
+    }
+    return null;
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 const DashboardHome = () => {
 
-    const [sections, setSections] = useState([]);
-    const [lines, setLines]       = useState([]);
+    const [sections,      setSections]      = useState([]);
+    // filteredLines contains only lines belonging to the currently selected section
+    const [filteredLines, setFilteredLines] = useState([]);
+    const [linesLoading,  setLinesLoading]  = useState(false);
+
     const [filterState, setFilterState] = useState({
         section:   "ALL",
         line:      "ALL",
         dateRange: undefined,
     });
 
-    // ── Fetch sections ────────────────────────────────────────────────────────
+    // ── 1. Fetch all sections once on mount ───────────────────────────────────
     useEffect(() => {
         axiosInstance.get('/api/sections')
             .then(res => { if (res.data?.data) setSections(res.data.data); })
             .catch(err => console.error("Failed to fetch sections", err));
     }, []);
 
-    // ── Fetch lines ───────────────────────────────────────────────────────────
+    // ── 2. Fetch lines ONLY for the selected section ──────────────────────────
+    //    When section is ALL → clear lines list (line stays at ALL too)
+    //    When section changes → reset line to ALL, then load new lines
     useEffect(() => {
-        axiosInstance.get('/api/lines')
-            .then(res => { if (res.data?.data) setLines(res.data.data); })
-            .catch(err => console.error("Failed to fetch lines", err));
-    }, []);
+        if (filterState.section === 'ALL') {
+            setFilteredLines([]);
+            return;
+        }
+        setLinesLoading(true);
+        axiosInstance
+            .get(`/api/lines?sectionId=${filterState.section}`)
+            .then(res => setFilteredLines(res.data?.data || []))
+            .catch(err => {
+                console.error("Failed to fetch lines for section", err);
+                setFilteredLines([]);
+            })
+            .finally(() => setLinesLoading(false));
+    }, [filterState.section]); // re-runs whenever section changes
 
-    // ── Dashboard Stats ───────────────────────────────────────────────────────
+    // ── 3. Dashboard stats query ──────────────────────────────────────────────
     const {
         data: dashboardStats,
         isLoading,
@@ -91,15 +130,42 @@ const DashboardHome = () => {
         absenteeismData: [],
     };
 
-    const isFiltered = filterState.section !== 'ALL' || filterState.line !== 'ALL';
-    const loadingChart = isLoading || isFetching;
+    // Sanitise attrition values (backend now sends daily current-month data)
+    const attritionChartData = (stats.attritionData || []).map(item => ({
+        ...item,
+        actual: typeof item.actual === 'number' ? item.actual : parseFloat(item.actual) || 0,
+        target: typeof item.target === 'number' ? item.target : parseFloat(item.target) || 2.0,
+    }));
 
-    // ── Filter handler ────────────────────────────────────────────────────────
+    // Delta badge: today vs yesterday (last two data points in current month)
+    const attritionDelta = (() => {
+        if (attritionChartData.length < 2) return null;
+        const last = attritionChartData[attritionChartData.length - 1]?.actual ?? 0;
+        const prev = attritionChartData[attritionChartData.length - 2]?.actual ?? 0;
+        return Math.round((last - prev) * 10) / 10;
+    })();
+
+    const isSectionSelected = filterState.section !== 'ALL';
+    const isFiltered        = filterState.section !== 'ALL' || filterState.line !== 'ALL';
+    const loadingChart      = isLoading || isFetching;
+
+    // ── 4. Filter change handler ──────────────────────────────────────────────
     const handleFilterChange = (key, value) => {
-        setFilterState(prev => ({ ...prev, [key]: value }));
+        if (key === 'section') {
+            // Changing section always resets the line dropdown
+            setFilterState(prev => ({ ...prev, section: value, line: 'ALL' }));
+        } else {
+            setFilterState(prev => ({ ...prev, [key]: value }));
+        }
     };
 
-    // ── Chart overlay when loading ────────────────────────────────────────────
+    // ── 5. Full reset ─────────────────────────────────────────────────────────
+    const handleReset = () => {
+        setFilteredLines([]);
+        setFilterState({ section: 'ALL', line: 'ALL', dateRange: undefined });
+    };
+
+    // ── Chart loading overlay ─────────────────────────────────────────────────
     const ChartLoader = () => (
         <div className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg z-10">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
@@ -126,7 +192,7 @@ const DashboardHome = () => {
                             <Filter className="w-3 h-3" /> Filters:
                         </span>
 
-                        {/* Section */}
+                        {/* ── Section dropdown ─────────────────────────────── */}
                         <Select
                             value={filterState.section}
                             onValueChange={(val) => handleFilterChange("section", val)}
@@ -144,25 +210,58 @@ const DashboardHome = () => {
 
                         <div className="h-4 w-[1px] bg-slate-300" />
 
-                        {/* Line */}
-                        <Select
-                            value={filterState.line}
-                            onValueChange={(val) => handleFilterChange("line", val)}
-                        >
-                            <SelectTrigger className="w-[140px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 shadow-none">
-                                <SelectValue placeholder="All Lines" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="ALL">All Lines</SelectItem>
-                                {lines.map(l => (
-                                    <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        {/* ── Line dropdown — locked until a section is chosen ─ */}
+                        <div className="relative group">
+                            <Select
+                                value={filterState.line}
+                                onValueChange={(val) => handleFilterChange("line", val)}
+                                // Disabled when no section selected OR while loading lines
+                                disabled={!isSectionSelected || linesLoading}
+                            >
+                                <SelectTrigger
+                                    className={`w-[155px] h-8 bg-transparent border-none focus:ring-0 shadow-none transition-opacity
+                                        ${!isSectionSelected || linesLoading
+                                            ? 'opacity-40 cursor-not-allowed'
+                                            : 'text-slate-700'
+                                        }`}
+                                >
+                                    {linesLoading ? (
+                                        <span className="flex items-center gap-1.5 text-slate-400 text-xs">
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            Loading lines…
+                                        </span>
+                                    ) : (
+                                        <SelectValue
+                                            placeholder={
+                                                isSectionSelected
+                                                    ? filteredLines.length === 0
+                                                        ? 'No lines found'
+                                                        : 'All Lines'
+                                                    : 'Select section first'
+                                            }
+                                        />
+                                    )}
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL">All Lines</SelectItem>
+                                    {filteredLines.map(l => (
+                                        <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+
+                            {/* Hover tooltip shown when line select is disabled */}
+                            {!isSectionSelected && (
+                                <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 hidden group-hover:block
+                                    bg-slate-800 text-white text-[10px] rounded px-2 py-0.5 whitespace-nowrap z-20 pointer-events-none">
+                                    Select a section first
+                                </div>
+                            )}
+                        </div>
 
                         <div className="h-4 w-[1px] bg-slate-300" />
 
-                        {/* Date Range */}
+                        {/* ── Date range picker ─────────────────────────────── */}
                         <Popover>
                             <PopoverTrigger asChild>
                                 <Button
@@ -196,13 +295,13 @@ const DashboardHome = () => {
                             </PopoverContent>
                         </Popover>
 
-                        {/* Reset */}
+                        {/* ── Reset button ──────────────────────────────────── */}
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-slate-400"
-                            onClick={() => setFilterState({ section: "ALL", line: "ALL", dateRange: undefined })}
-                            title="Reset filters"
+                            className="h-8 w-8 text-slate-400 hover:text-slate-700"
+                            onClick={handleReset}
+                            title="Reset all filters"
                         >
                             <RotateCw className="w-4 h-4" />
                         </Button>
@@ -213,8 +312,8 @@ const DashboardHome = () => {
             {/* ── Debug bar (remove in production) ─────────────────────────── */}
             {isFiltered && dashboardStats?.data?.filters && (
                 <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-amber-700 flex gap-4">
-                    <span>Section resolved: <strong>{dashboardStats.data.filters.sectionName || '—'}</strong></span>
-                    <span>Line resolved: <strong>{dashboardStats.data.filters.lineName || '—'}</strong></span>
+                    <span>Section: <strong>{dashboardStats.data.filters.sectionName || '—'}</strong></span>
+                    <span>Line: <strong>{dashboardStats.data.filters.lineName || '—'}</strong></span>
                     <span>Headcount: <strong>{dashboardStats.data.filters.snapshotTotal}</strong></span>
                 </div>
             )}
@@ -266,8 +365,6 @@ const DashboardHome = () => {
                                         />
                                         <Tooltip content={<ManpowerTooltip />} />
                                         <Legend wrapperStyle={{ paddingTop: '20px' }} />
-
-                                        {/* Required headcount */}
                                         <Line
                                             type="monotone"
                                             dataKey="required"
@@ -278,8 +375,6 @@ const DashboardHome = () => {
                                             activeDot={{ r: 6 }}
                                             connectNulls={false}
                                         />
-
-                                        {/* Current headcount from snapshots */}
                                         <Line
                                             type="monotone"
                                             dataKey="current"
@@ -290,8 +385,6 @@ const DashboardHome = () => {
                                             activeDot={{ r: 6 }}
                                             connectNulls={false}
                                         />
-
-                                        {/* Daily present from attendance_logs */}
                                         <Line
                                             type="monotone"
                                             dataKey="present"
@@ -308,38 +401,100 @@ const DashboardHome = () => {
                         </CardContent>
                     </Card>
 
-                    {/* ─── Attrition Trend ────────────────────────────────── */}
+                    {/* ─── Attrition Trend — current month daily ──────────── */}
                     <Card className="border-slate-200 shadow-sm">
                         <CardHeader className="pb-2 flex flex-row items-center justify-between">
                             <div>
                                 <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
                                     <TrendingDown className="w-5 h-5 text-red-500" />
-                                    Attrition Trend
+                                    Daily Attrition Trend (Current Month)
+                                    {loadingChart && <Loader2 className="w-4 h-4 animate-spin text-red-300 ml-1" />}
                                 </CardTitle>
-                                <p className="text-xs text-slate-500">Actual vs Target (%)</p>
+                                <p className="text-xs text-slate-500">
+                                    Daily Absence Rate vs Target (%) · Current Month Only
+                                </p>
                             </div>
-                            <div className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200">
-                                -0.7% vs Last Month
-                            </div>
+                            {/* Dynamic badge: today vs yesterday */}
+                            {attritionDelta !== null && (
+                                <div className={`px-2 py-1 rounded text-xs font-bold border ${
+                                    attritionDelta <= 0
+                                        ? 'bg-green-100 text-green-700 border-green-200'
+                                        : 'bg-red-100 text-red-700 border-red-200'
+                                }`}>
+                                    {attritionDelta > 0 ? '+' : ''}{attritionDelta}% vs Yesterday
+                                </div>
+                            )}
                         </CardHeader>
                         <CardContent>
                             <div className="h-[250px] w-full relative">
                                 {loadingChart && <ChartLoader />}
+                                {!loadingChart && attritionChartData.length === 0 && (
+                                    <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
+                                        No attrition data for selected filters
+                                    </div>
+                                )}
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={stats.attritionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <AreaChart
+                                        data={attritionChartData}
+                                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                                    >
                                         <defs>
                                             <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.1} />
+                                                <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.15} />
                                                 <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                            </linearGradient>
+                                            <linearGradient id="colorTarget" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.08} />
+                                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                                        {/* X-axis uses "day" key e.g. "1 Apr", "2 Apr" sent by backend */}
+                                        <XAxis
+                                            dataKey="day"
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fill: '#64748b', fontSize: 10 }}
+                                            dy={10}
+                                        />
+                                        <YAxis
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fill: '#64748b', fontSize: 10 }}
+                                            tickFormatter={(v) => `${v}%`}
+                                            domain={[0, (dataMax) => Math.max(dataMax + 2, 10)]}
+                                        />
+                                        <Tooltip content={<AttritionTooltip />} />
                                         <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                                        <ReferenceLine y={2.0} label="" stroke="#3b82f6" strokeDasharray="3 3" />
-                                        <Area type="monotone" dataKey="actual" name="Current (Actual)" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorActual)" />
+                                        <ReferenceLine
+                                            y={2.0}
+                                            label={{ value: 'Target 2%', position: 'insideTopRight', fontSize: 10, fill: '#3b82f6' }}
+                                            stroke="#3b82f6"
+                                            strokeDasharray="4 4"
+                                        />
+                                        <Area
+                                            type="monotone"
+                                            dataKey="target"
+                                            name="Target"
+                                            stroke="#3b82f6"
+                                            strokeWidth={1.5}
+                                            strokeDasharray="4 4"
+                                            fillOpacity={1}
+                                            fill="url(#colorTarget)"
+                                            dot={false}
+                                            activeDot={{ r: 4 }}
+                                        />
+                                        <Area
+                                            type="monotone"
+                                            dataKey="actual"
+                                            name="Actual Attrition"
+                                            stroke="#ef4444"
+                                            strokeWidth={2}
+                                            fillOpacity={1}
+                                            fill="url(#colorActual)"
+                                            dot={{ r: 3, strokeWidth: 2 }}
+                                            activeDot={{ r: 5 }}
+                                        />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </div>

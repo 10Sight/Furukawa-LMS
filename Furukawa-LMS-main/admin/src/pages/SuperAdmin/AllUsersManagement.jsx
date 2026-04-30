@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import {
@@ -95,7 +95,7 @@ const AllUsersManagement = () => {
     status: "ACTIVE",
     unit: "UNIT_1",
     customRoleId: "",
-    departmentId: "",
+    departmentId: currentUser?.role !== "SUPERADMIN" ? (String(currentUser?.departmentId || currentUser?.department?._id || "")) : "",
     sectionId: "",
     lineId: "",
     subSectionId: "",
@@ -136,7 +136,84 @@ const AllUsersManagement = () => {
   const { data: subSectionData } = useGetSubSectionsByLineQuery(filters.lineId, { skip: !filters.lineId });
   const { data: machineData } = useGetMachinesBySubSectionQuery(filters.subSectionId, { skip: !filters.subSectionId });
 
-  const departments = deptData?.data?.departments || [];
+  // Helper to get ID from a department object (handles both id and _id formats)
+  const getDeptId = (d) => d?.id || d?._id;
+
+  // Filter departments based on current user's access
+  const departments = useMemo(() => {
+    const allDepartments = deptData?.data?.departments || [];
+    if (!allDepartments.length) return [];
+
+    // SuperAdmin or Global Admin sees all departments
+    if (currentUser?.role === 'SUPERADMIN' || currentUser?.isAdmin === true) {
+      return allDepartments;
+    }
+
+    // Helper to get ID from a department object (handles both id and _id formats)
+    const getDeptId = (d) => d?.id || d?._id;
+
+    // 1. Check if they have multiple assigned departments (Primary restriction logic)
+    if (Array.isArray(currentUser?.departments) && currentUser.departments.length > 0) {
+      const allowedDeptIds = currentUser.departments.map(d => String(d));
+      const filtered = allDepartments.filter(dept => {
+        const dId = String(getDeptId(dept));
+        return allowedDeptIds.includes(dId);
+      });
+      if (filtered.length > 0) return filtered;
+    }
+
+    // 2. Try to find the specific department the user is assigned to
+    if ((currentUser?.deptName && currentUser.deptName.trim() !== "") || currentUser?.departmentId || currentUser?.department?._id) {
+      const userDept = allDepartments.find(dept => {
+        const dId = String(getDeptId(dept));
+        return (
+          (currentUser?.departmentId && dId === String(currentUser.departmentId)) ||
+          (currentUser?.department?._id && dId === String(currentUser.department._id)) ||
+          (currentUser?.deptName && dept.name?.trim().toLowerCase() === currentUser.deptName.trim().toLowerCase())
+        );
+      });
+      if (userDept) return [userDept];
+    }
+
+    // 2. If no single primary match, check if they have multiple assigned departments
+    if (Array.isArray(currentUser?.departments) && currentUser.departments.length > 0) {
+      const allowedDeptIds = currentUser.departments.map(d => String(d));
+      const filtered = allDepartments.filter(dept => {
+        const dId = String(getDeptId(dept));
+        return allowedDeptIds.includes(dId);
+      });
+      if (filtered.length > 0) return filtered;
+    }
+
+    // 3. Fallback: show only departments that have users in the current view
+    // (This acts as a fallback for users who manage multiple departments indirectly)
+    const usersList = usersData?.data?.users || [];
+    const deptIdsWithUsers = new Set();
+
+    usersList.forEach(user => {
+      if (user.deptName || user.departmentId || user.department?._id) {
+        const matchingDept = allDepartments.find(dept => {
+          const dId = String(getDeptId(dept));
+          return (
+            (user.departmentId && dId === String(user.departmentId)) ||
+            (user.department?._id && dId === String(user.department._id)) ||
+            (user.deptName && dept.name?.trim().toLowerCase() === user.deptName.trim().toLowerCase())
+          );
+        });
+        if (matchingDept) {
+          deptIdsWithUsers.add(String(getDeptId(matchingDept)));
+        }
+      }
+    });
+
+    if (deptIdsWithUsers.size > 0) {
+      return allDepartments.filter(dept => deptIdsWithUsers.has(String(getDeptId(dept))));
+    }
+
+    // Final safety fallback
+    return allDepartments;
+  }, [deptData?.data?.departments, usersData?.data?.users, currentUser?.deptName, currentUser?.departments, currentUser?.departmentId, currentUser?.department, currentUser?.role]);
+
   const sections = sectionData?.data || [];
   const lines = lineData?.data || [];
   const subSections = subSectionData?.data || [];
@@ -176,6 +253,33 @@ const AllUsersManagement = () => {
     };
     fetchCustomRoles();
   }, []);
+
+  // Initialize filters based on user role and departments
+  useEffect(() => {
+    const allDepartments = deptData?.data?.departments || [];
+    if (currentUser?.role !== 'SUPERADMIN' && currentUser?.isAdmin !== true && !filters.departmentId && allDepartments.length > 0) {
+      // Find the best match for the user's assigned department
+      const match = allDepartments.find(dept => {
+        const dId = String(getDeptId(dept));
+        return (
+          (currentUser?.departmentId && dId === String(currentUser.departmentId)) ||
+          (currentUser?.department?._id && dId === String(currentUser.department._id)) ||
+          (currentUser?.deptName && dept.name?.trim().toLowerCase() === currentUser.deptName.trim().toLowerCase())
+        );
+      });
+
+      if (match) {
+        setFilters(prev => ({ ...prev, departmentId: String(getDeptId(match)) }));
+      } else if (allDepartments.length > 0 && Array.isArray(currentUser?.departments) && currentUser.departments.length > 0) {
+        // Fallback to first assigned department if primary match fails but departments array exists
+        const firstAssignedId = String(currentUser.departments[0]);
+        const exists = allDepartments.find(d => String(getDeptId(d)) === firstAssignedId);
+        if (exists) {
+           setFilters(prev => ({ ...prev, departmentId: firstAssignedId }));
+        }
+      }
+    }
+  }, [deptData, currentUser, filters.departmentId]);
 
   // Refetch when filters change
   useEffect(() => {
@@ -504,8 +608,8 @@ const AllUsersManagement = () => {
                         >
                           <SelectTrigger className="h-9"><SelectValue placeholder="Select Dept" /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="unassigned">None</SelectItem>
-                            {departments.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                            {currentUser?.role === 'SUPERADMIN' && <SelectItem value="unassigned">None</SelectItem>}
+                            {departments.map((d) => <SelectItem key={getDeptId(d)} value={String(getDeptId(d))}>{d.name}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
@@ -709,8 +813,8 @@ const AllUsersManagement = () => {
                            >
                              <SelectTrigger className="h-9"><SelectValue placeholder="Select Dept" /></SelectTrigger>
                              <SelectContent>
-                               <SelectItem value="unassigned">None</SelectItem>
-                               {departments.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                               {currentUser?.role === 'SUPERADMIN' && <SelectItem value="unassigned">None</SelectItem>}
+                               {departments.map((d) => <SelectItem key={getDeptId(d)} value={String(getDeptId(d))}>{d.name}</SelectItem>)}
                              </SelectContent>
                            </Select>
                          </div>
@@ -964,19 +1068,23 @@ const AllUsersManagement = () => {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
               <Select
-                value={filters.departmentId || "all"}
+                value={filters.departmentId || (currentUser?.role === 'SUPERADMIN' || currentUser?.isAdmin === true ? "all" : (departments.length === 1 ? String(getDeptId(departments[0])) : "all-assigned"))}
                 onValueChange={(val) => setFilters({ 
                   ...filters, 
-                  departmentId: val === "all" ? "" : val,
+                  departmentId: (val === "all" || val === "all-assigned") ? "" : val,
                   sectionId: "", lineId: "", subSectionId: "", stationId: ""
                 })}
               >
                 <SelectTrigger className="h-9">
-                  <SelectValue placeholder="All Departments" />
+                  <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                  {currentUser?.role === 'SUPERADMIN' || currentUser?.isAdmin === true ? (
+                    <SelectItem value="all">All Departments</SelectItem>
+                  ) : (
+                     departments.length > 1 && <SelectItem value="all-assigned">All My Departments</SelectItem>
+                  )}
+                  {departments.map(d => <SelectItem key={getDeptId(d)} value={String(getDeptId(d))}>{d.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -1364,7 +1472,7 @@ const AllUsersManagement = () => {
                             className="p-1.5 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 rounded transition-colors"
                             title="Start Action"
                           >
-                            <IconPlayerPlay className="w-4 h-4" />
+                            <span className="text-[10px] font-black leading-none">5M</span>
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user._id, true)}
@@ -1440,7 +1548,7 @@ const AllUsersManagement = () => {
                             className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
                             title="Start Action"
                           >
-                            <IconPlayerPlay className="w-4 h-4" />
+                            <span className="text-[10px] font-black leading-none">5M</span>
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user._id, true)}

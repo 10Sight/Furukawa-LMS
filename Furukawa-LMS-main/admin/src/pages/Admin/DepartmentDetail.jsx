@@ -1,6 +1,5 @@
 // src/pages/DepartmentDetail.jsx
 import React, { useState, useMemo } from "react";
-import { useParams } from "react-router-dom";
 import {
   useGetDepartmentByIdQuery,
   useGetDepartmentProgressQuery,
@@ -36,15 +35,33 @@ import {
   IconBook2,
   IconTrophy,
   IconUser,
-  IconMail
+  IconMail,
+  IconChevronLeft,
+  IconChevronRight
 } from "@tabler/icons-react";
-import { useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 
 const DepartmentDetail = () => {
   const { departmentId } = useParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("overview");
+  const { search } = useLocation();
+  
+  const queryParams = useMemo(() => new URLSearchParams(search), [search]);
+  const [activeTab, setActiveTab] = useState(queryParams.get("tab") || "overview");
+
+  // Pagination states
+  const [progressPage, setProgressPage] = useState(1);
+  const [submissionsPage, setSubmissionsPage] = useState(1);
+  const [attemptsPage, setAttemptsPage] = useState(1);
+
+  // Sync tab if URL changes (e.g. browser back/forward)
+  React.useEffect(() => {
+    const tab = queryParams.get("tab");
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab);
+    }
+  }, [queryParams, activeTab]);
 
   // API Queries
   const {
@@ -57,28 +74,46 @@ const DepartmentDetail = () => {
   const {
     data: progressData,
     isLoading: progressLoading,
+    isFetching: progressFetching,
     error: progressError,
     refetch: refetchProgress,
-  } = useGetDepartmentProgressQuery(departmentId, {
+  } = useGetDepartmentProgressQuery({ 
+    departmentId, 
+    page: progressPage, 
+    limit: 10 
+  }, {
     refetchOnMountOrArgChange: true,
+    skip: activeTab !== "progress" && activeTab !== "overview" && activeTab !== "multi-skilling" && activeTab !== "handover"
   });
 
   const {
     data: submissionsData,
     isLoading: submissionsLoading,
+    isFetching: submissionsFetching,
     error: submissionsError,
     refetch: refetchSubmissions,
-  } = useGetDepartmentSubmissionsQuery(departmentId, {
+  } = useGetDepartmentSubmissionsQuery({ 
+    departmentId, 
+    page: submissionsPage, 
+    limit: 10 
+  }, {
     refetchOnMountOrArgChange: true,
+    skip: activeTab !== "submissions" && activeTab !== "overview"
   });
 
   const {
     data: attemptsData,
     isLoading: attemptsLoading,
+    isFetching: attemptsFetching,
     error: attemptsError,
     refetch: refetchAttempts,
-  } = useGetDepartmentAttemptsQuery(departmentId, {
+  } = useGetDepartmentAttemptsQuery({ 
+    departmentId, 
+    page: attemptsPage, 
+    limit: 10 
+  }, {
     refetchOnMountOrArgChange: true,
+    skip: activeTab !== "quizzes" && activeTab !== "overview"
   });
 
   const department = departmentData?.data;
@@ -91,9 +126,9 @@ const DepartmentDetail = () => {
 
   const handleRefreshAll = () => {
     refetchDepartment();
-    refetchProgress();
-    refetchSubmissions();
-    refetchAttempts();
+    if (activeTab === "progress" || activeTab === "overview") refetchProgress();
+    if (activeTab === "submissions" || activeTab === "overview") refetchSubmissions();
+    if (activeTab === "quizzes" || activeTab === "overview") refetchAttempts();
     toast.success("Department data refreshed successfully!");
   };
 
@@ -118,14 +153,14 @@ const DepartmentDetail = () => {
     );
   };
 
-  // Calculate enhanced statistics
+  // Calculate enhanced statistics from global metadata returned by API
   const enhancedStats = useMemo(() => {
-    const { overallStats } = progressStats;
-    const { stats: submissionStatsData } = submissionStats;
-    const { stats: attemptStatsData } = attemptStats;
+    const overallStats = progressStats.overallStats || {};
+    const submissionStatsData = submissionStats.stats || {};
+    const attemptStatsData = attemptStats.stats || {};
 
     return {
-      totalStudents: department?.students?.length || 0,
+      totalStudents: department?.studentCount || department?.students?.length || overallStats.totalStudents || 0,
       studentsWithProgress: overallStats.studentsWithProgress || 0,
       averageProgress: overallStats.averageProgress || 0,
       totalModules: overallStats.totalModules || 0,
@@ -207,7 +242,7 @@ const DepartmentDetail = () => {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{department.name}</h1>
             <p className="text-muted-foreground mt-1">
-              {department.course?.title || "No course assigned"} • {department.students?.length || 0} trainees
+              {department.course?.title || "No course assigned"} • {department.studentCount || department.students?.length || 0} trainees
             </p>
           </div>
         </div>
@@ -296,7 +331,6 @@ const DepartmentDetail = () => {
           </div>
 
           <DepartmentStudentsTable
-            students={department.students}
             departmentId={departmentId}
             departmentName={department.name}
             onRefetch={refetchDepartment}
@@ -359,6 +393,34 @@ const DepartmentDetail = () => {
                       </div>
                     );
                   })}
+
+                  {progressData?.data?.totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                      <p className="text-sm text-muted-foreground">
+                        Page {progressPage} of {progressData.data.totalPages}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setProgressPage(p => Math.max(1, p - 1))}
+                          disabled={progressPage === 1 || progressFetching}
+                        >
+                          <IconChevronLeft className="h-4 w-4 mr-1" />
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setProgressPage(p => Math.min(progressData.data.totalPages, p + 1))}
+                          disabled={progressPage === progressData.data.totalPages || progressFetching}
+                        >
+                          Next
+                          <IconChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-12">
@@ -391,7 +453,7 @@ const DepartmentDetail = () => {
                 </Alert>
               ) : submissionStats.submissions.length > 0 ? (
                 <div className="space-y-4">
-                  {submissionStats.submissions.slice(0, 10).map((submission) => (
+                  {submissionStats.submissions.map((submission) => (
                     <div key={submission._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
                       <div className="flex items-center gap-4 flex-1">
                         <div className="flex items-center gap-3">
@@ -423,6 +485,34 @@ const DepartmentDetail = () => {
                       </div>
                     </div>
                   ))}
+
+                  {submissionsData?.data?.totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                      <p className="text-sm text-muted-foreground">
+                        Page {submissionsPage} of {submissionsData.data.totalPages}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSubmissionsPage(p => Math.max(1, p - 1))}
+                          disabled={submissionsPage === 1 || submissionsFetching}
+                        >
+                          <IconChevronLeft className="h-4 w-4 mr-1" />
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSubmissionsPage(p => Math.min(submissionsData.data.totalPages, p + 1))}
+                          disabled={submissionsPage === submissionsData.data.totalPages || submissionsFetching}
+                        >
+                          Next
+                          <IconChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Show stats summary */}
                   <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
@@ -475,7 +565,7 @@ const DepartmentDetail = () => {
                 </Alert>
               ) : attemptStats.attempts.length > 0 ? (
                 <div className="space-y-4">
-                  {attemptStats.attempts.slice(0, 10).map((attempt) => (
+                  {attemptStats.attempts.map((attempt) => (
                     <div key={attempt._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
                       <div className="flex items-center gap-4 flex-1">
                         <div className="flex items-center gap-3">
@@ -505,6 +595,34 @@ const DepartmentDetail = () => {
                       </div>
                     </div>
                   ))}
+
+                  {attemptsData?.data?.totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                      <p className="text-sm text-muted-foreground">
+                        Page {attemptsPage} of {attemptsData.data.totalPages}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAttemptsPage(p => Math.max(1, p - 1))}
+                          disabled={attemptsPage === 1 || attemptsFetching}
+                        >
+                          <IconChevronLeft className="h-4 w-4 mr-1" />
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAttemptsPage(p => Math.min(attemptsData.data.totalPages, p + 1))}
+                          disabled={attemptsPage === attemptsData.data.totalPages || attemptsFetching}
+                        >
+                          Next
+                          <IconChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Show stats summary */}
                   <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">

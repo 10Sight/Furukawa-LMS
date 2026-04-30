@@ -13,9 +13,21 @@ const parseJSON = (data, fallback = []) => {
     return data;
 };
 
+// Helper to resolve Quiz ID
+const resolveQuizId = async (idOrSlug) => {
+    if (!idOrSlug) return null;
+    if (!isNaN(idOrSlug)) return idOrSlug;
+    const [rows] = await executeQuery("SELECT id FROM quizzes WHERE slug = ?", [idOrSlug]);
+    return rows.length > 0 ? rows[0].id : null;
+};
+
 // Create Quiz
 export const createQuiz = asyncHandler(async (req, res) => {
-    const { courseId, moduleId, lessonId, scope, title, questions, passingScore, description, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate } = req.body;
+    const { 
+        courseId, moduleId, lessonId, scope, title, questions, 
+        passingScore, description, timeLimit, attemptsAllowed, 
+        skillUpgradation, issueCertificate, departmentId, sectionId 
+    } = req.body;
 
     if (!title || !questions || questions.length === 0) {
         throw new ApiError("Title and questions are required", 400);
@@ -88,13 +100,14 @@ export const createQuiz = asyncHandler(async (req, res) => {
 
     const [insertRows] = await executeQuery(
         `INSERT INTO quizzes 
-        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, createdBy, createdAt, updatedAt)
+        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, createdBy, createdAt, updatedAt)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
         [
             resolvedCourseId, finalModuleId, finalLessonId, actualScope, title, slug, description,
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
-            JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true, req.user.id
+            JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true, 
+            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), req.user.id
         ]
     );
 
@@ -126,6 +139,14 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         whereClauses.push("q.course = ?");
         params.push(req.query.courseId);
     }
+    if (req.query.departmentId) {
+        whereClauses.push("EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)");
+        params.push(req.query.departmentId);
+    }
+    if (req.query.sectionId) {
+        whereClauses.push("EXISTS (SELECT 1 FROM OPENJSON(q.sectionId) WHERE value = ?)");
+        params.push(req.query.sectionId);
+    }
 
     const whereSQL = whereClauses.join(" AND ");
 
@@ -147,6 +168,8 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         q._id = q.id; // Map for frontend
         q.questions = parseJSON(q.questions);
         q.skillUpgradation = parseJSON(q.skillUpgradation);
+        q.departmentId = parseJSON(q.departmentId, []);
+        q.sectionId = parseJSON(q.sectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email, role: q.role };
@@ -162,19 +185,10 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
 
 // Get Quiz By ID
 export const getQuizById = asyncHandler(async (req, res) => {
-    const { id } = req.params;
+    const id = await resolveQuizId(req.params.id);
+    if (!id) throw new ApiError("Quiz not found", 404);
 
-    // Support slug or ID? Original supported both.
-    // Our schema likely relies on ID, but maybe slug exists.
-    let where = "id = ?";
-    let val = id;
-
-    // Check if ID-like
-    // Use try/catch or regex to determine if UUID/Int vs Slug string? 
-    // Assuming ID is standard int/uuid. If string, assume slug.
-    // Simplifying: Checks ID first.
-
-    let [rows] = await executeQuery(`
+    const [rows] = await executeQuery(`
         SELECT q.*, c.title as cTitle, u.fullName, u.email 
         FROM quizzes q 
         LEFT JOIN courses c ON q.course = c.id 
@@ -182,23 +196,14 @@ export const getQuizById = asyncHandler(async (req, res) => {
         WHERE q.id = ?
     `, [id]);
 
-    if (rows.length === 0) {
-        // Try slug if supported
-        [rows] = await executeQuery(`
-            SELECT q.*, c.title as cTitle, u.fullName, u.email 
-            FROM quizzes q 
-            LEFT JOIN courses c ON q.course = c.id 
-            LEFT JOIN users u ON q.createdBy = u.id 
-            WHERE q.slug = ?
-        `, [id]);
-    }
-
     if (rows.length === 0) throw new ApiError("Quiz not found", 404);
 
     const quiz = rows[0];
     quiz._id = quiz.id; // Map for frontend
     quiz.questions = parseJSON(quiz.questions);
     quiz.skillUpgradation = parseJSON(quiz.skillUpgradation);
+    quiz.departmentId = parseJSON(quiz.departmentId, []);
+    quiz.sectionId = parseJSON(quiz.sectionId, []);
     quiz.course = { id: quiz.course, title: quiz.cTitle };
     quiz.createdBy = { id: quiz.createdBy, fullName: quiz.fullName, email: quiz.email };
     delete quiz.cTitle; delete quiz.fullName; delete quiz.email;
@@ -208,8 +213,13 @@ export const getQuizById = asyncHandler(async (req, res) => {
 
 // Update Quiz
 export const updateQuiz = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const { title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation } = req.body;
+    const id = await resolveQuizId(req.params.id);
+    if (!id) throw new ApiError("Quiz not found", 404);
+    
+    const { 
+        title, questions, description, passingScore, timeLimit, 
+        attemptsAllowed, skillUpgradation, departmentId, sectionId 
+    } = req.body;
 
     const [rows] = await executeQuery("SELECT * FROM quizzes WHERE id = ?", [id]);
     if (rows.length === 0) throw new ApiError("Quiz not found", 404);
@@ -225,6 +235,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (attemptsAllowed !== undefined) { updates.push("attemptsAllowed = ?"); values.push(attemptsAllowed); }
     if (skillUpgradation !== undefined) { updates.push("skillUpgradation = ?"); values.push(JSON.stringify(skillUpgradation)); }
     if (req.body.issueCertificate !== undefined) { updates.push("issueCertificate = ?"); values.push(req.body.issueCertificate); }
+    if (departmentId !== undefined) { updates.push("departmentId = ?"); values.push(JSON.stringify(departmentId)); }
+    if (sectionId !== undefined) { updates.push("sectionId = ?"); values.push(JSON.stringify(sectionId)); }
 
     if (updates.length > 0) {
         updates.push("updatedAt = GETDATE()");
@@ -237,15 +249,18 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     quiz._id = quiz.id; // Map for frontend
     quiz.questions = parseJSON(quiz.questions);
     quiz.skillUpgradation = parseJSON(quiz.skillUpgradation);
+    quiz.departmentId = parseJSON(quiz.departmentId, []);
+    quiz.sectionId = parseJSON(quiz.sectionId, []);
 
     res.json(new ApiResponse(200, quiz, "Updated"));
 });
 
 // Delete Quiz
 export const deleteQuiz = asyncHandler(async (req, res) => {
-    const { id } = req.params;
+    const id = await resolveQuizId(req.params.id);
+    if (!id) throw new ApiError("Quiz not found", 404);
+    
     const [result, metadata] = await executeQuery("DELETE FROM quizzes WHERE id = ?", [id]);
-    if (metadata.affectedRows === 0) throw new ApiError("Quiz not found", 404);
     res.json(new ApiResponse(200, null, "Deleted"));
 });
 
@@ -332,6 +347,8 @@ export const getAccessibleQuizzes = asyncHandler(async (req, res) => {
         q._id = q.id; // Map for frontend
         q.questions = parseJSON(q.questions);
         q.skillUpgradation = parseJSON(q.skillUpgradation);
+        q.departmentId = parseJSON(q.departmentId, []);
+        q.sectionId = parseJSON(q.sectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email, role: q.role };
@@ -385,6 +402,8 @@ export const getCourseQuizzes = asyncHandler(async (req, res) => {
         q._id = q.id; // Map for frontend
         q.questions = parseJSON(q.questions);
         q.skillUpgradation = parseJSON(q.skillUpgradation);
+        q.departmentId = parseJSON(q.departmentId, []);
+        q.sectionId = parseJSON(q.sectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         delete q.cTitle;
         return q;
@@ -423,6 +442,8 @@ export const getQuizzesByCourse = asyncHandler(async (req, res) => {
         q._id = q.id; // Map for frontend
         q.questions = parseJSON(q.questions);
         q.skillUpgradation = parseJSON(q.skillUpgradation);
+        q.departmentId = parseJSON(q.departmentId, []);
+        q.sectionId = parseJSON(q.sectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email, role: q.role };
@@ -462,6 +483,8 @@ export const getQuizzesByModule = asyncHandler(async (req, res) => {
         q._id = q.id; // Map for frontend
         q.questions = parseJSON(q.questions);
         q.skillUpgradation = parseJSON(q.skillUpgradation);
+        q.departmentId = parseJSON(q.departmentId, []);
+        q.sectionId = parseJSON(q.sectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = { id: q.module, title: q.mTitle };
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email };
@@ -501,6 +524,8 @@ export const getQuizzesByLesson = asyncHandler(async (req, res) => {
         q._id = q.id; // Map for frontend
         q.questions = parseJSON(q.questions);
         q.skillUpgradation = parseJSON(q.skillUpgradation);
+        q.departmentId = parseJSON(q.departmentId, []);
+        q.sectionId = parseJSON(q.sectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email };

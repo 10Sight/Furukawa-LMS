@@ -69,6 +69,15 @@ export const departmentApi = createApi({
             providesTags: (result, error, id) => [{ type: 'Department', id }],
         }),
 
+        getDepartmentTrainees: builder.query({
+            query: ({ id, page = 1, limit = 20, search = "", status = "" }) => ({
+                url: `/api/departments/${id}/trainees`,
+                method: "GET",
+                params: { page, limit, search, status }
+            }),
+            providesTags: (result, error, { id }) => [{ type: 'Department', id: `trainees-${id}` }],
+        }),
+
         updateDepartment: builder.mutation({
             query: ({ id, data }) => ({
                 url: `/api/departments/${id}`,
@@ -87,11 +96,12 @@ export const departmentApi = createApi({
         }),
 
         getDepartmentProgress: builder.query({
-            query: (departmentId) => ({
+            query: ({ departmentId, page = 1, limit = 20, search = "" }) => ({
                 url: `/api/departments/${departmentId}/progress`,
                 method: "GET",
+                params: { page, limit, search }
             }),
-            providesTags: (result, error, departmentId) => [{ type: 'Department', id: `progress-${departmentId}` }],
+            providesTags: (result, error, { departmentId }) => [{ type: 'Department', id: `progress-${departmentId}` }],
         }),
 
         getAllDepartmentsProgress: builder.query({
@@ -103,19 +113,21 @@ export const departmentApi = createApi({
         }),
 
         getDepartmentSubmissions: builder.query({
-            query: (departmentId) => ({
+            query: ({ departmentId, page = 1, limit = 20, search = "" }) => ({
                 url: `/api/departments/${departmentId}/submissions`,
                 method: "GET",
+                params: { page, limit, search }
             }),
-            providesTags: (result, error, departmentId) => [{ type: 'Department', id: `submissions-${departmentId}` }],
+            providesTags: (result, error, { departmentId }) => [{ type: 'Department', id: `submissions-${departmentId}` }],
         }),
 
         getDepartmentAttempts: builder.query({
-            query: (departmentId) => ({
+            query: ({ departmentId, page = 1, limit = 20, search = "" }) => ({
                 url: `/api/departments/${departmentId}/attempts`,
                 method: "GET",
+                params: { page, limit, search }
             }),
-            providesTags: (result, error, departmentId) => [{ type: 'Department', id: `attempts-${departmentId}` }],
+            providesTags: (result, error, { departmentId }) => [{ type: 'Department', id: `attempts-${departmentId}` }],
         }),
 
         // Super Admin functions
@@ -173,6 +185,7 @@ export const {
     useRemoveStudentFromDepartmentMutation,
     useGetAllDepartmentsQuery,
     useGetDepartmentByIdQuery,
+    useGetDepartmentTraineesQuery,
     useUpdateDepartmentMutation,
     useDeleteDepartmentMutation,
     useGetDepartmentProgressQuery,

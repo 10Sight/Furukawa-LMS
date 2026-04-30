@@ -1057,7 +1057,7 @@ function EditUserDialog({ isOpen, setIsOpen, user, currentRoleId, onSuccess }) {
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="none">None (Remove from Role)</SelectItem>
-                                        {customRoles.filter(r => String(r.id) === String(currentRoleId)).map(r => (
+                                        {customRoles.filter(r => !r.isSystemRole).map(r => (
                                             <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
                                         ))}
                                     </SelectContent>

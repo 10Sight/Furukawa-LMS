@@ -7,7 +7,7 @@ export const quizApi = createApi({
     tagTypes: ['Quiz', 'Course', 'Module', 'Lesson'], // Add Module and Lesson to tagTypes
     endpoints: (builder) => ({
         createQuiz: builder.mutation({
-            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation }) => ({
+            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate }) => ({
                 url: "/api/quizzes",
                 method: "POST",
                 data: {
@@ -18,19 +18,29 @@ export const quizApi = createApi({
                     title,
                     questions,
                     passingScore,
+                    departmentId,
+                    sectionId,
                     ...(timeLimit !== undefined ? { timeLimit } : {}),
                     ...(attemptsAllowed !== undefined ? { attemptsAllowed } : {}),
-                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {})
+                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
+                    ...(issueCertificate !== undefined ? { issueCertificate } : {})
                 }
             }),
             invalidatesTags: ['Quiz', 'Course', 'Module', 'Lesson'], // Invalidate all relevant caches
         }),
 
         getAllQuizzes: builder.query({
-            query: ({ page = 1, limit = 20, search = "", courseId } = {}) => ({
+            query: ({ page = 1, limit = 20, search = "", courseId, departmentId, sectionId } = {}) => ({
                 url: "/api/quizzes",
                 method: "GET",
-                params: { page, limit, search, ...(courseId && { courseId }) }
+                params: { 
+                    page, 
+                    limit, 
+                    search, 
+                    ...(courseId && { courseId }),
+                    ...(departmentId && { departmentId }),
+                    ...(sectionId && { sectionId })
+                }
             }),
             providesTags: (result, error, arg) => {
                 // Handle different response structures
@@ -51,7 +61,7 @@ export const quizApi = createApi({
         }),
 
         updateQuiz: builder.mutation({
-            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation }) => ({
+            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate }) => ({
                 url: `/api/quizzes/${id}`,
                 method: "PUT",
                 data: {
@@ -61,7 +71,10 @@ export const quizApi = createApi({
                     ...(description !== undefined ? { description } : {}),
                     ...(timeLimit !== undefined ? { timeLimit } : {}),
                     ...(attemptsAllowed !== undefined ? { attemptsAllowed } : {}),
-                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {})
+                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
+                    ...(departmentId !== undefined ? { departmentId } : {}),
+                    ...(sectionId !== undefined ? { sectionId } : {}),
+                    ...(issueCertificate !== undefined ? { issueCertificate } : {})
                 }
             }),
             invalidatesTags: (result, error, arg) => [

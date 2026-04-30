@@ -57,8 +57,10 @@ import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
 import sixteenDayMonitoringRoutes from "./routes/sixteenDayMonitoring.routes.js";
+import threeDayMonitoringRoutes from "./routes/threeDayMonitoring.routes.js";
 import tenCycleSheetRoutes from "./routes/tenCycleSheet.routes.js";
 import reportClubRoutes from "./routes/reportClub.routes.js";
+import menteeFeedbackRoutes from "./routes/menteeFeedback.routes.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
 
 import machineRoutes from "./routes/machine.routes.js";
@@ -89,6 +91,9 @@ import LineRequirement from "./models/lineRequirement.model.js";
 import LineRequirementHistory from "./models/lineRequirementHistory.model.js";
 import ReportClub from "./models/reportClub.model.js";
 import UserHierarchySnapshot from "./models/userHierarchySnapshot.model.js";
+import MenteeFeedback from "./models/menteeFeedback.model.js";
+import Course from "./models/course.model.js";
+import Quiz from "./models/quiz.model.js";
 
 const app = express();
 const allowedOrigins = [
@@ -233,12 +238,15 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/operator-observance", operatorObservanceRoutes);
 app.use("/api/daily-5m", daily5MRoutes);
 app.use("/api/daily-production-report", dailyProductionReportRoutes);
+app.use("/api/v1/daily-production-report", dailyProductionReportRoutes);
 app.use("/api/sixteen-day-monitoring", sixteenDayMonitoringRoutes);
+app.use("/api/three-day-monitoring", threeDayMonitoringRoutes);
 app.use("/api/ten-cycle-sheets", tenCycleSheetRoutes);
 app.use("/api/section-heads", sectionHeadRoutes);
 app.use("/api/sections", sectionRoutes);
 app.use("/api/sub-sections", subSectionRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
+app.use("/api/mentee-feedback", menteeFeedbackRoutes);
 
 
 // Initialize Socket.IO service
@@ -405,18 +413,21 @@ const startServer = async () => {
         reportScheduler.init();
 
         // Initialize Tables
-        HeadcountReport.init();
+        await HeadcountReport.init();
         await import("./models/skillMatrixConfig.model.js").then(m => m.SkillMatrixConfig.init());
         await import("./models/skillMatrixEvaluation.model.js").then(m => m.SkillMatrixEvaluation.init());
         await MonitoringConfig.init();
         await HandoverSheetConfig.init();
         await MultiSkillingPlanConfig.init();
         await SkillMatrixDashboardConfig.init();
+        await Course.init();
+        await Quiz.init();
         await Line.init();
         await LineRequirement.init();
         await LineRequirementHistory.init();
         await ReportClub.init();
         await UserHierarchySnapshot.init();
+        await MenteeFeedback.init();
 
         server.listen(PORT, () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);

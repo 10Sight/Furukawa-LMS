@@ -4,6 +4,7 @@ class HandoverSheet {
     constructor(data) {
         this.id = data.id;
         this.departmentId = data.departmentId;
+        this.sectionId = data.sectionId;
         this.date = data.date;
 
         // Array of entries: { studentId, marks, process, mentor, interview1, interview2 }
@@ -24,6 +25,8 @@ class HandoverSheet {
                 issueDate: "01.06.09"
             });
 
+        this.isSubmitted = !!data.isSubmitted;
+        this.submittedAt = data.submittedAt;
         this.createdBy = data.createdBy;
         this.updatedBy = data.updatedBy;
         this.createdAt = data.createdAt;
@@ -37,10 +40,13 @@ class HandoverSheet {
                 CREATE TABLE handover_sheets (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId INT NOT NULL,
+                    sectionId INT,
                     date DATE,
                     entries NVARCHAR(MAX),
                     signatures NVARCHAR(MAX),
                     metadata NVARCHAR(MAX),
+                    isSubmitted BIT DEFAULT 0,
+                    submittedAt DATETIME,
                     createdBy NVARCHAR(255),
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE(),
@@ -60,20 +66,68 @@ class HandoverSheet {
                 console.log("Added metadata column to handover_sheets");
             } catch (e) { }
         }
+
+        // Migration: Add sectionId column if missing
+        try {
+            await executeQuery("SELECT TOP 1 sectionId FROM handover_sheets");
+        } catch (error) {
+            try {
+                await executeQuery("ALTER TABLE handover_sheets ADD sectionId INT");
+                console.log("Added sectionId column to handover_sheets");
+            } catch (e) { }
+        }
+
+        // Migration: Add isSubmitted column if missing
+        try {
+            await executeQuery("SELECT TOP 1 isSubmitted FROM handover_sheets");
+        } catch (error) {
+            try {
+                await executeQuery("ALTER TABLE handover_sheets ADD isSubmitted BIT DEFAULT 0");
+                console.log("Added isSubmitted column to handover_sheets");
+            } catch (e) { }
+        }
+
+        // Migration: Add submittedAt column if missing
+        try {
+            await executeQuery("SELECT TOP 1 submittedAt FROM handover_sheets");
+        } catch (error) {
+            try {
+                await executeQuery("ALTER TABLE handover_sheets ADD submittedAt DATETIME");
+                console.log("Added submittedAt column to handover_sheets");
+            } catch (e) { }
+        }
     }
 
-    static async findByDepartmentId(departmentId) {
-        const query = "SELECT * FROM handover_sheets WHERE departmentId = ?";
-        const [rows] = await executeQuery(query, [departmentId]);
+    static async findSpecific(departmentId, sectionId = null, date = null) {
+        let query = "SELECT * FROM handover_sheets WHERE departmentId = ?";
+        let params = [departmentId];
+        if (sectionId) {
+            query += " AND sectionId = ?";
+            params.push(sectionId);
+        } else {
+            query += " AND sectionId IS NULL";
+        }
+
+        if (date) {
+            query += " AND CAST(date AS DATE) = CAST(? AS DATE)";
+            params.push(date);
+        }
+
+        const [rows] = await executeQuery(query, params);
         if (rows.length === 0) return null;
         return new HandoverSheet(rows[0]);
     }
 
+    // Keep for compatibility
+    static async findByDepartmentId(departmentId) {
+        return this.findSpecific(departmentId, null);
+    }
+
     static async create(data) {
         const query = `
-            INSERT INTO handover_sheets (departmentId, date, entries, signatures, metadata, createdBy)
+            INSERT INTO handover_sheets (departmentId, sectionId, date, entries, signatures, metadata, createdBy, isSubmitted, submittedAt)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const entriesStr = JSON.stringify(data.entries || []);
         const signaturesStr = JSON.stringify(data.signatures || {});
@@ -81,11 +135,14 @@ class HandoverSheet {
 
         const [rows] = await executeQuery(query, [
             data.departmentId,
+            data.sectionId || null,
             data.date,
             entriesStr,
             signaturesStr,
             metadataStr,
-            data.createdBy
+            data.createdBy,
+            data.isSubmitted ? 1 : 0,
+            data.submittedAt || null
         ]);
         return new HandoverSheet({ ...data, id: rows[0].id });
     }
@@ -93,14 +150,14 @@ class HandoverSheet {
     async save() {
         const query = `
             UPDATE handover_sheets 
-            SET date = ?, entries = ?, signatures = ?, metadata = ?, updatedBy = ?, updatedAt = GETDATE()
+            SET date = ?, entries = ?, signatures = ?, metadata = ?, updatedBy = ?, updatedAt = GETDATE(), isSubmitted = ?, submittedAt = ?
             WHERE id = ?
         `;
         const entriesStr = JSON.stringify(this.entries);
         const signaturesStr = JSON.stringify(this.signatures);
         const metadataStr = JSON.stringify(this.metadata);
 
-        console.log(`[HandoverSheet Model] Saving sheet id=${this.id}, entries count=${this.entries.length}`);
+        console.log(`[HandoverSheet Model] Saving sheet id=${this.id}, entries count=${this.entries.length}, isSubmitted=${this.isSubmitted}`);
 
         await executeQuery(query, [
             this.date,
@@ -108,6 +165,8 @@ class HandoverSheet {
             signaturesStr,
             metadataStr,
             this.updatedBy,
+            this.isSubmitted ? 1 : 0,
+            this.submittedAt || null,
             this.id
         ]);
     }

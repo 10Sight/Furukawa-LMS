@@ -200,7 +200,8 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
     name: '',
     description: '',
     permissions: [],
-    color: '#3B82F6'
+    color: '#3B82F6',
+    targetLayout: 'custom'
   });
   const [errors, setErrors] = useState({});
 
@@ -276,7 +277,8 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
       name: '',
       description: '',
       permissions: [],
-      color: '#3B82F6'
+      color: '#3B82F6',
+      targetLayout: 'custom'
     });
     setErrors({});
     onClose();
@@ -358,6 +360,37 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
                 selectedColor={formData.color}
                 onColorChange={handleColorChange}
               />
+
+              <Box sx={{ mt: 3 }}>
+                <FormLabel sx={{ mb: 1, fontSize: '0.875rem', fontWeight: 600, display: 'block' }}>
+                  Target Layout
+                </FormLabel>
+                <select
+                  value={formData.targetLayout}
+                  onChange={handleInputChange('targetLayout')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #E2E8F0',
+                    fontSize: '0.875rem',
+                    backgroundColor: '#F8FAFC',
+                    outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = formData.color}
+                  onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
+                >
+                  <option value="custom">Custom Portal (Default)</option>
+                  <option value="admin">Admin Portal</option>
+                  <option value="trainer">Trainer Portal</option>
+                  <option value="student">Student Portal</option>
+                  <option value="cms">CMS Portal</option>
+                </select>
+                <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                  Determines the default dashboard and sidebar structure for this role.
+                </Typography>
+              </Box>
 
               {/* Role Preview */}
               <Box sx={{ mt: 3 }}>

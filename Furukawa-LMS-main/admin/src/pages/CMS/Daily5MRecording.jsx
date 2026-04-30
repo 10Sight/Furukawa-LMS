@@ -32,7 +32,9 @@ import {
     IconScissors,
     IconLayout2,
     IconCpu,
-    IconFilter
+    IconFilter,
+    IconClipboardCheck,
+    IconMail
 } from "@tabler/icons-react";
 import AssignmentSelect from "@/components/common/AssignmentSelect";
 import { Badge } from "@/components/ui/badge";
@@ -1017,11 +1019,17 @@ const Daily5MRecording = () => {
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSendingEmail, setIsSendingEmail] = useState(false);
 
     // Auth state for permissions
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin;
     const hasApprovalPermission = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:approve');
+    const canView5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:read');
+    const canEdit5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:update');
+    const canEditSubmitted5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:edit_submitted');
+    const isSessionLocked = recordStatus && String(recordStatus).toUpperCase() !== 'PENDING';
+    const hasEditPermission = isAdmin || canEdit5M || canEditSubmitted5M;
 
     // Segregation of Duties: User who filled/submitted the form CANNOT approve/reject it.
     // Even Admins are restricted from approving their own entries for audit integrity.
@@ -1313,7 +1321,9 @@ const Daily5MRecording = () => {
 
     // Data Entry State
     const [formData, setFormData] = useState({});
+    const [initialFormData, setInitialFormData] = useState({}); // Tracking which rows were already filled on load
     const [formType, setFormType] = useState('standard'); // 'standard' or 'crimping'
+    const isCrimping = formType === 'crimping'; // Derived variable for convenience
 
     // Play Mode state for automated workflows
     const [isPlayMode, setIsPlayMode] = useState(false);
@@ -1334,6 +1344,7 @@ const Daily5MRecording = () => {
 
             if (data.recordData) {
                 setFormData(data.recordData);
+                setInitialFormData(data.recordData);
             }
             if (data.formType) {
                 setFormType(data.formType);
@@ -1354,7 +1365,9 @@ const Daily5MRecording = () => {
     };
 
     const handleAddForm = async (typeOverride = null) => {
-        const activeType = typeOverride || addDialogType;
+        // Guard against React click events being passed as the first argument
+        const normalizedType = typeof typeOverride === 'string' ? typeOverride : null;
+        const activeType = normalizedType || addDialogType;
         if (!activeType) {
             toast.error("Please select a form type");
             return;
@@ -1368,9 +1381,13 @@ const Daily5MRecording = () => {
             if (isPlayMode && playUserData) {
                 const user = playUserData;
                 const recIndex = 0;
-                initialRecordData[`rec_${recIndex}_Date`] = new Date().toLocaleDateString('en-CA');
-                if (user.logShift || user.shift) {
-                    initialRecordData[`rec_${recIndex}_Shift`] = user.logShift || user.shift;
+                
+                // Use passed date if available, otherwise default to today
+                const targetDate = user.date || new Date().toLocaleDateString('en-CA');
+                initialRecordData[`rec_${recIndex}_Date`] = targetDate;
+
+                if (user.shift || user.logShift) {
+                    initialRecordData[`rec_${recIndex}_Shift`] = user.shift || user.logShift;
                 }
 
                 // Set Skill Level (Automated Fetch)
@@ -1441,6 +1458,7 @@ const Daily5MRecording = () => {
             if (response.data.success) {
                 const newRecord = response.data.data;
                 setFormData({});
+                setInitialFormData({});
                 setFormType(activeType);
                 setSelectedDate(addDialogDate);
                 setSubmittedBy(null);
@@ -1555,6 +1573,7 @@ const Daily5MRecording = () => {
                 setSelectedSection(sectId);
                 setSelectedDate(record.date ? new Date(record.date).toISOString().split('T')[0] : new Date().toLocaleDateString('en-CA'));
                 setFormData(recordData);
+                setInitialFormData(recordData);
                 setSubmittedBy(record.submittedByName || "User");
                 setSubmittedById(record.submittedBy);
                 setCurrentRecordId(record.id);
@@ -1684,7 +1703,7 @@ const Daily5MRecording = () => {
                 const qaShiftIC = isCrimping ? formData[`rec_${i}_QA_Incharge`] : formData[`rec_${i}_Result_1`];
                 const approvedBy = formData[`rec_${i}_Approved_By`]; // Same for both layouts
 
-                if (!processOwner || !qaShiftIC || !approvedBy) {
+                if (!qaShiftIC) {
                     activeRowsWithMissingFields.push(i + 1);
                 }
             }
@@ -1698,7 +1717,7 @@ const Daily5MRecording = () => {
         if (activeRowsWithMissingFields.length > 0) {
             toast.error(
                 `Row(s) [${activeRowsWithMissingFields.join(', ')}] are incomplete. ` +
-                `Please fill Process Owner, QA Shift In-charge, and Approved By before submitting.`,
+                `Please fill QA Shift In-charge before submitting.`,
                 { duration: 5000 }
             );
             return;
@@ -1709,7 +1728,8 @@ const Daily5MRecording = () => {
         try {
             const response = await axiosInstance.post(`/api/daily-5m/record/${currentRecordId}/submit`);
             if (response.data.success) {
-                toast.success("Form submitted and email sent successfully!");
+                toast.success("Form submitted successfully!");
+                setRecordStatus('SUBMITTED'); // Update local state immediately
                 setIsPreviewOpen(false);
                 // Redirect back to list after successful submission
                 navigate(location.pathname, { replace: true });
@@ -1721,6 +1741,26 @@ const Daily5MRecording = () => {
             toast.error(error.response?.data?.message || "Failed to submit form");
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleSendEmailNotification = async () => {
+        if (!currentRecordId) return;
+        setIsSendingEmail(true);
+        try {
+            const response = await axiosInstance.post(`/api/daily-5m/record/${currentRecordId}/send-email`);
+            if (response.data.success) {
+                toast.success("Email notification sent successfully!");
+                setIsPreviewOpen(false);
+                // Return to list view
+                navigate(location.pathname, { replace: true });
+                setShowFormList(true);
+                fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+            }
+        } catch (error) {
+            toast.error(error?.response?.data?.message || "Failed to send email notification");
+        } finally {
+            setIsSendingEmail(false);
         }
     };
 
@@ -1762,6 +1802,13 @@ const Daily5MRecording = () => {
     const processText = (text) => {
         if (!text) return "";
         return text.replace("{DeptName}", selectedDeptName);
+    };
+
+    // Helper to check if a row in a specific data set has significant data (Line, OpName, or Station)
+    const checkIsRowFilled = (data, index) => {
+        if (!data) return false;
+        // Primary fields that signify a row is "active" or "filled"
+        return !!(data[`rec_${index}_Line`] || data[`rec_${index}_OpName`] || data[`rec_${index}_StationMC`] || data[`rec_${index}_OperatorName`]);
     };
 
     // Common Render: Header Section
@@ -1865,7 +1912,7 @@ const Daily5MRecording = () => {
                         </DialogContent>
                     </Dialog>
 
-                    <Button onClick={() => handleSaveRecord(null, { showPreview: true })} disabled={!selectedDepartment || loadingConfig}>
+                    <Button onClick={() => handleSaveRecord(null, { showPreview: true })} disabled={!selectedDepartment || loadingConfig || !hasEditPermission}>
                         <IconClipboardList className="w-5 h-5 mr-2" />
                         Save & Preview
                     </Button>
@@ -1927,7 +1974,7 @@ const Daily5MRecording = () => {
 
                     {/* Preview & Submit Dialog */}
                     <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-                        <DialogContent className="max-w-[1000px] max-h-[90vh] flex flex-col">
+                        <DialogContent className="max-w-[1300px] max-h-[90vh] flex flex-col">
                             <DialogHeader>
                                 <DialogTitle className="text-xl font-bold flex items-center justify-between">
                                     <span>Review Recording & Submit</span>
@@ -2011,11 +2058,18 @@ const Daily5MRecording = () => {
                                 <Button variant="ghost" onClick={() => setIsPreviewOpen(false)} disabled={isSubmitting}>
                                     Back to Edit
                                 </Button>
-                                <Button onClick={handleSubmitSession} disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 px-8">
+                                <Button onClick={handleSubmitSession} disabled={isSubmitting || !hasEditPermission} className="bg-blue-600 hover:bg-blue-700 px-8">
                                     {isSubmitting ? (
-                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
                                     ) : (
-                                        <>Submit & Send Email</>
+                                        <><IconClipboardCheck className="w-5 h-5 mr-2" /> Save</>
+                                    )}
+                                </Button>
+                                <Button onClick={handleSendEmailNotification} disabled={isSendingEmail || !hasEditPermission} className="bg-emerald-600 hover:bg-emerald-700 px-8 text-white">
+                                    {isSendingEmail ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
+                                    ) : (
+                                        <><IconMail className="w-5 h-5 mr-2" /> Submit & Send Email Notification</>
                                     )}
                                 </Button>
                             </DialogFooter>
@@ -2097,7 +2151,7 @@ const Daily5MRecording = () => {
                 <div className="space-y-6">
                     <div className="flex justify-between items-center bg-white p-4 rounded-lg border">
                         <h2 className="text-lg font-semibold text-slate-700">Records for {selectedDeptName} - {selectedSectionName}</h2>
-                        <Button onClick={() => setIsAddDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+                        <Button onClick={() => setIsAddDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700" disabled={!hasEditPermission}>
                             <IconPlus className="mr-2" /> Add New Form
                         </Button>
                     </div>
@@ -2122,7 +2176,7 @@ const Daily5MRecording = () => {
                                             <div className="flex flex-col items-center justify-center space-y-3 opacity-60">
                                                 <IconClipboardList size={48} className="text-slate-300" />
                                                 <div className="font-medium text-lg">No sessions found for this date</div>
-                                                <Button onClick={() => setIsAddDialogOpen(true)} variant="outline" size="sm">Create First Form</Button>
+                                                <Button onClick={() => setIsAddDialogOpen(true)} variant="outline" size="sm" disabled={!hasEditPermission}>Create First Form</Button>
                                             </div>
                                         </TableCell>
                                     </TableRow>
@@ -2340,12 +2394,7 @@ const Daily5MRecording = () => {
 
 
 
-                                {/* Status Badge */}
-                                {recordStatus !== 'PENDING' && (
-                                    <Badge className={`ml-2 uppercase font-black px-4 py-1.5 text-sm shadow-sm ${recordStatus === 'APPROVED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                                        {recordStatus}
-                                    </Badge>
-                                )}
+
                             </div>
 
                             <div className="text-right">
@@ -2458,7 +2507,7 @@ const Daily5MRecording = () => {
                                                     departmentId={selectedDepartment}
                                                     canApprove={canApprove}
                                                     authUser={authUser}
-                                                    isLocked={!!formData[`rec_${recIndex}_RowStatus`] && !isAdmin}
+                                                    isLocked={!hasEditPermission || ((!!formData[`rec_${recIndex}_RowStatus`] || checkIsRowFilled(initialFormData, recIndex)) && !canEditSubmitted5M)}
                                                     isSubmitter={isSubmitter}
                                                     handleActionRow={handleActionRow}
                                                     skillLevels={skillLevels}
@@ -2467,7 +2516,8 @@ const Daily5MRecording = () => {
                                                 <React.Fragment key={recIndex}>
                                                     {(() => {
                                                         const rowStatus = formData[`rec_${recIndex}_RowStatus`];
-                                                        const isLocked = !!rowStatus && !isAdmin;
+                                                        const isRowInitiallyFilled = checkIsRowFilled(initialFormData, recIndex);
+                                                        const isLocked = !hasEditPermission || ((!!rowStatus || isRowInitiallyFilled) && !canEditSubmitted5M);
                                                         const isLastRow = recIndex === rowCount - 1;
                                                         return (
                                                             <>

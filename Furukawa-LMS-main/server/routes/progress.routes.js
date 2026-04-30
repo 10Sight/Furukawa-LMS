@@ -24,6 +24,7 @@ import {
     saveThreeDayMonitoringConfig,
     getThreeDayMonitoringHistory
 } from "../controllers/progress.controller.js";
+import { sendThreeDayMonitoringEmail } from "../controllers/threeDayMonitoring.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 import checkAccountStatus from "../middlewares/accountStatus.middleware.js";
@@ -50,16 +51,17 @@ router.get("/timeline-access/:courseId/:moduleId", verifyJWT, authorizeRoles("is
 router.patch("/admin/update-accessible-module", verifyJWT, authorizeRoles("isAdmin"), updateCurrentAccessibleModule);
 
 // 10 Cycle Check
-router.get("/ten-cycle-check/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), getTenCycleCheck);
-router.post("/ten-cycle-check/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), saveTenCycleCheck);
+router.get("/ten-cycle-check/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "ten_cycle:manage"), getTenCycleCheck);
+router.post("/ten-cycle-check/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "ten_cycle:manage"), saveTenCycleCheck);
 
 // 3 Day Monitoring
-router.get("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), getThreeDayMonitoring);
-router.post("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), saveThreeDayMonitoring);
+router.get("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage", "sixteen_day:manage"), getThreeDayMonitoring);
+router.post("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), saveThreeDayMonitoring);
+router.post("/three-day-monitoring/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), sendThreeDayMonitoringEmail);
 
 // 3 Day Monitoring Config
-router.get("/three-day-monitoring/config/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), getThreeDayMonitoringConfig);
-router.post("/three-day-monitoring/config/save", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), saveThreeDayMonitoringConfig);
-router.get("/three-day-monitoring/history/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), getThreeDayMonitoringHistory);
+router.get("/three-day-monitoring/config/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:edit_layout", "three_day:manage"), getThreeDayMonitoringConfig);
+router.post("/three-day-monitoring/config/save", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:edit_layout", "three_day:manage"), saveThreeDayMonitoringConfig);
+router.get("/three-day-monitoring/history/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:edit_layout", "three_day:manage"), getThreeDayMonitoringHistory);
 
 export default router;

@@ -113,6 +113,10 @@ const DEFAULT_DPR_CONFIG = {
             { process: "Leader" }
         ]
     },
+    attendance: {
+        title: "Manpower Attendance Summary",
+        rows: [] // Stores { stationId, stNo, process }
+    },
     footer: {
         title: "Efficiency & Signatures",
         madeByLabel: "Made By (Line Leader):",

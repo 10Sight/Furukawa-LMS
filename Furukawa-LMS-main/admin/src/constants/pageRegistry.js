@@ -42,6 +42,21 @@ export const getPageByLink = (link, layout) =>
         .sort((a, b) => b.link.length - a.link.length)[0];
 
 export const getKeyByPath = (path, layout) => {
+    // Check for portal-prefixed paths for custom roles
+    if (path.startsWith("/portal/")) {
+        // Map /portal/xyz to /admin/xyz to find the correct key
+        const subPath = path.substring(7); // e.g. "/departments/123"
+        const mappedPath = `/admin${subPath}`;
+        
+        // Try to find the key using the mapped path in the admin layout
+        const key = getKeyByPath(mappedPath, "admin");
+        if (key) return key;
+
+        // Fallback: search for any page that matches the subPath suffix
+        const match = PAGE_REGISTRY.find(p => p.link && p.link.endsWith(subPath.split('/')[1]));
+        if (match) return match.key;
+    }
+
     // Check direct registry matches
     const page = getPageByLink(path, layout);
     if (page) return page.key;
@@ -167,11 +182,16 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
 
     // Map to the format layouts expect
     return tabs.map(p => ({
-        link: p.link,
+        link: currentLayout === "custom" ? p.link.replace(/^\/[^/]+/, "/portal") : p.link,
         label: p.labelKey ? t(p.labelKey, p.label) : p.label,
         icon: getIcon(p.icon),
         key: p.key
     }));
+};
+
+export const getFirstAllowedPage = (layout, user, t) => {
+    const tabs = getSidebarTabs(layout, user, t);
+    return tabs.length > 0 ? tabs[0].link : null;
 };
 
 export const PAGE_REGISTRY = [
@@ -180,8 +200,9 @@ export const PAGE_REGISTRY = [
     { key: "trainers", label: "Instructors", labelKey: "nav.instructors", layout: "admin", link: "/admin/trainers", icon: "IconUser" },
     { key: "courses", label: "Courses", labelKey: "nav.courses", layout: "admin", link: "/admin/courses", icon: "IconCertificate" },
     { key: "departments", label: "Departments", labelKey: "nav.departments", layout: "admin", link: "/admin/departments", icon: "IconFolder" },
-    { key: "employees", label: "Trainees", labelKey: "nav.trainees", layout: "admin", link: "/admin/employees", icon: "IconUsers" },
+    { key: "employees", label: "Operator", labelKey: "nav.trainees", layout: "admin", link: "/admin/employees", icon: "IconUsers" },
     { key: "quiz-monitoring", label: "Quiz Monitoring", labelKey: "nav.quizMonitoring", layout: "admin", link: "/admin/quiz-monitoring", icon: "IconClock" },
+    { key: "test-paper", label: "Test Paper", labelKey: "nav.testPaper", layout: "admin", link: "/admin/test-paper", icon: "IconFileText" },
     { key: "attempt-requests", label: "Attempt Requests", labelKey: "nav.attemptRequests", layout: "admin", link: "/admin/attempt-requests", icon: "IconBell" },
     { key: "course-level-settings", label: "Course Level Settings", labelKey: "nav.courseLevelSettings", layout: "admin", link: "/admin/course-level-settings", icon: "IconLayersIntersect" },
     { key: "student-levels", label: "Student Levels", labelKey: "nav.studentLevels", layout: "admin", link: "/admin/student-levels", icon: "IconSettings" },
@@ -189,8 +210,12 @@ export const PAGE_REGISTRY = [
     { key: "analytics", label: "Analytics", labelKey: "nav.analytics", layout: "admin", link: "/admin/analytics", icon: "IconChartPie" },
     { key: "report", label: "Report", labelKey: "nav.report", layout: "admin", link: "/admin/report", icon: "IconClipboardList" },
     { key: "10-cycle", label: "10 Cycle", labelKey: "nav.tenCycle", layout: "admin", link: "/admin/10-cycle", icon: "IconRepeat" },
+    { key: "3-day-monitoring", label: "3-Day Monitoring", labelKey: "nav.threeDayMonitoring", layout: "admin", link: "/admin/3-day-monitoring", icon: "IconCalendarCheck" },
+    { key: "16-day-monitoring", label: "16-Day Monitoring", labelKey: "nav.sixteenDayMonitoring", layout: "admin", link: "/admin/16-day-monitoring", icon: "IconCalendarCheck" },
+    { key: "handover-sheet", label: "Handover Sheet", labelKey: "nav.handoverSheet", layout: "admin", link: "/admin/handover-sheet", icon: "IconClipboardList" },
     { key: "skill-matrix", label: "Skill Matrix", labelKey: "nav.skillMatrix", layout: "admin", link: "/admin/skill-matrix", icon: "IconStars" },
     { key: "daily-production-report", label: "Daily Production Report", labelKey: "nav.dailyProductionReport", layout: "admin", link: "/admin/daily-production-report", icon: "IconReportAnalytics" },
+    { key: "dpr-manage", label: "DPR Setup", labelKey: "nav.dprManage", layout: "admin", link: "/admin/dpr-manage", icon: "IconSettings" },
     { key: "role-manager", label: "Roles & Permissions", labelKey: "nav.rolesPermissions", layout: "admin", link: "/admin/role-manager", icon: "IconSettings" },
     { key: "all-users", label: "All Users", labelKey: "nav.allUsers", layout: "admin", link: "/admin/all-users", icon: "IconUsers" },
     { key: "mentors", label: "Mentors", labelKey: "nav.mentors", layout: "admin", link: "/admin/mentors", icon: "IconUserHeart" },
@@ -198,6 +223,7 @@ export const PAGE_REGISTRY = [
     { key: "incharges", label: "Incharges", labelKey: "nav.incharges", layout: "admin", link: "/admin/incharges", icon: "IconUserCheck" },
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
     { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
+    { key: "multi-skilling", label: "Multi Skilling", labelKey: "nav.multiSkilling", layout: "admin", link: "/admin/multi-skilling", icon: "IconStars" },
 
     // Dashboard-specific pages (often considered core Admin functions)
     { key: "dashboard-home", label: "Dashboard", labelKey: "nav.dashboard", layout: "dashboard", link: "/dashboard", icon: "IconLayoutDashboardFilled" },
@@ -229,7 +255,7 @@ export const PAGE_REGISTRY = [
     { key: "trainer-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "trainer", link: "/trainer", icon: "IconLayoutDashboardFilled" },
     { key: "trainer-courses", label: "My Courses", labelKey: "nav.myCourses", layout: "trainer", link: "/trainer/courses", icon: "IconCertificate" },
     { key: "trainer-departments", label: "Departments", labelKey: "nav.myDepartments", layout: "trainer", link: "/trainer/departments", icon: "IconFolder" },
-    { key: "trainer-employees", label: "My Trainees", labelKey: "nav.students", layout: "trainer", link: "/trainer/employees", icon: "IconUsers" },
+    { key: "trainer-employees", label: "My Operator", labelKey: "nav.students", layout: "trainer", link: "/trainer/employees", icon: "IconUsers" },
     { key: "trainer-quiz-monitoring", label: "Quiz Monitoring", labelKey: "nav.quizManagement", layout: "trainer", link: "/trainer/quiz-monitoring", icon: "IconClock" },
     { key: "trainer-assignment-monitoring", label: "Assignment Monitoring", labelKey: "nav.assignmentManagement", layout: "trainer", link: "/trainer/assignment-monitoring", icon: "IconClipboardList" },
     { key: "trainer-certificates", label: "Certificate Issuance", labelKey: "nav.certificates", layout: "trainer", link: "/trainer/certificate-issuance", icon: "IconTemplate" },
@@ -271,6 +297,6 @@ export const PAGE_REGISTRY = [
     { key: "cms-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "cms", link: "/cms", icon: "IconLayoutDashboardFilled" },
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
-    // { key: "cms-approval-status", label: "5M Approval Status", layout: "cms", link: "/cms/approvals/status", icon: "IconCircleCheck" },
+    { key: "landing-page", label: "Landing Page (Portal Selector)", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];
 

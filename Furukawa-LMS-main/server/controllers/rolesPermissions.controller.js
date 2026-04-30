@@ -13,6 +13,8 @@ const SYSTEM_PERMISSIONS = {
   USER_DELETE: "user:delete",
   USER_SUSPEND: "user:suspend",
   USER_ACTIVATE: "user:activate",
+  USER_IMPORT_EXCEL: "user:import_excel",
+  USER_IMPORT_LOGS: "user:import_logs",
 
   // Course Management
   COURSE_CREATE: "course:create",
@@ -95,7 +97,36 @@ const SYSTEM_PERMISSIONS = {
   ROLE_ASSIGN: "role:assign",
 
   // CMS Management
-  DAILY_5M_APPROVE: "daily5m:approve"
+  DAILY_5M_APPROVE: "daily5m:approve",
+  DAILY_5M_READ: "daily5m:read",
+  DAILY_5M_UPDATE: "daily5m:update",
+  DAILY_5M_EDIT_SUBMITTED: "daily5m:edit_submitted",
+
+  // 16-Day Monitoring Management
+  SIXTEEN_DAY_EDIT_LAYOUT: "sixteen_day:edit_layout",
+  SIXTEEN_DAY_MANAGE: "sixteen_day:manage",
+  SIXTEEN_DAY_VERIFY: "sixteen_day:verify",
+  SIXTEEN_DAY_APPROVE: "sixteen_day:approve",
+
+  // 3-Day Monitoring Management
+  THREE_DAY_EDIT_LAYOUT: "three_day:edit_layout",
+  THREE_DAY_MANAGE: "three_day:manage",
+  THREE_DAY_VERIFY: "three_day:verify",
+  THREE_DAY_APPROVE: "three_day:approve",
+
+  // Mentee Feedback Management
+  MENTEE_FEEDBACK_MANAGE: "mentee_feedback:manage",
+  MENTEE_FEEDBACK_VIEW: "mentee_feedback:view",
+
+  // Multi Skilling Management
+  MULTI_SKILLING_MANAGE: "multi_skilling:manage",
+  MULTI_SKILLING_EDIT_LAYOUT: "multi_skilling:edit_layout",
+  MULTI_SKILLING_VIEW_HISTORY: "multi_skilling:view_history",
+
+  // Handover Sheet Management
+  HANDOVER_SHEET_READ: "handover_sheet:read",
+  HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
+  HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
 };
 
 // Define default role permissions
@@ -110,7 +141,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.RESOURCE_READ,
       SYSTEM_PERMISSIONS.QUIZ_READ,
       SYSTEM_PERMISSIONS.ASSIGNMENT_READ,
-      SYSTEM_PERMISSIONS.CERTIFICATE_READ
+      SYSTEM_PERMISSIONS.CERTIFICATE_READ,
+      SYSTEM_PERMISSIONS.DAILY_5M_READ
     ],
     isSystemRole: true,
     color: "#3B82F6"
@@ -162,7 +194,15 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.CERTIFICATE_ISSUE,
       // Analytics & User Management
       SYSTEM_PERMISSIONS.ANALYTICS_READ,
-      SYSTEM_PERMISSIONS.USER_READ
+      SYSTEM_PERMISSIONS.USER_READ,
+      SYSTEM_PERMISSIONS.DAILY_5M_READ,
+      SYSTEM_PERMISSIONS.DAILY_5M_UPDATE,
+      SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE,
+      SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ,
+      SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -177,6 +217,9 @@ const DEFAULT_ROLES = {
       ),
       SYSTEM_PERMISSIONS.AUDIT_READ,
       SYSTEM_PERMISSIONS.ROLE_READ,
+      SYSTEM_PERMISSIONS.ROLE_CREATE,
+      SYSTEM_PERMISSIONS.ROLE_UPDATE,
+      SYSTEM_PERMISSIONS.ROLE_DELETE,
       SYSTEM_PERMISSIONS.BULK_ENROLLMENT,
       SYSTEM_PERMISSIONS.BULK_EMAIL,
       SYSTEM_PERMISSIONS.BULK_CERTIFICATES
@@ -204,7 +247,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.USER_UPDATE, name: "Update Users", description: "Edit user information and profiles" },
         { id: SYSTEM_PERMISSIONS.USER_DELETE, name: "Delete Users", description: "Permanently delete user accounts" },
         { id: SYSTEM_PERMISSIONS.USER_SUSPEND, name: "Suspend Users", description: "Suspend user accounts" },
-        { id: SYSTEM_PERMISSIONS.USER_ACTIVATE, name: "Activate Users", description: "Activate suspended accounts" }
+        { id: SYSTEM_PERMISSIONS.USER_ACTIVATE, name: "Activate Users", description: "Activate suspended accounts" },
+        { id: SYSTEM_PERMISSIONS.USER_IMPORT_EXCEL, name: "Import Excel Data", description: "Import users from Excel files" },
+        { id: SYSTEM_PERMISSIONS.USER_IMPORT_LOGS, name: "View Import Logs", description: "View history and details of user imports" }
       ],
       "Course Management": [
         { id: SYSTEM_PERMISSIONS.COURSE_CREATE, name: "Create Courses", description: "Create new courses" },
@@ -285,7 +330,26 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.ROLE_ASSIGN, name: "Assign Roles", description: "Assign roles to users" }
       ],
       "CMS Management": [
-        { id: SYSTEM_PERMISSIONS.DAILY_5M_APPROVE, name: "Approve Daily 5M", description: "Approve or decline daily 5M recording sessions" }
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_APPROVE, name: "Approve Daily 5M", description: "Approve or decline daily 5M recording sessions" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_READ, name: "View Daily 5M", description: "View daily 5M recording data" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_UPDATE, name: "Update Daily 5M", description: "Edit daily 5M recording data" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT, name: "Edit 16-Day Monitoring Layout", description: "Modify the structure and categories of 16-day monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_MANAGE, name: "Manage 16-Day Monitoring", description: "Manage 16-day monitoring records" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT, name: "Edit 3-Day Monitoring Layout", description: "Modify the structure and categories of 3-day monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_MANAGE, name: "Manage 3-Day Monitoring", description: "Manage 3-day monitoring records" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_VERIFY, name: "Verify 3-Day Monitoring", description: "Verify 3-day monitoring records (Area Incharge sign-off)" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_APPROVE, name: "Approve 3-Day Monitoring", description: "Approve 3-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_MANAGE, name: "Manage Mentee Feedback", description: "Fill out and manage mentee feedback monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_VIEW, name: "View Mentee Feedback", description: "View mentee feedback monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE, name: "Manage Multi Skilling", description: "Fill out and manage multi skilling training plans" },
+        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT, name: "Edit Multi Skilling Layout", description: "Modify the table configuration and structure of multi skilling sheets" },
+        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, name: "View Handover Sheet", description: "View handover sheet records and history" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE, name: "Manage Handover Sheet", description: "Fill out, save, and submit handover sheets" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" }
       ]
     };
 

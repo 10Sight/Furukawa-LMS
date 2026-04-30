@@ -315,34 +315,72 @@ const CourseDetailPage = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Title</p>
-                  <p className="text-sm">{course.title}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Course Title</p>
+                  <p className="text-sm font-medium">{course.title}</p>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Category</p>
-                  <Badge variant="outline">{course.category}</Badge>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Category</p>
+                  <Badge variant="secondary" className="font-normal">{course.category}</Badge>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Level</p>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Difficulty Level</p>
                   {getDifficultyBadge(course.difficulty || "BEGINNER")}
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Status</p>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Current Status</p>
                   {getStatusBadge(course.status)}
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Instructor</p>
-                  <p className="text-sm">
-                    {course.instructor?.name || "Not assigned"}
-                  </p>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Trainer</p>
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-6 w-6">
+                      <AvatarFallback className="text-[10px]">
+                        {course.instructor?.fullName?.charAt(0) || 'T'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <p className="text-sm font-medium">
+                      {course.instructor?.fullName || "Not assigned"}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Created At</p>
-                  <p className="text-sm">
-                    {new Date(course.createdAt).toLocaleDateString()}
-                  </p>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Created Date</p>
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <IconCalendar className="h-3.5 w-3.5" />
+                    <span>{new Date(course.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1 col-span-full md:col-span-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Departments</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {course.departments && course.departments.length > 0 ? (
+                      course.departments.map((dept, idx) => (
+                        <Badge key={idx} variant="outline" className="bg-blue-50/50 text-blue-700 border-blue-200/50">
+                          {dept}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground italic">{course.department || "No department assigned"}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1 col-span-full md:col-span-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sections</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {course.sections && course.sections.length > 0 ? (
+                      course.sections.map((sec, idx) => (
+                        <Badge key={idx} variant="outline" className="bg-secondary/20 text-secondary-foreground border-secondary/30">
+                          {sec}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground italic">{course.section || "No section assigned"}</span>
+                    )}
+                  </div>
                 </div>
               </div>
 

@@ -312,3 +312,13 @@ export {
     useValidateCompatibilityMutation,
     useMigrateLevelsMutation,
 } from './CourseLevelConfigApi';
+
+// MultiSkilling API exports
+export {
+    multiSkillingApi,
+    useGetMultiSkillingPlanQuery,
+    useSaveMultiSkillingPlanMutation,
+    useGetMultiSkillingConfigQuery,
+    useSaveMultiSkillingConfigMutation,
+    useGetMultiSkillingHistoryQuery,
+} from './MultiSkillingApi';

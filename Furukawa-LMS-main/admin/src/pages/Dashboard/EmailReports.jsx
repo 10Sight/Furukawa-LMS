@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axiosInstance from '../../Helper/axiosInstance';
 import { useSelector } from 'react-redux';
-import { Mail, Plus, Trash2, CheckSquare, AlertCircle, FileSpreadsheet, CheckCircle2, Clock, Calendar } from 'lucide-react';
-import { Card } from "@/components/ui/card";
+import { Mail, Plus, Trash2, FileSpreadsheet, CheckCircle2, Clock } from 'lucide-react';
 import { toast } from "react-hot-toast";
 
 const EmailReports = () => {
@@ -19,45 +18,47 @@ const EmailReports = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    // same design, but backend-compatible form
     const [form, setForm] = useState({
         email: '',
         frequency: ['Daily'],
         reportTypes: ['Manpower']
     });
 
-    const [testLoading, setTestLoading] = useState(false);
     const [sending, setSending] = useState(false);
 
     useEffect(() => {
         fetchRecipients();
     }, []);
 
-const fetchRecipients = async () => {
-    try {
-        setLoading(true);
-        // 1. Ensure this matches index.js mounting point
-        const res = await axiosInstance.get('/api/reports/recipients');
+    const fetchRecipients = async () => {
+        try {
+            setLoading(true);
+            const res = await axiosInstance.get('/api/reports/recipients');
+            const list = res?.data?.data;
 
-        // 2. Based on your controller, the list is in res.data.data
-        const list = res?.data?.data;
-
-        if (Array.isArray(list)) {
-            setRecipients(list);
-        } else {
-            console.warn("Received data is not an array:", list);
+            if (Array.isArray(list)) {
+                // Normalize: ensure frequency is always an array on each recipient
+                const normalized = list.map(r => ({
+                    ...r,
+                    frequency: Array.isArray(r.frequency)
+                        ? r.frequency
+                        : typeof r.frequency === 'string' && r.frequency.trim()
+                            ? r.frequency.split(',').map(f => f.trim())
+                            : []
+                }));
+                setRecipients(normalized);
+            } else {
+                console.warn("Received data is not an array:", list);
+                setRecipients([]);
+            }
+        } catch (err) {
+            console.error("Failed to fetch recipients", err);
+            toast.error(err?.response?.data?.message || "Failed to load recipients");
             setRecipients([]);
+        } finally {
+            setLoading(false);
         }
-    } catch (err) {
-        console.error("Failed to fetch recipients", err);
-        // This will stop the 'buffering' by showing an error toast
-        toast.error(err?.response?.data?.message || "Failed to load recipients");
-        setRecipients([]);
-    } finally {
-        // This stops the loading spinner/buffering state
-        setLoading(false);
-    }
-};
+    };
 
     const validateEmail = (email) => {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -76,23 +77,13 @@ const fetchRecipients = async () => {
             return toast.error("Please enter a valid email address");
         }
 
-        const alreadyExists = recipients.some((r) => {
-            const existingEmails = String(r.toEmails || '')
-                .split(',')
-                .map((x) => x.trim().toLowerCase())
-                .filter(Boolean);
-
-            return existingEmails.includes(cleanedEmail);
-        });
-
-        if (alreadyExists) {
-            return toast.error("This email is already added");
+        if (!form.frequency || form.frequency.length === 0) {
+            return toast.error("Please select at least one report frequency");
         }
 
         try {
             setSaving(true);
 
-            // Payload for email_report_recipients via /api/reports/recipients
             const submission = {
                 email: cleanedEmail,
                 frequency: form.frequency,
@@ -101,37 +92,31 @@ const fetchRecipients = async () => {
 
             const res = await axiosInstance.post(`/api/reports/recipients`, submission);
 
-            // Reset the form using your existing setForm state
             setForm({
                 email: '',
                 frequency: ['Daily'],
                 reportTypes: ['Manpower']
             });
 
-            toast.success(res?.data?.message || "Recipient added successfully");
+            toast.success(res?.data?.message || "Recipient saved successfully");
             await fetchRecipients();
         } catch (err) {
-            console.error("Failed to add recipient", err);
-            toast.error(err?.response?.data?.message || "Failed to add recipient");
+            console.error("Failed to save recipient", err);
+            toast.error(err?.response?.data?.message || "Failed to save recipient");
         } finally {
             setSaving(false);
         }
     };
 
     const handleDelete = async (id) => {
-        // Optional: Add a confirmation dialog
         if (!window.confirm("Are you sure you want to delete this recipient?")) return;
 
         try {
             setLoading(true);
-
-            // CHANGE THIS LINE: from `/api/email-configurations/${id}` to `/api/reports/recipients/${id}`
             const res = await axiosInstance.delete(`/api/reports/recipients/${id}`);
-
             if (res.data.success) {
                 toast.success("Recipient deleted successfully");
-                // Refresh the list after deletion
-                await fetchRecipients(); 
+                await fetchRecipients();
             }
         } catch (err) {
             console.error("Failed to delete recipient", err);
@@ -145,10 +130,7 @@ const fetchRecipients = async () => {
         setSending(true);
         try {
             const res = await axiosInstance.post(`/api/reports/send-manual`);
-            toast.success(
-                res?.data?.message ||
-                `Report sent successfully!`
-            );
+            toast.success(res?.data?.message || `Report sent successfully!`);
         } catch (err) {
             console.error("Failed to manual send", err);
             toast.error(err?.response?.data?.message || "Failed to send report.");
@@ -161,7 +143,7 @@ const fetchRecipients = async () => {
         setForm(prev => {
             const current = prev.frequency || [];
             if (current.includes(freq)) {
-                if (current.length === 1) return prev;
+                if (current.length === 1) return prev; // keep at least one selected
                 return { ...prev, frequency: current.filter(f => f !== freq) };
             } else {
                 return { ...prev, frequency: [...current, freq] };
@@ -181,7 +163,7 @@ const fetchRecipients = async () => {
     return (
         <div className="space-y-8 animate-fade-in pb-12 w-full p-6">
             {/* Header Section */}
-            <div className={`p-8 rounded-2xl border shadow-sm bg-white relative overflow-hidden group border-slate-200`}>
+            <div className="p-8 rounded-2xl border shadow-sm bg-white relative overflow-hidden group border-slate-200">
                 <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
                     <Mail size={120} />
                 </div>
@@ -194,13 +176,17 @@ const fetchRecipients = async () => {
                             Email Report Settings
                         </h2>
                         <p className="mt-2 text-base text-slate-500 max-w-xl">
-                            Manage automated manpower reports. Reports are generated as <span className="font-semibold text-green-600">Excel</span> files and sent to registered recipients.
+                            Manage automated manpower reports. Reports are generated as{' '}
+                            <span className="font-semibold text-green-600">Excel</span> files and sent to registered recipients.
                         </p>
                     </div>
                     <button
                         onClick={handleSendReport}
                         disabled={sending}
-                        className={`px-6 py-3 rounded-xl font-bold text-sm shadow-xl flex items-center gap-2 transition-all transform hover:-translate-y-0.5 ${sending ? 'bg-slate-400 cursor-not-allowed text-white' : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-blue-600/20'}`}
+                        className={`px-6 py-3 rounded-xl font-bold text-sm shadow-xl flex items-center gap-2 transition-all transform hover:-translate-y-0.5 ${sending
+                            ? 'bg-slate-400 cursor-not-allowed text-white'
+                            : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-blue-600/20'
+                            }`}
                     >
                         {sending ? (
                             <>
@@ -245,7 +231,7 @@ const fetchRecipients = async () => {
                                 />
                             </div>
 
-                            {/* Frequency Selection - design same, currently UI-only */}
+                            {/* Frequency Selection */}
                             <div className="space-y-3">
                                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
                                     <Clock size={14} />
@@ -263,40 +249,74 @@ const fetchRecipients = async () => {
                                             <Clock size={16} />
                                         </div>
                                         <span className={`text-sm font-bold ${form.frequency.includes('Daily') ? 'text-blue-700' : 'text-slate-900'}`}>Daily</span>
-                                        <span className="text-[10px] text-slate-500">Every Morning</span>
+                                        <span className="text-[10px] text-slate-500">Manpower Report</span>
                                     </div>
 
                                     <div
-                                        onClick={() => toggleFrequency('Monthly')}
-                                        className={`cursor-pointer p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 text-center ${form.frequency.includes('Monthly')
+                                        onClick={() => toggleFrequency('Management Daily')}
+                                        className={`cursor-pointer p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 text-center ${form.frequency.includes('Management Daily')
                                             ? 'border-green-500 bg-green-50'
                                             : 'border-transparent bg-slate-100 hover:bg-slate-200'
                                             }`}
                                     >
-                                        <div className={`p-1.5 rounded-full ${form.frequency.includes('Monthly') ? 'bg-green-100 text-green-600' : 'bg-slate-200 text-slate-500'}`}>
-                                            <Calendar size={16} />
+                                        <div className={`p-1.5 rounded-full ${form.frequency.includes('Management Daily') ? 'bg-green-100 text-green-600' : 'bg-slate-200 text-slate-500'}`}>
+                                            <FileSpreadsheet size={16} />
                                         </div>
-                                        <span className={`text-sm font-bold ${form.frequency.includes('Monthly') ? 'text-green-700' : 'text-slate-900'}`}>Monthly</span>
-                                        <span className="text-[10px] text-slate-500">1st of Month</span>
+                                        <span className={`text-sm font-bold ${form.frequency.includes('Management Daily') ? 'text-green-700' : 'text-slate-900'}`}>Management Daily</span>
+                                        <span className="text-[10px] text-slate-500">Attendance Data</span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Report Type Info */}
-                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 block">Included Report</label>
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center text-green-600">
-                                        <FileSpreadsheet size={20} />
+                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-3">
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">
+                                    Included Report(s)
+                                </label>
+
+                                {form.frequency.includes('Daily') && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                                            <FileSpreadsheet size={20} />
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-bold text-slate-900">Manpower Report</div>
+                                            <div className="text-xs text-slate-500">Daily Excel Format (.xlsx)</div>
+                                        </div>
+                                        <div className="ml-auto">
+                                            <CheckCircle2 size={18} className="text-blue-500" />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div className="text-sm font-bold text-slate-900">Manpower Report</div>
-                                        <div className="text-xs text-slate-500">Excel Format (.xlsx)</div>
+                                )}
+
+                                {form.frequency.includes('Management Daily') && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center text-green-600">
+                                            <FileSpreadsheet size={20} />
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-bold text-slate-900">Management Daily</div>
+                                            <div className="text-xs text-slate-500">Attendance Excel Format (.xlsx)</div>
+                                        </div>
+                                        <div className="ml-auto">
+                                            <CheckCircle2 size={18} className="text-green-500" />
+                                        </div>
                                     </div>
-                                    <div className="ml-auto">
-                                        <CheckCircle2 size={18} className="text-blue-500" />
+                                )}
+
+                                {form.frequency.includes('Daily') && form.frequency.includes('Management Daily') && (
+                                    <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+                                        <p className="text-[11px] font-semibold text-amber-700">
+                                            ✦ Both reports will be sent in a single email with 2 attachments.
+                                        </p>
                                     </div>
-                                </div>
+                                )}
+
+                                {form.frequency.length === 0 && (
+                                    <div className="text-sm text-slate-500 italic py-2">
+                                        Please select at least one report type above.
+                                    </div>
+                                )}
                             </div>
 
                             <button
@@ -342,10 +362,16 @@ const fetchRecipients = async () => {
                             ) : (
                                 <div className="space-y-3 p-2">
                                     {recipients.map((r) => {
+                                        // frequency is already normalized to array by fetchRecipients
+                                        const freqArr = r.frequency || [];
                                         const displayEmail = (r.email || r.toEmails || '').split(',')[0]?.trim() || '-';
+                                        const hasBoth = freqArr.includes('Daily') && freqArr.includes('Management Daily');
 
                                         return (
-                                            <div key={r.id} className="group p-4 rounded-xl border border-transparent hover:border-slate-200 bg-slate-50/50 hover:bg-white transition-all flex flex-col md:flex-row items-center gap-4">
+                                            <div
+                                                key={r.id}
+                                                className="group p-4 rounded-xl border border-transparent hover:border-slate-200 bg-slate-50/50 hover:bg-white transition-all flex flex-col md:flex-row items-center gap-4"
+                                            >
                                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
                                                     {(displayEmail || "?").charAt(0).toUpperCase()}
                                                 </div>
@@ -353,16 +379,23 @@ const fetchRecipients = async () => {
                                                 <div className="flex-1 text-center md:text-left">
                                                     <div className="font-bold text-slate-900">{displayEmail}</div>
                                                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mt-1">
-                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 bg-blue-100 text-blue-700">
-                                                            <Clock size={10} />
-                                                            Daily
-                                                        </span>
-
-                                                        <span className="text-[10px] text-slate-400 flex items-center gap-1 ml-1 pl-2 border-l border-slate-200">
-                                                            <FileSpreadsheet size={10} className="text-green-500" />
-                                                            {r.formName || "Manpower Report"}
-                                                        </span>
-
+                                                        {freqArr.includes('Daily') && (
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 bg-blue-100 text-blue-700">
+                                                                <Clock size={10} />
+                                                                Daily Manpower
+                                                            </span>
+                                                        )}
+                                                        {freqArr.includes('Management Daily') && (
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 bg-green-100 text-green-700">
+                                                                <FileSpreadsheet size={10} />
+                                                                Management Daily
+                                                            </span>
+                                                        )}
+                                                        {hasBoth && (
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 bg-amber-100 text-amber-700">
+                                                                ✦ Combined Email
+                                                            </span>
+                                                        )}
                                                         {!r.isActive && (
                                                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-100 text-red-700">
                                                                 Inactive

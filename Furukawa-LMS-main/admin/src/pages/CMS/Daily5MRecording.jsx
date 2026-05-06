@@ -249,8 +249,8 @@ const LineSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
     );
 };
 
-const SubSectionSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
-    const { data: subSectionsData, isLoading } = useGetSubSectionsQuery({ departmentId }, { skip: !departmentId });
+const SubSectionSelect = ({ recIndex, departmentId, sectionId, formData, onInputChange }) => {
+    const { data: subSectionsData, isLoading } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
     const subSections = subSectionsData?.data || [];
 
     return (
@@ -278,8 +278,8 @@ const SubSectionSelect = ({ recIndex, departmentId, formData, onInputChange }) =
     );
 };
 
-const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, formData, onInputChange }) => {
-    const { data: subSectionsData } = useGetSubSectionsQuery({ departmentId }, { skip: !departmentId });
+const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, sectionId, formData, onInputChange, disabled }) => {
+    const { data: subSectionsData } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
     const subSections = subSectionsData?.data || [];
 
     // Find the subSection object to get its ID
@@ -532,7 +532,7 @@ const CRIMPING_CONFIG = {
     bodyRows: 5
 };
 
-const CrimpingRecord = ({ recIndex, formData, handleInputChange, departmentId, canApprove, authUser, isLocked, isSubmitter, skillLevels }) => {
+const CrimpingRecord = ({ recIndex, formData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, skillLevels }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
     const rowStatus = formData[`rec_${recIndex}_RowStatus`];
 
@@ -546,6 +546,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, departmentId, c
                     <SubSectionSelect
                         recIndex={recIndex}
                         departmentId={departmentId}
+                        sectionId={sectionId}
                         formData={formData}
                         onInputChange={handleInputChange}
                         disabled={isLocked}
@@ -590,6 +591,7 @@ const CrimpingRecord = ({ recIndex, formData, handleInputChange, departmentId, c
                         recIndex={recIndex}
                         selectedSubSectionDisplayName={formData[`rec_${recIndex}_StationMC`]}
                         departmentId={departmentId}
+                        sectionId={sectionId}
                         formData={formData}
                         onInputChange={handleInputChange}
                         disabled={isLocked}
@@ -2505,6 +2507,7 @@ const Daily5MRecording = () => {
                                                     formData={formData}
                                                     handleInputChange={handleInputChange}
                                                     departmentId={selectedDepartment}
+                                                    sectionId={selectedSection}
                                                     canApprove={canApprove}
                                                     authUser={authUser}
                                                     isLocked={!hasEditPermission || ((!!formData[`rec_${recIndex}_RowStatus`] || checkIsRowFilled(initialFormData, recIndex)) && !canEditSubmitted5M)}

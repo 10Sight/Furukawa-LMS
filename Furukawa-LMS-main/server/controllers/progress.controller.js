@@ -291,8 +291,24 @@ export const upgradeLevel = asyncHandler(async (req, res) => {
     if (hasNext) {
         const nextLevel = levels[currentIdx + 1];
         await executeQuery("UPDATE progress SET currentLevel = ? WHERE id = ?", [nextLevel.name, progress.id]);
-        await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [nextLevel.name, userId]);
         progress.currentLevel = nextLevel.name;
+
+        // Sync to user profile with station awareness
+        const { default: UserModel } = await import("../models/auth.model.js");
+        const userData = await UserModel.findById(userId);
+        if (userData && userData.stationId) {
+            let currentSkill = userData.currentSkill || {};
+            if (typeof currentSkill === 'string') {
+                try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+            }
+            currentSkill[userData.stationId] = nextLevel.name;
+            await executeQuery(
+                "UPDATE users SET currentLevel = ?, currentSkill = ? WHERE id = ?",
+                [nextLevel.name, JSON.stringify(currentSkill), userId]
+            );
+        } else {
+            await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [nextLevel.name, userId]);
+        }
 
         // --- AUTOMATED HANDOVER & MAX LEVEL CHECK ---
         // If user is upgraded from L1 -> Add to Handover Sheet + Email Trainer
@@ -530,7 +546,11 @@ export const getOrInitializeProgress = asyncHandler(async (req, res) => {
 });
 
 export const setStudentLevel = asyncHandler(async (req, res) => {
-    let { studentId, courseId, level, lock } = req.body;
+    let { studentId, courseId, stationId, level, lock } = req.body;
+
+    if (!studentId) {
+        throw new ApiError("studentId is required", 400);
+    }
 
     // Check config
     if (level) {
@@ -546,65 +566,94 @@ export const setStudentLevel = asyncHandler(async (req, res) => {
         level = matchedLevel.name;
     }
 
-    let [rows] = await executeQuery("SELECT * FROM progress WHERE student = ? AND course = ?", [studentId, courseId]);
-    let progress;
-    if (rows.length === 0) {
-        const levelConfig = await getActiveLevelConfig();
-        const firstLevel = levelConfig && levelConfig.levels.length > 0 ? levelConfig.levels[0].name : "L1";
-        const [resP] = await executeQuery(
-            `INSERT INTO progress (student, course, currentLevel, completedLessons, completedModules, quizzes, assignments, progressPercent, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
-            [studentId, courseId, level || firstLevel, '[]', '[]', '[]', '[]', 0]
-        );
-        const [newP] = await executeQuery("SELECT * FROM progress WHERE id = ?", [resP[0].id]);
-        progress = newP[0];
-    } else {
-        progress = rows[0];
-    }
+    const { default: UserModel } = await import("../models/auth.model.js");
+    const userData = await UserModel.findById(studentId);
+    if (!userData) throw new ApiError("User not found", 404);
 
-    let updates = [];
-    let values = [];
-    const levelChanged = !!level && String(progress.currentLevel) !== String(level);
-    if (level) { updates.push("currentLevel = ?"); values.push(level); }
-    if (levelChanged) { updates.push("levelStartDate = GETDATE()"); }
-    if (typeof lock === 'boolean') {
-        updates.push("levelLockEnabled = ?"); values.push(lock);
-        updates.push("lockedLevel = ?"); values.push(lock ? (level || progress.currentLevel) : null);
-        if (lock && (level || progress.currentLevel) && (progress.currentLevel !== (level || progress.currentLevel))) {
-            // Logic says force level if locking
-            if (!level) { updates.push("currentLevel = ?"); values.push(progress.lockedLevel); }
-            // Logic overlap handled, mostly setting locked values
+    if (!stationId) stationId = userData.stationId;
+
+    let progress = null;
+    if (courseId && courseId !== "undefined" && courseId !== "null") {
+        let [rows] = await executeQuery("SELECT * FROM progress WHERE student = ? AND course = ?", [studentId, courseId]);
+        if (rows.length === 0) {
+            const levelConfig = await getActiveLevelConfig();
+            const firstLevel = levelConfig && levelConfig.levels.length > 0 ? levelConfig.levels[0].name : "L1";
+            const [resP] = await executeQuery(
+                `INSERT INTO progress (student, course, currentLevel, completedLessons, completedModules, quizzes, assignments, progressPercent, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+                [studentId, courseId, level || firstLevel, '[]', '[]', '[]', '[]', 0]
+            );
+            const [newP] = await executeQuery("SELECT * FROM progress WHERE id = ?", [resP[0].id]);
+            progress = newP[0];
+        } else {
+            progress = rows[0];
         }
     }
 
-    if (updates.length > 0) {
-        await executeQuery(`UPDATE progress SET ${updates.join(', ')} WHERE id = ?`, [...values, progress.id]);
+    if (progress) {
+        let updates = [];
+        let values = [];
+        if (level) { updates.push("currentLevel = ?"); values.push(level); }
+        if (typeof lock === 'boolean') {
+            updates.push("levelLockEnabled = ?"); values.push(lock);
+            updates.push("lockedLevel = ?"); values.push(lock ? (level || progress.currentLevel) : null);
+        }
 
-        // Sync to user profile if level changed
-        if (level) {
-            await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [level, studentId]);
+        if (updates.length > 0) {
+            await executeQuery(`UPDATE progress SET ${updates.join(', ')} WHERE id = ?`, [...values, progress.id]);
+            // Re-fetch for response
+            const [upP] = await executeQuery("SELECT * FROM progress WHERE id = ?", [progress.id]);
+            progress = upP[0];
+        }
+    }
 
-            // --- TRIGGER AUTOMATED HANDOVER & MAX LEVEL CHECK ---
-            if (level !== 'L1') {
-                try {
-                    const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("../utils/handover.util.js");
-                    await checkAndProcessHandover(studentId, level);
-                    await checkAndProcessMaxLevelNotification(studentId, level);
-                } catch (err) {
-                    console.error("[SetStudentLevel] Handover/MaxLevel trigger failed:", err);
-                }
+    // 2. Sync to User Profile with Station Awareness
+    if (level || typeof lock === 'boolean') {
+        let currentSkill = userData.currentSkill || {};
+        if (typeof currentSkill === 'string') {
+            try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+        }
+
+        if (stationId) {
+            if (level) currentSkill[stationId] = level;
+            if (typeof lock === 'boolean') {
+                currentSkill[`${stationId}_locked`] = lock;
+                if (lock) currentSkill[`${stationId}_lockedLevel`] = level || currentSkill[stationId] || "L1";
             }
-            // ----------------------------------------------------
         }
 
-        // Refresh
-        const [final] = await executeQuery("SELECT * FROM progress WHERE id = ?", [progress.id]);
-        progress = final[0];
+        const updateFields = [];
+        const updateParams = [];
+
+        // If this is the user's primary station, also update the main currentLevel column
+        if (String(userData.stationId) === String(stationId) && level) {
+            updateFields.push("currentLevel = ?");
+            updateParams.push(level);
+        }
+
+        updateFields.push("currentSkill = ?");
+        updateParams.push(JSON.stringify(currentSkill));
+        updateParams.push(studentId);
+
+        await executeQuery(`UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
+
+        // --- TRIGGER AUTOMATED HANDOVER & MAX LEVEL CHECK ---
+        if (level && level !== 'L1') {
+            try {
+                const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("../utils/handover.util.js");
+                await checkAndProcessHandover(studentId, level);
+                await checkAndProcessMaxLevelNotification(studentId, level);
+            } catch (err) {
+                console.error("[SetStudentLevel] Handover/MaxLevel trigger failed:", err);
+            }
+        }
     }
 
-    progress.completedLessons = parseJSON(progress.completedLessons);
-    progress.completedModules = parseJSON(progress.completedModules);
+    if (progress) {
+        progress.completedLessons = typeof progress.completedLessons === 'string' ? JSON.parse(progress.completedLessons) : (progress.completedLessons || []);
+        progress.completedModules = typeof progress.completedModules === 'string' ? JSON.parse(progress.completedModules) : (progress.completedModules || []);
+    }
 
-    res.json(new ApiResponse(200, progress, "Student level updated successfully"));
+    res.json(new ApiResponse(200, progress || { success: true }, "Operator level updated successfully"));
 });
 
 export const getCourseProgress = asyncHandler(async (req, res) => {

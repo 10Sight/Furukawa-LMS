@@ -354,13 +354,14 @@ export const getDepartmentTrainees = asyncHandler(async (req, res) => {
     const status = req.query.status || "";
 
     let whereSql = `
-        WHERE (u.departmentId = ? OR u.department = ? OR u.department = ?)
+        WHERE (u.departmentId = ? OR u.department = ? OR u.department = ? 
+               OR (u.isTemporary = 1 AND u.targetDeptId = ? AND u.currentLevel != 'L1' AND ? = 'true'))
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
         AND (u.isEmployee = 1)
         AND (u.isTrainer = 0 OR u.isTrainer IS NULL)
         AND (u.customRoleId IS NULL)
     `;
-    let params = [department.id, String(department.id), department.name];
+    let params = [department.id, String(department.id), department.name, department.id, req.query.includeTemporary || 'false'];
 
     if (search) {
         whereSql += " AND (u.fullName LIKE ? OR u.email LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)";
@@ -503,6 +504,7 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
     // If no courses, we still want to see students (with 0 progress)
     // if (courses.length === 0) return res.json(new ApiResponse(200, { departmentProgress: [], overallStats: {}, total: 0 }, "No courses"));
 
+    const { sectionId, lineId, subSectionId, stationId } = req.query;
     let whereSql = `
         WHERE (departmentId = ? OR department = ? OR department = ?)
         AND (isDeleted = 0 OR isDeleted IS NULL)
@@ -511,6 +513,11 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
         AND (customRoleId IS NULL)
     `;
     let params = [department.id, String(department.id), department.name];
+
+    if (sectionId && sectionId !== "undefined") { whereSql += " AND sectionId = ?"; params.push(sectionId); }
+    if (lineId && lineId !== "undefined") { whereSql += " AND lineId = ?"; params.push(lineId); }
+    if (subSectionId && subSectionId !== "undefined") { whereSql += " AND subSectionId = ?"; params.push(subSectionId); }
+    if (stationId && stationId !== "undefined") { whereSql += " AND stationId = ?"; params.push(stationId); }
 
     if (search) {
         whereSql += " AND (fullName LIKE ? OR email LIKE ? OR userName LIKE ? OR empId LIKE ?)";
@@ -522,10 +529,12 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
     const total = countRows[0].total;
 
     const [students] = await executeQuery(`
-        SELECT id, fullName, email, avatar, currentLevel, status, empId
-        FROM users 
+        SELECT u.id, u.fullName, u.email, u.avatar, u.currentLevel, u.status, u.empId, u.currentSkill, u.stationId,
+               s.name as stationName
+        FROM users u
+        LEFT JOIN machines s ON u.stationId = s.id
         ${whereSql}
-        ORDER BY fullName ASC
+        ORDER BY u.fullName ASC
         OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `, [...params, offset, limit]);
 
@@ -543,6 +552,38 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
                 const prog = progressRows.find(p => p.student == student.id && p.course == course.id);
                 const completedModules = prog?.completedModules ? JSON.parse(prog.completedModules).length : 0;
                 const pct = course.totalModules > 0 ? Math.round((completedModules / course.totalModules) * 100) : 0;
+                let currentLevel = prog?.currentLevel || student.currentLevel || 'L1';
+                let levelLockEnabled = prog?.levelLockEnabled || false;
+                let lockedLevel = prog?.lockedLevel || null;
+
+                // Override with station specific data if station filter is active
+                if (stationId && stationId !== "undefined") {
+                    let currentSkill = student.currentSkill || "{}";
+                    if (typeof currentSkill === 'string') {
+                        try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+                    }
+                    if (currentSkill[stationId]) {
+                        currentLevel = currentSkill[stationId];
+                        levelLockEnabled = !!currentSkill[`${stationId}_locked`];
+                        lockedLevel = currentSkill[`${stationId}_lockedLevel`];
+                    }
+                }
+
+                // Resolve TRUE primary level: Strict check against primary stationId
+                let resolvedPrimaryLevel = "L1";
+                let studentSkill = student.currentSkill || "{}";
+                if (typeof studentSkill === 'string') {
+                    try { studentSkill = JSON.parse(studentSkill); } catch (e) { studentSkill = {}; }
+                }
+
+                if (student.stationId) {
+                    // If they have a primary station assigned, their level MUST come from that station's skill in the map
+                    resolvedPrimaryLevel = studentSkill[student.stationId] || "L1";
+                } else {
+                    // Fallback to global level only if no primary station is assigned
+                    resolvedPrimaryLevel = student.currentLevel || "L1";
+                }
+
                 departmentProgress.push({
                     student: {
                         _id: student.id,
@@ -550,22 +591,54 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
                         email: student.email,
                         avatar: student.avatar,
                         status: student.status,
-                        empId: student.empId
+                        empId: student.empId,
+                        primaryLevel: resolvedPrimaryLevel,
+                        primaryStation: student.stationName
                     },
                     completedModules,
                     totalModules: course.totalModules,
                     progressPercentage: pct,
                     courseTitle: course.title,
                     courseId: course.id,
-                    currentLevel: prog?.currentLevel || 'L1',
-                    levelLockEnabled: prog?.levelLockEnabled || false,
-                    lockedLevel: prog?.lockedLevel || null
+                    currentLevel,
+                    levelLockEnabled,
+                    lockedLevel
                 });
             }
         }
     } else {
         // No courses assigned, just return students
         for (const student of students) {
+            let currentLevel = student.currentLevel || 'L1';
+            let levelLockEnabled = false;
+            let lockedLevel = null;
+
+            // Override with station specific data if station filter is active
+            if (stationId && stationId !== "undefined") {
+                let currentSkill = student.currentSkill || "{}";
+                if (typeof currentSkill === 'string') {
+                    try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+                }
+                if (currentSkill[stationId]) {
+                    currentLevel = currentSkill[stationId];
+                    levelLockEnabled = !!currentSkill[`${stationId}_locked`];
+                    lockedLevel = currentSkill[`${stationId}_lockedLevel`];
+                }
+            }
+
+            // Resolve TRUE primary level: Strict check against primary stationId
+            let resolvedPrimaryLevel = "L1";
+            let studentSkill = student.currentSkill || "{}";
+            if (typeof studentSkill === 'string') {
+                try { studentSkill = JSON.parse(studentSkill); } catch (e) { studentSkill = {}; }
+            }
+
+            if (student.stationId) {
+                resolvedPrimaryLevel = studentSkill[student.stationId] || "L1";
+            } else {
+                resolvedPrimaryLevel = student.currentLevel || "L1";
+            }
+
             departmentProgress.push({
                 student: {
                     _id: student.id,
@@ -573,16 +646,18 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
                     email: student.email,
                     avatar: student.avatar,
                     status: student.status,
-                    empId: student.empId
+                    empId: student.empId,
+                    primaryLevel: resolvedPrimaryLevel,
+                    primaryStation: student.stationName
                 },
                 completedModules: 0,
                 totalModules: 0,
                 progressPercentage: 0,
                 courseTitle: "No Course Assigned",
                 courseId: null,
-                currentLevel: 'L1',
-                levelLockEnabled: false,
-                lockedLevel: null
+                currentLevel,
+                levelLockEnabled,
+                lockedLevel
             });
         }
     }
@@ -917,8 +992,57 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     let sheet = await HandoverSheet.findSpecific(departmentId, sectionId, date);
 
     if (!sheet) {
+        // Automatically find users who passed a handover quiz on this date for this department
+        let suggestedEntries = [];
+        if (date) {
+            const [passedUsers] = await executeQuery(`
+                SELECT DISTINCT 
+                    u.id as studentId, 
+                    u.fullName as employeeName, 
+                    u.userName as employeeCode, -- Manual Employee Code (DOJO ID)
+                    u.targetDeptId,
+                    u.targetSectionId as sectionId,
+                    u.targetLineId as lineId,
+                    u.targetSubSectionId as subSectionId,
+                    u.targetStationId as stationId,
+                    aq.score,
+                    q.questions as quizQuestions
+                FROM users u
+                JOIN attempted_quizzes aq ON CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student
+                JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+                WHERE u.isTemporary = 1 
+                  AND u.targetDeptId = ?
+                  AND q.isHandover = 1
+                  AND (aq.status = 'PASSED' OR aq.status = 'PASS')
+                  AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
+            `, [departmentId, date]);
+
+            suggestedEntries = passedUsers.map(user => {
+                // Calculate percentage marks
+                let marksPercent = "0%";
+                try {
+                    const questions = JSON.parse(user.quizQuestions || "[]");
+                    const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
+                    marksPercent = `${Math.round((user.score / totalMarks) * 100)}%`;
+                } catch (e) {
+                    console.error("Error calculating marks:", e);
+                }
+
+                return {
+                    ...user,
+                    marks: marksPercent,
+                    passedQuizDate: date,
+                    isAutoSuggested: true
+                };
+            });
+        }
+
         return res.status(200).json(
-            new ApiResponse(200, { isNew: true }, "No record found")
+            new ApiResponse(200, { 
+                isNew: true, 
+                entries: suggestedEntries,
+                date: date 
+            }, suggestedEntries.length > 0 ? "Found suggested entries from quizzes" : "No record found")
         );
     }
 
@@ -951,12 +1075,6 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
         sheet.metadata = metadata;
         sheet.updatedBy = req.user?.fullName || req.user?.name || "System";
 
-        // Handle submission status
-        if (isSubmitted) {
-            sheet.isSubmitted = true;
-            sheet.submittedAt = new Date();
-        }
-
         await sheet.save();
     } else {
         sheet = await HandoverSheet.create({
@@ -971,6 +1089,34 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
             submittedAt: isSubmitted ? new Date() : null
         });
     }
+
+    // --- SYNC ASSIGNMENTS & AUTO-ASSIGN ON APPROVAL ---
+    if (entries && Array.isArray(entries)) {
+        for (const entry of entries) {
+            if (entry.studentId) {
+                const [uRows] = await executeQuery("SELECT isTemporary, departmentId, targetDeptId FROM users WHERE id = ?", [entry.studentId]);
+                if (uRows.length) {
+                    const user = uRows[0];
+                    
+                    // 1. Update Target Dept if changed (for temporary users)
+                    if (user.isTemporary && entry.departmentId && String(entry.departmentId) !== String(user.targetDeptId)) {
+                        await executeQuery("UPDATE users SET targetDeptId = ? WHERE id = ?", [entry.departmentId, entry.studentId]);
+                    }
+                    
+                    // 2. Auto-Assign Department on Approval (Transition to regular employee)
+                    if (entry.interviewStatus === 'APPROVE' && entry.departmentId) {
+                        // We always update to ensure they are assigned to the chosen dept and isTemporary is 0
+                        await executeQuery(
+                            "UPDATE users SET departmentId = ?, targetDeptId = ?, isTemporary = 0 WHERE id = ?", 
+                            [entry.departmentId, entry.departmentId, entry.studentId]
+                        );
+                        console.log(`[Handover] User ${entry.studentId} assigned to department ${entry.departmentId} and cleared temporary status upon approval.`);
+                    }
+                }
+            }
+        }
+    }
+    // --------------------------------------------------
 
     // --- EMAIL HANDOVER SHEET (Only if submitted) ---
     if (isSubmitted) {

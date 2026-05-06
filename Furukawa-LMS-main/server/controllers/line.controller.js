@@ -30,7 +30,7 @@ const resolveSectionId = async (sectionId) => {
 // @route   POST /api/lines
 // @access  Private
 export const createLine = asyncHandler(async (req, res) => {
-    let { name, uniCode, lineLeader, mentor, requirement, departmentId, sectionId, description } = req.body;
+    let { name, uniCode, lineLeader, mentor, requirement, departmentId, sectionId, description, tenCycleFormType } = req.body;
 
     if (!name || !departmentId || !sectionId) {
         throw new ApiError(400, "Name, Department ID, and Section ID are required");
@@ -53,7 +53,7 @@ export const createLine = asyncHandler(async (req, res) => {
 
     // Insert
     const [result] = await executeQuery(
-        "INSERT INTO [lines] (name, uniCode, lineLeader, mentor, requirement, department, sectionId, description, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())",
+        "INSERT INTO [lines] (name, uniCode, lineLeader, mentor, requirement, department, sectionId, description, isActive, tenCycleFormType, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())",
         [
             name,
             uniCode && uniCode.trim() !== "" ? uniCode.trim() : null,
@@ -63,7 +63,8 @@ export const createLine = asyncHandler(async (req, res) => {
             departmentId,
             sectionId,
             description,
-            true
+            true,
+            tenCycleFormType || "form1"
         ]
     );
 
@@ -122,7 +123,7 @@ export const getLinesByDepartment = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateLine = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, uniCode, lineLeader, mentor, requirement, description, isActive } = req.body;
+    const { name, uniCode, lineLeader, mentor, requirement, description, tenCycleFormType, isActive } = req.body;
 
     const [existing] = await executeQuery("SELECT * FROM [lines] WHERE id = ?", [id]);
     if (existing.length === 0) {
@@ -162,6 +163,7 @@ export const updateLine = asyncHandler(async (req, res) => {
     if (typeof mentor !== 'undefined') { updateFields.push("mentor = ?"); updateValues.push(mentor); }
     if (typeof requirement !== 'undefined') { updateFields.push("requirement = ?"); updateValues.push(requirement); }
     if (typeof description !== 'undefined') { updateFields.push("description = ?"); updateValues.push(description); }
+    if (typeof tenCycleFormType !== 'undefined') { updateFields.push("tenCycleFormType = ?"); updateValues.push(tenCycleFormType); }
     if (typeof isActive !== 'undefined') { updateFields.push("isActive = ?"); updateValues.push(isActive); }
 
     if (updateFields.length > 0) {

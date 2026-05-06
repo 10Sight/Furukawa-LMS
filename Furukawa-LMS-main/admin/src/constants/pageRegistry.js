@@ -146,6 +146,7 @@ export const isPathAllowedForUser = (pathname, layout, user) => {
     }
 
     const allowed = normalizeAllowedPages(user);
+    if (layout === 'student' && user?.isEmployee) return true;
     return allowed.includes(pageKey);
 };
 
@@ -164,7 +165,7 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
 
     const tabs = sidebarPages.filter(p => {
         const isCurrentLayout = p.layout === currentLayout;
-        const isAllowed = !isRestricted || allowedKeys.has(p.key);
+        const isAllowed = !isRestricted || allowedKeys.has(p.key) || (p.layout === 'student' && user?.isEmployee);
         const isPrivileged = !p.privilege || hasPrivilege(p.privilege);
 
         // Root dashboard rule: Only show the dashboard of the CURRENT layout
@@ -224,6 +225,8 @@ export const PAGE_REGISTRY = [
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
     { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
     { key: "multi-skilling", label: "Multi Skilling", labelKey: "nav.multiSkilling", layout: "admin", link: "/admin/multi-skilling", icon: "IconStars" },
+    { key: "dojo-hiring", label: "DOJO Hiring", layout: "admin", link: "/admin/dojo-hiring", icon: "IconUserPlus" },
+    { key: "learning", label: "Learning", labelKey: "nav.learning", layout: "admin", link: "/admin/learning", icon: "IconBook" },
 
     // Dashboard-specific pages (often considered core Admin functions)
     { key: "dashboard-home", label: "Dashboard", labelKey: "nav.dashboard", layout: "dashboard", link: "/dashboard", icon: "IconLayoutDashboardFilled" },
@@ -248,8 +251,11 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/edit-quiz/", key: "courses" },
     { layout: "admin", prefix: "/admin/report-clubbing/", key: "report-clubbing" },
     { layout: "admin", prefix: "/admin/trainers/", key: "trainers" },
+    { layout: "admin", prefix: "/admin/dojo-hiring/", key: "dojo-hiring" },
     { layout: "admin", prefix: "/admin/employees/", key: "employees" },
     { layout: "admin", prefix: "/admin/departments/", key: "departments" },
+    { layout: "admin", prefix: "/admin/learning/", key: "learning" },
+    { layout: "admin", prefix: "/admin/learning/create", key: "learning" },
 
     // Trainer layout
     { key: "trainer-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "trainer", link: "/trainer", icon: "IconLayoutDashboardFilled" },
@@ -277,20 +283,12 @@ export const PAGE_REGISTRY = [
 
     // Student layout
     { key: "student-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "student", link: "/student", icon: "IconLayoutDashboardFilled" },
-    { key: "student-courses", label: "My Courses", labelKey: "nav.course", layout: "student", link: "/student/course", icon: "IconBooks" },
-    { key: "student-department", label: "My Department", labelKey: "nav.department", layout: "student", link: "/student/department", icon: "IconFolder" },
-    { key: "student-reports", label: "My Reports", labelKey: "nav.reports", layout: "student", link: "/student/reports", icon: "IconChartPie" },
+    { key: "student-test-paper", label: "Test Papers", layout: "student", link: "/student/test-paper", icon: "IconFileText" },
     { key: "student-certificates", label: "My Certificates", labelKey: "nav.certificates", layout: "student", link: "/student/certificates", icon: "IconFileCertificate" },
-    { key: "student-ojt", label: "On Job Training", labelKey: "nav.onJobTraining", layout: "student", link: "/student/on-job-training", icon: "IconClipboardList" },
-    { key: "student-feedback", label: "Feedback", labelKey: "nav.feedback", layout: "student", link: "/student/feedback", icon: "IconMessage" },
     { key: "student-profile", label: "My Profile", labelKey: "nav.profile", layout: "student", link: "/student/profile", icon: "IconUser" },
 
     // Student route aliases
-    { layout: "student", prefix: "/student/course/", key: "student-courses" },
-    { layout: "student", prefix: "/student/lesson/", key: "student-courses" },
     { layout: "student", prefix: "/student/quiz/", key: "student-courses" },
-    { layout: "student", prefix: "/student/assignment/", key: "student-courses" },
-    { layout: "student", prefix: "/student/report/", key: "student-reports" },
     { layout: "student", prefix: "/student/resource-preview/", key: "student-courses" },
 
     // CMS layout

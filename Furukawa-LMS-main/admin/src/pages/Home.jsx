@@ -31,6 +31,13 @@ import {
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import DepartmentQuizChart from "@/components/charts/DepartmentQuizChart";
+import DojoHiringChart from "@/components/charts/DojoHiringChart";
+import HandoverComparisonChart from "@/components/charts/HandoverComparisonChart";
+import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
+import UserStatusDistributionChart from "@/components/charts/UserStatusDistributionChart";
+import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
+import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { IconUserPlus } from "@tabler/icons-react";
 
 // Reusable StatCard component
 const StatCard = ({ title, value, description, icon: Icon, iconBgColor, iconColor, isLoading, trend, linkTo }) => {
@@ -102,6 +109,8 @@ const QuickActionCard = ({ title, description, icon: Icon, linkTo, color = "blue
 };
 
 const Home = () => {
+  const [dateRange, setDateRange] = React.useState({ startDate: '', endDate: '' });
+
   // API calls for all stats
   const { data: studentsData, isLoading: studentsLoading } = useGetAllStudentsQuery();
   const { data: instructorsData, isLoading: instructorsLoading } = useGetAllInstructorsQuery();
@@ -117,6 +126,10 @@ const Home = () => {
     page: 1,
     limit: 10
   });
+
+  // Dojo Hiring stats from the new API
+  const { data: dojoStats, isLoading: dojoLoading } = useGetAdminHomeDojoStatsQuery(dateRange);
+  const totalDojoUsers = dojoStats?.data?.totalDojoUsers || 0;
 
   // Extract counts from API responses
   const totalStudents = studentsData?.data?.totalUsers || 0;
@@ -148,11 +161,7 @@ const Home = () => {
 
   return (
     <div className="space-y-6">
-      {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-lg shadow-lg">
-        <h1 className="text-2xl font-bold mb-2">Welcome to Admin Dashboard</h1>
-        <p className="text-blue-100">Manage your learning management system efficiently</p>
-      </div>
+      <DashboardDateFilter onFilterChange={setDateRange} />
 
       {/* Main Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -168,16 +177,6 @@ const Home = () => {
           trend={{ type: 'positive', value: `${activeStudents} active` }}
         />
 
-        <StatCard
-          title="Total Trainers"
-          value={totalInstructors}
-          description="Teaching staff members"
-          icon={IconSchool}
-          iconBgColor="bg-green-100"
-          iconColor="text-green-600"
-          isLoading={instructorsLoading}
-          linkTo="/admin/trainers"
-        />
 
         <StatCard
           title="Total Sections"
@@ -202,54 +201,30 @@ const Home = () => {
           linkTo="/admin/courses"
           trend={{ type: 'positive', value: `${publishedCourses} published` }}
         />
+
+        <StatCard
+          title="Dojo Hiring"
+          value={totalDojoUsers}
+          description="Temporary candidates"
+          icon={IconUserPlus}
+          iconBgColor="bg-pink-100"
+          iconColor="text-pink-600"
+          isLoading={dojoLoading}
+          linkTo="/admin/employees?type=temporary"
+        />
       </div>
 
-      {/* Engagement Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Operator Engagement</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl font-bold text-gray-900">{studentEngagement}%</span>
-              <IconUserCheck className="h-5 w-5 text-blue-600" />
-            </div>
-            <Progress value={studentEngagement} className="mb-2" />
-            <p className="text-xs text-gray-500">Active employees participating</p>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Section Utilization</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl font-bold text-gray-900">{departmentUtilization}%</span>
-              <IconSchool className="h-5 w-5 text-purple-600" />
-            </div>
-            <Progress value={departmentUtilization} className="mb-2" />
-            <p className="text-xs text-gray-500">Active learning groups</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Course Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl font-bold text-gray-900">{courseCompletion}%</span>
-              <IconBook2 className="h-5 w-5 text-green-600" />
-            </div>
-            <Progress value={courseCompletion} className="mb-2" />
-            <p className="text-xs text-gray-500">Published and available</p>
-          </CardContent>
-        </Card>
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <DojoHiringChart dateRange={dateRange} />
+        <HandoverComparisonChart dateRange={dateRange} />
+        <TestPaperPassChart dateRange={dateRange} />
+        <UserStatusDistributionChart dateRange={dateRange} />
+        <DepartmentQuizChart dateRange={dateRange} />
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content Area (Moved below charts) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Activity */}
         <Card>
@@ -351,11 +326,6 @@ const Home = () => {
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <DepartmentQuizChart />
       </div>
 
       {/* System Health Indicators */}

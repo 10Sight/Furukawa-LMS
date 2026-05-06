@@ -6,7 +6,7 @@ class Mail {
         this.id = data.id;
         this.email = data.email;
         this.isDailyReport = !!data.isDailyReport;
-        this.isMonthlyReport = !!data.isMonthlyReport;
+        this.isManagementDailyReport = !!data.isManagementDailyReport;
         this.reportTypes = data.reportTypes || "";
     }
 
@@ -18,7 +18,7 @@ class Mail {
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     email VARCHAR(255) NOT NULL,
                     isDailyReport BIT DEFAULT 0,
-                    isMonthlyReport BIT DEFAULT 0,
+                    isManagementDailyReport BIT DEFAULT 0,
                     reportTypes VARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT uq_email_report_email UNIQUE (email)
@@ -35,26 +35,33 @@ class Mail {
                     await executeQuery("ALTER TABLE email_report_recipients ADD reportTypes VARCHAR(255)");
                 } catch (e2) { }
             }
+            try {
+                await executeQuery("SELECT TOP 1 isManagementDailyReport FROM email_report_recipients");
+            } catch (e) {
+                try {
+                    await executeQuery("ALTER TABLE email_report_recipients ADD isManagementDailyReport BIT DEFAULT 0");
+                } catch (e2) { }
+            }
         } catch (error) {
             logger.error("Failed to initialize Mail table", error);
         }
     }
 
     static async create(data) {
-        const { email, isDailyReport, isMonthlyReport, reportTypes } = data;
+        const { email, isDailyReport, isManagementDailyReport, reportTypes } = data;
 
         const daily = isDailyReport ? 1 : 0;
-        const monthly = isMonthlyReport ? 1 : 0;
+        const managementDaily = isManagementDailyReport ? 1 : 0;
         const types = reportTypes || "";
 
         const query = `
-            INSERT INTO email_report_recipients (email, isDailyReport, isMonthlyReport, reportTypes)
+            INSERT INTO email_report_recipients (email, isDailyReport, isManagementDailyReport, reportTypes)
             OUTPUT INSERTED.id
             VALUES (?, ?, ?, ?)
         `;
 
-        const [rows] = await executeQuery(query, [email, daily, monthly, types]);
-        return new Mail({ id: rows[0].id, email, isDailyReport: !!daily, isMonthlyReport: !!monthly, reportTypes: types });
+        const [rows] = await executeQuery(query, [email, daily, managementDaily, types]);
+        return new Mail({ id: rows[0].id, email, isDailyReport: !!daily, isManagementDailyReport: !!managementDaily, reportTypes: types });
     }
 
     static async findAll(query = {}) {

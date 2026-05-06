@@ -129,7 +129,7 @@ export const deleteSubSection = asyncHandler(async (req, res) => {
 });
 
 export const getAllSubSections = asyncHandler(async (req, res) => {
-    const { lineId, departmentId } = req.query;
+    const { lineId, departmentId, sectionId } = req.query;
 
     let querySQL = `
         SELECT ss.*, l.name as lineName, s.name as sectionName,
@@ -148,6 +148,11 @@ export const getAllSubSections = asyncHandler(async (req, res) => {
     if (departmentId) {
         conditions.push("l.department = ?");
         params.push(departmentId);
+    }
+
+    if (sectionId) {
+        conditions.push("l.sectionId = ?");
+        params.push(sectionId);
     }
 
     if (conditions.length > 0) {

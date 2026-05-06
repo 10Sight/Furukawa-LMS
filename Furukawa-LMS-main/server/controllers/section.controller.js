@@ -8,7 +8,7 @@ import Section from "../models/section.model.js";
 // @route   POST /api/sections
 // @access  Private
 export const createSection = asyncHandler(async (req, res) => {
-    const { name, uniCode, description, category, daily5mFormType, departmentId } = req.body;
+    const { name, uniCode, description, category, departmentId } = req.body;
 
     if (!name || !departmentId) {
         throw new ApiError(400, "Name and Department ID are required");
@@ -19,7 +19,6 @@ export const createSection = asyncHandler(async (req, res) => {
         uniCode,
         description,
         category,
-        daily5mFormType,
         departmentId
     });
 
@@ -41,16 +40,25 @@ export const getSectionsByDepartment = asyncHandler(async (req, res) => {
     );
 });
 
-// @desc    Get all sections globally
+// @desc    Get all sections globally (optional: filter by department)
 // @route   GET /api/sections
 // @access  Private
 export const getAllSections = asyncHandler(async (req, res) => {
-    const [sections] = await executeQuery(
-        "SELECT id, name, uniCode, description, category, departmentId, isActive FROM [sections] ORDER BY name ASC"
-    );
+    const { departmentId } = req.query;
+    let querySQL = "SELECT id, name, uniCode, description, category, departmentId, isActive FROM [sections]";
+    let params = [];
+
+    if (departmentId && departmentId !== "ALL" && departmentId !== "undefined" && departmentId !== "null") {
+        querySQL += " WHERE departmentId = ?";
+        params.push(departmentId);
+    }
+
+    querySQL += " ORDER BY name ASC";
+
+    const [sections] = await executeQuery(querySQL, params);
 
     res.status(200).json(
-        new ApiResponse(200, sections, "All sections fetched successfully")
+        new ApiResponse(200, sections, "Sections fetched successfully")
     );
 });
 
@@ -59,14 +67,13 @@ export const getAllSections = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateSection = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, uniCode, description, category, daily5mFormType, isActive } = req.body;
+    const { name, uniCode, description, category, isActive } = req.body;
 
     const updatedSection = await Section.update(id, {
         name,
         uniCode,
         description,
         category,
-        daily5mFormType,
         isActive
     });
 

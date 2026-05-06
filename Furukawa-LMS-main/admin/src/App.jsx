@@ -85,9 +85,15 @@ const SixteenDayMonitoring = lazy(() => import("./pages/Admin/SixteenDayMonitori
 const ThreeDayMonitoring = lazy(() => import("./pages/Admin/ThreeDayMonitoring"));
 const HandoverSheetPage = lazy(() => import("./pages/Admin/HandoverSheetPage"));
 const MultiSkilling = lazy(() => import("./pages/Admin/MultiSkilling"));
+const DojoHiring = lazy(() => import("./pages/Admin/DojoHiring"));
+const DojoCandidateDetail = lazy(() => import("./pages/Admin/DojoCandidateDetail"));
 
 
 const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
+const Learning = lazy(() => import("./pages/Admin/Learning"));
+const CreateLearningComparison = lazy(() => import("./pages/Admin/CreateLearningComparison"));
+const LearningComparisonDetail = lazy(() => import("./pages/Admin/LearningComparisonDetail"));
+const EditLearningComparison = lazy(() => import("./pages/Admin/EditLearningComparison"));
 
 // Instructor Pages
 const InstructorDashboard = lazy(() => import("./pages/Instructor/Dashboard.jsx"));
@@ -119,11 +125,8 @@ const CertificateManagement = lazy(() => import("./pages/SuperAdmin/CertificateM
 // Student Pages
 const StudentDashboard = lazy(() => import("./pages/Student/Dashboard.jsx"));
 const StudentProfile = lazy(() => import("./pages/Student/Profile.jsx"));
-const StudentDepartment = lazy(() => import("./pages/Student/Department.jsx"));
-const DepartmentCourse = lazy(() => import("./pages/Student/DepartmentCourse.jsx"));
 const LessonDetail = lazy(() => import("./pages/Student/LessonDetail.jsx"));
 const TakeQuiz = lazy(() => import("./pages/Student/TakeQuiz.jsx"));
-const CourseReport = lazy(() => import("./pages/Student/CourseReport.jsx"));
 const Reports = lazy(() => import("./pages/Student/Reports.jsx"));
 const StudentCertificates = lazy(() => import("./pages/Student/Certificates.jsx"));
 const ResourcePreview = lazy(() => import("./pages/Student/ResourcePreview.jsx"));
@@ -257,6 +260,8 @@ const App = () => {
             <Route path="3-day-monitoring/:studentId?" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="multi-skilling" element={<MultiSkilling />} />
+            <Route path="dojo-hiring" element={<DojoHiring />} />
+            <Route path="dojo-hiring/:studentId" element={<DojoCandidateDetail />} />
             <Route path="role-manager" element={<RoleManager />} />
             <Route path="manage-role/:roleId" element={<RoleUserManager />} />
             <Route path="all-users" element={<AllUsersManagement />} />
@@ -266,6 +271,10 @@ const App = () => {
             <Route path="line-requirements" element={<LineRequirementManager />} />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
             <Route path="report-clubbing" element={<ReportClubbing />} />
+            <Route path="learning" element={<Learning />} />
+            <Route path="learning/create" element={<CreateLearningComparison />} />
+            <Route path="learning/edit/:id" element={<EditLearningComparison />} />
+            <Route path="learning/:id" element={<LearningComparisonDetail />} />
             <Route path="settings" element={<AdminSettings />} />
           </Route>
 
@@ -390,16 +399,9 @@ const App = () => {
           >
             <Route index element={<StudentDashboard />} />
             <Route path="profile" element={<StudentProfile />} />
-            <Route path="department" element={<StudentDepartment />} />
-            <Route path="course" element={<DepartmentCourse />} />
-            <Route path="lesson/:lessonId" element={<LessonDetail />} />
+            <Route path="test-paper" element={<TestPaper />} />
             <Route path="quiz/:quizId" element={<TakeQuiz />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="report/:courseId" element={<CourseReport />} />
             <Route path="certificates" element={<StudentCertificates />} />
-            <Route path="on-job-training" element={<StudentOnJobTraining />} />
-            <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
-            <Route path="feedback" element={<StudentFeedback />} />
           </Route>
 
           {/* Custom Role Portal routes */}

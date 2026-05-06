@@ -1395,6 +1395,7 @@ const Students = () => {
                 </TableHead>
                 <TableHead className="w-[180px]">Operator</TableHead>
                 <TableHead className="w-[100px]">Emp Code</TableHead>
+                <TableHead className="w-[100px]">Primary Level</TableHead>
                 <TableHead className="w-[120px]">Date</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Status</TableHead>
@@ -1448,6 +1449,16 @@ const Students = () => {
                     <TableCell>
                       <div className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 w-fit text-[11px]">
                         {student.empId || "---"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant="outline" className="font-bold text-xs bg-indigo-50 text-indigo-700 border-indigo-200 w-fit">
+                          {student.primaryLevel || "L1"}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[100px]" title={student.primaryStationName}>
+                          {student.primaryStationName || "No Station"}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500 whitespace-nowrap">

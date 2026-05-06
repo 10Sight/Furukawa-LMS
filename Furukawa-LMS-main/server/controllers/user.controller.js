@@ -49,25 +49,28 @@ const handleInstructorAssignments = async (userId, departmentIds) => {
 const getHierarchyJoinSQL = `
   OUTER APPLY (
     SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 
-    FROM sub_sections ss WHERE ss.id = u.subSectionId
+    FROM sub_sections ss 
+    WHERE ss.id = COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END))
   ) ss_res
   OUTER APPLY (
     SELECT TOP 1 l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
-    FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
+    FROM [lines] l 
+    WHERE l.id = COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), ss_res.ssLineId)
   ) l_res
   OUTER APPLY (
     SELECT TOP 1 s.name as sectionName, s.departmentId as sDeptId, s.id as sectionId
-    FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
+    FROM [sections] s 
+    WHERE s.id = COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), l_res.lSectionId)
   ) s_res
   OUTER APPLY (
-    -- Optimize by checking ID directly first, then falling back to name/string comparison if needed
     SELECT TOP 1 d.id, d.name as deptName, d.instructor as deptInstructor
     FROM departments d 
-    WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
-       OR (u.departmentId IS NULL AND (u.department = d.name OR TRY_CAST(u.department AS INT) = d.id))
+    WHERE d.id = COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), s_res.sDeptId, l_res.lDeptId)
+       OR (u.departmentId IS NULL AND u.targetDeptId IS NULL AND (u.department = d.name OR TRY_CAST(u.department AS INT) = d.id))
   ) d
   OUTER APPLY (
-    SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
+    SELECT TOP 1 name as stationName FROM machines 
+    WHERE id = COALESCE(u.stationId, (CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END))
   ) st
    OUTER APPLY (
     SELECT 
@@ -126,20 +129,43 @@ const sanitize = (val) => (val && val !== "N/A" && val.toLowerCase() !== "none")
 
 export const formatUser = (u) => {
   const assignments = parseJSON(u.assignments, []);
+  const currentSkill = parseJSON(u.currentSkill, {});
+  
+  // Resolve TRUE primary level: Strict check against primary stationId
+  let resolvedPrimaryLevel = "L1";
+  if (u.stationId) {
+    // If they have a primary station assigned, their level MUST come from that station's skill in the map
+    resolvedPrimaryLevel = currentSkill[u.stationId] || "L1";
+  } else {
+    // Fallback to global level only if no primary station is assigned
+    resolvedPrimaryLevel = u.currentLevel || "L1";
+  }
+
   const formatted = {
     ...u,
     _id: u.id,
     avatar: parseJSON(u.avatar),
     assignments,
-    department: u.deptName ? { _id: String(u.actualDeptId || u.departmentId), name: u.deptName, instructor: u.deptInstructor } : (sanitize(u.department) ? { _id: String(u.department), name: u.department } : null),
+    primaryStationName: u.stationName || sanitize(u.stationNo) || "No Station",
+    primaryLevel: resolvedPrimaryLevel,
+    allStations: assignments?.length > 0 
+      ? assignments.map(a => a.stationName).join(', ') 
+      : (u.stationName || sanitize(u.stationNo) || "No Station"),
+    department: u.deptName ? { _id: String(u.actualDeptId || u.departmentId || u.targetDeptId), name: u.deptName, instructor: u.deptInstructor } : (sanitize(u.department) ? { _id: String(u.department), name: u.department } : null),
     deptName: u.deptName || sanitize(u.department) || "",
     sectionName: u.sectionName || sanitize(u.section) || "",
     lineName: u.lineName || sanitize(u.line) || "",
     subSectionName: u.subSectionName || sanitize(u.sub_section) || "",
-    stationName: assignments?.length > 1 
+    stationName: assignments?.length > 0 
       ? assignments.map(a => a.stationName).join(', ') 
       : (u.stationName || sanitize(u.stationNo) || ""),
-    fromInfo: [u.deptName || sanitize(u.department), u.sectionName || sanitize(u.section), u.lineName || sanitize(u.line), u.subSectionName || sanitize(u.sub_section), u.stationName || sanitize(u.stationNo)].filter(Boolean).join(' / ')
+    fromInfo: [u.deptName || sanitize(u.department), u.sectionName || sanitize(u.section), u.lineName || sanitize(u.line), u.subSectionName || sanitize(u.sub_section), u.stationName || sanitize(u.stationNo)].filter(Boolean).join(' / '),
+    currentSkill,
+    targetDeptId: u.targetDeptId,
+    targetSectionId: u.targetSectionId,
+    targetLineId: u.targetLineId,
+    targetSubSectionId: u.targetSubSectionId,
+    targetStationId: u.targetStationId
   };
   delete formatted.password;
   delete formatted.refreshToken;
@@ -157,6 +183,13 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const offset = (page - 1) * limit;
 
   let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  if (req.query.includeTemporary === "true") {
+    whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
+  } else if (req.query.includeTemporary === "only") {
+    whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
+  } else {
+    whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+  }
   let params = [];
 
   if (req.query.search) {
@@ -372,8 +405,8 @@ export const getUserById = asyncHandler(async (req, res) => {
  */
 export const createUser = asyncHandler(async (req, res) => {
   const data = req.body;
-  if (!data.fullName || !data.userName || !data.email || !data.password || !data.unit) {
-    throw new ApiError("Missing required fields", 400);
+  if (!data.fullName || !data.userName || !data.password || !data.unit) {
+    throw new ApiError("Missing required fields (fullName, userName, password, unit)", 400);
   }
 
   // Duplicate Check
@@ -401,18 +434,35 @@ export const createUser = asyncHandler(async (req, res) => {
     "fullName", "userName", "slug", "email", "phoneNumber", "role", "password", "unit", "status",
     "empId", "isEmployee", "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate", "leavingDate",
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId", "department",
+    "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "currentLevel", "createdAt", "updatedAt"
+    "currentLevel", "isTemporary", "createdAt", "updatedAt"
   ];
+
+  // For temporary users, map assignments to target fields and clear actual fields
+  if (data.isTemporary) {
+    data.targetDeptId = data.departmentId;
+    data.targetSectionId = data.sectionId;
+    data.targetLineId = data.lineId;
+    data.targetSubSectionId = data.subSectionId;
+    data.targetStationId = data.stationId;
+    
+    data.departmentId = null;
+    data.sectionId = null;
+    data.lineId = null;
+    data.subSectionId = null;
+    data.stationId = null;
+    data.department = null;
+  }
 
   const values = fields.map(f => {
     if (f === 'password') return hashedPassword;
-    if (f === 'userName' || f === 'email') return data[f].toLowerCase();
+    if (f === 'userName' || f === 'email') return data[f] ? data[f].toLowerCase() : null;
     if (f === 'slug') return slug;
     if (f === 'department') return departmentName;
     if (f === 'createdAt' || f === 'updatedAt') return new Date();
-    if (['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge'].includes(f)) return data[f] ? 1 : 0;
+    if (['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f)) return data[f] ? 1 : 0;
     return data[f] || null;
   });
 
@@ -452,8 +502,45 @@ export const updateUser = asyncHandler(async (req, res) => {
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "customRoleId", "currentLevel"
+    "customRoleId", "currentLevel", "isTemporary",
+    "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId"
   ];
+
+  const oldUser = rows[0];
+
+  // If station is being updated, sync currentLevel with the skill level for that station
+  if (data.stationId && data.stationId !== oldUser.stationId) {
+    let currentSkill = oldUser.currentSkill || {};
+    if (typeof currentSkill === 'string') {
+        try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+    }
+    // Set currentLevel to the level associated with the new station, default to L1
+    data.currentLevel = currentSkill[data.stationId] || "L1";
+  }
+
+  // Promotion Logic: If transitioning from temporary to permanent
+  if (oldUser.isTemporary && data.isTemporary === false) {
+    // Copy target values to actual fields if they are not being explicitly overridden in the request
+    data.departmentId = data.departmentId !== undefined ? data.departmentId : oldUser.targetDeptId;
+    data.sectionId = data.sectionId !== undefined ? data.sectionId : oldUser.targetSectionId;
+    data.lineId = data.lineId !== undefined ? data.lineId : oldUser.targetLineId;
+    data.subSectionId = data.subSectionId !== undefined ? data.subSectionId : oldUser.targetSubSectionId;
+    data.stationId = data.stationId !== undefined ? data.stationId : oldUser.targetStationId;
+
+    // Clear target fields
+    data.targetDeptId = null;
+    data.targetSectionId = null;
+    data.targetLineId = null;
+    data.targetSubSectionId = null;
+    data.targetStationId = null;
+  } else if (data.isTemporary || (data.isTemporary === undefined && oldUser.isTemporary)) {
+    // If user is/remains temporary, ensure assignments go to target fields
+    if (data.departmentId !== undefined) { data.targetDeptId = data.departmentId; data.departmentId = null; }
+    if (data.sectionId !== undefined) { data.targetSectionId = data.sectionId; data.sectionId = null; }
+    if (data.lineId !== undefined) { data.targetLineId = data.lineId; data.lineId = null; }
+    if (data.subSectionId !== undefined) { data.targetSubSectionId = data.subSectionId; data.subSectionId = null; }
+    if (data.stationId !== undefined) { data.targetStationId = data.stationId; data.stationId = null; }
+  }
 
   for (const f of fieldsToUpdate) {
     if (data[f] !== undefined) {
@@ -477,7 +564,7 @@ export const updateUser = asyncHandler(async (req, res) => {
         }
       } else {
         updates.push(`${f} = ?`);
-        values.push(['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge'].includes(f) ? (data[f] ? 1 : 0) : (data[f] || null));
+        values.push(['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f) ? (data[f] ? 1 : 0) : (data[f] === undefined ? null : data[f]));
       }
     }
   }
@@ -718,6 +805,13 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
+  if (req.query.includeTemporary === "true") {
+    whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
+  } else if (req.query.includeTemporary === "only") {
+    whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
+  } else {
+    whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+  }
   let params = [];
   if (req.query.search) {
     const t = `%${req.query.search}%`;
@@ -1184,3 +1278,108 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
 export const checkAndProcessLevelUpgrades = async (userId) => {
   // Background logic - intentionally left empty or simplified if not critical right now
 };
+
+/**
+ * Get Temporary Hires (DOJO Hiring)
+ */
+export const getTemporaryUsers = asyncHandler(async (req, res) => {
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = (page - 1) * limit;
+
+  let whereClauses = ["u.isTemporary = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let params = [];
+
+  if (req.query.search) {
+    const t = `%${req.query.search}%`;
+    whereClauses.push("(u.fullName LIKE ? OR u.empId LIKE ? OR u.phoneNumber LIKE ?)");
+    params.push(t, t, t);
+  }
+
+  if (req.query.gender && req.query.gender !== 'ALL') {
+    whereClauses.push("u.gender = ?");
+    params.push(req.query.gender);
+  }
+
+  if (req.query.today === 'true') {
+    const today = new Date().toISOString().split('T')[0];
+    whereClauses.push("CAST(u.createdAt AS DATE) = ?");
+    params.push(today);
+  }
+
+  const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+
+  // Fetch Stats
+  const [statsData] = await executeQuery(`
+    SELECT 
+      COUNT(*) as total,
+      SUM(CASE WHEN CAST(createdAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
+      SUM(CASE WHEN gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
+      SUM(CASE WHEN gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
+    FROM users 
+    WHERE isTemporary = 1 AND (isDeleted = 0 OR isDeleted IS NULL)
+  `);
+
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${whereSQL}`, params);
+  const [users] = await executeQuery(`
+    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments
+    FROM users u
+    ${getHierarchyJoinSQL}
+    ${whereSQL}
+    ORDER BY u.createdAt DESC
+    OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+  `, [...params, offset, limit]);
+
+  res.json(new ApiResponse(200, {
+    users: users.map(formatUser),
+    totalUsers: cnt[0].total,
+    totalPages: Math.ceil(cnt[0].total / limit),
+    currentPage: page,
+    ...statsData[0]
+  }, "Temporary users fetched successfully"));
+});
+
+/**
+ * Get Next Temporary ID Sequence
+ */
+/**
+ * Get Next Temporary ID Sequence
+ */
+export const getNextTemporaryId = asyncHandler(async (req, res) => {
+  const { prefix } = req.query; // e.g. TEMPJEED
+  if (!prefix) throw new ApiError("Prefix is required", 400);
+
+  // Clean prefix of any hyphens if they were passed by old frontend
+  const cleanPrefix = prefix.replace(/-/g, '');
+
+  const [rows] = await executeQuery(`
+    SELECT empId FROM users 
+    WHERE empId LIKE ? AND isTemporary = 1
+    ORDER BY empId DESC
+  `, [`${cleanPrefix}%`]);
+
+  let nextSeq = 1;
+  let randomPart = Math.floor(100 + Math.random() * 900); // 3-digit random
+
+  if (rows.length > 0) {
+    const lastId = rows[0].empId;
+    
+    // Attempt to parse sequence from the end (last 3 digits)
+    const seqMatch = lastId.match(/(\d{3})$/);
+    if (seqMatch) {
+      nextSeq = parseInt(seqMatch[1]) + 1;
+      
+      // Attempt to extract the random part (3 digits before the sequence)
+      // We look for 3 digits that precede the last 3 digits
+      const randMatch = lastId.match(/(\d{3})\d{3}$/);
+      if (randMatch) {
+        randomPart = randMatch[1];
+      }
+    }
+  }
+
+  const formattedSeq = String(nextSeq).padStart(3, '0');
+  const nextId = `${cleanPrefix}${randomPart}${formattedSeq}`;
+  
+  res.json(new ApiResponse(200, { nextId }, "Next sequence generated"));
+});

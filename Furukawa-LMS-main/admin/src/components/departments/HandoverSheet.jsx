@@ -14,8 +14,9 @@ import { Label } from "@/components/ui/label";
 import { IconSettings, IconHistory, IconPlus, IconTrash } from "@tabler/icons-react";
 import { format } from "date-fns";
 import UserAutocomplete from '../common/UserAutocomplete';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName }) => {
+const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [] }) => {
     const authUser = useSelector(state => state.auth.user);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -122,7 +123,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
         const fetchData = async () => {
             setLoading(true);
-            
+
             // Check if we need to reset initialization because of selection change
             if (lastSessionKey.current !== currentSessionKey) {
                 hasInitialized.current = false;
@@ -173,26 +174,57 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                     setIsSubmitted(false);
                     setSubmittedAt(null);
                     setSignatures({ educationCell: "", hod: "" });
-                    
-                    if (students && students.length > 0) {
-                    // Initial population from students list if new
-                    const eligibleStudents = students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
 
-                    const initialEntries = eligibleStudents.map((student, index) => ({
-                        sn: index + 1,
-                        studentId: student._id,
-                        employeeName: student.fullName,
-                        empCode: student.empId || "",
-                        marks: "0%",
-                        department: sectionName || departmentName || "Quality",
-                        process: "",
-                        mentor: "",
-                        interview1: "",
-                        interview2: "",
-                        interviewStatus: "",
-                        statusActionBy: ""
-                    }));
+                    let initialEntries = [];
 
+                    // 1. Try auto-suggested entries from backend (from Handover Quizzes)
+                    if (data?.entries && data.entries.length > 0) {
+                        initialEntries = data.entries.map((student, index) => ({
+                            sn: index + 1,
+                            studentId: student.studentId,
+                            employeeName: student.employeeName,
+                            empCode: student.employeeCode || "",
+                            marks: student.marks || "0%",
+                            department: sectionName || departmentName || "",
+                            departmentId: student.targetDeptId || departmentId || null,
+                            sectionId: student.sectionId || null,
+                            lineId: student.lineId || null,
+                            subSectionId: student.subSectionId || null,
+                            stationId: student.stationId || null,
+                            process: student.stationName || "",
+                            mentor: "",
+                            interview1: "",
+                            interview2: "",
+                            interviewStatus: "",
+                            statusActionBy: "",
+                            isAutoSuggested: true
+                        }));
+                    } 
+                    // 2. Fallback to all eligible temporary students if no quiz-based suggestions
+                    else if (students && students.length > 0) {
+                        const eligibleStudents = students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
+                        initialEntries = eligibleStudents.map((student, index) => ({
+                            sn: index + 1,
+                            studentId: student._id || student.id,
+                            employeeName: student.fullName,
+                            empCode: student.empId || "",
+                            marks: "0%",
+                            department: student.deptName || sectionName || departmentName || "",
+                            departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
+                            sectionId: student.sectionId || student.targetSectionId || null,
+                            lineId: student.lineId || student.targetLineId || null,
+                            subSectionId: student.subSectionId || student.targetSubSectionId || null,
+                            stationId: student.stationId || student.targetStationId || null,
+                            process: student.stationName || "",
+                            mentor: "",
+                            interview1: "",
+                            interview2: "",
+                            interviewStatus: "",
+                            statusActionBy: ""
+                        }));
+                    }
+
+                    // 3. Fallback to a single empty row if nothing else
                     if (initialEntries.length === 0) {
                         initialEntries.push({
                             sn: 1,
@@ -212,32 +244,14 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
                     setEntries(initialEntries);
                     hasInitialized.current = true;
-                } else {
-                    // Totally empty new sheet
-                    setEntries([{
-                        sn: 1,
-                        studentId: "",
-                        employeeName: "",
-                        empCode: "",
-                        marks: "0%",
-                        department: sectionName || departmentName || "",
-                        process: "",
-                        mentor: "",
-                        interview1: "",
-                        interview2: "",
-                        interviewStatus: "",
-                        statusActionBy: ""
-                    }]);
-                    hasInitialized.current = true;
                 }
+            } catch (error) {
+                console.error("Error fetching handover sheet:", error);
+                toast.error("Failed to fetch handover sheet data");
+            } finally {
+                setLoading(false);
             }
-        } catch (error) {
-            console.error("Error fetching handover sheet:", error);
-            toast.error("Failed to fetch handover sheet data");
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
 
         fetchData();
     }, [departmentId, sectionId, date, students.length, departmentName, instructorName]);
@@ -254,8 +268,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
             ...newEntries[index],
             studentId: user.id,
             employeeName: user.fullName,
-            empCode: user.empId || "",
-            department: sectionName || user.deptName || departmentName || "",
+            empCode: user.userName || user.empId || "",
+            department: user.deptName || sectionName || departmentName || "",
+            departmentId: user.actualDeptId || user.departmentId || user.targetDeptId || null,
+            sectionId: user.sectionId || user.targetSectionId || null,
             process: user.machineName || ""
         };
         setEntries(newEntries);
@@ -293,12 +309,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const handleMetadataChange = (field, value) => {
         setMetadata(prev => ({ ...prev, [field]: value }));
     };
-    
+
     const handleStatusAction = (index, status) => {
         const newEntries = [...entries];
         const userName = authUser?.fullName || authUser?.name || "Unknown User";
-        newEntries[index] = { 
-            ...newEntries[index], 
+        newEntries[index] = {
+            ...newEntries[index],
             interviewStatus: status,
             statusActionBy: userName,
             statusActionAt: status ? new Date().toISOString() : null
@@ -314,7 +330,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const handleSave = async (isSubmit = false) => {
         setSaving(true);
         const userName = authUser?.fullName || authUser?.name || "System";
-        
+
         // Auto-fill Education Cell signature if not set
         const updatedSignatures = { ...signatures };
         if (!updatedSignatures.educationCell) {
@@ -332,12 +348,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                 metadata,
                 isSubmitted: isSubmit
             });
-            
+
             if (isSubmit) {
                 setIsSubmitted(true);
                 setSubmittedAt(new Date().toISOString());
             }
-            
+
             toast.success(isSubmit ? "Handover sheet submitted and emailed successfully" : "Handover sheet progress saved successfully");
         } catch (error) {
             console.error("Error saving handover sheet:", error);
@@ -451,17 +467,17 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                     <IconPrinter className="h-4 w-4 mr-2" />
                                     Print
                                 </Button>
-                                <Button 
+                                <Button
                                     className="bg-green-600 hover:bg-green-700 text-white border-green-700"
-                                    onClick={() => handleSave(false)} 
+                                    onClick={() => handleSave(false)}
                                     disabled={saving}
                                 >
                                     <IconDeviceFloppy className="h-4 w-4 mr-2" />
                                     {saving ? "Saving..." : "Save Progress"}
                                 </Button>
-                                <Button 
+                                <Button
                                     className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all"
-                                    onClick={() => handleSave(true)} 
+                                    onClick={() => handleSave(true)}
                                     disabled={saving}
                                 >
                                     <Save className="h-4 w-4 mr-2" />
@@ -531,6 +547,49 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             className="w-full"
                                                             inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
                                                         />
+                                                    ) : (col.field === 'department' || col.field === 'departmentId') && !col.readOnly ? (
+                                                        <Select
+                                                            key={`dept-select-${index}-${entry.studentId || 'new'}`}
+                                                            value={entry.departmentId ? String(entry.departmentId) : undefined}
+                                                            onValueChange={(val) => {
+                                                                const deptId = val;
+                                                                const dept = departments.find(d => String(d.id || d._id) === String(deptId));
+                                                                handleEntryChange(index, 'departmentId', deptId);
+                                                                handleEntryChange(index, 'department', dept?.name || "");
+                                                            }}
+                                                        >
+                                                            <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs font-medium text-blue-600 bg-transparent">
+                                                                <SelectValue placeholder="Dept" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {departments.map(d => (
+                                                                    <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
+                                                                        {d.name || d.deptName}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    ) : col.field === 'process' ? (
+                                                        <Select
+                                                            key={`process-select-${index}-${entry.studentId || 'new'}`}
+                                                            value={entry.process || ""}
+                                                            onValueChange={(val) => handleEntryChange(index, 'process', val)}
+                                                        >
+                                                            <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
+                                                                <SelectValue placeholder="Process" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {machines.length > 0 ? (
+                                                                    machines.map((m, i) => (
+                                                                        <SelectItem key={m.id || m._id || i} value={m.name || m.machineName}>
+                                                                            {m.name || m.machineName}
+                                                                        </SelectItem>
+                                                                    ))
+                                                                ) : (
+                                                                    <SelectItem value="none" disabled>No Processes Found</SelectItem>
+                                                                )}
+                                                            </SelectContent>
+                                                        </Select>
                                                     ) : col.readOnly ? (
                                                         <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
                                                             {entry[col.field]}
@@ -560,6 +619,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
                                                         placeholder="Search Employee..."
                                                         compact={true}
+                                                        includeTemporary="only"
                                                         className="min-w-[150px]"
                                                         inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                     />
@@ -581,20 +641,49 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                     />
                                                 </td>
                                                 <td className="border p-1 text-center">
-                                                    <Input
-                                                        value={entry.department}
-                                                        onChange={(e) => handleEntryChange(index, 'department', e.target.value)}
-                                                        className="h-7 min-w-[80px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                        size={Math.max((entry.department || "").length || 1, 10)}
-                                                    />
+                                                    <Select
+                                                        key={`dept-select-def-${index}-${entry.studentId || 'new'}`}
+                                                        value={entry.departmentId ? String(entry.departmentId) : undefined}
+                                                        onValueChange={(val) => {
+                                                            const deptId = val;
+                                                            const dept = departments.find(d => String(d.id || d._id) === String(deptId));
+                                                            handleEntryChange(index, 'departmentId', deptId);
+                                                            handleEntryChange(index, 'department', dept?.name || "");
+                                                        }}
+                                                    >
+                                                        <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs font-medium text-blue-600 bg-transparent">
+                                                            <SelectValue placeholder="Select Dept" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {departments.map(d => (
+                                                                <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
+                                                                    {d.name || d.deptName}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
                                                 </td>
                                                 <td className="border p-1 text-center">
-                                                    <Input
-                                                        value={entry.process}
-                                                        onChange={(e) => handleEntryChange(index, 'process', e.target.value)}
-                                                        className="h-7 min-w-[80px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                        size={Math.max((entry.process || "").length || 1, 10)}
-                                                    />
+                                                    <Select
+                                                        key={`process-select-def-${index}-${entry.studentId || 'new'}`}
+                                                        value={entry.process || ""}
+                                                        onValueChange={(val) => handleEntryChange(index, 'process', val)}
+                                                    >
+                                                        <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
+                                                            <SelectValue placeholder="Process" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {machines.length > 0 ? (
+                                                                machines.map((m, i) => (
+                                                                    <SelectItem key={m.id || m._id || i} value={m.name || m.machineName}>
+                                                                        {m.name || m.machineName}
+                                                                    </SelectItem>
+                                                                ))
+                                                            ) : (
+                                                                <SelectItem value="none" disabled>No Processes Found</SelectItem>
+                                                            )}
+                                                        </SelectContent>
+                                                    </Select>
                                                 </td>
                                                 <td className="border p-1">
                                                     <UserAutocomplete
@@ -628,15 +717,15 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                 <td className="border p-1">
                                                     {!entry.interviewStatus ? (
                                                         <div className="flex items-center justify-center gap-2">
-                                                            <Button 
-                                                                variant="ghost" 
+                                                            <Button
+                                                                variant="ghost"
                                                                 className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
                                                                 onClick={() => handleStatusAction(index, 'APPROVE')}
                                                             >
                                                                 APPROVE
                                                             </Button>
-                                                            <Button 
-                                                                variant="ghost" 
+                                                            <Button
+                                                                variant="ghost"
                                                                 className="h-7 px-2 text-[10px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200"
                                                                 onClick={() => handleStatusAction(index, 'REJECT')}
                                                             >
@@ -651,7 +740,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             <div className="text-[9px] text-gray-500 leading-tight text-center">
                                                                 by: {entry.statusActionBy}
                                                             </div>
-                                                            <button 
+                                                            <button
                                                                 onClick={() => handleStatusAction(index, "")}
                                                                 className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
                                                             >
@@ -669,9 +758,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                             </tbody>
                         </table>
                         <div className="mt-2 flex justify-start no-print">
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={addRow}
                                 className="flex items-center gap-1 text-xs border-dashed"
                             >
@@ -715,10 +804,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                         >
                             Export to Excel
                         </Button>
-                        <Button 
+                        <Button
                             variant="outline"
-                            onClick={() => handleSave(false)} 
-                            disabled={saving} 
+                            onClick={() => handleSave(false)}
+                            disabled={saving}
                             className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
                         >
                             <IconDeviceFloppy className="h-4 w-4" />

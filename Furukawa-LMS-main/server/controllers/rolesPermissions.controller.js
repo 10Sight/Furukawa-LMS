@@ -123,10 +123,27 @@ const SYSTEM_PERMISSIONS = {
   MULTI_SKILLING_EDIT_LAYOUT: "multi_skilling:edit_layout",
   MULTI_SKILLING_VIEW_HISTORY: "multi_skilling:view_history",
 
-  // Handover Sheet Management
+  HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
   HANDOVER_SHEET_READ: "handover_sheet:read",
   HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
-  HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
+  
+  // 10-Cycle Sheet Management
+  TEN_CYCLE_MANAGE: "ten_cycle:manage",
+  TEN_CYCLE_VERIFY: "ten_cycle:verify",
+  TEN_CYCLE_APPROVE: "ten_cycle:approve",
+
+  // DOJO Hiring Management
+  DOJO_HIRING_CREATE: "dojo_hiring:create",
+  
+  // Test Paper Management
+  TEST_PAPER_READ: "test_paper:read",
+  TEST_PAPER_CREATE: "test_paper:create",
+
+  // Learning Management
+  LEARNING_READ: "learning:read",
+  LEARNING_CREATE: "learning:create",
+  LEARNING_UPDATE: "learning:update",
+  LEARNING_DELETE: "learning:delete",
 };
 
 // Define default role permissions
@@ -142,7 +159,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.QUIZ_READ,
       SYSTEM_PERMISSIONS.ASSIGNMENT_READ,
       SYSTEM_PERMISSIONS.CERTIFICATE_READ,
-      SYSTEM_PERMISSIONS.DAILY_5M_READ
+      SYSTEM_PERMISSIONS.DAILY_5M_READ,
+      SYSTEM_PERMISSIONS.LEARNING_READ
     ],
     isSystemRole: true,
     color: "#3B82F6"
@@ -202,7 +220,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE,
       SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ,
-      SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE
+      SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE,
+      SYSTEM_PERMISSIONS.LEARNING_READ
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -347,9 +366,22 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE, name: "Manage Multi Skilling", description: "Fill out and manage multi skilling training plans" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT, name: "Edit Multi Skilling Layout", description: "Modify the table configuration and structure of multi skilling sheets" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" },
-        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, name: "View Handover Sheet", description: "View handover sheet records and history" },
-        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE, name: "Manage Handover Sheet", description: "Fill out, save, and submit handover sheets" },
-        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" }
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet", description: "Fill out, save, and submit 10-cycle sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, name: "Onboard Candidates", description: "Onboard new temporary candidates into the pipeline" }
+      ],
+      "Test Paper Management": [
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_READ, name: "View Test Papers", description: "Access and view the list of test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_CREATE, name: "Create/Manage Test Papers", description: "Create or modify test paper entries" }
+      ],
+      "Learning Management": [
+        { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Learning Dashboard", description: "View the learning management dashboard and statistics" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_CREATE, name: "Create Learning Content", description: "Create new before & after learning comparisons" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_UPDATE, name: "Update Learning Content", description: "Edit existing learning comparison entries" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_DELETE, name: "Delete Learning Content", description: "Remove learning comparison entries from the system" }
       ]
     };
 

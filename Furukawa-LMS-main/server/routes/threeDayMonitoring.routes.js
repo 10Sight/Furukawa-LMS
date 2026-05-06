@@ -5,14 +5,19 @@ import {
     getThreeDayMonitoringConfig,
     saveThreeDayMonitoringConfig,
     getThreeDayMonitoringHistory,
-    sendThreeDayMonitoringEmail
+    getStudentThreeDayMonitoringHistory,
+    sendThreeDayMonitoringEmail,
+    listThreeDayMonitoring
 } from "../controllers/threeDayMonitoring.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 
 const router = Router();
 
+router.get("/", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), listThreeDayMonitoring);
+
 router.get("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage"), getThreeDayMonitoring);
+router.get("/:studentId/history", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage"), getStudentThreeDayMonitoringHistory);
 router.post("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), saveThreeDayMonitoring);
 router.post("/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), sendThreeDayMonitoringEmail);
 

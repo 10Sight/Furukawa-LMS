@@ -37,6 +37,12 @@ const FORM_TYPES = [
     { id: 'src', label: 'SRC' }
 ];
 
+const TEN_CYCLE_FORM_TYPES = [
+    { id: 'form1', label: 'Logical (Form 1)' },
+    { id: 'form2', label: 'Complete (Form 2)' },
+    { id: 'form3', label: 'Numerical (Form 3)' }
+];
+
 const DepartmentSectionManager = ({ departmentId }) => {
     const { data: sectionsData, isLoading, error } = useGetSectionsByDepartmentQuery(departmentId);
     const [createSection, { isLoading: isCreating }] = useCreateSectionMutation();
@@ -48,6 +54,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [newSectionDescription, setNewSectionDescription] = useState("");
     const [newSectionCategory, setNewSectionCategory] = useState("Direct");
     const [newSectionFormTypes, setNewSectionFormTypes] = useState(["standard"]);
+    const [newSectionTenCycleFormTypes, setNewSectionTenCycleFormTypes] = useState(["form1"]);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingSection, setEditingSection] = useState(null);
@@ -58,6 +65,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [editDescription, setEditDescription] = useState("");
     const [editCategory, setEditCategory] = useState("Direct");
     const [editFormTypes, setEditFormTypes] = useState([]);
+    const [editTenCycleFormTypes, setEditTenCycleFormTypes] = useState([]);
 
     const [expandedSectionId, setExpandedSectionId] = useState(null);
     const [categoryFilter, setCategoryFilter] = useState("All");
@@ -66,9 +74,14 @@ const DepartmentSectionManager = ({ departmentId }) => {
         setExpandedSectionId(expandedSectionId === sectionId ? null : sectionId);
     };
 
-    const toggleFormType = (type, mode = 'create') => {
-        const currentTypes = mode === 'create' ? newSectionFormTypes : editFormTypes;
-        const setTypes = mode === 'create' ? setNewSectionFormTypes : setEditFormTypes;
+    const toggleFormType = (type, mode = 'create', formSet = 'daily5m') => {
+        const currentTypes = mode === 'create' 
+            ? (formSet === 'daily5m' ? newSectionFormTypes : newSectionTenCycleFormTypes)
+            : (formSet === 'daily5m' ? editFormTypes : editTenCycleFormTypes);
+        
+        const setTypes = mode === 'create'
+            ? (formSet === 'daily5m' ? setNewSectionFormTypes : setNewSectionTenCycleFormTypes)
+            : (formSet === 'daily5m' ? setEditFormTypes : setEditTenCycleFormTypes);
 
         if (currentTypes.includes(type)) {
             setTypes(currentTypes.filter(t => t !== type));
@@ -90,7 +103,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 departmentId,
                 description: newSectionDescription,
                 category: newSectionCategory,
-                daily5mFormType: newSectionFormTypes.join(",")
+                daily5mFormType: newSectionFormTypes.join(","),
+                tenCycleFormType: newSectionTenCycleFormTypes.join(",")
             }).unwrap();
             toast.success("Section created successfully");
             setNewSectionName("");
@@ -98,6 +112,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
             setNewSectionDescription("");
             setNewSectionCategory("Direct");
             setNewSectionFormTypes(["standard"]);
+            setNewSectionTenCycleFormTypes(["form1"]);
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create section");
@@ -124,6 +139,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
         setEditDescription(section.description || "");
         setEditCategory(section.category || "Direct");
         setEditFormTypes(section.daily5mFormType ? section.daily5mFormType.split(",") : ["standard"]);
+        setEditTenCycleFormTypes(section.tenCycleFormType ? section.tenCycleFormType.split(",") : ["form1"]);
         setIsEditDialogOpen(true);
     };
 
@@ -140,7 +156,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 uniCode: editUniCode,
                 description: editDescription,
                 category: editCategory,
-                daily5mFormType: editFormTypes.join(",")
+                daily5mFormType: editFormTypes.join(","),
+                tenCycleFormType: editTenCycleFormTypes.join(",")
             }).unwrap();
             toast.success("Section updated successfully");
             setIsEditDialogOpen(false);
@@ -244,6 +261,26 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
                                     )}
                                 </div>
+                                <div className="space-y-4 pt-2 border-t">
+                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {TEN_CYCLE_FORM_TYPES.map(type => (
+                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                <Checkbox 
+                                                    id={`new-10c-${type.id}`} 
+                                                    checked={newSectionTenCycleFormTypes.includes(type.id)}
+                                                    onCheckedChange={() => toggleFormType(type.id, 'create', '10cycle')}
+                                                />
+                                                <Label htmlFor={`new-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                    {type.label}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {newSectionTenCycleFormTypes.length === 0 && (
+                                        <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
+                                    )}
+                                </div>
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
@@ -319,6 +356,26 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                     </div>
                                     {editFormTypes.length === 0 && (
                                         <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
+                                    )}
+                                </div>
+                                <div className="space-y-4 pt-2 border-t">
+                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {TEN_CYCLE_FORM_TYPES.map(type => (
+                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                <Checkbox 
+                                                    id={`edit-10c-${type.id}`} 
+                                                    checked={editTenCycleFormTypes.includes(type.id)}
+                                                    onCheckedChange={() => toggleFormType(type.id, 'edit', '10cycle')}
+                                                />
+                                                <Label htmlFor={`edit-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                    {type.label}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {editTenCycleFormTypes.length === 0 && (
+                                        <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
                                     )}
                                 </div>
                             </div>
@@ -397,6 +454,15 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                                 }`}>
                                                                     {type === 'standard' ? 'Assembly' : 
                                                                      type === 'src' ? 'SRC' : 'Crimping'}
+                                                                </Badge>
+                                                            )) : (
+                                                                <span className="text-xs text-slate-400">None</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1 mt-1">
+                                                            {section.tenCycleFormType ? section.tenCycleFormType.split(",").map(type => (
+                                                                <Badge key={type} variant="outline" className="text-[9px] bg-purple-50 text-purple-700 border-purple-200 uppercase font-bold py-0 h-4">
+                                                                    10C: {TEN_CYCLE_FORM_TYPES.find(t => t.id === type)?.label.split(" ")[0] || type}
                                                                 </Badge>
                                                             )) : (
                                                                 <span className="text-xs text-slate-400">None</span>

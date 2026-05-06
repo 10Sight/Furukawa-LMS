@@ -25,6 +25,52 @@ const resolveStudentId = async (studentId) => {
     return users.length > 0 ? users[0].id : null;
 };
 
+export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId, lineId } = req.query;
+
+    if (!departmentId) {
+        throw new ApiError("Department ID is required", 400);
+    }
+
+    let query = `
+        SELECT 
+            u.id, u.fullName, u.empId, u.avatar,
+            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber,
+            stats.totalAttempts, stats.rejectedCount
+        FROM users u
+        LEFT JOIN (
+            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber,
+                   ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
+            FROM sixteen_day_monitorings
+        ) m ON u.id = m.studentId AND m.rn = 1
+        LEFT JOIN (
+            SELECT studentId, COUNT(*) as totalAttempts,
+                   SUM(CASE WHEN verifiedBy LIKE '%Rejected%' OR approvedBy LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejectedCount
+            FROM sixteen_day_monitorings
+            GROUP BY studentId
+        ) stats ON u.id = stats.studentId
+        WHERE u.departmentId = ?
+    `;
+    const params = [departmentId];
+
+    if (sectionId && sectionId !== "0") {
+        query += " AND u.sectionId = ?";
+        params.push(sectionId);
+    }
+    if (lineId) {
+        query += " AND u.lineId = ?";
+        params.push(lineId);
+    }
+
+    query += " AND (u.role = 'STUDENT' OR u.isEmployee = 1)";
+
+    const [rows] = await executeQuery(query, params);
+
+    return res.status(200).json(
+        new ApiResponse(200, rows, "16-Day monitoring status list fetched successfully")
+    );
+});
+
 export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
     const sid = await resolveStudentId(studentId);
@@ -33,13 +79,20 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     // Authorization check: User can access if they are the owner OR have management permissions
     const isOwner = String(req.user.id) === String(sid);
     const hasManagePermission = req.user.isAdmin || req.user.isTrainer || 
-                                (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('sixteen_day:manage'));
+                                 (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('sixteen_day:manage'));
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to view this monitoring record", 403);
     }
 
-    let data = await SixteenDayMonitoring.findByStudentId(sid);
+    let data;
+    const recordId = req.query.recordId;
+
+    if (recordId) {
+        data = await SixteenDayMonitoring.findById(recordId);
+    } else {
+        data = await SixteenDayMonitoring.findByStudentId(sid);
+    }
     
     // Fetch handover marks & approval date to pre-populate if needed
     const [handoverRows] = await executeQuery(`
@@ -83,6 +136,17 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     );
 });
 
+export const getStudentSixteenDayMonitoringHistory = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    const sid = await resolveStudentId(studentId);
+    if (!sid) throw new ApiError("Invalid student ID", 400);
+
+    const history = await SixteenDayMonitoring.findAllByStudentId(sid);
+    return res.status(200).json(
+        new ApiResponse(200, history, "Monitoring history fetched successfully")
+    );
+});
+
 export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
     const sid = await resolveStudentId(studentId);
@@ -100,12 +164,18 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const { 
         employeeName, employeeCode, processName, dept,
         handoverDate, trgResult, workingWith, lineLeaderName,
-        gridData, checkedBy, verifiedBy, approvedBy, status
+        gridData, checkedBy, verifiedBy, approvedBy, status,
+        isNewAttempt, recordId
     } = req.body;
 
-    let sheet = await SixteenDayMonitoring.findByStudentId(sid);
+    let sheet;
+    if (recordId) {
+        sheet = await SixteenDayMonitoring.findById(recordId);
+    } else if (!isNewAttempt) {
+        sheet = await SixteenDayMonitoring.findByStudentId(sid);
+    }
 
-    if (sheet) {
+    if (sheet && !isNewAttempt) {
         sheet.employeeName = employeeName;
         sheet.employeeCode = employeeCode;
         sheet.processName = processName;
@@ -122,8 +192,13 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet.updatedBy = req.user?.fullName || req.user?.name;
         await sheet.save();
     } else {
+        // Find latest attempt number
+        const latest = await SixteenDayMonitoring.findByStudentId(sid);
+        const nextAttempt = latest ? (latest.attemptNumber + 1) : 1;
+
         sheet = await SixteenDayMonitoring.create({
             studentId: sid,
+            attemptNumber: nextAttempt,
             employeeName,
             employeeCode,
             processName,
@@ -159,7 +234,6 @@ export const sendSixteenDayMonitoringEmail = asyncHandler(async (req, res) => {
     if (!sheet) throw new ApiError("Monitoring record not found", 404);
 
     // 1. Get recipients from EmailConfiguration
-    // We need to find the dept ID from name or from user
     const [users] = await executeQuery("SELECT departmentId, sectionId, fullName, empId FROM users WHERE id = ?", [sid]);
     const student = users[0];
     
@@ -213,7 +287,7 @@ export const sendSixteenDayMonitoringEmail = asyncHandler(async (req, res) => {
             approvedBy: sheet.approvedBy
         },
         gridData: sheet.gridData,
-        config: sheetConfig || [], // Empty list if no config found
+        config: sheetConfig || [], 
         portalUrl
     });
 

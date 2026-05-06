@@ -7,7 +7,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 // @route   POST /api/machines
 // @access  Private
 export const createMachine = asyncHandler(async (req, res) => {
-    const { name, lineId, subSectionId, description } = req.body;
+    const { name, lineId, subSectionId, description, minimumRequiredLevel } = req.body;
 
     if (!name || !lineId || !subSectionId) {
         throw new ApiError(400, "Name, Line ID, and Sub-Section ID are required");
@@ -31,8 +31,8 @@ export const createMachine = asyncHandler(async (req, res) => {
 
     // Insert
     const [result] = await executeQuery(
-        "INSERT INTO machines (name, line, subSectionId, description, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, GETDATE(), GETDATE())",
-        [name, lineId, subSectionId, description, true]
+        "INSERT INTO machines (name, line, subSectionId, description, minimumRequiredLevel, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())",
+        [name, lineId, subSectionId, description, minimumRequiredLevel || null, true]
     );
 
     const [newMachine] = await executeQuery(`
@@ -144,7 +144,7 @@ export const getMachinesByDepartment = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateMachine = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, description, isActive } = req.body;
+    const { name, description, isActive, minimumRequiredLevel } = req.body;
 
     if (isNaN(id)) {
         throw new ApiError(400, "Invalid Machine ID parameter. Must be numeric.");
@@ -162,6 +162,7 @@ export const updateMachine = asyncHandler(async (req, res) => {
     if (typeof name !== 'undefined') { updateFields.push("name = ?"); updateValues.push(name); }
 
     if (typeof description !== 'undefined') { updateFields.push("description = ?"); updateValues.push(description); }
+    if (typeof minimumRequiredLevel !== 'undefined') { updateFields.push("minimumRequiredLevel = ?"); updateValues.push(minimumRequiredLevel); }
     if (typeof isActive !== 'undefined') { updateFields.push("isActive = ?"); updateValues.push(isActive); }
 
     if (updateFields.length > 0) {

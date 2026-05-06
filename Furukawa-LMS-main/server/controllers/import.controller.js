@@ -63,6 +63,39 @@ const syncDepartmentStudents = async (userId, departmentId) => {
 };
 
 /**
+ * Internal helper to generate next temporary ID for DOJO candidates
+ */
+const generateNextTempId = async (prefix) => {
+    const cleanPrefix = prefix.replace(/-/g, '').replace(/\s/g, '');
+    const [rows] = await executeQuery(`
+        SELECT TOP 1 empId FROM users 
+        WHERE empId LIKE ? AND isTemporary = 1
+        ORDER BY createdAt DESC
+    `, [`${cleanPrefix}%`]);
+
+    let nextSeq = 1;
+    let randomPart = Math.floor(100 + Math.random() * 900); // 3-digit random
+
+    if (rows && rows.length > 0) {
+        const lastId = rows[0].empId;
+        // Try to extract existing sequence (last 3 digits)
+        const seqMatch = lastId.match(/(\d{3})$/);
+        if (seqMatch) {
+            nextSeq = parseInt(seqMatch[1]) + 1;
+        }
+        
+        // Try to keep the same random part for same prefix to maintain structure
+        const randMatch = lastId.match(/(\d{3})\d{3}$/);
+        if (randMatch) {
+            randomPart = randMatch[1];
+        }
+    }
+
+    const formattedSeq = String(nextSeq).padStart(3, '0');
+    return `${cleanPrefix}${randomPart}${formattedSeq}`;
+};
+
+/**
  * Import employees from Excel file
  * Expected columns: EmployeeID, CardNo, Name, Father/HusbandName, Gender, Department, Section, Line, Sub Section, Station No., Mentor, Designation, D.O.B., D.O.J., Education, District, State, PIN, Bus Route, E-Mail ID, Mobile No., L, Date of Leaving, Reason of Leaving, Status
  */
@@ -292,7 +325,7 @@ export const importEmployees = async (req, res) => {
                     isEmployee: true,
                     isAdmin: false,
                     isTrainer: false,
-                    email: normalizedRow.email || `${normalizedRow.empId.toLowerCase()}@example.com`,
+                    email: normalizedRow.email || null,
                     status: normalizedRow.status || "PRESENT",
                     departments: departmentId ? [departmentId] : []
                 };
@@ -526,11 +559,11 @@ export const importInstructors = async (req, res) => {
             const rowNumber = i + 2;
 
             try {
-                if (!row.fullName || !row.userName || !row.email || !row.phoneNumber) {
+                if (!row.fullName || !row.userName || !row.phoneNumber) {
                     results.failed.push({
                         row: rowNumber,
                         data: row,
-                        error: "Missing required fields (fullName, userName, email, phoneNumber)",
+                        error: "Missing required fields (fullName, userName, phoneNumber)",
                     });
                     continue;
                 }
@@ -539,7 +572,7 @@ export const importInstructors = async (req, res) => {
                 const userData = {
                     fullName: row.fullName.trim(),
                     userName: row.userName.trim().toLowerCase(),
-                    email: row.email.trim().toLowerCase(),
+                    email: row.email ? row.email.trim().toLowerCase() : null,
                     phoneNumber: row.phoneNumber.toString().trim(),
                     password: row.password || "trainer123", // User.create will hash this
                     role: "INSTRUCTOR",
@@ -643,6 +676,219 @@ export const downloadImportTemplate = async (req, res) => {
         res.send(buffer);
     } catch (error) {
         console.error("Download template error:", error);
+        throw new ApiError(500, "Failed to generate template");
+    }
+};
+
+/**
+ * Import DOJO candidates from Excel file
+ */
+export const importDojoUsers = async (req, res) => {
+    try {
+        if (!req.file) {
+            throw new ApiError(400, "No file uploaded");
+        }
+
+        // Read the Excel file
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+        
+        let hRowIndex = -1;
+        for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+            const row = allRows[i];
+            if (row && Array.isArray(row) && row.some(cell => {
+                if (!cell) return false;
+                const c = cell.toString().trim().toLowerCase();
+                return c === "employeeid" || c === "employee code" || c === "employee id";
+            })) {
+                hRowIndex = i;
+                break;
+            }
+        }
+
+        if (hRowIndex === -1) hRowIndex = 0;
+
+        const headers = allRows[hRowIndex].map(h => h?.toString().trim() || "");
+        const rawData = allRows.slice(hRowIndex + 1);
+
+        const data = rawData.map(r => {
+            const obj = {};
+            headers.forEach((h, idx) => {
+                const key = h || `__EMPTY_${idx}`;
+                obj[key] = r[idx];
+            });
+            return obj;
+        });
+
+        if (!data || data.length === 0) {
+            throw new ApiError(400, "No data found in Excel file");
+        }
+
+        const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
+        const [allSections] = await executeQuery("SELECT id, name, departmentId FROM sections WHERE isActive = 1");
+        const [allLines] = await executeQuery("SELECT id, name, sectionId FROM [lines] WHERE isActive = 1");
+        const [allSubSections] = await executeQuery("SELECT id, name, lineId FROM sub_sections WHERE isActive = 1");
+        const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
+
+        const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
+        const sectionMap = new Map(allSections.map(s => [`${s.departmentId}|${s.name.toLowerCase().trim()}`, s.id]));
+
+        const results = { success: [], failed: [], total: data.length, updatedCount: 0 };
+
+        const [logResult] = await executeQuery(
+            "INSERT INTO import_logs (fileName, importType, totalRows, importedBy) OUTPUT INSERTED.id VALUES (?, ?, ?, ?)",
+            [req.file.originalname, "DOJO_CANDIDATE", data.length, req.user?.id || null]
+        );
+        const logId = logResult[0].id;
+
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const rowNumber = hRowIndex + i + 2;
+
+            try {
+                const normalizedRow = {
+                    empId: (row["Employee Code"] || row["EmployeeID"] || row["Employee ID"])?.toString().trim(),
+                    fullName: (row["Name"] || row["Full Name"])?.toString().trim(),
+                    gender: (row["Gender"])?.toString().trim() || "MALE",
+                    department: (row["Department"])?.toString().trim(),
+                    section: (row["Section"])?.toString().trim(),
+                    line: (row["Line"])?.toString().trim(),
+                    sub_section: (row["Sub Section"])?.toString().trim(),
+                    stationNo: (row["Station No."])?.toString().trim(),
+                    phoneNumber: (row["Mobile No"] || row["Mobile No."] || row["Mobile Number"])?.toString().trim(),
+                    email: (row["E-Mail ID"] || row["Email"])?.toString().trim(),
+                    designation: (row["Designation"])?.toString().trim(),
+                    dob: row["DOB"] || row["D.O.B."] || null,
+                    joiningDate: row["D.O.J."] || row["DOJ"] || null,
+                    fatherHusbandName: row["Father / Husband Name"] || row["Father/HusbandName"] || null,
+                    education: row["Education"] || null,
+                    district: row["Distt"] || row["District"] || null,
+                    state: row["State"] || null,
+                    pin: row["PIN"] || null,
+                    busRoute: row["Bus Route"] || null,
+                };
+
+                if (!normalizedRow.empId || !normalizedRow.fullName) {
+                    if (!normalizedRow.empId && !normalizedRow.fullName) continue;
+                    throw new Error("Missing required fields: Employee Code and Name are mandatory.");
+                }
+
+                // Check for duplicate username (Employee Code)
+                const [existing] = await executeQuery("SELECT id FROM users WHERE userName = ?", [normalizedRow.empId.toLowerCase()]);
+                if (existing.length > 0) {
+                    throw new Error(`Candidate with Employee Code ${normalizedRow.empId} already exists.`);
+                }
+
+                // Resolve hierarchy
+                const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
+                const sectionId = (departmentId && normalizedRow.section) ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`) : null;
+
+                // Generate Temporary ID
+                const namePart = normalizedRow.fullName.substring(0, 3).toUpperCase();
+                const empPart = normalizedRow.empId.toUpperCase();
+                const prefix = `TEMP${namePart}${empPart}`;
+                const tempId = await generateNextTempId(prefix);
+
+                const userData = {
+                    fullName: normalizedRow.fullName,
+                    userName: normalizedRow.empId.toLowerCase(), // Manual code as login
+                    empId: tempId, // Generated TEMP ID
+                    password: tempId, // TEMP ID as password
+                    role: "STUDENT",
+                    isEmployee: true,
+                    isTemporary: true,
+                    status: "PRESENT",
+                    gender: normalizedRow.gender.toUpperCase().startsWith('F') ? "FEMALE" : "MALE",
+                    email: normalizedRow.email || null,
+                    phoneNumber: normalizedRow.phoneNumber || null,
+                    departmentId: departmentId,
+                    sectionId: sectionId,
+                    targetDeptId: departmentId,
+                    targetSectionId: sectionId,
+                    designation: normalizedRow.designation,
+                    dob: normalizedRow.dob,
+                    joiningDate: normalizedRow.joiningDate || new Date().toISOString().split('T')[0],
+                    fatherHusbandName: normalizedRow.fatherHusbandName,
+                    education: normalizedRow.education,
+                    district: normalizedRow.district,
+                    state: normalizedRow.state,
+                    pin: normalizedRow.pin,
+                    busRoute: normalizedRow.busRoute,
+                    unit: "UNIT_1"
+                };
+
+                const newUser = await User.create(userData);
+
+                results.success.push({ row: rowNumber, userName: userData.userName, tempId });
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), "CREATED", newUser.id]
+                );
+
+            } catch (error) {
+                results.failed.push({ row: rowNumber, error: error.message });
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), "FAILED", error.message]
+                );
+            }
+        }
+
+        await executeQuery(
+            "UPDATE import_logs SET successCount = ?, failCount = ? WHERE id = ?",
+            [results.success.length, results.failed.length, logId]
+        );
+
+        res.json(new ApiResponse(200, results, `Import: ${results.success.length} ok, ${results.failed.length} failed`));
+    } catch (error) {
+        console.error("Import DOJO candidates error:", error);
+        throw new ApiError(500, error.message || "Failed to import DOJO candidates");
+    }
+};
+
+/**
+ * Download DOJO import template
+ */
+export const downloadDojoImportTemplate = async (req, res) => {
+    try {
+        const templateData = [
+            {
+                "Employee Code": "AS000233",
+                "Card No.": "00C0233",
+                "Name": "SUBHASH SINGH",
+                "Father / Husband Name": "RAM SHARAN",
+                "Gender": "M",
+                "Department": "C&C - Indirect",
+                "Section": "Assembly - Direct",
+                "Line": "AIRBAG",
+                "Sub Section": "YHB FL 1",
+                "Station No.": "LEADER",
+                "Mentor": "",
+                "Designation": "Operator",
+                "DOB": "1990-11-23",
+                "D.O.J.": "2013-03-01",
+                "Education": "10th",
+                "Distt": "REVARI",
+                "State": "Haryana",
+                "PIN": "123101",
+                "Bus Route": "Route 1",
+                "E-Mail ID": "subhash@example.com",
+                "Mobile No": "9876543210",
+                "Status": "PRESENT",
+            },
+        ];
+
+        const worksheet = XLSX.utils.json_to_sheet(templateData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Candidates");
+        const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+        res.setHeader("Content-Disposition", "attachment; filename=dojo_import_template.xlsx");
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.send(buffer);
+    } catch (error) {
         throw new ApiError(500, "Failed to generate template");
     }
 };

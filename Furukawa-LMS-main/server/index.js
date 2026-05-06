@@ -61,6 +61,8 @@ import threeDayMonitoringRoutes from "./routes/threeDayMonitoring.routes.js";
 import tenCycleSheetRoutes from "./routes/tenCycleSheet.routes.js";
 import reportClubRoutes from "./routes/reportClub.routes.js";
 import menteeFeedbackRoutes from "./routes/menteeFeedback.routes.js";
+import learningComparisonRoutes from "./routes/learningComparison.routes.js";
+import adminHomeRoutes from "./routes/adminHome.routes.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
 
 import machineRoutes from "./routes/machine.routes.js";
@@ -147,7 +149,33 @@ const uploadPath = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadPath)) {
     fs.mkdirSync(uploadPath, { recursive: true });
 }
-app.use("/uploads", express.static(uploadPath));
+app.use("/uploads", express.static(uploadPath, {
+    setHeaders: (res, filePath) => {
+        const ext = path.extname(filePath).toLowerCase();
+        
+        // Map extensions to content types
+        const typeMap = {
+            '.pdf': 'application/pdf',
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+            '.ogg': 'video/ogg',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.txt': 'text/plain',
+            '.mp3': 'audio/mpeg'
+        };
+
+        if (typeMap[ext]) {
+            res.setHeader('Content-Type', typeMap[ext]);
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
 
 
 // Security headers
@@ -247,6 +275,8 @@ app.use("/api/sections", sectionRoutes);
 app.use("/api/sub-sections", subSectionRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
 app.use("/api/mentee-feedback", menteeFeedbackRoutes);
+app.use("/api/learning-comparisons", learningComparisonRoutes);
+app.use("/api/admin-home", adminHomeRoutes);
 
 
 // Initialize Socket.IO service

@@ -4,6 +4,7 @@ class SixteenDayMonitoring {
     constructor(data) {
         this.id = data.id;
         this.studentId = data.studentId;
+        this.attemptNumber = data.attemptNumber || 1;
 
         this.employeeName = data.employeeName || "";
         this.employeeCode = data.employeeCode || "";
@@ -36,6 +37,7 @@ class SixteenDayMonitoring {
                 CREATE TABLE sixteen_day_monitorings (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     studentId INT NOT NULL,
+                    attemptNumber INT DEFAULT 1,
                     employeeName VARCHAR(255),
                     employeeCode VARCHAR(255),
                     processName VARCHAR(255),
@@ -77,33 +79,51 @@ class SixteenDayMonitoring {
                 BEGIN
                     ALTER TABLE sixteen_day_monitorings ADD status VARCHAR(50) DEFAULT 'Draft';
                 END
+                -- Add attemptNumber column if missing
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'attemptNumber')
+                BEGIN
+                    ALTER TABLE sixteen_day_monitorings ADD attemptNumber INT DEFAULT 1;
+                END
             END
         `;
         await executeQuery(query);
     }
 
     static async findByStudentId(studentId) {
-        const [rows] = await executeQuery("SELECT * FROM sixteen_day_monitorings WHERE studentId = ?", [studentId]);
+        // Return the LATEST attempt
+        const [rows] = await executeQuery("SELECT TOP 1 * FROM sixteen_day_monitorings WHERE studentId = ? ORDER BY attemptNumber DESC, createdAt DESC", [studentId]);
         if (rows.length === 0) return null;
         return new SixteenDayMonitoring(rows[0]);
     }
 
+    static async findById(id) {
+        const [rows] = await executeQuery("SELECT * FROM sixteen_day_monitorings WHERE id = ?", [id]);
+        if (rows.length === 0) return null;
+        return new SixteenDayMonitoring(rows[0]);
+    }
+
+    static async findAllByStudentId(studentId) {
+        const [rows] = await executeQuery("SELECT * FROM sixteen_day_monitorings WHERE studentId = ? ORDER BY attemptNumber DESC, createdAt DESC", [studentId]);
+        return rows.map(r => new SixteenDayMonitoring(r));
+    }
+
     static async create(data) {
         const {
-            studentId, employeeName, employeeCode, processName, dept,
+            studentId, attemptNumber, employeeName, employeeCode, processName, dept,
             handoverDate, trgResult, workingWith, lineLeaderName,
             gridData, checkedBy, verifiedBy, approvedBy, createdBy, status
         } = data;
 
         const query = `
             INSERT INTO sixteen_day_monitorings 
-            (studentId, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, createdBy, status)
+            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, createdBy, status)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
             studentId,
+            attemptNumber || 1,
             employeeName,
             employeeCode,
             processName,
@@ -129,7 +149,7 @@ class SixteenDayMonitoring {
             UPDATE sixteen_day_monitorings SET
             employeeName = ?, employeeCode = ?, processName = ?, dept = ?, 
             handoverDate = ?, trgResult = ?, workingWith = ?, lineLeaderName = ?, 
-            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, updatedBy = ?, updatedAt = GETDATE()
+            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, attemptNumber = ?, updatedBy = ?, updatedAt = GETDATE()
             WHERE id = ?
         `;
 
@@ -147,6 +167,7 @@ class SixteenDayMonitoring {
             this.verifiedBy,
             this.approvedBy,
             this.status || "Draft",
+            this.attemptNumber,
             this.updatedBy,
             this.id
         ];

@@ -6,13 +6,16 @@ export const dashboardApi = createApi({
     baseQuery: axiosBaseQuery,
     endpoints: (builder) => ({
         getDashboardStats: builder.query({
-            query: ({ section, line, machine, dateRange }) => ({
+            query: ({ department, section, line, machine, startDate, endDate }) => ({
                 url: "/api/dashboard/stats",
                 method: "GET",
                 params: {
+                    department,
                     section,
                     line,
                     machine,
+                    startDate,
+                    endDate,
                 },
             }),
             keepUnusedDataFor: 0,

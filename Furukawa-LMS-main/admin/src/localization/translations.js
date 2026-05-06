@@ -65,6 +65,7 @@ export const translations = {
     "nav.skillMatrix": "Skill Matrix",
     "nav.lineRequirements": "Line Requirements",
     "nav.multiSkilling": "Multi Skilling",
+    "nav.learning": "Learning",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "Administrator Information",
@@ -176,6 +177,7 @@ export const translations = {
     "nav.dataManagement": "डेटा प्रबंधन",
     "nav.skillMatrix": "कौशल मैट्रिक्स",
     "nav.multiSkilling": "मल्टी स्किलिंग",
+    "nav.learning": "लर्निंग",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "प्रशासक जानकारी",
@@ -274,6 +276,7 @@ export const translations = {
     "nav.dataManagement": "データ管理",
     "nav.skillMatrix": "スキルマトリックス",
     "nav.multiSkilling": "マルチスキリング",
+    "nav.learning": "ラーニング",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理者情報",
@@ -372,6 +375,7 @@ export const translations = {
     "nav.dataManagement": "数据管理",
     "nav.skillMatrix": "技能矩阵",
     "nav.multiSkilling": "多技能",
+    "nav.learning": "学习",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理员信息",
@@ -470,6 +474,7 @@ export const translations = {
     "nav.dataManagement": "Управление данными",
     "nav.skillMatrix": "Матрица навыков",
     "nav.multiSkilling": "Мультискиллинг",
+    "nav.learning": "Обучение",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "Информация об администраторе",

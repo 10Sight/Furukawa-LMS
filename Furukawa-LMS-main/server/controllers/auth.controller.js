@@ -96,11 +96,11 @@ export const register = asyncHandler(async (req, res) => {
     isMentor, isSupervisor, isIncharge
   } = req.body;
 
-  if (!fullName || !userName || !email || !password || !unit) {
-    throw new ApiError("All fields are required (Name, Username, Email, Password, Unit)", 400);
+  if (!fullName || !userName || !password || !unit) {
+    throw new ApiError("All fields are required (Name, Username, Password, Unit)", 400);
   }
 
-  if (!validator.isEmail(email)) {
+  if (email && !validator.isEmail(email)) {
     throw new ApiError("Invalid email address", 400);
   }
 
@@ -191,6 +191,11 @@ export const login = asyncHandler(async (req, res) => {
 
   if (!isPasswordValid) {
     throw new ApiError("Invalid user credentials", 401);
+  }
+
+  // 2.1 Enforce Student Portal restriction (Only Temporary candidates)
+  if (user.role === 'STUDENT' && !user.isTemporary) {
+    throw new ApiError("Access restricted. Only temporary candidates can access the student portal.", 403);
   }
 
   // 3. Generate Tokens

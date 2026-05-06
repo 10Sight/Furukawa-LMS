@@ -38,6 +38,52 @@ const resolveStudentId = async (studentId) => {
     return users.length > 0 ? users[0].id : null;
 };
 
+export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId, lineId } = req.query;
+
+    if (!departmentId) {
+        throw new ApiError("Department ID is required", 400);
+    }
+
+    let query = `
+        SELECT 
+            u.id, u.fullName, u.empId, u.avatar,
+            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber,
+            stats.totalAttempts, stats.rejectedCount
+        FROM users u
+        LEFT JOIN (
+            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber,
+                   ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
+            FROM three_day_monitorings
+        ) m ON u.id = m.studentId AND m.rn = 1
+        LEFT JOIN (
+            SELECT studentId, COUNT(*) as totalAttempts,
+                   SUM(CASE WHEN verifiedBy LIKE '%Rejected%' OR approvedBy LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejectedCount
+            FROM three_day_monitorings
+            GROUP BY studentId
+        ) stats ON u.id = stats.studentId
+        WHERE u.departmentId = ?
+    `;
+    const params = [departmentId];
+
+    if (sectionId && sectionId !== "0") {
+        query += " AND u.sectionId = ?";
+        params.push(sectionId);
+    }
+    if (lineId) {
+        query += " AND u.lineId = ?";
+        params.push(lineId);
+    }
+
+    query += " AND (u.role = 'STUDENT' OR u.isEmployee = 1)";
+
+    const [rows] = await executeQuery(query, params);
+
+    return res.status(200).json(
+        new ApiResponse(200, rows, "3-Day monitoring status list fetched successfully")
+    );
+});
+
 export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
     const sid = await resolveStudentId(studentId);
@@ -46,13 +92,20 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
     // Authorization check: User can access if they are the owner OR have management permissions
     const isOwner = String(req.user.id) === String(sid);
     const hasManagePermission = req.user.isAdmin || req.user.isTrainer || 
-                                (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('three_day:manage'));
+                                 (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('three_day:manage'));
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to view this monitoring record", 403);
     }
 
-    let data = await ThreeDayMonitoring.findByStudentId(sid);
+    let data;
+    const recordId = req.query.recordId;
+
+    if (recordId) {
+        data = await ThreeDayMonitoring.findById(recordId);
+    } else {
+        data = await ThreeDayMonitoring.findByStudentId(sid);
+    }
 
     if (!data) {
         return res.status(200).json(
@@ -65,6 +118,17 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
             ...data,
             isNew: false,
         }, "3 Day Monitoring fetched successfully")
+    );
+});
+
+export const getStudentThreeDayMonitoringHistory = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    const sid = await resolveStudentId(studentId);
+    if (!sid) throw new ApiError("Invalid student ID", 400);
+
+    const history = await ThreeDayMonitoring.findAllByStudentId(sid);
+    return res.status(200).json(
+        new ApiResponse(200, history, "Monitoring history fetched successfully")
     );
 });
 
@@ -84,12 +148,18 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
 
     const {
         processName, lineName, entries, evaluation,
-        checkedBy, verifiedBy, approvedBy, status
+        checkedBy, verifiedBy, approvedBy, status,
+        isNewAttempt, recordId
     } = req.body;
 
-    let sheet = await ThreeDayMonitoring.findByStudentId(sid);
+    let sheet;
+    if (recordId) {
+        sheet = await ThreeDayMonitoring.findById(recordId);
+    } else if (!isNewAttempt) {
+        sheet = await ThreeDayMonitoring.findByStudentId(sid);
+    }
 
-    if (sheet) {
+    if (sheet && !isNewAttempt) {
         sheet.processName = processName;
         sheet.lineName = lineName;
         sheet.entries = entries;
@@ -101,8 +171,13 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
         sheet.updatedBy = req.user?.fullName || req.user?.name;
         await sheet.save();
     } else {
+        // Find latest attempt
+        const latest = await ThreeDayMonitoring.findByStudentId(sid);
+        const nextAttempt = latest ? (latest.attemptNumber + 1) : 1;
+
         sheet = await ThreeDayMonitoring.create({
             studentId: sid,
+            attemptNumber: nextAttempt,
             processName,
             lineName,
             entries,

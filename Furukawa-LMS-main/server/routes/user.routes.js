@@ -23,6 +23,8 @@ import {
   restoreUser,
   getEmployees,
   getEmployeeById,
+  getTemporaryUsers,
+  getNextTemporaryId,
 } from "../controllers/user.controller.js";
 import { AvailableUserRoles } from "../constants.js";
 
@@ -53,6 +55,10 @@ router.get("/incharges", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]
 // Get employees (Onboarding & ID)
 router.get("/employees", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getEmployees);
 router.get("/employees/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getEmployeeById);
+
+// DOJO Hiring routes
+router.get("/temporary", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getTemporaryUsers);
+router.get("/temporary/next-id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getNextTemporaryId);
 
 // Super admin specific routes - must come before /:id routes
 router.get("/deleted/all", verifyJWT, authorizeRoles("SUPERADMIN"), getSoftDeletedUsers);

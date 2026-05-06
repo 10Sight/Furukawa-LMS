@@ -337,7 +337,12 @@ const StudentDetail = () => {
               </AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">{student.fullName}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight">{student.fullName}</h1>
+                <Badge className="bg-indigo-600 text-white border-indigo-700 text-sm py-0.5 px-3">
+                  {student.primaryLevel || "L1"} • {student.primaryStationName || "No Station"}
+                </Badge>
+              </div>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-muted-foreground">@{student.userName}</p>
                 {getStatusBadge(student.status)}
@@ -524,6 +529,14 @@ const StudentDetail = () => {
                             <div className="flex flex-col">
                               <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Station{idx > 0 ? ` ${idx + 1}` : ''}</span>
                               <span className="text-[10px] font-bold whitespace-nowrap">{assignment.stationName}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100 shadow-sm ml-auto sm:ml-0">
+                            <IconTrophy size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Level</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{student.currentSkill?.[assignment.machineId] || "L1"}</span>
                             </div>
                           </div>
 

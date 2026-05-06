@@ -15,6 +15,7 @@ import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { IconClipboardList, IconHierarchy2, IconInfoCircle, IconUsersGroup } from "@tabler/icons-react";
+import { useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
 import HandoverSheet from '@/components/departments/HandoverSheet';
 
 const HandoverSheetPage = () => {
@@ -28,22 +29,25 @@ const HandoverSheetPage = () => {
     const [section, setSection] = useState(searchParams.get('section') || "");
 
     // API Data
-    const { data: deptsData } = useGetAllDepartmentsQuery();
+    const { data: deptsData } = useGetAllDepartmentsQuery({ limit: 500 });
     const { data: sectionsData } = useGetSectionsByDepartmentQuery(dept, { skip: !dept });
 
     // Fetch students based on Dept / Section for initial population if needed
     const { data: studentsData } = useGetAllStudentsQuery({
         departmentId: dept,
         sectionId: section === "0" ? "" : section,
-        limit: 200
+        includeTemporary: "only",
     }, { 
         skip: !dept,
         refetchOnMountOrArgChange: true 
     });
 
+    const { data: machinesData } = useGetMachinesByDepartmentQuery(dept, { skip: !dept });
+
     const departments = deptsData?.data?.departments || [];
     const sections = sectionsData?.data || [];
     const students = studentsData?.data?.users || [];
+    const machines = machinesData?.data || [];
 
     // Filter departments based on user assignment
     const assignableDepartments = useMemo(() => {
@@ -151,6 +155,8 @@ const HandoverSheetPage = () => {
                         departmentName={selectedDeptName}
                         sectionName={selectedSectionName}
                         instructorName={authUser?.fullName}
+                        departments={departments}
+                        machines={machines}
                     />
                 </div>
             ) : (

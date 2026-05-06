@@ -3,6 +3,7 @@ import { useSelector } from 'react-redux';
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
 import { exportToExcel } from "@/utils/exportHelper";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,7 +99,8 @@ const ThreeDayMonitoringSheet = ({
     departmentName = "",
     sectionName = "",
     readOnly = false,
-    canEditConfig = false
+    canEditConfig = false,
+    initialForceNewAttempt = false
 }) => {
     const [headerInfo, setHeaderInfo] = useState({
         employeeName: "",
@@ -129,6 +131,11 @@ const ThreeDayMonitoringSheet = ({
     const [lines, setLines] = useState([]);
     const [stations, setStations] = useState([]);
     const isDesignMode = !studentId;
+
+    // Attempt History (Versioning)
+    const [historyAttempts, setHistoryAttempts] = useState([]);
+    const [selectedAttemptId, setSelectedAttemptId] = useState("");
+    const [isForceNewAttempt, setIsForceNewAttempt] = useState(false);
     const isLocked = status === "Submitted" &&
         !authUser?.isAdmin &&
         !authUser?.isTrainer &&
@@ -139,7 +146,7 @@ const ThreeDayMonitoringSheet = ({
     useEffect(() => {
         if (studentId) fetchData();
         if (departmentId && departmentId !== 'undefined') fetchConfig();
-    }, [studentId, departmentId, sectionName, departmentName, authUser]);
+    }, [studentId, departmentId, sectionName, departmentName, authUser, initialForceNewAttempt]);
 
     // Auto-populate checkedByName when authUser is available and it's a new or blank field
     useEffect(() => {
@@ -222,13 +229,138 @@ const ThreeDayMonitoringSheet = ({
                 }
 
                 if (!data.isNew) {
-                    setGridData(data.gridData || data.entries || {});
-                    setFooterData(data.evaluation || data.footerData || {});
-                    setStatus(data.status || "Draft");
+                    if (initialForceNewAttempt) {
+                        setGridData({});
+                        setFooterData({});
+                        setStatus("Draft");
+                        setSelectedAttemptId("");
+                        setIsForceNewAttempt(true);
+                        setHeaderInfo(prev => ({
+                            ...prev,
+                            checkedBy: "",
+                            verifiedBy: "",
+                            approvedBy: "",
+                            attemptNumber: (data.attemptNumber || 1) + 1
+                        }));
+                    } else {
+                        setGridData(data.gridData || data.entries || {});
+                        setFooterData(data.evaluation || data.footerData || {});
+                        setStatus(data.status || "Draft");
+                        setSelectedAttemptId(data.id);
+                        setIsForceNewAttempt(false);
+                        setHeaderInfo(prev => ({
+                            ...prev,
+                            attemptNumber: data.attemptNumber || 1
+                        }));
+                    }
+                } else {
+                    setGridData({});
+                    setFooterData({});
+                    setStatus("Draft");
+                    setSelectedAttemptId("");
+                    setIsForceNewAttempt(false);
+                    setHeaderInfo(prev => ({
+                        ...prev,
+                        attemptNumber: 1
+                    }));
                 }
             }
         } catch (error) {
             console.error("Error fetching data:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchHistoryAttempts = async () => {
+        if (!studentId) return;
+        try {
+            const res = await axiosInstance.get(`/api/three-day-monitoring/${studentId}/history`);
+            if (res.data.success) {
+                setHistoryAttempts(res.data.data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch history:", err);
+        }
+    };
+
+    useEffect(() => {
+        if (studentId) {
+            fetchHistoryAttempts();
+        }
+    }, [studentId]);
+
+    useEffect(() => {
+        const handleStartNew = (e) => {
+            if (String(e.detail.studentId) === String(studentId)) {
+                setIsForceNewAttempt(true);
+                setGridData({});
+                setEvaluationData({});
+                setStatus("Draft");
+                setHeaderInfo(prev => ({
+                    ...prev,
+                    attemptNumber: (historyAttempts[0]?.attemptNumber || 0) + 1
+                }));
+                setFooterData({
+                    checkedByName: authUser?.fullName || authUser?.name || "",
+                    verifiedByName: "",
+                    approvedByName: "",
+                    comment: ""
+                });
+                setSelectedAttemptId("");
+                toast.info(`Starting new attempt (#${(historyAttempts[0]?.attemptNumber || 0) + 1})`);
+            }
+        };
+        window.addEventListener('START_NEW_THREE_DAY_MONITORING', handleStartNew);
+        return () => window.removeEventListener('START_NEW_THREE_DAY_MONITORING', handleStartNew);
+    }, [studentId, historyAttempts]);
+
+    const handleAttemptChange = async (attemptId) => {
+        if (!attemptId) {
+            // Load latest/new attempt
+            fetchData();
+            return;
+        }
+        setSelectedAttemptId(attemptId);
+        setIsForceNewAttempt(false);
+        try {
+            setLoading(true);
+            const res = await axiosInstance.get(`/api/three-day-monitoring/${studentId}?recordId=${attemptId}`);
+            if (res.data.success) {
+                const data = res.data.data;
+                
+                // Update Header Info - Ensure we don't lose basic student info
+                setHeaderInfo(prev => ({
+                    ...prev,
+                    employeeName: data.employeeName || prev.employeeName,
+                    employeeCode: data.employeeCode || prev.employeeCode,
+                    processName: data.processName || prev.processName,
+                    dept: data.dept || prev.dept,
+                    lineName: data.lineName || prev.lineName,
+                    handoverDate: data.handoverDate || "",
+                    trgResult: data.trgResult || "",
+                    workingWith: data.workingWith || "",
+                    lineLeaderName: data.lineLeaderName || "",
+                    attemptNumber: data.attemptNumber || 1
+                }));
+
+                // Update Grid and Footer
+                setGridData(data.entries || data.gridData || {});
+                
+                const evalData = data.evaluation || data.footerData || {};
+                setFooterData({
+                    ...evalData,
+                    checkedByName: data.checkedBy || evalData.checkedByName || "",
+                    verifiedByName: data.verifiedBy || evalData.verifiedByName || "",
+                    approvedByName: data.approvedBy || evalData.approvedByName || "",
+                    comment: data.comment || evalData.comment || ""
+                });
+                
+                setStatus(data.status || "Draft");
+            }
+        } catch (err) {
+            console.error("Error loading attempt:", err);
+            toast.error("Failed to load attempt data");
         } finally {
             setLoading(false);
         }
@@ -281,24 +413,32 @@ const ThreeDayMonitoringSheet = ({
     };
 
     const handleSave = async (finalStatus = null) => {
-        if (isDesignMode) {
-            toast.error("Cannot save data in Design Mode. Please select an operator first.");
+        if (!studentId) {
+            toast.error("Student ID is missing");
             return;
         }
+
         try {
             setSaving(true);
             const targetStatus = finalStatus || status || "Draft";
             const payload = {
-                studentId,
-                departmentId,
-                headerInfo,
-                gridData,
-                footerData,
-                status: targetStatus
+                ...headerInfo,
+                entries: gridData,
+                evaluation: footerData,
+                checkedBy: footerData.checkedByName,
+                verifiedBy: footerData.verifiedByName,
+                approvedBy: footerData.approvedByName,
+                status: targetStatus,
+                comment: footerData.comment,
+                isNewAttempt: isForceNewAttempt,
+                recordId: selectedAttemptId
             };
-            const response = await axiosInstance.post(`/api/progress/three-day-monitoring/${studentId}`, payload);
+
+            const response = await axiosInstance.post(`/api/three-day-monitoring/${studentId}`, payload);
             if (response.data.success) {
                 setStatus(targetStatus);
+                setIsForceNewAttempt(false);
+                fetchHistoryAttempts();
                 toast.success(`Monitoring ${targetStatus === 'Submitted' ? 'Submitted' : 'Saved'} successfully`);
 
                 if (targetStatus === 'Submitted') {
@@ -306,8 +446,8 @@ const ThreeDayMonitoringSheet = ({
                 }
             }
         } catch (error) {
-            console.error("Error saving data:", error);
-            toast.error(error?.response?.data?.message || "Failed to save data");
+            console.error("Save error:", error);
+            toast.error(error.response?.data?.message || "Failed to save monitoring sheet");
         } finally {
             setSaving(false);
         }
@@ -569,24 +709,47 @@ const ThreeDayMonitoringSheet = ({
     return (
         <div className="space-y-6">
             <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                    <div className="flex flex-col gap-1">
+                <div className="flex justify-between items-center print:hidden mb-4 px-4 pt-4">
+                    <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
-                            <Badge variant={status === 'Submitted' ? "success" : "secondary"} className="text-[10px] px-2 py-0.5 uppercase tracking-wider font-bold h-fit">
-                                {status}
+                            <Badge className={cn(
+                                "text-white font-bold px-3 py-1",
+                                footerData.approvedByName?.includes("Rejected") || footerData.verifiedByName?.includes("Rejected") ? "bg-red-500" :
+                                status === 'Submitted' ? "bg-blue-500" :
+                                footerData.approvedByName?.includes("Approved") ? "bg-emerald-500" : "bg-slate-500"
+                            )}>
+                                {footerData.approvedByName?.includes("Rejected") ? "REJECTED BY APPROVER" :
+                                 footerData.verifiedByName?.includes("Rejected") ? "REJECTED BY VERIFIER" :
+                                 footerData.approvedByName?.includes("Approved") ? "APPROVED" :
+                                 status.toUpperCase()}
                             </Badge>
-                            {isLocked && <Badge variant="outline" className="text-[9px] text-orange-600 border-orange-200 bg-orange-50 h-fit">View Only</Badge>}
+                            {isForceNewAttempt && <Badge className="bg-blue-500 animate-pulse text-white text-[10px]">NEW ATTEMPT MODE</Badge>}
                         </div>
-                        <div className="text-left">
-                            <CardTitle className="text-lg font-bold uppercase tracking-wider">ASSOCIATE EFFECTIVENESS CHECK SHEET</CardTitle>
-                            <p className="text-[10px] font-bold mt-0.5">(WORKING IN {headerInfo.dept || "DEPARTMENT / SECTION"})</p>
-                        </div>
+
+                        {historyAttempts.length > 0 && (
+                            <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Attempt History:</span>
+                                <select 
+                                    className="text-xs font-bold bg-transparent border-none outline-none text-indigo-600 cursor-pointer"
+                                    value={selectedAttemptId}
+                                    onChange={(e) => handleAttemptChange(e.target.value)}
+                                >
+                                    {historyAttempts.map((att) => (
+                                        <option key={att.id} value={att.id}>
+                                            Attempt #{att.attemptNumber} ({att.status}) - {new Date(att.createdAt).toLocaleDateString()}
+                                        </option>
+                                    ))}
+                                    {isForceNewAttempt && (
+                                        <option value="">Attempt #{(historyAttempts[0]?.attemptNumber || 0) + 1} (New)</option>
+                                    )}
+                                </select>
+                            </div>
+                        )}
                     </div>
+
                     <div className="flex gap-2 items-center">
                         {isDesignMode && (
-                            <div className="px-3 py-1 bg-amber-50 border border-amber-200 rounded-md flex items-center mr-2">
-                                <span className="text-[10px] font-bold text-amber-700 uppercase tracking-tighter">Design Mode: No Operator Selected</span>
-                            </div>
+                            <Badge className="bg-amber-500 text-white text-[10px] animate-pulse">DESIGN MODE: TEMPLATE SETUP</Badge>
                         )}
                         <div className="flex gap-1.5">
                             {canEditConfig && (
@@ -626,7 +789,6 @@ const ThreeDayMonitoringSheet = ({
                             </Button>
 
                             <div className="flex gap-1 border-l pl-2 border-gray-200">
-                                {/* Save Draft - Only if not submitted */}
                                 {status !== 'Submitted' && (
                                     <Button
                                         variant="secondary"
@@ -640,7 +802,6 @@ const ThreeDayMonitoringSheet = ({
                                     </Button>
                                 )}
 
-                                {/* Submit Button */}
                                 <Button
                                     variant={status === 'Submitted' ? "outline" : "default"}
                                     size="sm"
@@ -652,7 +813,6 @@ const ThreeDayMonitoringSheet = ({
                                     {status === 'Submitted' ? 'Update & Re-Submit' : 'Submit Monitoring'}
                                 </Button>
 
-                                {/* Email Button */}
                                 {(status === 'Submitted' || authUser?.isAdmin || authUser?.isTrainer) && !isDesignMode && (
                                     <Button
                                         variant="outline"
@@ -671,7 +831,23 @@ const ThreeDayMonitoringSheet = ({
                             </Button>
                         </div>
                     </div>
+                </div>
+
+                <CardHeader className="border-t">
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                            <Badge variant={status === 'Submitted' ? "success" : "secondary"} className="text-[10px] px-2 py-0.5 uppercase tracking-wider font-bold h-fit">
+                                {status}
+                            </Badge>
+                            {isLocked && <Badge variant="outline" className="text-[9px] text-orange-600 border-orange-200 bg-orange-50 h-fit">View Only</Badge>}
+                        </div>
+                        <div className="text-left">
+                            <CardTitle className="text-lg font-bold uppercase tracking-wider">ASSOCIATE EFFECTIVENESS CHECK SHEET</CardTitle>
+                            <p className="text-[10px] font-bold mt-0.5">(WORKING IN {headerInfo.dept || "DEPARTMENT / SECTION"})</p>
+                        </div>
+                    </div>
                 </CardHeader>
+
                 <CardContent className="p-0">
                     <div className="border-black border mb-6 text-[13px] m-4 min-w-max">
                         {[
@@ -1188,7 +1364,8 @@ const ThreeDayMonitoringSheet = ({
                                                         </div>
                                                         <span className="font-normal text-[10px] text-gray-500">(Process In charge)</span>
                                                     </div>
-                                                                                                        {/* Verified By */}
+
+                                                    {/* Verified By */}
                                                     <div className="flex flex-col justify-between items-center text-center">
                                                         <span className="font-bold whitespace-nowrap">Verified By:-</span>
                                                         <div className="w-full flex flex-col items-center justify-end flex-1 pb-1 gap-2">
@@ -1214,7 +1391,7 @@ const ThreeDayMonitoringSheet = ({
                                                         </div>
                                                         <span className="font-normal text-[10px] text-gray-500">(Area In charge)</span>
                                                     </div>
-                                                    
+
                                                     {/* Approved By */}
                                                     <div className="flex flex-col justify-center items-center text-center pt-8">
                                                         <span className="font-bold whitespace-nowrap">Approved By:</span>

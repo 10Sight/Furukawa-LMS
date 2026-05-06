@@ -322,7 +322,9 @@ export const startQuiz = asyncHandler(async (req, res) => {
 
     const isAdminOrTrainer = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPERADMIN' || req.user.role === 'INSTRUCTOR' || req.user.role === 'TRAINER');
 
-    if (!isAdminOrTrainer) {
+    const isTemporaryCandidate = req.user && req.user.isTemporary;
+
+    if (!isAdminOrTrainer && !isTemporaryCandidate) {
         if (quiz.module && quiz.type === "MODULE") {
             const accessCheck = await checkModuleAccessForAssessments(userId, quiz.course.id, quiz.module.id);
             if (!accessCheck.hasAccess) {
@@ -562,128 +564,143 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         const progress = await Progress.findOne({ student: userId, course: quiz.course.id });
         if (progress) {
             const levelConfig = await CourseLevelConfig.getActiveConfig();
-            console.log(`[DEBUG] Level Config Found: ${!!levelConfig}, Current Level: ${progress.currentLevel}`);
+            console.log(`[DEBUG] Level Config Found: ${!!levelConfig}, Current Level (Progress): ${progress.currentLevel}`);
 
             if (levelConfig) {
-                const nextLevel = levelConfig.getNextLevel(progress.currentLevel);
-                console.log(`[DEBUG] Next Level: ${nextLevel ? nextLevel.name : 'None'}`);
+                // Fetch User to get station-specific skill levels
+                const userData = await User.findById(userId);
+                const stationId = userData.stationId;
+                
+                if (!stationId) {
+                    console.log(`[DEBUG] Level Upgrade Skipped: User has no assigned station`);
+                } else {
+                    // Get current skill mapping or initialize
+                    let currentSkill = userData.currentSkill || {};
+                    if (typeof currentSkill === 'string') {
+                        try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+                    }
 
-                if (nextLevel && nextLevel.name !== progress.currentLevel) {
+                    // Get current level for THIS station
+                    const stationLevel = currentSkill[stationId] || "L1";
+                    console.log(`[DEBUG] Station Level: ${stationLevel} for Station: ${stationId}`);
 
-                    // Time Restriction Check
-                    const currentLevelConfig = levelConfig.levels.find(l => l.name === progress.currentLevel);
-                    const maxDays = currentLevelConfig?.completionTimeframe?.maxDays || 0;
+                    const nextLevel = levelConfig.getNextLevel(stationLevel);
+                    console.log(`[DEBUG] Next Level: ${nextLevel ? nextLevel.name : 'None'}`);
 
-                    let levelStart = progress.levelStartDate;
-                    if (!levelStart) {
-                        try {
-                            const user = await User.findById(userId);
-                            // joiningDate could be string or Date. 
-                            if (progress.currentLevel === 'L1') {
-                                levelStart = user.joiningDate ? new Date(user.joiningDate) : user.createdAt;
+                    if (nextLevel && nextLevel.name !== stationLevel) {
+                        // Time Restriction Check
+                        const currentLevelConfig = levelConfig.levels.find(l => l.name === stationLevel);
+                        const maxDays = currentLevelConfig?.completionTimeframe?.maxDays || 0;
+
+                        let levelStart = progress.levelStartDate;
+                        if (!levelStart) {
+                            if (stationLevel === 'L1') {
+                                levelStart = userData.joiningDate ? new Date(userData.joiningDate) : userData.createdAt;
                             } else {
                                 levelStart = progress.updatedAt || progress.createdAt;
                             }
-                        } catch (e) {
-                            levelStart = new Date();
                         }
-                    }
-                    levelStart = new Date(levelStart); // Ensure Date object
+                        levelStart = new Date(levelStart);
 
-                    const now = new Date();
-                    const diffTime = Math.abs(now - levelStart);
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        const now = new Date();
+                        const diffTime = Math.abs(now - levelStart);
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-                    console.log(`[DEBUG] Time Check: Start=${levelStart.toISOString()}, Now=${now.toISOString()}, Days=${diffDays}, MaxDays=${maxDays}`);
+                        console.log(`[DEBUG] Time Check: Start=${levelStart.toISOString()}, Now=${now.toISOString()}, Days=${diffDays}, MaxDays=${maxDays}`);
 
-                    if (diffDays >= maxDays) {
-                        progress.currentLevel = nextLevel.name;
-                        progress.levelStartDate = new Date(); // Update Start Date for new level
-                        levelUpgraded = true;
-                        newLevel = nextLevel.name;
-                        await progress.save();
+                        if (diffDays >= maxDays) {
+                            // Update Station Specific Level
+                            currentSkill[stationId] = nextLevel.name;
+                            
+                            progress.currentLevel = nextLevel.name;
+                            progress.levelStartDate = new Date();
+                            levelUpgraded = true;
+                            newLevel = nextLevel.name;
+                            await progress.save();
 
-                        // Sync to Users table
-                        await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [newLevel, userId]);
-                    } else {
-                        console.log(`[DEBUG] Level Upgrade Deferred: Time requirement not met (${diffDays}/${maxDays} days)`);
-                        progress.pendingLevelUpgrade = nextLevel.name;
-                        await progress.save();
-                    }
-
-                    // Certificate issuance
-                    if (quiz.issueCertificate) { // Check if certificate should be issued
-                        const courseIdStr = String(quiz.course.id || quiz.course._id || quiz.course);
-                        console.log(`[DEBUG] Attempting to issue cert for Student=${userId}, Course=${courseIdStr}, Level=${newLevel}`);
-
-                        // Check existing
-                        const [existingCerts] = await executeQuery(
-                            "SELECT * FROM certificates WHERE student = ? AND course = ? AND type = 'SKILL_UPGRADATION' AND level = ?",
-                            [userId, courseIdStr, newLevel]
-                        );
-
-                        console.log(`[DEBUG] Existing Certs Count: ${existingCerts.length}`);
-
-                        if (existingCerts.length === 0) {
-                            try {
-                                // Template
-                                let template = await CertificateTemplate.findOne({ isDefault: 1, isActive: 1 });
-                                if (!template) {
-                                    // Find one active
-                                    const [temps] = await executeQuery("SELECT TOP 1 * FROM certificate_templates WHERE isActive = 1 ORDER BY createdAt ASC");
-                                    if (temps.length > 0) template = new CertificateTemplate(temps[0]);
-                                }
-
-                                if (template) {
-                                    const issueDate = new Date();
-                                    const userData = await User.findById(userId);
-
-                                    const certificateData = {
-                                        studentName: userData.fullName || "Student",
-                                        courseName: quiz.course.title || "Course",
-                                        departmentName: "N/A",
-                                        instructorName: "System",
-                                        level: newLevel,
-                                        issueDate: issueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-                                        grade: 'PASS'
-                                    };
-
-                                    let certificateHTML = template.template;
-                                    Object.keys(certificateData).forEach(key => {
-                                        const placeholder = new RegExp(`{{${key}}}`, 'g');
-                                        certificateHTML = certificateHTML.replace(placeholder, certificateData[key]);
-                                    });
-
-                                    const newCert = await Certificate.create({
-                                        student: userId,
-                                        course: courseIdStr,
-                                        issuedBy: userId,
-                                        grade: 'PASS',
-                                        type: 'SKILL_UPGRADATION',
-                                        level: newLevel,
-                                        metadata: {
-                                            ...certificateData,
-                                            templateId: template.id,
-                                            templateName: template.name,
-                                            generatedHTML: certificateHTML,
-                                            styles: template.styles
-                                        }
-                                    });
-                                    console.log(`[DEBUG] Certificate Created Successfully: ID=${newCert.id}`);
-                                } else {
-                                    console.log(`[DEBUG] Cert Skipped: No Template`);
-                                }
-                            } catch (certErr) {
-                                console.error(`[DEBUG] Cert Creation Failed:`, certErr);
-                            }
+                            // Sync to Users table: update both currentLevel (active) and currentSkill (mapping)
+                            await executeQuery(
+                                "UPDATE users SET currentLevel = ?, currentSkill = ? WHERE id = ?",
+                                [newLevel, JSON.stringify(currentSkill), userId]
+                            );
                         } else {
-                            console.log(`[DEBUG] Cert Skipped: Already Exists`);
+                            console.log(`[DEBUG] Level Upgrade Deferred: Time requirement not met (${diffDays}/${maxDays} days)`);
+                            progress.pendingLevelUpgrade = nextLevel.name;
+                            await progress.save();
+                        }
+
+                        // Certificate issuance
+                        if (quiz.issueCertificate) { // Check if certificate should be issued
+                            const courseIdStr = String(quiz.course.id || quiz.course._id || quiz.course);
+                            console.log(`[DEBUG] Attempting to issue cert for Student=${userId}, Course=${courseIdStr}, Level=${newLevel}`);
+
+                            // Check existing
+                            const [existingCerts] = await executeQuery(
+                                "SELECT * FROM certificates WHERE student = ? AND course = ? AND type = 'SKILL_UPGRADATION' AND level = ?",
+                                [userId, courseIdStr, newLevel]
+                            );
+
+                            console.log(`[DEBUG] Existing Certs Count: ${existingCerts.length}`);
+
+                            if (existingCerts.length === 0) {
+                                try {
+                                    // Template
+                                    let template = await CertificateTemplate.findOne({ isDefault: 1, isActive: 1 });
+                                    if (!template) {
+                                        // Find one active
+                                        const [temps] = await executeQuery("SELECT TOP 1 * FROM certificate_templates WHERE isActive = 1 ORDER BY createdAt ASC");
+                                        if (temps.length > 0) template = new CertificateTemplate(temps[0]);
+                                    }
+
+                                    if (template) {
+                                        const issueDate = new Date();
+                                        const userDataForCert = await User.findById(userId);
+
+                                        const certificateData = {
+                                            studentName: userDataForCert.fullName || "Student",
+                                            courseName: quiz.course.title || "Course",
+                                            departmentName: "N/A",
+                                            instructorName: "System",
+                                            level: newLevel,
+                                            issueDate: issueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+                                            grade: 'PASS'
+                                        };
+
+                                        let certificateHTML = template.template;
+                                        Object.keys(certificateData).forEach(key => {
+                                            const placeholder = new RegExp(`{{${key}}}`, 'g');
+                                            certificateHTML = certificateHTML.replace(placeholder, certificateData[key]);
+                                        });
+
+                                        const newCert = await Certificate.create({
+                                            student: userId,
+                                            course: courseIdStr,
+                                            issuedBy: userId,
+                                            grade: 'PASS',
+                                            type: 'SKILL_UPGRADATION',
+                                            level: newLevel,
+                                            metadata: {
+                                                ...certificateData,
+                                                templateId: template.id,
+                                                templateName: template.name,
+                                                generatedHTML: certificateHTML,
+                                                styles: template.styles
+                                            }
+                                        });
+                                        console.log(`[DEBUG] Certificate Created Successfully: ID=${newCert.id}`);
+                                    } else {
+                                        console.log(`[DEBUG] Cert Skipped: No Template`);
+                                    }
+                                } catch (certErr) {
+                                    console.error(`[DEBUG] Cert Creation Failed:`, certErr);
+                                }
+                            } else {
+                                console.log(`[DEBUG] Cert Skipped: Already Exists`);
+                            }
                         }
                     } else {
-                        console.log(`[DEBUG] Cert Skipped: Quiz does not issue certificates.`);
+                        console.log(`[DEBUG] Level Upgrade Skipped: Next Level Same as Current (${stationLevel}) or None`);
                     }
-                } else {
-                    console.log(`[DEBUG] Level Upgrade Skipped: Next Level Same as Current (${progress.currentLevel}) or None`);
                 }
             } else {
                 console.log(`[DEBUG] Level Upgrade Skipped: No Level Config`);

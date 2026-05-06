@@ -110,7 +110,8 @@ const SixteenDayMonitoringSheet = ({
     departmentId,
     sectionId = 0,
     sectionName = "",
-    canEditConfig = false
+    canEditConfig = false,
+    initialForceNewAttempt = false
 }) => {
     const [headerInfo, setHeaderInfo] = useState({
         employeeName: studentName || "",
@@ -145,6 +146,11 @@ const SixteenDayMonitoringSheet = ({
     const [showHistory, setShowHistory] = useState(false);
     const [sendingEmail, setSendingEmail] = useState(false);
 
+    // Attempt History (Versioning)
+    const [historyAttempts, setHistoryAttempts] = useState([]);
+    const [selectedAttemptId, setSelectedAttemptId] = useState("");
+    const [isForceNewAttempt, setIsForceNewAttempt] = useState(false);
+
     const isLocked = headerInfo.status === 'Submitted' &&
         !authUser?.isAdmin &&
         !authUser?.isTrainer &&
@@ -168,6 +174,7 @@ const SixteenDayMonitoringSheet = ({
                     verifiedBy: "",
                     approvedBy: "",
                     status: "Draft",
+                    attemptNumber: 1
                 });
                 setGridData({});
                 setFooterData({});
@@ -175,69 +182,82 @@ const SixteenDayMonitoringSheet = ({
                 return;
             }
 
-            // Reset current data while loading new student
             setGridData({});
             setFooterData({});
             setLoading(true);
             try {
-                // 1. Always fetch the latest Line & Leader metadata from the 3-day progress/line system
                 let progressData = {};
                 try {
                     const progressRes = await axiosInstance.get(`/api/progress/three-day-monitoring/${studentId}`);
                     progressData = progressRes?.data?.data || {};
-                    const options = progressData.lineLeaderOptions || [];
-                    setLineLeaderOptions(options);
+                    setLineLeaderOptions(progressData.lineLeaderOptions || []);
                     setLineNamePart(progressData.lineName || "");
-                } catch (err) {
-                    console.error("Failed to load line/leader metadata", err);
-                }
-
-                // 2. Fetch the actual 16-day monitoring record
+                } catch (err) { console.error(err); }
                 const response = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}`);
                 if (response.data.success && response.data.data && !response.data.data.isNew) {
                     const record = response.data.data;
-                    setHeaderInfo({
-                        employeeName: record.employeeName || studentName || "",
-                        employeeCode: record.employeeCode || employeeCode || "",
-                        processName: record.processName || progressData.processName || "",
-                        dept: sectionName || record.dept || departmentName || "",
-                        handoverDate: record.handoverDate || "",
-                        trgResult: record.trgResult || "",
-                        workingWith: record.workingWith || "",
-                        lineLeaderName: record.lineLeaderName || "",
-                        checkedBy: record.checkedBy || "",
-                        verifiedBy: record.verifiedBy || "",
-                        approvedBy: record.approvedBy || "",
-                        status: record.status || "Draft",
-                    });
-                    setGridData(record.gridData || {});
-                    setFooterData(record.footerData || {});
+                    if (initialForceNewAttempt) {
+                        setHeaderInfo({
+                            employeeName: record.employeeName || studentName || "",
+                            employeeCode: record.employeeCode || employeeCode || "",
+                            processName: record.processName || progressData.processName || "",
+                            dept: record.dept || sectionName || departmentName || "",
+                            handoverDate: record.handoverDate || "",
+                            trgResult: record.trgResult || "",
+                            workingWith: record.workingWith || "",
+                            lineLeaderName: record.lineLeaderName || "",
+                            checkedBy: "",
+                            verifiedBy: "",
+                            approvedBy: "",
+                            status: "Draft",
+                            attemptNumber: (record.attemptNumber || 1) + 1
+                        });
+                        setGridData({});
+                        setSelectedAttemptId("");
+                        setIsForceNewAttempt(true);
+                    } else {
+                        setHeaderInfo({
+                            employeeName: record.employeeName || studentName || "",
+                            employeeCode: record.employeeCode || employeeCode || "",
+                            processName: record.processName || progressData.processName || "",
+                            dept: record.dept || sectionName || departmentName || "",
+                            handoverDate: record.handoverDate || "",
+                            trgResult: record.trgResult || "",
+                            workingWith: record.workingWith || "",
+                            lineLeaderName: record.lineLeaderName || "",
+                            checkedBy: record.checkedBy || "",
+                            verifiedBy: record.verifiedBy || "",
+                            approvedBy: record.approvedBy || "",
+                            status: record.status || "Draft",
+                            attemptNumber: record.attemptNumber || 1
+                        });
+                        setGridData(record.gridData || {});
+                        setSelectedAttemptId(record.id);
+                        setIsForceNewAttempt(false);
+                    }
                 } else {
-                    // Reset grid and footer for new record
+                    const header = response.data.data?.headerInfo || {};
+                    setHeaderInfo({
+                        employeeName: studentName || "",
+                        employeeCode: employeeCode || "",
+                        processName: progressData.processName || "",
+                        dept: sectionName || departmentName || "",
+                        handoverDate: header.handoverDate || "",
+                        trgResult: header.trgResult || "",
+                        workingWith: "",
+                        lineLeaderName: "",
+                        checkedBy: "",
+                        verifiedBy: "",
+                        approvedBy: "",
+                        status: "Draft",
+                        attemptNumber: 1
+                    });
                     setGridData({});
-                    setFooterData({});
-
-                    const extraInfo = response.data.data || {};
-                    const lineName = progressData.lineName || "";
-                    const options = progressData.lineLeaderOptions || [];
-
-                    // Pre-select the first leader if available
-                    let initialLeader = "";
-                    if (options.length > 0) initialLeader = options[0];
-
-                    setHeaderInfo(prev => ({
-                        ...prev,
-                        checkedBy: prev.checkedBy || authUser?.fullName || authUser?.name || "",
-                        trgResult: extraInfo.headerInfo?.trgResult || prev.trgResult || "",
-                        handoverDate: extraInfo.headerInfo?.handoverDate || prev.handoverDate || "",
-                        employeeName: studentName || prev.employeeName,
-                        employeeCode: employeeCode || prev.employeeCode,
-                        processName: progressData.processName || prev.processName,
-                        lineLeaderName: lineName ? `${lineName}${initialLeader ? ` / ${initialLeader}` : ""}` : prev.lineLeaderName,
-                    }));
+                    setSelectedAttemptId("");
+                    setIsForceNewAttempt(false);
                 }
             } catch (error) {
-                console.error("Failed to load 16-day monitoring data:", error);
+                console.error("Error fetching monitoring data:", error);
             } finally {
                 setLoading(false);
             }
@@ -245,16 +265,79 @@ const SixteenDayMonitoringSheet = ({
 
         loadInitialData();
         fetchConfig();
-    }, [studentId, departmentId, sectionId, authUser, departmentName, sectionName]);
+    }, [studentId, studentName, employeeCode, departmentName, sectionName, initialForceNewAttempt]);
+
+    const fetchHistoryAttempts = async () => {
+        if (!studentId) return;
+        try {
+            const res = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}/history`);
+            if (res.data.success) {
+                setHistoryAttempts(res.data.data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch history:", err);
+        }
+    };
 
     useEffect(() => {
-        if (!readOnly && authUser && !headerInfo.checkedBy) {
-            setHeaderInfo(prev => ({
-                ...prev,
-                checkedBy: authUser.fullName || authUser.name || ""
-            }));
+        if (studentId) {
+            fetchHistoryAttempts();
         }
-    }, [authUser, readOnly, headerInfo.checkedBy]);
+    }, [studentId]);
+
+    useEffect(() => {
+        const handleStartNew = (e) => {
+            if (String(e.detail.studentId) === String(studentId)) {
+                setIsForceNewAttempt(true);
+                setGridData({});
+                setHeaderInfo(prev => ({
+                    ...prev,
+                    status: "Draft",
+                    checkedBy: "",
+                    verifiedBy: "",
+                    approvedBy: "",
+                    attemptNumber: (historyAttempts[0]?.attemptNumber || 0) + 1
+                }));
+                setSelectedAttemptId("");
+                toast.info(`Starting new attempt (#${(historyAttempts[0]?.attemptNumber || 0) + 1})`);
+            }
+        };
+        window.addEventListener('START_NEW_MONITORING_ATTEMPT', handleStartNew);
+        return () => window.removeEventListener('START_NEW_MONITORING_ATTEMPT', handleStartNew);
+    }, [studentId, historyAttempts]);
+
+    const handleAttemptChange = async (attemptId) => {
+        if (!attemptId) return;
+        setSelectedAttemptId(attemptId);
+        setIsForceNewAttempt(false);
+        try {
+            setLoading(true);
+            const res = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}?recordId=${attemptId}`);
+            if (res.data.success) {
+                const record = res.data.data;
+                setHeaderInfo({
+                    employeeName: record.employeeName || "",
+                    employeeCode: record.employeeCode || "",
+                    processName: record.processName || "",
+                    dept: record.dept || "",
+                    handoverDate: record.handoverDate || "",
+                    trgResult: record.trgResult || "",
+                    workingWith: record.workingWith || "",
+                    lineLeaderName: record.lineLeaderName || "",
+                    checkedBy: record.checkedBy || "",
+                    verifiedBy: record.verifiedBy || "",
+                    approvedBy: record.approvedBy || "",
+                    status: record.status || "Draft",
+                    attemptNumber: record.attemptNumber || 1
+                });
+                setGridData(record.gridData || {});
+            }
+        } catch (err) {
+            toast.error("Failed to load attempt data");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const fetchConfig = async () => {
         if (!departmentId || departmentId === 'undefined') return;
@@ -302,14 +385,62 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
+    const handleSave = async (finalStatus = null) => {
+        if (!studentId) {
+            toast.error("Student selection is required to save data");
+            return;
+        }
+
+        try {
+            setSaving(true);
+            const targetStatus = finalStatus || headerInfo.status || "Draft";
+            const payload = {
+                ...headerInfo,
+                gridData,
+                status: targetStatus,
+                isNewAttempt: isForceNewAttempt,
+                recordId: selectedAttemptId
+            };
+
+            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId || 0}`, payload);
+            if (response.data.success) {
+                setHeaderInfo(prev => ({ ...prev, status: targetStatus }));
+                setIsForceNewAttempt(false);
+                fetchHistoryAttempts();
+                toast.success(`Monitoring ${targetStatus === 'Submitted' ? 'Submitted' : 'Saved'} successfully`);
+
+                if (targetStatus === 'Submitted') {
+                    handleEmail(true);
+                }
+            }
+        } catch (error) {
+            console.error("Error saving data:", error);
+            toast.error(error.response?.data?.message || "Failed to save data");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleEmail = async (isAuto = false) => {
+        try {
+            if (!isAuto) setSendingEmail(true);
+            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}/email`);
+            if (response.data.success) {
+                toast.success("Monitoring report emailed successfully");
+            }
+        } catch (error) {
+            console.error("Error sending email:", error);
+            if (!isAuto) {
+                toast.error(error.response?.data?.message || "Failed to send email report");
+            }
+        } finally {
+            if (!isAuto) setSendingEmail(false);
+        }
+    };
+
     const handleHeaderChange = (field, value) => {
         if (readOnly || !studentId) return;
         setHeaderInfo(prev => ({ ...prev, [field]: value }));
-    };
-
-    const handleFooterChange = (field, value) => {
-        if (readOnly || !studentId) return;
-        setFooterData(prev => ({ ...prev, [field]: value }));
     };
 
     const handleGridChange = (rowId, colId, value) => {
@@ -598,68 +729,6 @@ const SixteenDayMonitoringSheet = ({
             setGridData(newGridData);
         }
     }, [gridData, config, readOnly]);
-
-    const handleSave = async (finalStatus = null) => {
-        if (!studentId) {
-            toast.error("Student ID is missing");
-            return;
-        }
-
-        try {
-            setSaving(true);
-            const targetStatus = finalStatus || headerInfo.status || "Draft";
-            const submitterName = authUser?.fullName || authUser?.name || "";
-
-            const updatedHeader = {
-                ...headerInfo,
-                status: targetStatus
-            };
-
-            // Force checkedBy to current user if submitting
-            if (targetStatus === 'Submitted') {
-                updatedHeader.checkedBy = submitterName;
-            }
-
-            const payload = {
-                ...updatedHeader,
-                gridData,
-                footerData
-            };
-
-            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}`, payload);
-            if (response.data.success) {
-                setHeaderInfo(updatedHeader);
-                toast.success(`Monitoring ${targetStatus === 'Submitted' ? 'Submitted' : 'Saved'} successfully`);
-
-                if (targetStatus === 'Submitted') {
-                    handleEmail(true);
-                }
-            }
-        } catch (error) {
-            console.error("Save error:", error);
-            toast.error(error?.response?.data?.message || "Failed to save monitoring sheet");
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleEmail = async (isAuto = false) => {
-        try {
-            if (!isAuto) setSendingEmail(true);
-            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}/email`);
-            if (response.data.success) {
-                toast.success("Monitoring report emailed successfully");
-            }
-        } catch (error) {
-            console.error("Error sending email:", error);
-            if (!isAuto) {
-                toast.error(error.response?.data?.message || "Failed to send email report");
-            }
-        } finally {
-            if (!isAuto) setSendingEmail(false);
-        }
-    };
-
     const handleSignature = (field, type) => {
         const name = authUser?.fullName || authUser?.name;
         const prefix = type === 'approve' ? "Approved By: " : "Rejected By: ";
@@ -676,11 +745,37 @@ const SixteenDayMonitoringSheet = ({
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center print:hidden">
-                <div className="flex items-center gap-2">
-                    <Badge variant={headerInfo.status === 'Submitted' ? "success" : "secondary"} className="text-xs px-3 py-1 uppercase tracking-wider font-bold">
-                        {headerInfo.status || 'Draft'}
-                    </Badge>
-                    {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <Badge variant={headerInfo.status === 'Submitted' ? "success" : "secondary"} className="text-xs px-3 py-1 uppercase tracking-wider font-bold">
+                            {headerInfo.status || 'Draft'}
+                        </Badge>
+                        {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
+                        {isForceNewAttempt && <Badge className="bg-blue-500 animate-pulse text-white text-[10px]">NEW ATTEMPT MODE</Badge>}
+                        {!studentId && (
+                            <Badge className="bg-amber-500 text-white text-[10px] animate-pulse">DESIGN MODE: TEMPLATE SETUP</Badge>
+                        )}
+                    </div>
+
+                    {historyAttempts.length > 0 && (
+                        <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Attempt History:</span>
+                            <select 
+                                className="text-xs font-bold bg-transparent border-none outline-none text-indigo-600 cursor-pointer"
+                                value={selectedAttemptId}
+                                onChange={(e) => handleAttemptChange(e.target.value)}
+                            >
+                                {historyAttempts.map((att) => (
+                                    <option key={att.id} value={att.id}>
+                                        Attempt #{att.attemptNumber} ({att.status}) - {new Date(att.createdAt).toLocaleDateString()}
+                                    </option>
+                                ))}
+                                {isForceNewAttempt && (
+                                    <option value="">Attempt #{(historyAttempts[0]?.attemptNumber || 0) + 1} (New)</option>
+                                )}
+                            </select>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex gap-2">

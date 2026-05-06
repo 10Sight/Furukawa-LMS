@@ -16,6 +16,14 @@ class TenCycleSheet {
         this.entries = typeof data.entries === "string"
             ? JSON.parse(data.entries || "[]")
             : (data.entries || []);
+        this.status = data.status || "Draft";
+        this.checkedBy = data.checkedBy || "";
+        this.verifiedBy = data.verifiedBy || "";
+        this.verifiedStatus = data.verifiedStatus || "";
+        this.verifiedAt = data.verifiedAt;
+        this.reviewedBy = data.reviewedBy || "";
+        this.reviewedStatus = data.reviewedStatus || "";
+        this.reviewedAt = data.reviewedAt;
         this.createdBy = data.createdBy || "";
         this.updatedBy = data.updatedBy || "";
         this.createdAt = data.createdAt;
@@ -39,6 +47,14 @@ class TenCycleSheet {
                     dojoEngineer NVARCHAR(255),
                     dojoEngineerSign NVARCHAR(255),
                     entries NVARCHAR(MAX),
+                    status NVARCHAR(50) DEFAULT 'Draft',
+                    checkedBy NVARCHAR(255),
+                    verifiedBy NVARCHAR(255),
+                    verifiedStatus NVARCHAR(50),
+                    verifiedAt DATETIME,
+                    reviewedBy NVARCHAR(255),
+                    reviewedStatus NVARCHAR(50),
+                    reviewedAt DATETIME,
                     createdBy NVARCHAR(255),
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE(),
@@ -55,6 +71,22 @@ class TenCycleSheet {
                     ALTER TABLE ten_cycle_sheets ADD lineId INT;
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'subSectionId')
                     ALTER TABLE ten_cycle_sheets ADD subSectionId INT;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'status')
+                    ALTER TABLE ten_cycle_sheets ADD status NVARCHAR(50) DEFAULT 'Draft';
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'checkedBy')
+                    ALTER TABLE ten_cycle_sheets ADD checkedBy NVARCHAR(255);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'verifiedBy')
+                    ALTER TABLE ten_cycle_sheets ADD verifiedBy NVARCHAR(255);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'verifiedStatus')
+                    ALTER TABLE ten_cycle_sheets ADD verifiedStatus NVARCHAR(50);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'verifiedAt')
+                    ALTER TABLE ten_cycle_sheets ADD verifiedAt DATETIME;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'reviewedBy')
+                    ALTER TABLE ten_cycle_sheets ADD reviewedBy NVARCHAR(255);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'reviewedStatus')
+                    ALTER TABLE ten_cycle_sheets ADD reviewedStatus NVARCHAR(50);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'reviewedAt')
+                    ALTER TABLE ten_cycle_sheets ADD reviewedAt DATETIME;
             END
         `;
         await executeQuery(query);
@@ -104,14 +136,22 @@ class TenCycleSheet {
             dojoEngineer,
             dojoEngineerSign,
             entries,
+            status,
+            checkedBy,
+            verifiedBy,
+            verifiedStatus,
+            verifiedAt,
+            reviewedBy,
+            reviewedStatus,
+            reviewedAt,
             createdBy,
         } = data;
 
         const [rows] = await executeQuery(
             `INSERT INTO ten_cycle_sheets
-             (departmentId, sectionId, lineId, subSectionId, formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, createdBy, updatedBy)
+             (departmentId, sectionId, lineId, subSectionId, formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, status, checkedBy, verifiedBy, verifiedStatus, verifiedAt, reviewedBy, reviewedStatus, reviewedAt, createdBy, updatedBy)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 departmentId,
                 sectionId || null,
@@ -123,6 +163,14 @@ class TenCycleSheet {
                 dojoEngineer || "",
                 dojoEngineerSign || "",
                 JSON.stringify(entries || []),
+                status || "Draft",
+                checkedBy || "",
+                verifiedBy || "",
+                verifiedStatus || null,
+                verifiedAt || null,
+                reviewedBy || "",
+                reviewedStatus || null,
+                reviewedAt || null,
                 createdBy || "",
                 createdBy || "",
             ]
@@ -140,13 +188,22 @@ class TenCycleSheet {
             dojoEngineer,
             dojoEngineerSign,
             entries,
+            status,
+            checkedBy,
+            verifiedBy,
+            verifiedStatus,
+            verifiedAt,
+            reviewedBy,
+            reviewedStatus,
+            reviewedAt,
             updatedBy,
         } = data;
 
         await executeQuery(
             `UPDATE ten_cycle_sheets
              SET formType = ?, qualityEngineer = ?, qualityEngineerSign = ?, dojoEngineer = ?, dojoEngineerSign = ?,
-                 entries = ?, updatedBy = ?, updatedAt = GETDATE()
+                 entries = ?, status = ?, checkedBy = ?, verifiedBy = ?, verifiedStatus = ?, verifiedAt = ?, reviewedBy = ?, reviewedStatus = ?, reviewedAt = ?,
+                 updatedBy = ?, updatedAt = GETDATE()
              WHERE id = ?`,
             [
                 formType || "form1",
@@ -155,6 +212,14 @@ class TenCycleSheet {
                 dojoEngineer || "",
                 dojoEngineerSign || "",
                 JSON.stringify(entries || []),
+                status || "Draft",
+                checkedBy || "",
+                verifiedBy || "",
+                verifiedStatus || null,
+                verifiedAt || null,
+                reviewedBy || "",
+                reviewedStatus || null,
+                reviewedAt || null,
                 updatedBy || "",
                 id,
             ]

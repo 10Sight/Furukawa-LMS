@@ -22,8 +22,20 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { useSelector } from "react-redux";
+
 const TestPaper = () => {
   const navigate = useNavigate();
+  const currentUser = useSelector((state) => state.auth.user);
+
+  const hasPermission = (permission) => {
+    if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
+    return currentUser?.customRole?.permissions?.includes(permission);
+  };
+
+  const canRead = hasPermission("test_paper:read") || currentUser?.role === "STUDENT" || currentUser?.isEmployee;
+  const canManage = hasPermission("test_paper:create");
+
   const [selectedDepartment, setSelectedDepartment] = useState("ALL");
   const [selectedSection, setSelectedSection] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,6 +59,7 @@ const TestPaper = () => {
     search: searchTerm,
     departmentId: selectedDepartment !== "ALL" ? selectedDepartment : undefined,
     sectionId: selectedSection !== "ALL" ? selectedSection : undefined,
+    isDojo: currentUser?.isTemporary ? true : undefined,
   });
 
   const quizzes = quizzesData?.data?.quizzes || [];
@@ -59,6 +72,149 @@ const TestPaper = () => {
     setPage(1);
   };
 
+  if (!canRead) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+        <IconFileText className="w-12 h-12 text-slate-300" />
+        <h2 className="text-2xl font-bold text-slate-900">Access Denied</h2>
+        <p className="text-slate-500 max-w-md">You do not have permission to view the Test Papers. Please contact your administrator.</p>
+      </div>
+    );
+  }
+
+  // Candidate Assessment Center UI (isTemporary: true)
+  if (currentUser?.isTemporary) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] pb-12">
+        {/* Hero Section */}
+        <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white py-12 px-8 mb-8 shadow-lg">
+          <div className="max-w-6xl mx-auto">
+            <h1 className="text-4xl font-extrabold tracking-tight mb-2">DOJO Assessment Center</h1>
+            <p className="text-blue-100 text-lg opacity-90">
+              Welcome, <span className="text-white font-semibold">{currentUser.fullName}</span>! Here are your assigned assessments for the hiring process.
+            </p>
+          </div>
+        </div>
+
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">Available Assessments</h2>
+              <p className="text-slate-500">Complete these tests to proceed with your application.</p>
+            </div>
+            <Button variant="outline" onClick={() => refetch()} className="bg-white hover:bg-slate-50 shadow-sm border-slate-200">
+              <IconRefresh className="h-4 w-4 mr-2 text-blue-600" />
+              Refresh List
+            </Button>
+          </div>
+
+          {quizzesLoading ? (
+            <Card className="border-none shadow-sm">
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[40%]">Assessment Name</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Questions</TableHead>
+                      <TableHead>Min. Score</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[1, 2, 3].map((i) => (
+                      <TableRow key={i}>
+                        <TableCell><Skeleton className="h-5 w-48" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                        <TableCell className="text-right"><Skeleton className="h-10 w-24 ml-auto rounded-md" /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ) : quizzes.length === 0 ? (
+            <Card className="border-dashed border-2 border-slate-200 bg-white/50 py-20">
+              <CardContent className="flex flex-col items-center justify-center text-center">
+                <div className="bg-slate-100 p-4 rounded-full mb-4">
+                  <IconFileText className="h-10 w-10 text-slate-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">No Assessments Assigned</h3>
+                <p className="text-slate-500 max-w-sm">
+                  There are currently no assessments assigned to your profile. Please check back later or contact your supervisor.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-none shadow-xl overflow-hidden rounded-2xl bg-white">
+              <Table>
+                <TableHeader className="bg-slate-50">
+                  <TableRow className="border-b border-slate-100 h-14">
+                    <TableHead className="pl-8 font-bold text-slate-900 text-sm uppercase tracking-wider">Assessment Name</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">Duration</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">Questions</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">Pass Score</TableHead>
+                    <TableHead className="pr-8 font-bold text-slate-900 text-sm uppercase tracking-wider text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {quizzes.map((quiz) => (
+                    <TableRow key={quiz._id} className="group hover:bg-blue-50/30 transition-colors border-slate-50 h-24">
+                      <TableCell className="pl-8">
+                        <div className="flex items-center gap-4">
+                          <div className="p-3 bg-blue-50 rounded-xl text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
+                            <IconFileText size={24} />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-slate-900 text-lg leading-tight group-hover:text-blue-700 transition-colors">
+                              {quiz.title}
+                            </span>
+                            <span className="text-sm text-slate-500 line-clamp-1 max-w-md">
+                              {quiz.description || "Assessment to evaluate skills for current position."}
+                            </span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1.5 font-semibold text-slate-700">
+                          <IconClock size={18} className="text-blue-500" />
+                          <span>{quiz.timeLimit || 0} Mins</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1.5 font-semibold text-slate-700">
+                          <IconLayoutGrid size={18} className="text-blue-500" />
+                          <span>{quiz.questions?.length || 0} Items</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge className="bg-slate-900 text-white font-bold px-3 py-1">
+                          {quiz.passingScore}%
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="pr-8 text-right">
+                        <Button 
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold h-11 px-6 rounded-xl shadow-lg shadow-blue-100 group-hover:scale-105 transition-transform"
+                          onClick={() => navigate(`/student/quiz/${quiz._id}`)}
+                        >
+                          <IconPlayerPlay className="h-4 w-4 mr-2" />
+                          Start Test
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Standard Admin/Student UI
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -73,10 +229,12 @@ const TestPaper = () => {
             <IconRefresh className="h-4 w-4" />
             Refresh
           </Button>
-          <Button onClick={() => navigate("/admin/courses")} className="gap-2">
-            <IconFileText className="h-4 w-4" />
-            Manage Courses
-          </Button>
+          {canManage && (
+            <Button onClick={() => navigate("/admin/courses")} className="gap-2">
+              <IconFileText className="h-4 w-4" />
+              Manage Courses
+            </Button>
+          )}
         </div>
       </div>
 
@@ -245,8 +403,10 @@ const TestPaper = () => {
                         variant="default" 
                         size="sm" 
                         onClick={() => {
-                          const base = window.location.pathname.startsWith("/portal") ? "/portal" : "/admin";
-                          navigate(`${base}/take-test/${quiz._id}`);
+                          const base = window.location.pathname.startsWith("/portal") ? "/portal" : 
+                                       window.location.pathname.startsWith("/student") ? "/student" : "/admin";
+                          const quizPath = base === "/student" ? "quiz" : "take-test";
+                          navigate(`${base}/${quizPath}/${quiz._id}`);
                         }}
                         className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
                       >

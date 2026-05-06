@@ -611,7 +611,7 @@ const DepartmentStudentsTable = ({ departmentId, departmentName, onRefetch }) =>
                       </Avatar>
                       <div>
                         <p className="font-medium">{student.fullName}</p>
-                        <p className="text-sm text-muted-foreground">@{student.userName || student.email.split('@')[0]}</p>
+                        <p className="text-sm text-muted-foreground">@{student.userName || (student.email ? student.email.split('@')[0] : 'user')}</p>
                       </div>
                     </div>
                   </TableCell>

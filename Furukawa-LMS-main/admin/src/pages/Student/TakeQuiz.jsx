@@ -7,30 +7,25 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  IconPlayerPlay,
-  IconUser,
-  IconId,
-  IconCalendar,
-  IconBook,
-  IconGenderMale,
-  IconMail,
-  IconMapPin,
-  IconBus,
-  IconUserPlus,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   IconClock,
   IconCircleCheck,
   IconAlertCircle,
-  IconChartBar,
   IconArrowLeft,
+  IconDeviceFloppy,
   IconSend,
   IconTrophy,
   IconRotateClockwise,
   IconLockOpen
 } from "@tabler/icons-react";
 import { getMediaUrl } from "@/utils/mediaUtils";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSelector } from "react-redux";
 
 const TakeQuiz = () => {
@@ -46,27 +41,18 @@ const TakeQuiz = () => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [startTime, setStartTime] = useState(null);
-  const [step, setStep] = useState("loading"); // loading, details, quiz, result
-  const [userDetails, setUserDetails] = useState({
-    fullName: "",
-    empId: "",
-    fatherHusbandName: "",
-    gender: "",
-    dob: "",
-    education: "",
-    joiningDate: "",
-    district: "",
-    state: "",
-    pin: "",
-    busRoute: "",
-    email: "",
-    userName: ""
-  });
-  const [registeringUser, setRegisteringUser] = useState(false);
-  const [studentId, setStudentId] = useState(null);
+  const [step, setStep] = useState("loading"); // loading, quiz, result
 
   const { user: currentUser } = useSelector((state) => state.auth);
   const isAdminOrTrainer = currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPERADMIN' || currentUser.role === 'INSTRUCTOR' || currentUser.role === 'TRAINER');
+
+  const getCurrentQuarter = () => {
+    const month = new Date().getMonth();
+    if (month >= 3 && month <= 5) return "QUARTER-1 (APR-JUN)";
+    if (month >= 6 && month <= 8) return "QUARTER-2 (JUL-SEP)";
+    if (month >= 9 && month <= 11) return "QUARTER-3 (OCT-DEC)";
+    return "QUARTER-4 (JAN-MAR)";
+  };
 
   // Load quiz data
   useEffect(() => {
@@ -88,9 +74,11 @@ const TakeQuiz = () => {
 
         // Initialize answers array
         const initialAnswers = {};
-        data.quiz.questions.forEach((_, index) => {
-          initialAnswers[index] = null;
-        });
+        if (data.quiz.questions) {
+          data.quiz.questions.forEach((_, index) => {
+            initialAnswers[index] = null;
+          });
+        }
         setAnswers(initialAnswers);
 
         // Start timer if time limit exists
@@ -99,19 +87,12 @@ const TakeQuiz = () => {
         }
 
         setError(null);
-        
-        // Decide which step to show
-        if (isAdminOrTrainer) {
-          setStep("details");
-        } else {
-          setStep("quiz");
-        }
+        setStep("quiz");
       } catch (err) {
         console.error("Failed to load quiz:", err);
         setError(err.response?.data?.message || "Failed to load quiz");
       } finally {
         setLoading(false);
-        if (!isAdminOrTrainer) setStep("quiz");
       }
     };
 
@@ -166,7 +147,7 @@ const TakeQuiz = () => {
         quizId,
         answers: answersArray,
         timeTaken,
-        studentId: studentId || (isAdminOrTrainer ? null : currentUser.id)
+        studentId: isAdminOrTrainer ? null : currentUser.id
       });
 
       setResult(response.data.data);
@@ -180,43 +161,6 @@ const TakeQuiz = () => {
     }
   };
 
-  const handleStartQuiz = async (e) => {
-    e.preventDefault();
-    if (!userDetails.fullName || !userDetails.empId) {
-      setError("Name and Employee ID are required");
-      return;
-    }
-
-    try {
-      setRegisteringUser(true);
-      setError(null);
-
-      // Create a temporary/new user for this attempt
-      // Using a specialized endpoint or just register
-      const response = await axiosInstance.post("/api/v1/auth/register", {
-        ...userDetails,
-        role: "STUDENT",
-        unit: currentUser?.unit || "UNIT_1",
-        fullName: userDetails.fullName,
-        isEmployee: true,
-        isTemporary: true,
-        password: "DefaultPassword123!", // Secure default
-        // If email/userName is blank, generate it
-        email: userDetails.email || `${userDetails.empId}@sarvagaya.edu`,
-        userName: userDetails.userName || userDetails.empId
-      });
-
-      setStudentId(response.data.data.user.id);
-      setStep("quiz");
-      setStartTime(Date.now());
-      if (quiz.timeLimit) setTimerActive(true);
-    } catch (err) {
-      console.error("Failed to register user:", err);
-      setError(err.response?.data?.message || "Failed to register user details");
-    } finally {
-      setRegisteringUser(false);
-    }
-  };
 
   const formatTime = (seconds) => {
     if (seconds === null) return "";
@@ -275,352 +219,212 @@ const TakeQuiz = () => {
     );
   }
 
-  if (step === "details") {
-    return (
-      <div className="max-w-4xl mx-auto p-3 sm:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <Card className="border-none shadow-2xl bg-white overflow-hidden">
-          <div className="h-2 bg-blue-600" />
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
-                <IconUserPlus size={24} />
-              </div>
-              <div>
-                <CardTitle className="text-2xl font-bold text-gray-900">Trainee Registration</CardTitle>
-                <CardDescription>Enter candidate details before starting the assessment</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleStartQuiz} className="space-y-8 py-4">
-              {error && (
-                <Alert variant="destructive" className="animate-in head-shake">
-                  <IconAlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                {/* Personal Info */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <IconUser size={14} /> Personal Information
-                  </h3>
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">Full Name *</Label>
-                    <Input 
-                      id="fullName" 
-                      placeholder="Enter full name" 
-                      value={userDetails.fullName}
-                      onChange={e => setUserDetails(p => ({ ...p, fullName: e.target.value }))}
-                      className="h-11"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="fatherHusbandName">Father/Husband Name</Label>
-                    <Input 
-                      id="fatherHusbandName" 
-                      placeholder="Enter name"
-                      value={userDetails.fatherHusbandName}
-                      onChange={e => setUserDetails(p => ({ ...p, fatherHusbandName: e.target.value }))}
-                      className="h-11"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Gender</Label>
-                      <Select 
-                        onValueChange={v => setUserDetails(p => ({ ...p, gender: v }))}
-                        value={userDetails.gender}
-                      >
-                        <SelectTrigger className="h-11">
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="MALE">Male</SelectItem>
-                          <SelectItem value="FEMALE">Female</SelectItem>
-                          <SelectItem value="OTHER">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="dob">DOB</Label>
-                      <Input 
-                        id="dob" 
-                        type="date"
-                        value={userDetails.dob}
-                        onChange={e => setUserDetails(p => ({ ...p, dob: e.target.value }))}
-                        className="h-11"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="education">Education</Label>
-                    <Input 
-                      id="education" 
-                      placeholder="e.g. B.Tech, Diploma"
-                      value={userDetails.education}
-                      onChange={e => setUserDetails(p => ({ ...p, education: e.target.value }))}
-                      className="h-11"
-                    />
-                  </div>
-                </div>
-
-                {/* Professional Info */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <IconId size={14} /> Professional Details
-                  </h3>
-                  <div className="space-y-2">
-                    <Label htmlFor="empId">Employee ID *</Label>
-                    <Input 
-                      id="empId" 
-                      placeholder="Enter employee ID"
-                      value={userDetails.empId}
-                      onChange={e => setUserDetails(p => ({ ...p, empId: e.target.value }))}
-                      className="h-11 border-blue-200 focus:border-blue-500 bg-blue-50/30 font-mono"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="joiningDate">Joining Date</Label>
-                    <Input 
-                      id="joiningDate" 
-                      type="date"
-                      value={userDetails.joiningDate}
-                      onChange={e => setUserDetails(p => ({ ...p, joiningDate: e.target.value }))}
-                      className="h-11"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="busRoute">Bus Route</Label>
-                    <Input 
-                      id="busRoute" 
-                      placeholder="Enter route info"
-                      value={userDetails.busRoute}
-                      onChange={e => setUserDetails(p => ({ ...p, busRoute: e.target.value }))}
-                      className="h-11"
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="district">District</Label>
-                      <Input 
-                        id="district" 
-                        placeholder="District"
-                        value={userDetails.district}
-                        onChange={e => setUserDetails(p => ({ ...p, district: e.target.value }))}
-                        className="h-11"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="state">State</Label>
-                      <Input 
-                        id="state" 
-                        placeholder="State"
-                        value={userDetails.state}
-                        onChange={e => setUserDetails(p => ({ ...p, state: e.target.value }))}
-                        className="h-11"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-gray-100 flex justify-end gap-3">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => navigate(-1)}
-                  disabled={registeringUser}
-                  className="h-12 px-8"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={registeringUser}
-                  className="h-12 px-10 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 transition-all hover:scale-[1.02]"
-                >
-                  {registeringUser ? (
-                    <>
-                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      Registering...
-                    </>
-                  ) : (
-                    <>
-                      <IconPlayerPlay className="mr-2 h-5 w-5" />
-                      Start Assessment
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   if (step === "quiz") {
     return (
-      <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6 animate-in fade-in duration-700">
-        {/* Quiz Header */}
-        <Card className="bg-gradient-to-br from-white to-blue-50/50 border-blue-100 shadow-xl overflow-hidden relative">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600" />
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-3">
-                  <Badge className="bg-blue-600 text-white border-none px-3 py-1">Assessment</Badge>
-                  {timeRemaining !== null && (
-                    <Badge variant="outline" className={`px-3 py-1 flex items-center gap-2 ${timeRemaining <= 300 ? 'text-red-600 border-red-200 bg-red-50' : 'text-blue-700 border-blue-200 bg-blue-50'}`}>
-                      <IconClock size={14} className={timeRemaining <= 300 ? 'animate-pulse' : ''} />
-                      <span className="font-bold tabular-nums">{formatTime(timeRemaining)}</span>
-                    </Badge>
-                  )}
-                </div>
-                <CardTitle className="text-2xl font-bold text-gray-900 leading-tight mb-2">
-                  {quiz.title}
-                </CardTitle>
-                {quiz.description && (
-                  <CardDescription className="text-gray-600 leading-relaxed max-w-2xl">{quiz.description}</CardDescription>
-                )}
-                
-                <div className="flex flex-wrap items-center gap-y-2 gap-x-6 mt-4 text-sm font-medium text-gray-500">
-                  <div className="flex items-center gap-2">
-                    <div className="size-2 rounded-full bg-blue-400" />
-                    {quiz.questions.length} Questions
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="size-2 rounded-full bg-green-400" />
-                    Passing: {quiz.passingScore}%
-                  </div>
-                  {isAdminOrTrainer && studentId && (
-                    <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-3 py-1 rounded-full text-xs">
-                      <IconUser size={14} />
-                      Candidate: {userDetails.fullName} ({userDetails.empId})
-                    </div>
-                  )}
-                </div>
-              </div>
+      <div className="max-w-6xl mx-auto p-2 sm:p-6 animate-in fade-in duration-700">
+        {/* Floating Timer & Progress */}
+        <div className="sticky top-4 z-50 flex justify-between items-center mb-6 pointer-events-none">
+          <div className="pointer-events-auto">
+            {timeRemaining !== null && (
+              <Badge 
+                variant="outline" 
+                className={`px-4 py-2 text-lg shadow-xl border-2 flex items-center gap-2 bg-white/90 backdrop-blur-sm ${
+                  timeRemaining <= 300 ? 'text-red-600 border-red-200 animate-pulse' : 'text-blue-700 border-blue-200'
+                }`}
+              >
+                <IconClock size={20} />
+                <span className="font-bold tabular-nums">{formatTime(timeRemaining)}</span>
+              </Badge>
+            )}
+          </div>
+          <div className="pointer-events-auto bg-white/90 backdrop-blur-sm p-3 rounded-xl border border-gray-200 shadow-xl w-48 sm:w-64">
+            <div className="flex justify-between text-xs font-bold mb-1">
+              <span>PROGRESS</span>
+              <span>{Math.round((getAnsweredCount() / (quiz?.questions?.length || 1)) * 100)}%</span>
             </div>
-
-            {/* Progress Bar Area */}
-            <div className="mt-8 pt-6 border-t border-gray-100">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-gray-900">Completion</span>
-                  <Badge variant="secondary" className="bg-gray-100 text-gray-600">{Math.round((getAnsweredCount() / quiz.questions.length) * 100)}%</Badge>
-                </div>
-                <span className="text-xs font-medium text-gray-500 italic">
-                  {getAnsweredCount()} of {quiz.questions.length} answered
-                </span>
-              </div>
-              <Progress
-                value={(getAnsweredCount() / quiz.questions.length) * 100}
-                className="h-2.5 bg-gray-100"
-              />
-            </div>
-          </CardHeader>
-        </Card>
-
-        {/* Questions Grid */}
-        <div className="space-y-6">
-          {quiz.questions.map((question, questionIndex) => (
-            <Card key={questionIndex} className={`group border-none shadow-md transition-all duration-300 hover:shadow-lg ${answers[questionIndex] ? 'bg-white' : 'bg-white/90'}`}>
-              <CardHeader className="pb-4 relative">
-                <div className={`absolute top-6 -left-1 w-2 h-12 rounded-r-full transition-colors ${answers[questionIndex] ? 'bg-green-500' : 'bg-gray-200 group-hover:bg-blue-400'}`} />
-                <div className="flex justify-between items-start gap-4 ml-2">
-                  <CardTitle className="text-lg font-bold text-gray-800 flex items-start gap-3">
-                    <span className="flex-shrink-0 flex items-center justify-center size-7 rounded-lg bg-gray-100 text-gray-600 text-xs mt-0.5">
-                      {question.questionNumber}
-                    </span>
-                    <span className="pt-0.5 leading-relaxed">{question.questionText}</span>
-                  </CardTitle>
-                  <Badge variant="outline" className="shrink-0 font-bold tabular-nums text-gray-400 border-gray-100">
-                    {question.marks} PTS
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="ml-10">
-                {question.image && question.image.url && (
-                  <div className="mb-6 rounded-xl overflow-hidden border border-gray-100 shadow-sm inline-block max-w-full">
-                    <img
-                      src={getMediaUrl(question.image.url)}
-                      alt="Question Reference"
-                      className="max-h-96 w-auto object-contain bg-white"
-                    />
-                  </div>
-                )}
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                  {question.options.map((option, optionIndex) => {
-                    const isSelected = answers[questionIndex]?.text === option.text;
-                    return (
-                      <div
-                        key={optionIndex}
-                        className={`group/opt p-4 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-4
-                          ${isSelected 
-                            ? 'border-blue-600 bg-blue-50/50 shadow-sm' 
-                            : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'}`}
-                        onClick={() => handleAnswerChange(questionIndex, option)}
-                      >
-                        <div className={`flex-shrink-0 size-6 rounded-full border-2 flex items-center justify-center transition-all
-                          ${isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-200 group-hover/opt:border-blue-400'}`}>
-                          {isSelected && <div className="size-2 bg-white rounded-full" />}
-                        </div>
-                        <span className={`text-sm font-medium transition-colors ${isSelected ? 'text-blue-900' : 'text-gray-700'}`}>
-                          {option.text}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+            <Progress value={(getAnsweredCount() / (quiz?.questions?.length || 1)) * 100} className="h-2" />
+          </div>
         </div>
 
-        {/* Submit Section */}
-        <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-none shadow-2xl p-6 sm:p-10 text-white overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full -mr-32 -mt-32 blur-3xl" />
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
-            <div className="text-center md:text-left">
-              <h3 className="text-2xl font-bold mb-2 flex items-center justify-center md:justify-start gap-3">
-                <IconSend size={24} className="text-blue-400" /> Finished Assessment?
-              </h3>
-              <p className="text-gray-400 text-sm max-w-md">
-                Please review your answers before submitting. You have answered <strong>{getAnsweredCount()}</strong> out of <strong>{quiz.questions.length}</strong> questions.
-              </p>
+        {/* Standardized Test Paper Document */}
+        <div className="bg-white border-[3px] border-black text-black font-serif shadow-2xl overflow-hidden mb-12">
+          {/* HEADER TABLE */}
+          <div className="grid grid-cols-12 border-b-[3px] border-black">
+            <div className="col-span-9 border-r-[3px] border-black flex flex-col items-center justify-center py-4 bg-gray-50/50">
+              <h1 className="text-2xl sm:text-3xl font-bold text-blue-900 tracking-tighter text-center uppercase">
+                FURUKAWA MINDA ELECTRIC PVT. LTD
+              </h1>
+              <h2 className="text-xl sm:text-2xl font-semibold text-blue-800 tracking-widest mt-1 uppercase underline decoration-2 underline-offset-4">
+                TEST PAPER
+              </h2>
             </div>
-            
-            <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-              <Button 
-                variant="ghost" 
-                onClick={handleBackToCourse} 
-                className="h-14 px-8 border border-white/10 text-white hover:bg-white/5 transition-all order-2 sm:order-1"
-              >
-                <IconArrowLeft size={20} className="mr-2" />
-                Cancel & Exit
-              </Button>
-              <Button
-                onClick={() => handleSubmit(false)}
-                disabled={submitting}
-                className="h-14 px-12 bg-blue-600 hover:bg-blue-700 text-white shadow-xl shadow-blue-900/20 font-bold text-lg transition-all hover:scale-105 active:scale-95 order-1 sm:order-2"
-              >
-                {submitting ? (
-                  <div className="flex items-center gap-3">
-                    <div className="size-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    Submitting...
-                  </div>
-                ) : (
-                  "Finalize Assessment"
-                )}
-              </Button>
+            <div className="col-span-3 flex flex-col text-[11px] font-bold">
+              <div className="grid grid-cols-2 border-b border-black flex-1">
+                <div className="border-r border-black flex items-center px-2">Doc.No.</div>
+                <div className="flex items-center px-2 text-blue-800">TST-HR-02</div>
+              </div>
+              <div className="grid grid-cols-2 border-b border-black flex-1">
+                <div className="border-r border-black flex items-center px-2">REV 00</div>
+                <div className="flex items-center px-2 text-blue-800">3</div>
+              </div>
+              <div className="grid grid-cols-2 border-b border-black flex-1">
+                <div className="border-r border-black flex items-center px-2">REV. DATE</div>
+                <div className="flex items-center px-2">06.10.2019</div>
+              </div>
+              <div className="grid grid-cols-2 flex-1">
+                <div className="border-r border-black flex items-center px-2">ISSUE DATE</div>
+                <div className="flex items-center px-2">04.07.2013</div>
+              </div>
             </div>
           </div>
-        </Card>
+
+          {/* QUARTER SUB-HEADER */}
+          <div className="border-b-[3px] border-black flex justify-end px-6 py-2 bg-white">
+            <span className="font-bold text-lg tracking-widest uppercase">{getCurrentQuarter()}</span>
+          </div>
+
+          {/* METADATA SECTION */}
+          <div className="grid grid-cols-12 border-b-[3px] border-black text-sm uppercase">
+            <div className="col-span-7 border-r-[3px] border-black p-4 space-y-3 bg-white">
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[140px]">Process Name :</span>
+                <span className="border-b border-black flex-1 pb-0.5">{quiz?.category || quiz?.title || "N/A"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[140px]">Candidate Name :</span>
+                <span className="border-b border-black flex-1 pb-0.5">{currentUser?.fullName || "N/A"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[140px]">Employee Code :</span>
+                <span className="border-b border-black flex-1 pb-0.5 font-mono">{currentUser?.empId || "N/A"}</span>
+              </div>
+            </div>
+            <div className="col-span-5 p-4 space-y-3 bg-white">
+              <div className="flex gap-2">
+                <span className="font-bold">Marks Of Each Question :</span>
+                <span className="border-b border-black flex-1 pb-0.5 text-center">{quiz?.questions?.[0]?.marks || 1}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold">Test Conducted By :</span>
+                <span className="border-b border-black flex-1 pb-0.5 text-center">Education Cell</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold">Test Date :</span>
+                <span className="border-b border-black flex-1 pb-0.5 text-center">{new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* PARAMETERS HEADER */}
+          <div className="bg-gray-100/80 border-b-[3px] border-black p-3 font-bold uppercase text-lg tracking-wider text-center">
+            {quiz?.course?.title || quiz?.course?.name || "THEORITICAL PARAMETERS"}
+          </div>
+
+          {/* QUESTIONS TABLE */}
+          <div className="bg-white relative overflow-hidden">
+            <Table className="border-collapse border-t-[3px] border-black">
+              <TableHeader className="bg-gray-100">
+                <TableRow className="border-b-[3px] border-black hover:bg-gray-100">
+                  <TableHead className="w-[60px] border-r-[3px] border-black text-center font-bold text-black uppercase">S.No</TableHead>
+                  <TableHead className="border-r-[3px] border-black font-bold text-black uppercase">Question Description</TableHead>
+                  <TableHead className="w-[45%] font-bold text-black uppercase">Options / Choices</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {quiz?.questions?.map((question, questionIndex) => (
+                  <TableRow key={questionIndex} className="border-b-[3px] border-black hover:bg-transparent">
+                    {/* Serial Number */}
+                    <TableCell className="border-r-[3px] border-black text-center font-bold align-top py-6 text-lg">
+                      {questionIndex + 1}
+                    </TableCell>
+
+                    {/* Question Description */}
+                    <TableCell className="border-r-[3px] border-black align-top py-6 px-4">
+                      <div className="space-y-4">
+                        <div className="text-lg font-bold leading-tight">
+                          {question.questionText}
+                        </div>
+                        
+                        {/* Image Support */}
+                        {question.image && question.image.url && (
+                          <div className="border-2 border-black p-1 bg-white shadow-sm inline-block max-w-full">
+                            <img
+                              src={getMediaUrl(question.image.url)}
+                              alt="Question Ref"
+                              className="max-h-60 w-auto object-contain mx-auto"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+
+                    {/* Options / Choices */}
+                    <TableCell className="align-top py-6 px-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
+                        {question.options.map((option, optionIndex) => {
+                          const isSelected = answers[questionIndex]?.text === option.text;
+                          const letter = String.fromCharCode(97 + optionIndex);
+                          
+                          return (
+                            <div
+                              key={optionIndex}
+                              onClick={() => handleAnswerChange(questionIndex, option)}
+                              className={`flex items-start gap-3 cursor-pointer group/opt transition-all ${
+                                isSelected ? 'text-blue-800' : 'text-gray-700 hover:text-black'
+                              }`}
+                            >
+                              <div className={`flex-shrink-0 font-bold text-base min-w-[22px] transition-colors ${
+                                isSelected ? 'text-blue-800 underline decoration-2' : 'text-gray-500 group-hover/opt:text-black'
+                              }`}>
+                                {letter})
+                              </div>
+                              <div className={`flex-1 border-b-[1.5px] transition-all font-semibold text-sm pb-0.5 leading-tight ${
+                                isSelected ? 'border-blue-600 bg-blue-50/50 px-1' : 'border-black/10 hover:border-black/30 px-1'
+                              }`}>
+                                {option.text}
+                              </div>
+                              {isSelected && <IconCircleCheck size={16} className="text-green-600 mt-0.5" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {/* DOCUMENT FOOTER / SUBMIT SECTION */}
+        <div className="flex justify-end gap-4 mt-8 mb-20 no-print">
+          <Button
+            variant="outline"
+            onClick={handleBackToCourse}
+            className="h-11 px-8 border-2 border-gray-300 font-bold uppercase tracking-widest hover:bg-gray-50 text-gray-600 rounded-none transition-all"
+          >
+            <IconArrowLeft size={18} className="mr-2" />
+            Cancel & Exit
+          </Button>
+          <Button
+            onClick={() => handleSubmit(false)}
+            disabled={submitting}
+            className="h-11 px-10 bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase tracking-widest rounded-none shadow-lg active:translate-y-0.5 transition-all"
+          >
+            {submitting ? (
+              <div className="flex items-center gap-2">
+                <div className="size-4 animate-spin border-2 border-white/30 border-t-white rounded-full" />
+                Processing...
+              </div>
+            ) : (
+              <>
+                <IconDeviceFloppy size={20} className="mr-2" />
+                Submit Assessment
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -708,41 +512,63 @@ const TakeQuiz = () => {
           </CardContent>
         </Card>
 
-        {/* Detailed Review */}
+        {/* Detailed Review Table */}
         {result.detailedAnswers && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-700 delay-300">
-            <h3 className="text-xl font-bold text-gray-800 ml-1">Review Assessment Details</h3>
-            <div className="grid grid-cols-1 gap-4">
-              {result.detailedAnswers.map((answer, index) => (
-                <Card key={index} className={`border-none shadow-sm ${answer.isCorrect ? 'bg-white' : 'bg-red-50/30'}`}>
-                  <CardContent className="p-5 flex gap-4">
-                    <div className={`shrink-0 size-10 rounded-xl flex items-center justify-center font-bold shadow-sm ${answer.isCorrect ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {answer.questionNumber}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900 mb-2 leading-relaxed">{answer.questionText}</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400">Your Selection:</span>
-                          <span className={`font-bold ${answer.isCorrect ? 'text-green-600' : 'text-red-600'}`}>{answer.userAnswer || "None"}</span>
+          <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-700 delay-300">
+            <h3 className="text-2xl font-black text-gray-900 ml-1 tracking-tight flex items-center gap-3">
+              <IconTrophy className="text-blue-600" />
+              Detailed Assessment Review
+            </h3>
+            
+            <Card className="border-none shadow-xl overflow-hidden rounded-2xl">
+              <Table>
+                <TableHeader className="bg-gray-50/80">
+                  <TableRow className="border-b border-gray-100">
+                    <TableHead className="w-[60px] text-center font-bold text-gray-400">#</TableHead>
+                    <TableHead className="font-bold text-gray-900">Question Details</TableHead>
+                    <TableHead className="w-[200px] font-bold text-gray-900">Your Answer</TableHead>
+                    <TableHead className="w-[200px] font-bold text-emerald-700 bg-emerald-50/30">Correct Answer</TableHead>
+                    <TableHead className="w-[100px] text-right font-bold text-gray-900">Score</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {result.detailedAnswers.map((answer, index) => (
+                    <TableRow key={index} className={`border-b border-gray-50 transition-colors ${answer.isCorrect ? 'hover:bg-green-50/30' : 'hover:bg-red-50/30'}`}>
+                      <TableCell className="text-center">
+                        <div className={`size-8 rounded-lg flex items-center justify-center font-bold text-sm mx-auto shadow-sm ${
+                          answer.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {answer.questionNumber}
                         </div>
-                        {!answer.isCorrect && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-gray-400">Correct Answer:</span>
-                            <span className="font-bold text-emerald-600">{answer.correctAnswer}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-black text-gray-400 tabular-nums">
-                        {answer.marksObtained}/{answer.totalMarks} <span className="text-[10px]">PTS</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                      </TableCell>
+                      <TableCell className="py-5">
+                        <p className="font-bold text-gray-900 leading-snug">{answer.questionText}</p>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold ${answer.isCorrect ? 'text-green-600' : 'text-red-600'}`}>
+                            {answer.userAnswer || "NO ANSWER"}
+                          </span>
+                          {answer.isCorrect ? 
+                            <IconCircleCheck size={16} className="text-green-500 shrink-0" /> : 
+                            <IconAlertCircle size={16} className="text-red-500 shrink-0" />
+                          }
+                        </div>
+                      </TableCell>
+                      <TableCell className="bg-emerald-50/10 font-bold text-emerald-700">
+                        {answer.correctAnswer}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="font-bold text-gray-900">
+                          {answer.marksObtained}
+                        </span>
+                        <span className="text-[10px] font-semibold text-gray-400 ml-1">/{answer.totalMarks}</span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
           </div>
         )}
       </div>

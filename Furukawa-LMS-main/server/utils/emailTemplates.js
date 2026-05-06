@@ -864,6 +864,123 @@ export const generateHandoverSheetEmail = ({
     `;
 };
 
+/**
+ * Generate 10 Cycle Sheet email template
+ */
+export const generateTenCycleSheetEmail = ({
+    departmentName,
+    sectionName,
+    lineName,
+    subSectionName,
+    formType,
+    date,
+    entries,
+    portalUrl
+}) => {
+    const formDisplayName = {
+        'form1': '10-Cycle Checklist',
+        'form2': '10-Cycle Observation',
+        'form3': '10-Cycle Numerical'
+    }[formType] || formType;
+
+    const entryRows = (entries || []).map((entry, index) => `
+        <tr>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 11px;">${index + 1}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; font-size: 11px;">${entry.inspectorName || '-'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; font-size: 11px;">${entry.empCode || '-'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 11px; font-weight: bold; color: ${entry.overallResult === '✓' ? '#10b981' : entry.overallResult === 'X' ? '#ef4444' : '#6b7280'};">
+                ${entry.overallResult || '-'}
+            </td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 11px;">${entry.passScore || '-'}</td>
+        </tr>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.4; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; border-bottom: 2px solid #2563eb; margin-bottom: 20px; padding-bottom: 10px; }
+        .info-grid { display: table; width: 100%; border-collapse: collapse; margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0; }
+        .info-row { display: table-row; }
+        .info-cell { display: table-cell; padding: 8px; border: 1px solid #e2e8f0; }
+        .label { font-weight: bold; color: #475569; width: 120px; font-size: 12px; }
+        .value { color: #1e293b; font-size: 12px; }
+        .table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .table th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 10px; text-align: left; font-size: 11px; color: #334155; }
+        .actions { margin: 30px 0; text-align: center; }
+        .btn { background-color: #2563eb; color: white !important; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; }
+        .footer { font-size: 12px; color: #94a3b8; text-align: center; margin-top: 40px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="color: #2563eb; margin: 0; font-size: 24px;">10-Cycle Sheet Report</h1>
+            <p style="margin: 5px 0; color: #64748b;">Furukawa Learning Management System</p>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <p style="font-weight: bold; color: #ef4444; margin-bottom: 10px;">Safety First!</p>
+            <p style="font-size: 14px;">A new <strong>10-Cycle Sheet (${formDisplayName})</strong> has been submitted. Summary of entries:</p>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-row">
+                <div class="info-cell label">Department:</div>
+                <div class="info-cell value">${departmentName}</div>
+                <div class="info-cell label">Section:</div>
+                <div class="info-cell value">${sectionName || '-'}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-cell label">Line:</div>
+                <div class="info-cell value">${lineName || '-'}</div>
+                <div class="info-cell label">Sub Section:</div>
+                <div class="info-cell value">${subSectionName || '-'}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-cell label">Form Type:</div>
+                <div class="info-cell value">${formDisplayName}</div>
+                <div class="info-cell label">Date:</div>
+                <div class="info-cell value">${date || 'N/A'}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-cell label">Status:</div>
+                <div class="info-cell value" colspan="3"><strong style="color: #2563eb;">SUBMITTED</strong></div>
+            </div>
+        </div>
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>SN.</th>
+                    <th>Operator Name</th>
+                    <th>Emp. Code</th>
+                    <th>Result</th>
+                    <th>Score %</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${entryRows}
+            </tbody>
+        </table>
+
+        <div class="actions">
+            <a href="${portalUrl}" class="btn">Review 10Cycle sheet</a>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated report generated by the Furukawa LMS.</p>
+            <p>&copy; ${new Date().getFullYear()} Furukawa . All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+    `;
+};
+
 export default {
     generateWelcomeEmail,
     generateInstructorWelcomeEmail,
@@ -873,5 +990,6 @@ export default {
     generateThreeDayMonitoringEmail,
     generateMenteeFeedbackEmail,
     generateMaxLevelNotificationEmail,
-    generateHandoverSheetEmail
+    generateHandoverSheetEmail,
+    generateTenCycleSheetEmail
 };

@@ -4,6 +4,7 @@ class ThreeDayMonitoring {
     constructor(data) {
         this.id = data.id;
         this.studentId = data.studentId;
+        this.attemptNumber = data.attemptNumber || 1;
 
         this.processName = data.processName || "";
         this.lineName = data.lineName || "";
@@ -37,6 +38,7 @@ class ThreeDayMonitoring {
                 CREATE TABLE three_day_monitorings (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     studentId INT NOT NULL,
+                    attemptNumber INT DEFAULT 1,
                     processName VARCHAR(255),
                     lineName VARCHAR(255),
                     entries NVARCHAR(MAX),
@@ -59,32 +61,50 @@ class ThreeDayMonitoring {
                 BEGIN
                     ALTER TABLE three_day_monitorings ADD status VARCHAR(50) DEFAULT 'Draft';
                 END
+                -- Add attemptNumber column if missing
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'attemptNumber')
+                BEGIN
+                    ALTER TABLE three_day_monitorings ADD attemptNumber INT DEFAULT 1;
+                END
             END
         `;
         await executeQuery(query);
     }
 
     static async findByStudentId(studentId) {
-        const [rows] = await executeQuery("SELECT * FROM three_day_monitorings WHERE studentId = ?", [studentId]);
+        // Return the LATEST attempt
+        const [rows] = await executeQuery("SELECT TOP 1 * FROM three_day_monitorings WHERE studentId = ? ORDER BY attemptNumber DESC, createdAt DESC", [studentId]);
         if (rows.length === 0) return null;
         return new ThreeDayMonitoring(rows[0]);
     }
 
+    static async findById(id) {
+        const [rows] = await executeQuery("SELECT * FROM three_day_monitorings WHERE id = ?", [id]);
+        if (rows.length === 0) return null;
+        return new ThreeDayMonitoring(rows[0]);
+    }
+
+    static async findAllByStudentId(studentId) {
+        const [rows] = await executeQuery("SELECT * FROM three_day_monitorings WHERE studentId = ? ORDER BY attemptNumber DESC, createdAt DESC", [studentId]);
+        return rows.map(r => new ThreeDayMonitoring(r));
+    }
+
     static async create(data) {
         const {
-            studentId, processName, lineName, entries, evaluation,
+            studentId, attemptNumber, processName, lineName, entries, evaluation,
             checkedBy, verifiedBy, approvedBy, status, createdBy
         } = data;
 
         const query = `
             INSERT INTO three_day_monitorings 
-            (studentId, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, status, createdBy)
+            (studentId, attemptNumber, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, status, createdBy)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
             studentId,
+            attemptNumber || 1,
             processName,
             lineName,
             JSON.stringify(entries || {}),
@@ -104,7 +124,7 @@ class ThreeDayMonitoring {
         const query = `
             UPDATE three_day_monitorings SET
             processName = ?, lineName = ?, entries = ?, evaluation = ?, 
-            checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, updatedBy = ?, updatedAt = GETDATE()
+            checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, attemptNumber = ?, updatedBy = ?, updatedAt = GETDATE()
             WHERE id = ?
         `;
 
@@ -117,6 +137,7 @@ class ThreeDayMonitoring {
             this.verifiedBy,
             this.approvedBy,
             this.status || "Draft",
+            this.attemptNumber,
             this.updatedBy,
             this.id
         ];

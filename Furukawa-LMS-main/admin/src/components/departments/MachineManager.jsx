@@ -21,6 +21,14 @@ import {
 import { IconPlus, IconEdit, IconLoader, IconCheck, IconX, IconTrash } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 
 const MachineManager = ({ subSectionId, lineId }) => {
     const { data: machinesData, isLoading, error } = useGetMachinesBySubSectionQuery(subSectionId, {
@@ -29,14 +37,18 @@ const MachineManager = ({ subSectionId, lineId }) => {
     const [createMachine, { isLoading: isCreating }] = useCreateMachineMutation();
     const [updateMachine, { isLoading: isUpdating }] = useUpdateMachineMutation();
     const [deleteMachine, { isLoading: isDeleting }] = useDeleteMachineMutation();
+    const { data: activeConfigData } = useGetActiveConfigQuery();
+    const activeLevels = activeConfigData?.data?.levels || [];
 
     const [newMachineName, setNewMachineName] = useState("");
     const [newMachineDescription, setNewMachineDescription] = useState("");
+    const [newMachineMinLevel, setNewMachineMinLevel] = useState("");
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingMachine, setEditingMachine] = useState(null);
     const [editName, setEditName] = useState("");
     const [editDescription, setEditDescription] = useState("");
+    const [editMinLevel, setEditMinLevel] = useState("");
 
     const handleCreateMachine = async () => {
         if (!newMachineName.trim()) {
@@ -49,11 +61,13 @@ const MachineManager = ({ subSectionId, lineId }) => {
                 name: newMachineName,
                 lineId,
                 subSectionId,
-                description: newMachineDescription
+                description: newMachineDescription,
+                minimumRequiredLevel: newMachineMinLevel || null
             }).unwrap();
             toast.success("Station created successfully");
             setNewMachineName("");
             setNewMachineDescription("");
+            setNewMachineMinLevel("");
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create station");
@@ -83,6 +97,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
         setEditingMachine(machine);
         setEditName(machine.name || "");
         setEditDescription(machine.description || "");
+        setEditMinLevel(machine.minimumRequiredLevel || "none");
         setIsEditDialogOpen(true);
     };
 
@@ -97,7 +112,8 @@ const MachineManager = ({ subSectionId, lineId }) => {
             await updateMachine({
                 id: editingMachine.id || editingMachine._id,
                 name: editName,
-                description: editDescription
+                description: editDescription,
+                minimumRequiredLevel: editMinLevel === "none" ? null : editMinLevel
             }).unwrap();
             toast.success("Machine updated successfully");
             setIsEditDialogOpen(false);
@@ -161,6 +177,25 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                         onChange={(e) => setNewMachineDescription(e.target.value)}
                                     />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="minLevel">Minimum Required Level (Optional)</Label>
+                                    <Select 
+                                        value={newMachineMinLevel} 
+                                        onValueChange={setNewMachineMinLevel}
+                                    >
+                                        <SelectTrigger id="minLevel">
+                                            <SelectValue placeholder="Select level" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">None</SelectItem>
+                                            {activeLevels.map((level) => (
+                                                <SelectItem key={level.name} value={level.name}>
+                                                    {level.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
@@ -196,6 +231,25 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                         onChange={(e) => setEditDescription(e.target.value)}
                                     />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="editMinLevel">Minimum Required Level (Optional)</Label>
+                                    <Select 
+                                        value={editMinLevel} 
+                                        onValueChange={setEditMinLevel}
+                                    >
+                                        <SelectTrigger id="editMinLevel">
+                                            <SelectValue placeholder="Select level" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">None</SelectItem>
+                                            {activeLevels.map((level) => (
+                                                <SelectItem key={level.name} value={level.name}>
+                                                    {level.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
@@ -222,6 +276,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
                             <TableRow>
                                 <TableHead>Station Name</TableHead>
                                 <TableHead>Description</TableHead>
+                                <TableHead>Min. Level</TableHead>
                                 <TableHead>Operators</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
@@ -239,6 +294,15 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                         </div>
                                     </TableCell>
                                     <TableCell>{machine.description || "-"}</TableCell>
+                                    <TableCell>
+                                        {machine.minimumRequiredLevel ? (
+                                            <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                                                {machine.minimumRequiredLevel}
+                                            </span>
+                                        ) : (
+                                            <span className="text-muted-foreground text-xs">None</span>
+                                        )}
+                                    </TableCell>
                                     <TableCell className="text-sm font-medium">{machine.machineCount || 0}</TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>

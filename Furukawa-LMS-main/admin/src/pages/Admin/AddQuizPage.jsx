@@ -79,6 +79,9 @@ const AddQuizPage = () => {
     issueCertificate: true,
     departmentId: [],
     sectionId: [],
+    isDojo: false,
+    isHandover: false,
+    isTheoretical: false,
     questions: [
       {
         questionText: "",
@@ -376,6 +379,9 @@ const AddQuizPage = () => {
         issueCertificate: formData.issueCertificate,
         departmentId: formData.departmentId,
         sectionId: formData.sectionId,
+        isDojo: formData.isDojo,
+        isHandover: formData.isHandover,
+        isTheoretical: formData.isTheoretical,
       };
 
       // Include moduleId for module and lesson scopes
@@ -769,6 +775,78 @@ const AddQuizPage = () => {
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
                   If Yes, a certificate will be issued upon passing this test (if skill upgradation applies).
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isDojo">Is DOJO Quiz? *</Label>
+                <Select
+                  value={formData.isDojo ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isDojo: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, this quiz will be visible to temporary DOJO candidates in their portal.
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
+                <Select
+                  value={formData.isHandover ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isHandover: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, passing this quiz will automatically add the student to the Handover Sheet on the date of passing.
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isTheoretical">Is Theoretical Quiz? *</Label>
+                <Select
+                  value={formData.isTheoretical ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isTheoretical: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, this quiz will be marked as a theoretical assessment.
                 </p>
               </div>
             </div>

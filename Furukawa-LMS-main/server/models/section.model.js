@@ -11,6 +11,7 @@ class Section {
         this.description = data.description;
         this.category = data.category || "Not Applicable";
         this.daily5mFormType = data.daily5mFormType || "standard";
+        this.tenCycleFormType = data.tenCycleFormType || "form1";
         this.departmentId = data.departmentId;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
         this.sectionCount = data.sectionCount || 0;
@@ -31,6 +32,7 @@ class Section {
                     description NVARCHAR(MAX),
                     category NVARCHAR(50) DEFAULT 'Not Applicable',
                     daily5mFormType NVARCHAR(255) DEFAULT 'standard',
+                    tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
                     departmentId INT NOT NULL,
                     isActive BIT DEFAULT 1,
                     createdAt DATETIME DEFAULT GETDATE(),
@@ -62,8 +64,18 @@ class Section {
                 END
                 ELSE
                 BEGIN
-                    -- Increase size if it exists
                     ALTER TABLE [sections] ALTER COLUMN daily5mFormType NVARCHAR(255);
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns 
+                             WHERE object_id = OBJECT_ID('sections') 
+                             AND name = 'tenCycleFormType')
+                BEGIN
+                    ALTER TABLE [sections] ADD tenCycleFormType NVARCHAR(255) DEFAULT 'form1';
+                END
+                ELSE
+                BEGIN
+                    ALTER TABLE [sections] ALTER COLUMN tenCycleFormType NVARCHAR(255);
                 END
 
                 -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
@@ -120,7 +132,7 @@ class Section {
 
     static async create(data) {
         const fields = [
-            "name", "uniCode", "description", "category", "daily5mFormType", "departmentId", "isActive", "createdAt", "updatedAt"
+            "name", "uniCode", "description", "category", "daily5mFormType", "tenCycleFormType", "departmentId", "isActive", "createdAt", "updatedAt"
         ];
 
         const now = new Date();
@@ -130,6 +142,7 @@ class Section {
             data.description || null,
             data.category || "Not Applicable",
             data.daily5mFormType || "standard",
+            data.tenCycleFormType || "form1",
             data.departmentId,
             data.isActive !== undefined ? data.isActive : true,
             now,
@@ -247,6 +260,7 @@ class Section {
         if (data.description !== undefined) { updateFields.push("description = ?"); values.push(data.description); }
         if (data.category !== undefined) { updateFields.push("category = ?"); values.push(data.category); }
         if (data.daily5mFormType !== undefined) { updateFields.push("daily5mFormType = ?"); values.push(data.daily5mFormType); }
+        if (data.tenCycleFormType !== undefined) { updateFields.push("tenCycleFormType = ?"); values.push(data.tenCycleFormType); }
         if (data.isActive !== undefined) { updateFields.push("isActive = ?"); values.push(data.isActive); }
 
         if (updateFields.length === 0) return null;

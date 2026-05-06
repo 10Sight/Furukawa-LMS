@@ -48,15 +48,13 @@ export const createRequirement = asyncHandler(async (req, res) => {
 
     const query = `
         INSERT INTO requirements
-        (section_id, section_code, section_name, section_desc_unicode, description_line, station_no, supervisor_name, mentor, month_name, year_val, sales_plan, prod_plan)
+        (sectionName, lineDescription, monthName, [year], salesPlan, prodPlan)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
     `;
 
     const [rows, meta] = await executeSql(query, [
-        sectionId, '', section,
-        '', sub_section || '', // Mapping to both desc and unicode for fallback
-        stationNo || '', supervisorName || '', mentor || '',
+        section, sub_section || '',
         month, year, salesPlan !== undefined ? salesPlan : (count || 0), prodPlan !== undefined ? prodPlan : (count || 0)
     ]);
 
@@ -637,28 +635,26 @@ export const getRequirements = asyncHandler(async (req, res) => {
     const params = [];
 
     if (section && section.toLowerCase() !== 'all') {
-        const isNumeric = !isNaN(Number(section)) && String(section).trim() !== '';
-        const cond = isNumeric ? " AND (section_name = ? OR section_id = ?)" : " AND section_name = ?";
+        const cond = " AND sectionName = ?";
         countSql += cond; sql += cond;
-        if (isNumeric) params.push(section, section);
-        else params.push(section);
+        params.push(section);
     }
-    // Mapping sub_section to description_line
+    // Mapping sub_section to lineDescription
     if (sub_section && sub_section.toLowerCase() !== 'all') {
-        const cond = " AND (description_line = ?)";
+        const cond = " AND (lineDescription = ?)";
         countSql += cond; sql += cond;
         params.push(sub_section);
     }
 
     if (search) {
         const searchPattern = `%${search}%`;
-        const searchCondition = " AND (section_name LIKE ? OR description_line LIKE ? OR month_name LIKE ?)";
+        const searchCondition = " AND (sectionName LIKE ? OR lineDescription LIKE ? OR monthName LIKE ?)";
         countSql += searchCondition; sql += searchCondition;
         params.push(searchPattern, searchPattern, searchPattern);
     }
 
     if (startDate || endDate) {
-        const dateConstruction = "TRY_CAST('01 ' + SUBSTRING(month_name, 1, 3) + ' ' + CAST(year_val AS VARCHAR) AS DATE)";
+        const dateConstruction = "TRY_CAST('01 ' + SUBSTRING(monthName, 1, 3) + ' ' + CAST([year] AS VARCHAR) AS DATE)";
 
         if (startDate) {
             countSql += ` AND ${dateConstruction} >= ?`;
@@ -681,16 +677,16 @@ export const getRequirements = asyncHandler(async (req, res) => {
 
     const [results] = await executeSql(sql, mainParams);
 
-    // Map new db column names back to what the frontend expects
+    // Map db column names back to what the frontend expects
     const data = results.map(row => ({
         ...row,
-        count: row.sales_plan,
-        section: row.section_name,
-        sub_section: row.description_line,
+        count: row.salesPlan,
+        section: row.sectionName,
+        sub_section: row.lineDescription,
         line_area: "N/A"
     }));
 
-    const totalManpower = results.reduce((sum, row) => sum + (parseFloat(row.sales_plan || 0)), 0);
+    const totalManpower = results.reduce((sum, row) => sum + (parseFloat(row.salesPlan || 0)), 0);
 
     res.status(200).json(
         new ApiResponse(200, {
@@ -795,8 +791,8 @@ export const getRequirementLogs = asyncHandler(async (req, res) => {
 });
 
 export const getRequirementFilters = asyncHandler(async (req, res) => {
-    const [sections] = await executeSql("SELECT DISTINCT section_name as section FROM requirements WHERE section_name IS NOT NULL AND section_name != '' ORDER BY section_name");
-    const [subSections] = await executeSql("SELECT DISTINCT description_line as sub_section FROM requirements WHERE description_line IS NOT NULL AND description_line != '' ORDER BY description_line");
+    const [sections] = await executeSql("SELECT DISTINCT sectionName as section FROM requirements WHERE sectionName IS NOT NULL AND sectionName != '' ORDER BY sectionName");
+    const [subSections] = await executeSql("SELECT DISTINCT lineDescription as sub_section FROM requirements WHERE lineDescription IS NOT NULL AND lineDescription != '' ORDER BY lineDescription");
 
     res.status(200).json(new ApiResponse(200, {
         sections: sections.map(s => s.section),

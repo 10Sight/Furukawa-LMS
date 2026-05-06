@@ -3,8 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-    LineChart, Line, AreaChart, Area,
-    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine
+    LineChart, Line,
+    BarChart, Bar,
+    PieChart, Pie, Cell,
+    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList
 } from 'recharts';
 import {
     Popover,
@@ -29,6 +31,7 @@ const ManpowerTooltip = ({ active, payload, label }) => {
         return (
             <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[160px]">
                 <p className="font-bold text-slate-700 mb-2">{label}</p>
+
                 {payload.map((entry, i) =>
                     entry.value !== null && (
                         <div key={i} className="flex items-center justify-between gap-4">
@@ -39,22 +42,27 @@ const ManpowerTooltip = ({ active, payload, label }) => {
                                 />
                                 <span className="text-slate-500">{entry.name}</span>
                             </div>
-                            <span className="font-bold text-slate-900">{entry.value}</span>
+
+                            <span className="font-bold text-slate-900">
+                                {entry.value}
+                            </span>
                         </div>
                     )
                 )}
             </div>
         );
     }
+
     return null;
 };
 
-// ─── Attrition Tooltip ────────────────────────────────────────────────────────
-const AttritionTooltip = ({ active, payload, label }) => {
+// ─── Bar Chart Tooltip ────────────────────────────────────────────────────────
+const BarCustomTooltip = ({ active, payload, label, suffix = "" }) => {
     if (active && payload && payload.length) {
         return (
             <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[150px]">
                 <p className="font-bold text-slate-700 mb-2">{label}</p>
+
                 {payload.map((entry, i) => (
                     <div key={i} className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-1.5">
@@ -64,45 +72,215 @@ const AttritionTooltip = ({ active, payload, label }) => {
                             />
                             <span className="text-slate-500">{entry.name}</span>
                         </div>
-                        <span className="font-bold text-slate-900">{entry.value}%</span>
+
+                        <span className="font-bold text-slate-900">
+                            {entry.value}{suffix}
+                        </span>
                     </div>
                 ))}
             </div>
         );
     }
+
     return null;
+};
+
+// ─── Pie Tooltip ──────────────────────────────────────────────────────────────
+const PieTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+        const item = payload[0].payload;
+
+        return (
+            <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[140px]">
+                <p className="font-bold text-slate-800 mb-1">
+                    {item.name}
+                </p>
+
+                <p className="text-slate-600">
+                    Count: <strong>{item.value}</strong>
+                </p>
+
+                {item.percentValue && (
+                    <p className="text-slate-600">
+                        Share: <strong>{item.percentValue}%</strong>
+                    </p>
+                )}
+            </div>
+        );
+    }
+
+    return null;
+};
+
+// ─── Pie Label ────────────────────────────────────────────────────────────────
+const renderPieLabel = ({
+    cx,
+    cy,
+    midAngle,
+    outerRadius,
+    percent,
+    name
+}) => {
+    const RADIAN = Math.PI / 180;
+    const radius = outerRadius + 26;
+
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+    return (
+        <text
+            x={x}
+            y={y}
+            fill="#475569"
+            textAnchor={x > cx ? 'start' : 'end'}
+            dominantBaseline="central"
+            fontSize="11"
+            fontWeight="700"
+        >
+            {`${name} ${(percent * 100).toFixed(0)}%`}
+        </text>
+    );
+};
+
+// ─── Normal Pie Chart ─────────────────────────────────────────────────────────
+const CustomPieChart = ({ title, data = [], colors = [], icon: Icon }) => {
+    const safeData = data.filter(item => Number(item.value) > 0);
+    const total = safeData.reduce((sum, item) => sum + Number(item.value || 0), 0);
+
+    const chartData = safeData.map(item => ({
+        ...item,
+        value: Number(item.value || 0),
+        percentValue: total > 0 ? ((Number(item.value || 0) / total) * 100).toFixed(0) : 0
+    }));
+
+    return (
+        <Card className="border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col h-full">
+            <CardHeader className="pb-2 pt-4 px-5">
+                <CardTitle className="text-base font-semibold flex items-center gap-2 text-slate-800">
+                    {Icon && <Icon className="w-5 h-5" />}
+                    {title}
+                </CardTitle>
+            </CardHeader>
+
+            <CardContent className="pb-5 pt-0 px-5">
+                {chartData.length === 0 ? (
+                    <div className="h-[330px] flex items-center justify-center text-slate-400 text-sm">
+                        No data found
+                    </div>
+                ) : (
+                    <>
+                        <div className="h-[330px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={chartData}
+                                        cx="50%"
+                                        cy="50%"
+                                        outerRadius={115}
+                                        innerRadius={0}
+                                        paddingAngle={2}
+                                        dataKey="value"
+                                        label={renderPieLabel}
+                                        labelLine={{
+                                            stroke: '#cbd5e1',
+                                            strokeWidth: 1
+                                        }}
+                                        stroke="#ffffff"
+                                        strokeWidth={2}
+                                    >
+                                        {chartData.map((entry, index) => (
+                                            <Cell
+                                                key={`cell-${index}`}
+                                                fill={colors[index % colors.length]}
+                                            />
+                                        ))}
+                                    </Pie>
+
+                                    <Tooltip content={<PieTooltip />} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
+                            {chartData.map((item, index) => (
+                                <div key={index} className="flex items-center gap-2 text-xs">
+                                    <span
+                                        className="w-3 h-3 rounded-sm inline-block"
+                                        style={{
+                                            backgroundColor: colors[index % colors.length]
+                                        }}
+                                    />
+
+                                    <span className="text-slate-600 truncate">
+                                        {item.name}
+                                    </span>
+
+                                    <span className="font-semibold text-slate-800 ml-auto">
+                                        {item.value}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const DashboardHome = () => {
-
-    const [sections,      setSections]      = useState([]);
-    // filteredLines contains only lines belonging to the currently selected section
+    const [departments, setDepartments] = useState([]);
+    const [sections, setSections] = useState([]);
     const [filteredLines, setFilteredLines] = useState([]);
-    const [linesLoading,  setLinesLoading]  = useState(false);
+    const [sectionsLoading, setSectionsLoading] = useState(false);
+    const [linesLoading, setLinesLoading] = useState(false);
 
     const [filterState, setFilterState] = useState({
-        section:   "ALL",
-        line:      "ALL",
+        department: "ALL",
+        section: "ALL",
+        line: "ALL",
         dateRange: undefined,
     });
 
-    // ── 1. Fetch all sections once on mount ───────────────────────────────────
     useEffect(() => {
-        axiosInstance.get('/api/sections')
-            .then(res => { if (res.data?.data) setSections(res.data.data); })
-            .catch(err => console.error("Failed to fetch sections", err));
+        axiosInstance.get('/api/departments')
+            .then(res => {
+                if (res.data?.data?.departments) {
+                    setDepartments(res.data.data.departments);
+                } else if (res.data?.data) {
+                    setDepartments(res.data.data);
+                }
+            })
+            .catch(err => console.error("Failed to fetch departments", err));
     }, []);
 
-    // ── 2. Fetch lines ONLY for the selected section ──────────────────────────
-    //    When section is ALL → clear lines list (line stays at ALL too)
-    //    When section changes → reset line to ALL, then load new lines
+    useEffect(() => {
+        if (filterState.department === 'ALL') {
+            setSections([]);
+            return;
+        }
+
+        setSectionsLoading(true);
+
+        axiosInstance
+            .get(`/api/sections?departmentId=${filterState.department}`)
+            .then(res => setSections(res.data?.data || []))
+            .catch(err => {
+                console.error("Failed to fetch sections for department", err);
+                setSections([]);
+            })
+            .finally(() => setSectionsLoading(false));
+    }, [filterState.department]);
+
     useEffect(() => {
         if (filterState.section === 'ALL') {
             setFilteredLines([]);
             return;
         }
+
         setLinesLoading(true);
+
         axiosInstance
             .get(`/api/lines?sectionId=${filterState.section}`)
             .then(res => setFilteredLines(res.data?.data || []))
@@ -111,61 +289,87 @@ const DashboardHome = () => {
                 setFilteredLines([]);
             })
             .finally(() => setLinesLoading(false));
-    }, [filterState.section]); // re-runs whenever section changes
+    }, [filterState.section]);
 
-    // ── 3. Dashboard stats query ──────────────────────────────────────────────
     const {
         data: dashboardStats,
         isLoading,
         isFetching,
     } = useGetDashboardStatsQuery({
+        department: filterState.department,
         section: filterState.section,
-        line:    filterState.line,
+        line: filterState.line,
+        startDate: filterState.dateRange?.from
+            ? filterState.dateRange.from.toISOString().split('T')[0]
+            : undefined,
+        endDate: filterState.dateRange?.to
+            ? filterState.dateRange.to.toISOString().split('T')[0]
+            : undefined,
     });
 
     const stats = dashboardStats?.data || {
-        manpowerData:    [],
-        attritionData:   [],
-        skillGapData:    [],
+        manpowerData: [],
         absenteeismData: [],
-    };
-
-    // Sanitise attrition values (backend now sends daily current-month data)
-    const attritionChartData = (stats.attritionData || []).map(item => ({
-        ...item,
-        actual: typeof item.actual === 'number' ? item.actual : parseFloat(item.actual) || 0,
-        target: typeof item.target === 'number' ? item.target : parseFloat(item.target) || 2.0,
-    }));
-
-    // Delta badge: today vs yesterday (last two data points in current month)
-    const attritionDelta = (() => {
-        if (attritionChartData.length < 2) return null;
-        const last = attritionChartData[attritionChartData.length - 1]?.actual ?? 0;
-        const prev = attritionChartData[attritionChartData.length - 2]?.actual ?? 0;
-        return Math.round((last - prev) * 10) / 10;
-    })();
-
-    const isSectionSelected = filterState.section !== 'ALL';
-    const isFiltered        = filterState.section !== 'ALL' || filterState.line !== 'ALL';
-    const loadingChart      = isLoading || isFetching;
-
-    // ── 4. Filter change handler ──────────────────────────────────────────────
-    const handleFilterChange = (key, value) => {
-        if (key === 'section') {
-            // Changing section always resets the line dropdown
-            setFilterState(prev => ({ ...prev, section: value, line: 'ALL' }));
-        } else {
-            setFilterState(prev => ({ ...prev, [key]: value }));
+        attritionData: [],
+        pieCharts: {
+            skillLevels: [],
+            gender: []
         }
     };
 
-    // ── 5. Full reset ─────────────────────────────────────────────────────────
-    const handleReset = () => {
-        setFilteredLines([]);
-        setFilterState({ section: 'ALL', line: 'ALL', dateRange: undefined });
+    const pieCharts = stats.pieCharts || {
+        skillLevels: [],
+        gender: []
     };
 
-    // ── Chart loading overlay ─────────────────────────────────────────────────
+    const CHART_COLORS = {
+        skill: ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
+        gender: ['#ec4899', '#0ea5e9', '#64748b']
+    };
+
+    const isDepartmentSelected = filterState.department !== 'ALL';
+    const isSectionSelected = filterState.section !== 'ALL';
+
+    const isFiltered =
+        filterState.department !== 'ALL' ||
+        filterState.section !== 'ALL' ||
+        filterState.line !== 'ALL';
+
+    const loadingChart = isLoading || isFetching;
+
+    const handleFilterChange = (key, value) => {
+        if (key === 'department') {
+            setFilterState(prev => ({
+                ...prev,
+                department: value,
+                section: 'ALL',
+                line: 'ALL'
+            }));
+        } else if (key === 'section') {
+            setFilterState(prev => ({
+                ...prev,
+                section: value,
+                line: 'ALL'
+            }));
+        } else {
+            setFilterState(prev => ({
+                ...prev,
+                [key]: value
+            }));
+        }
+    };
+
+    const handleReset = () => {
+        setSections([]);
+        setFilteredLines([]);
+        setFilterState({
+            department: 'ALL',
+            section: 'ALL',
+            line: 'ALL',
+            dateRange: undefined
+        });
+    };
+
     const ChartLoader = () => (
         <div className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg z-10">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
@@ -175,10 +379,13 @@ const DashboardHome = () => {
     return (
         <div className="min-h-screen bg-slate-50 p-6 space-y-6">
 
-            {/* ── Header & Filters ─────────────────────────────────────────── */}
+            {/* Header & Filters */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center gap-3">
-                    <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
+                    <h1 className="text-xl font-bold text-slate-900">
+                        Dashboard
+                    </h1>
+
                     {isFiltered && (
                         <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
                             Filtered
@@ -192,30 +399,83 @@ const DashboardHome = () => {
                             <Filter className="w-3 h-3" /> Filters:
                         </span>
 
-                        {/* ── Section dropdown ─────────────────────────────── */}
                         <Select
-                            value={filterState.section}
-                            onValueChange={(val) => handleFilterChange("section", val)}
+                            value={filterState.department}
+                            onValueChange={(val) => handleFilterChange("department", val)}
                         >
                             <SelectTrigger className="w-[140px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 shadow-none">
-                                <SelectValue placeholder="All Sections" />
+                                <SelectValue placeholder="All Departments" />
                             </SelectTrigger>
+
                             <SelectContent>
-                                <SelectItem value="ALL">All Sections</SelectItem>
-                                {sections.map(s => (
-                                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                                <SelectItem value="ALL">All Departments</SelectItem>
+
+                                {departments.map(d => (
+                                    <SelectItem key={d.id} value={d.id.toString()}>
+                                        {d.name}
+                                    </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
 
                         <div className="h-4 w-[1px] bg-slate-300" />
 
-                        {/* ── Line dropdown — locked until a section is chosen ─ */}
+                        <div className="relative group">
+                            <Select
+                                value={filterState.section}
+                                onValueChange={(val) => handleFilterChange("section", val)}
+                                disabled={!isDepartmentSelected || sectionsLoading}
+                            >
+                                <SelectTrigger
+                                    className={`w-[140px] h-8 bg-transparent border-none focus:ring-0 shadow-none transition-opacity
+                                        ${!isDepartmentSelected || sectionsLoading
+                                            ? 'opacity-40 cursor-not-allowed'
+                                            : 'text-slate-700'
+                                        }`}
+                                >
+                                    {sectionsLoading ? (
+                                        <span className="flex items-center gap-1.5 text-slate-400 text-xs">
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            ...
+                                        </span>
+                                    ) : (
+                                        <SelectValue
+                                            placeholder={
+                                                isDepartmentSelected
+                                                    ? sections.length === 0
+                                                        ? 'No sections'
+                                                        : 'All Sections'
+                                                    : 'Select Dept'
+                                            }
+                                        />
+                                    )}
+                                </SelectTrigger>
+
+                                <SelectContent>
+                                    <SelectItem value="ALL">All Sections</SelectItem>
+
+                                    {sections.map(s => (
+                                        <SelectItem key={s.id} value={s.id.toString()}>
+                                            {s.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+
+                            {!isDepartmentSelected && (
+                                <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 hidden group-hover:block
+                                    bg-slate-800 text-white text-[10px] rounded px-2 py-0.5 whitespace-nowrap z-20 pointer-events-none">
+                                    Select a department first
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="h-4 w-[1px] bg-slate-300" />
+
                         <div className="relative group">
                             <Select
                                 value={filterState.line}
                                 onValueChange={(val) => handleFilterChange("line", val)}
-                                // Disabled when no section selected OR while loading lines
                                 disabled={!isSectionSelected || linesLoading}
                             >
                                 <SelectTrigger
@@ -242,15 +502,18 @@ const DashboardHome = () => {
                                         />
                                     )}
                                 </SelectTrigger>
+
                                 <SelectContent>
                                     <SelectItem value="ALL">All Lines</SelectItem>
+
                                     {filteredLines.map(l => (
-                                        <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
+                                        <SelectItem key={l.id} value={l.id.toString()}>
+                                            {l.name}
+                                        </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
 
-                            {/* Hover tooltip shown when line select is disabled */}
                             {!isSectionSelected && (
                                 <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 hidden group-hover:block
                                     bg-slate-800 text-white text-[10px] rounded px-2 py-0.5 whitespace-nowrap z-20 pointer-events-none">
@@ -261,7 +524,6 @@ const DashboardHome = () => {
 
                         <div className="h-4 w-[1px] bg-slate-300" />
 
-                        {/* ── Date range picker ─────────────────────────────── */}
                         <Popover>
                             <PopoverTrigger asChild>
                                 <Button
@@ -269,6 +531,7 @@ const DashboardHome = () => {
                                     className={`h-8 justify-start text-left font-normal px-2 ${!filterState.dateRange?.from && "text-muted-foreground"}`}
                                 >
                                     <CalendarIcon className="mr-2 h-3 w-3" />
+
                                     {filterState.dateRange?.from ? (
                                         filterState.dateRange.to ? (
                                             <span className="text-xs">
@@ -276,13 +539,18 @@ const DashboardHome = () => {
                                                 {filterState.dateRange.to.toLocaleDateString()}
                                             </span>
                                         ) : (
-                                            <span className="text-xs">{filterState.dateRange.from.toLocaleDateString()}</span>
+                                            <span className="text-xs">
+                                                {filterState.dateRange.from.toLocaleDateString()}
+                                            </span>
                                         )
                                     ) : (
-                                        <span className="text-xs">Pick a date range</span>
+                                        <span className="text-xs">
+                                            Pick a date range
+                                        </span>
                                     )}
                                 </Button>
                             </PopoverTrigger>
+
                             <PopoverContent className="w-auto p-0" align="end">
                                 <CalendarComponent
                                     initialFocus
@@ -295,7 +563,6 @@ const DashboardHome = () => {
                             </PopoverContent>
                         </Popover>
 
-                        {/* ── Reset button ──────────────────────────────────── */}
                         <Button
                             variant="ghost"
                             size="icon"
@@ -309,47 +576,69 @@ const DashboardHome = () => {
                 </div>
             </div>
 
-            {/* ── Debug bar (remove in production) ─────────────────────────── */}
+            {/* Debug bar */}
             {isFiltered && dashboardStats?.data?.filters && (
                 <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-amber-700 flex gap-4">
-                    <span>Section: <strong>{dashboardStats.data.filters.sectionName || '—'}</strong></span>
-                    <span>Line: <strong>{dashboardStats.data.filters.lineName || '—'}</strong></span>
-                    <span>Headcount: <strong>{dashboardStats.data.filters.snapshotTotal}</strong></span>
+                    <span>
+                        Dept: <strong>{dashboardStats.data.filters.departmentName || '—'}</strong>
+                    </span>
+
+                    <span>
+                        Section: <strong>{dashboardStats.data.filters.sectionName || '—'}</strong>
+                    </span>
+
+                    <span>
+                        Line: <strong>{dashboardStats.data.filters.lineName || '—'}</strong>
+                    </span>
+
+                    <span>
+                        Headcount: <strong>{dashboardStats.data.filters.snapshotTotal}</strong>
+                    </span>
                 </div>
             )}
 
-            {/* ── Main Content Grid ─────────────────────────────────────────── */}
+            {/* Main Grid */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
 
-                {/* Left Column */}
-                <div className="xl:col-span-9 space-y-6">
-
-                    {/* ─── Manpower Trend ─────────────────────────────────── */}
+                {/* 1. Daily Manpower Trend */}
+                <div className="xl:col-span-12">
                     <Card className="border-slate-200 shadow-sm">
                         <CardHeader className="pb-2">
                             <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
                                 <Users className="w-5 h-5 text-blue-600" />
                                 Daily Manpower Trend (Current Month)
-                                {loadingChart && <Loader2 className="w-4 h-4 animate-spin text-blue-400 ml-1" />}
+
+                                {loadingChart && (
+                                    <Loader2 className="w-4 h-4 animate-spin text-blue-400 ml-1" />
+                                )}
                             </CardTitle>
+
                             <p className="text-xs text-slate-500">
-                                Required vs Current Headcount · Actual Present (Daily)
+                                Required vs Current Headcount · Actual Present Daily
                             </p>
                         </CardHeader>
+
                         <CardContent>
-                            <div className="h-[300px] w-full relative">
+                            <div className="h-[360px] w-full relative">
                                 {loadingChart && <ChartLoader />}
+
                                 {!loadingChart && stats.manpowerData.length === 0 && (
                                     <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
                                         No data found for selected filters
                                     </div>
                                 )}
+
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart
                                         data={stats.manpowerData}
-                                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                                        margin={{ top: 35, right: 40, left: 0, bottom: 5 }}
                                     >
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                        <CartesianGrid
+                                            strokeDasharray="3 3"
+                                            vertical={false}
+                                            stroke="#e2e8f0"
+                                        />
+
                                         <XAxis
                                             dataKey="month"
                                             axisLine={false}
@@ -357,14 +646,18 @@ const DashboardHome = () => {
                                             tick={{ fill: '#64748b', fontSize: 12 }}
                                             dy={10}
                                         />
+
                                         <YAxis
                                             axisLine={false}
                                             tickLine={false}
                                             tick={{ fill: '#64748b', fontSize: 12 }}
                                             allowDecimals={false}
                                         />
+
                                         <Tooltip content={<ManpowerTooltip />} />
+
                                         <Legend wrapperStyle={{ paddingTop: '20px' }} />
+
                                         <Line
                                             type="monotone"
                                             dataKey="required"
@@ -374,7 +667,17 @@ const DashboardHome = () => {
                                             dot={{ r: 4, strokeWidth: 2 }}
                                             activeDot={{ r: 6 }}
                                             connectNulls={false}
-                                        />
+                                        >
+                                            <LabelList
+                                                dataKey="required"
+                                                position="top"
+                                                offset={10}
+                                                fill="#1d4ed8"
+                                                fontSize={11}
+                                                fontWeight={700}
+                                            />
+                                        </Line>
+
                                         <Line
                                             type="monotone"
                                             dataKey="current"
@@ -384,7 +687,17 @@ const DashboardHome = () => {
                                             dot={{ r: 4, strokeWidth: 2 }}
                                             activeDot={{ r: 6 }}
                                             connectNulls={false}
-                                        />
+                                        >
+                                            <LabelList
+                                                dataKey="current"
+                                                position="bottom"
+                                                offset={10}
+                                                fill="#047857"
+                                                fontSize={11}
+                                                fontWeight={700}
+                                            />
+                                        </Line>
+
                                         <Line
                                             type="monotone"
                                             dataKey="present"
@@ -394,162 +707,199 @@ const DashboardHome = () => {
                                             dot={{ r: 4, strokeWidth: 2 }}
                                             activeDot={{ r: 6 }}
                                             connectNulls={false}
-                                        />
+                                        >
+                                            <LabelList
+                                                dataKey="present"
+                                                position="top"
+                                                offset={22}
+                                                fill="#b45309"
+                                                fontSize={11}
+                                                fontWeight={700}
+                                            />
+                                        </Line>
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>
                         </CardContent>
                     </Card>
+                </div>
 
-                    {/* ─── Attrition Trend — current month daily ──────────── */}
-                    <Card className="border-slate-200 shadow-sm">
-                        <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                            <div>
-                                <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
-                                    <TrendingDown className="w-5 h-5 text-red-500" />
-                                    Daily Attrition Trend (Current Month)
-                                    {loadingChart && <Loader2 className="w-4 h-4 animate-spin text-red-300 ml-1" />}
-                                </CardTitle>
-                                <p className="text-xs text-slate-500">
-                                    Daily Absence Rate vs Target (%) · Current Month Only
-                                </p>
-                            </div>
-                            {/* Dynamic badge: today vs yesterday */}
-                            {attritionDelta !== null && (
-                                <div className={`px-2 py-1 rounded text-xs font-bold border ${
-                                    attritionDelta <= 0
-                                        ? 'bg-green-100 text-green-700 border-green-200'
-                                        : 'bg-red-100 text-red-700 border-red-200'
-                                }`}>
-                                    {attritionDelta > 0 ? '+' : ''}{attritionDelta}% vs Yesterday
-                                </div>
-                            )}
+                {/* 2. Attrition Bar Graph */}
+                <div className="xl:col-span-6">
+                    <Card className="border-slate-200 shadow-sm h-full">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                <TrendingDown className="w-4 h-4 text-rose-500" />
+                                Daily Attrition Rate (%)
+                            </CardTitle>
                         </CardHeader>
+
                         <CardContent>
-                            <div className="h-[250px] w-full relative">
+                            <div className="h-[280px] w-full relative">
                                 {loadingChart && <ChartLoader />}
-                                {!loadingChart && attritionChartData.length === 0 && (
+
+                                {!loadingChart && stats.attritionData.length === 0 && (
                                     <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
-                                        No attrition data for selected filters
+                                        No attrition data found
                                     </div>
                                 )}
+
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart
-                                        data={attritionChartData}
-                                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                                    <BarChart
+                                        data={stats.attritionData}
+                                        margin={{ top: 20, right: 20, left: 0, bottom: 0 }}
                                     >
-                                        <defs>
-                                            <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.15} />
-                                                <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                                            </linearGradient>
-                                            <linearGradient id="colorTarget" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.08} />
-                                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                            </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                        {/* X-axis uses "day" key e.g. "1 Apr", "2 Apr" sent by backend */}
+                                        <CartesianGrid
+                                            strokeDasharray="3 3"
+                                            vertical={false}
+                                            stroke="#f1f5f9"
+                                        />
+
                                         <XAxis
                                             dataKey="day"
                                             axisLine={false}
                                             tickLine={false}
-                                            tick={{ fill: '#64748b', fontSize: 10 }}
-                                            dy={10}
+                                            tick={{ fontSize: 10, fill: '#64748b' }}
                                         />
+
                                         <YAxis
                                             axisLine={false}
                                             tickLine={false}
-                                            tick={{ fill: '#64748b', fontSize: 10 }}
-                                            tickFormatter={(v) => `${v}%`}
-                                            domain={[0, (dataMax) => Math.max(dataMax + 2, 10)]}
+                                            tick={{ fontSize: 10, fill: '#64748b' }}
+                                            unit="%"
                                         />
-                                        <Tooltip content={<AttritionTooltip />} />
-                                        <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+
+                                        <Tooltip content={<BarCustomTooltip suffix="%" />} />
+
                                         <ReferenceLine
-                                            y={2.0}
-                                            label={{ value: 'Target 2%', position: 'insideTopRight', fontSize: 10, fill: '#3b82f6' }}
-                                            stroke="#3b82f6"
-                                            strokeDasharray="4 4"
+                                            y={2}
+                                            label={{
+                                                value: 'Target 2%',
+                                                position: 'right',
+                                                fontSize: 10,
+                                                fill: '#f87171'
+                                            }}
+                                            stroke="#f87171"
+                                            strokeDasharray="3 3"
                                         />
-                                        <Area
-                                            type="monotone"
-                                            dataKey="target"
-                                            name="Target"
-                                            stroke="#3b82f6"
-                                            strokeWidth={1.5}
-                                            strokeDasharray="4 4"
-                                            fillOpacity={1}
-                                            fill="url(#colorTarget)"
-                                            dot={false}
-                                            activeDot={{ r: 4 }}
-                                        />
-                                        <Area
-                                            type="monotone"
+
+                                        <Bar
                                             dataKey="actual"
-                                            name="Actual Attrition"
-                                            stroke="#ef4444"
-                                            strokeWidth={2}
-                                            fillOpacity={1}
-                                            fill="url(#colorActual)"
-                                            dot={{ r: 3, strokeWidth: 2 }}
-                                            activeDot={{ r: 5 }}
-                                        />
-                                    </AreaChart>
+                                            name="Actual Rate"
+                                            fill="#ef4444"
+                                            radius={[6, 6, 0, 0]}
+                                            barSize={24}
+                                        >
+                                            <LabelList
+                                                dataKey="actual"
+                                                position="top"
+                                                fill="#991b1b"
+                                                fontSize={10}
+                                                fontWeight={700}
+                                                formatter={(value) => `${value}%`}
+                                            />
+                                        </Bar>
+                                    </BarChart>
                                 </ResponsiveContainer>
                             </div>
                         </CardContent>
                     </Card>
                 </div>
 
-                {/* Right Column — Skill Gap */}
-                <div className="xl:col-span-3">
-                    <Card className="h-full border-slate-200 shadow-sm bg-white">
-                        <CardHeader className="pb-4 border-b border-slate-100 bg-white rounded-t-xl text-slate-900">
-                            <div className="flex justify-between items-center">
-                                <CardTitle className="text-lg flex items-center gap-2">
-                                    <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                                    </svg>
-                                    Skill Gap
-                                </CardTitle>
-                                <Button variant="outline" size="sm" className="h-6 text-[10px] px-2 border-slate-200">
-                                    All Depts
-                                </Button>
-                            </div>
+                {/* 3. Absenteeism Bar Graph */}
+                <div className="xl:col-span-6">
+                    <Card className="border-slate-200 shadow-sm h-full">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                <TrendingDown className="w-4 h-4 text-amber-500" />
+                                7-Day Rolling Absenteeism
+                            </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-6 pt-6 bg-white rounded-b-xl">
-                            {loadingChart ? (
-                                <div className="flex items-center justify-center py-8">
-                                    <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
-                                </div>
-                            ) : (
-                                stats.skillGapData.map((gap, index) => (
-                                    <div key={index} className="space-y-2">
-                                        <div className="flex justify-between items-center">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold text-white ${gap.color}`}>
-                                                    {gap.level}
-                                                </span>
-                                                <span className="text-sm font-semibold text-slate-700">{gap.label}</span>
-                                            </div>
-                                            <div className="flex gap-3 text-xs">
-                                                <span className="text-slate-500">Avail: <span className="font-bold text-slate-900">{gap.avail}</span></span>
-                                                <span className="text-slate-500">Req: <span className="font-bold text-slate-900">{gap.req}</span></span>
-                                            </div>
-                                        </div>
-                                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full ${gap.color} opacity-80 transition-all duration-500`}
-                                                style={{ width: `${Math.min((gap.avail / Math.max(gap.req, 1)) * 100, 100)}%` }}
-                                            />
-                                        </div>
+
+                        <CardContent>
+                            <div className="h-[280px] w-full relative">
+                                {loadingChart && <ChartLoader />}
+
+                                {!loadingChart && stats.absenteeismData.length === 0 && (
+                                    <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
+                                        No absenteeism data found
                                     </div>
-                                ))
-                            )}
+                                )}
+
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart
+                                        data={stats.absenteeismData}
+                                        margin={{ top: 20, right: 20, left: 0, bottom: 0 }}
+                                    >
+                                        <CartesianGrid
+                                            strokeDasharray="3 3"
+                                            vertical={false}
+                                            stroke="#f1f5f9"
+                                        />
+
+                                        <XAxis
+                                            dataKey="day"
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fontSize: 10, fill: '#64748b' }}
+                                        />
+
+                                        <YAxis
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fontSize: 10, fill: '#64748b' }}
+                                            allowDecimals={false}
+                                        />
+
+                                        <Tooltip content={<BarCustomTooltip />} />
+
+                                        <Legend iconType="circle" />
+
+                                        <ReferenceLine
+                                            y={10}
+                                            stroke="#cbd5e1"
+                                            strokeDasharray="3 3"
+                                        />
+
+                                        <Bar
+                                            dataKey="actual"
+                                            name="Absents"
+                                            fill="#f59e0b"
+                                            radius={[6, 6, 0, 0]}
+                                            barSize={24}
+                                        >
+                                            <LabelList
+                                                dataKey="actual"
+                                                position="top"
+                                                fill="#92400e"
+                                                fontSize={10}
+                                                fontWeight={700}
+                                            />
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
+
+                {/* 4. Normal Pie Charts Below All Graphs */}
+                <div className="xl:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <CustomPieChart
+                        title="Skill Distribution (L0-L4)"
+                        data={pieCharts.skillLevels}
+                        colors={CHART_COLORS.skill}
+                        icon={Users}
+                    />
+
+                    <CustomPieChart
+                        title="Gender Distribution"
+                        data={pieCharts.gender}
+                        colors={CHART_COLORS.gender}
+                        icon={Users}
+                    />
+                </div>
+
             </div>
         </div>
     );

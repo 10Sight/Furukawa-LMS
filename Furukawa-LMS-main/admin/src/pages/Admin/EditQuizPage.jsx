@@ -57,6 +57,9 @@ const EditQuizPage = () => {
     issueCertificate: true,
     departmentId: [],
     sectionId: [],
+    isDojo: false,
+    isHandover: false,
+    isTheoretical: false,
     questions: [
       {
         questionText: "",
@@ -130,6 +133,9 @@ const EditQuizPage = () => {
         issueCertificate: quiz.issueCertificate !== undefined ? !!quiz.issueCertificate : true,
         departmentId: initialDeptId,
         sectionId: initialSectionId,
+        isDojo: !!quiz.isDojo,
+        isHandover: !!quiz.isHandover,
+        isTheoretical: !!quiz.isTheoretical,
         questions: Array.isArray(quiz.questions) && quiz.questions.length > 0
           ? quiz.questions.map((q) => ({
             questionText: q.questionText || q.text || "",
@@ -287,6 +293,9 @@ const EditQuizPage = () => {
         issueCertificate: formData.issueCertificate,
         departmentId: formData.departmentId,
         sectionId: formData.sectionId,
+        isDojo: formData.isDojo,
+        isHandover: formData.isHandover,
+        isTheoretical: formData.isTheoretical,
       }).unwrap();
 
       toast.success("Test updated successfully!");
@@ -492,6 +501,81 @@ const EditQuizPage = () => {
                 If Yes, a certificate will be issued upon passing this test (if skill upgradation applies).
               </p>
             </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="isDojo">Is DOJO Quiz? *</Label>
+              <Select
+                key={formData.isDojo ? "yes" : "no"}
+                value={formData.isDojo ? "yes" : "no"}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    isDojo: value === "yes",
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select option" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no">No</SelectItem>
+                  <SelectItem value="yes">Yes</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                If Yes, this quiz will be visible to temporary DOJO candidates in their portal.
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+                <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
+                <Select
+                  key={formData.isHandover ? "yes" : "no"}
+                  value={formData.isHandover ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isHandover: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, passing this quiz will automatically add the student to the Handover Sheet on the date of passing.
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isTheoretical">Is Theoretical Quiz? *</Label>
+                <Select
+                  key={formData.isTheoretical ? "yes" : "no"}
+                  value={formData.isTheoretical ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isTheoretical: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, this quiz will be marked as a theoretical assessment.
+                </p>
+              </div>
           </CardContent>
         </Card>
 

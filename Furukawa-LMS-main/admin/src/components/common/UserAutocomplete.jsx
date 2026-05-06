@@ -20,6 +20,7 @@ const UserAutocomplete = ({
   mode = "student", // "student" or "all"
   excludeTrainers = false,
   excludeAdmins = false,
+  includeTemporary = false,
   onTextChange = null
 }) => {
   const [open, setOpen] = useState(false);
@@ -45,8 +46,10 @@ const UserAutocomplete = ({
       if (mode === "all") {
         if (excludeTrainers) searchParams.excludeTrainers = "true";
         if (excludeAdmins) searchParams.excludeAdmins = "true";
+        if (includeTemporary) searchParams.includeTemporary = String(includeTemporary);
         triggerAll(searchParams);
       } else {
+        if (includeTemporary) searchParams.includeTemporary = String(includeTemporary);
         triggerStudents(searchParams);
       }
     }
@@ -68,6 +71,7 @@ const UserAutocomplete = ({
       onChange({
         fullName: user.fullName,
         empId: user.empId,
+        userName: user.userName,
         currentLevel: user.currentLevel,
         fromInfo: user.fromInfo,
         departmentId: user.departmentId,

@@ -7,7 +7,7 @@ export const quizApi = createApi({
     tagTypes: ['Quiz', 'Course', 'Module', 'Lesson'], // Add Module and Lesson to tagTypes
     endpoints: (builder) => ({
         createQuiz: builder.mutation({
-            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate }) => ({
+            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate, isDojo, isHandover, isTheoretical }) => ({
                 url: "/api/quizzes",
                 method: "POST",
                 data: {
@@ -23,14 +23,17 @@ export const quizApi = createApi({
                     ...(timeLimit !== undefined ? { timeLimit } : {}),
                     ...(attemptsAllowed !== undefined ? { attemptsAllowed } : {}),
                     ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
-                    ...(issueCertificate !== undefined ? { issueCertificate } : {})
+                    ...(issueCertificate !== undefined ? { issueCertificate } : {}),
+                    ...(isDojo !== undefined ? { isDojo } : {}),
+                    ...(isHandover !== undefined ? { isHandover } : {}),
+                    ...(isTheoretical !== undefined ? { isTheoretical } : {})
                 }
             }),
             invalidatesTags: ['Quiz', 'Course', 'Module', 'Lesson'], // Invalidate all relevant caches
         }),
 
         getAllQuizzes: builder.query({
-            query: ({ page = 1, limit = 20, search = "", courseId, departmentId, sectionId } = {}) => ({
+            query: ({ page = 1, limit = 20, search = "", courseId, departmentId, sectionId, isDojo } = {}) => ({
                 url: "/api/quizzes",
                 method: "GET",
                 params: { 
@@ -39,7 +42,8 @@ export const quizApi = createApi({
                     search, 
                     ...(courseId && { courseId }),
                     ...(departmentId && { departmentId }),
-                    ...(sectionId && { sectionId })
+                    ...(sectionId && { sectionId }),
+                    ...(isDojo !== undefined && { isDojo })
                 }
             }),
             providesTags: (result, error, arg) => {
@@ -61,7 +65,7 @@ export const quizApi = createApi({
         }),
 
         updateQuiz: builder.mutation({
-            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate }) => ({
+            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate, isDojo, isHandover, isTheoretical }) => ({
                 url: `/api/quizzes/${id}`,
                 method: "PUT",
                 data: {
@@ -74,7 +78,10 @@ export const quizApi = createApi({
                     ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
                     ...(departmentId !== undefined ? { departmentId } : {}),
                     ...(sectionId !== undefined ? { sectionId } : {}),
-                    ...(issueCertificate !== undefined ? { issueCertificate } : {})
+                    ...(issueCertificate !== undefined ? { issueCertificate } : {}),
+                    ...(isDojo !== undefined ? { isDojo } : {}),
+                    ...(isHandover !== undefined ? { isHandover } : {}),
+                    ...(isTheoretical !== undefined ? { isTheoretical } : {})
                 }
             }),
             invalidatesTags: (result, error, arg) => [

@@ -5,9 +5,9 @@ import { useGetDepartmentQuizStatsQuery } from '@/Redux/AllApi/AnalyticsApi';
 import { Skeleton } from "@/components/ui/skeleton";
 import { IconChartBar } from "@tabler/icons-react";
 
-const DepartmentQuizChart = () => {
+const DepartmentQuizChart = ({ dateRange }) => {
     // Optional: Date range filtering could be added here
-    const { data: statsData, isLoading, error } = useGetDepartmentQuizStatsQuery({});
+    const { data: statsData, isLoading, error } = useGetDepartmentQuizStatsQuery(dateRange);
 
     const chartData = statsData?.data || [];
 

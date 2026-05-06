@@ -19,7 +19,10 @@ class Quiz {
         this.isPublished = !!data.isPublished;
         this.attemptsAllowed = data.attemptsAllowed !== undefined ? data.attemptsAllowed : 1;
         this.skillUpgradation = !!data.skillUpgradation;
-        this.issueCertificate = data.issueCertificate !== undefined ? !!data.issueCertificate : true; // Default true for backward compatibility or logical sense? Or false? User request implies optionality. Let's verify defaults. Usually existing quizzes might want it to yes if they had skillUpgradation? Let's default to true locally if undefined, but explicit in SQL default might be needed. Let's checking init sql.
+        this.issueCertificate = data.issueCertificate !== undefined ? !!data.issueCertificate : true;
+        this.isDojo = !!data.isDojo;
+        this.isHandover = !!data.isHandover;
+        this.isTheoretical = !!data.isTheoretical;
 
         // Resource linking & Legacy fields
         this.courseId = data.courseId || data.course;
@@ -101,6 +104,9 @@ class Quiz {
                             scope NVARCHAR(50),
                             departmentId NVARCHAR(MAX),
                             sectionId NVARCHAR(MAX),
+                            isDojo BIT DEFAULT 0,
+                            isHandover BIT DEFAULT 0,
+                            isTheoretical BIT DEFAULT 0,
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
                         );
@@ -113,7 +119,10 @@ class Quiz {
                 // Manual migration check for columns using INFORMATION_SCHEMA
                 const columns = [
                     { name: 'departmentId', type: 'NVARCHAR(MAX)' },
-                    { name: 'sectionId', type: 'NVARCHAR(MAX)' }
+                    { name: 'sectionId', type: 'NVARCHAR(MAX)' },
+                    { name: 'isDojo', type: 'BIT DEFAULT 0' },
+                    { name: 'isHandover', type: 'BIT DEFAULT 0' },
+                    { name: 'isTheoretical', type: 'BIT DEFAULT 0' }
                 ];
 
                 for (const col of columns) {
@@ -167,7 +176,7 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "createdAt"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "isDojo", "isHandover", "isTheoretical", "createdAt"
         ];
 
         if (!quiz.createdAt) quiz.createdAt = new Date();
@@ -256,7 +265,7 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "isDojo", "isHandover", "isTheoretical"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

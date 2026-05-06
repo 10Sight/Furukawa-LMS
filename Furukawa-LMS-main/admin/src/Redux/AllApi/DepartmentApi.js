@@ -96,10 +96,10 @@ export const departmentApi = createApi({
         }),
 
         getDepartmentProgress: builder.query({
-            query: ({ departmentId, page = 1, limit = 20, search = "" }) => ({
+            query: ({ departmentId, page = 1, limit = 20, search = "", sectionId, lineId, subSectionId, stationId }) => ({
                 url: `/api/departments/${departmentId}/progress`,
                 method: "GET",
-                params: { page, limit, search }
+                params: { page, limit, search, sectionId, lineId, subSectionId, stationId }
             }),
             providesTags: (result, error, { departmentId }) => [{ type: 'Department', id: `progress-${departmentId}` }],
         }),

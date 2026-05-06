@@ -15,6 +15,7 @@ class Line {
         this.description = data.description;
         this.requirement = data.requirement || 0;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
+        this.tenCycleFormType = data.tenCycleFormType || "form1";
         this.lineCount = data.lineCount || 0;
 
         this.createdAt = data.createdAt;
@@ -40,6 +41,7 @@ class Line {
                             sectionId INT NOT NULL,
                             description NVARCHAR(MAX),
                             isActive BIT DEFAULT 1,
+                            tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE(),
                             CONSTRAINT unique_section_line UNIQUE (name, sectionId),
@@ -87,6 +89,14 @@ class Line {
                     IF COL_LENGTH('lines', 'requirement') IS NULL
                     BEGIN
                         ALTER TABLE [lines] ADD requirement INT DEFAULT 0;
+                    END
+                    IF COL_LENGTH('lines', 'tenCycleFormType') IS NULL
+                    BEGIN
+                        ALTER TABLE [lines] ADD tenCycleFormType NVARCHAR(255) DEFAULT 'form1';
+                    END
+                    ELSE
+                    BEGIN
+                        ALTER TABLE [lines] ALTER COLUMN tenCycleFormType NVARCHAR(255);
                     END
 
                     DECLARE @ConstraintName NVARCHAR(MAX);
@@ -162,7 +172,7 @@ class Line {
         const line = new Line(data);
 
         const fields = [
-            "name", "uniCode", "lineLeader", "mentor", "requirement", "department", "sectionId", "description", "isActive", "createdAt"
+            "name", "uniCode", "lineLeader", "mentor", "requirement", "tenCycleFormType", "department", "sectionId", "description", "isActive", "createdAt"
         ];
 
         if (!line.createdAt) line.createdAt = new Date();
@@ -276,7 +286,7 @@ class Line {
 
     async save() {
         const fields = [
-            "name", "uniCode", "lineLeader", "mentor", "requirement", "department", "sectionId", "description", "isActive"
+            "name", "uniCode", "lineLeader", "mentor", "requirement", "tenCycleFormType", "department", "sectionId", "description", "isActive"
         ];
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => this[field]);

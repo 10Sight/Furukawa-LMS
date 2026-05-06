@@ -26,7 +26,7 @@ export const createQuiz = asyncHandler(async (req, res) => {
     const { 
         courseId, moduleId, lessonId, scope, title, questions, 
         passingScore, description, timeLimit, attemptsAllowed, 
-        skillUpgradation, issueCertificate, departmentId, sectionId 
+        skillUpgradation, issueCertificate, departmentId, sectionId, isDojo, isHandover, isTheoretical
     } = req.body;
 
     if (!title || !questions || questions.length === 0) {
@@ -100,14 +100,14 @@ export const createQuiz = asyncHandler(async (req, res) => {
 
     const [insertRows] = await executeQuery(
         `INSERT INTO quizzes 
-        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, createdBy, createdAt, updatedAt)
+        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, isDojo, isHandover, isTheoretical, createdBy, createdAt, updatedAt)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
         [
             resolvedCourseId, finalModuleId, finalLessonId, actualScope, title, slug, description,
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
             JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true, 
-            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), req.user.id
+            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, req.user.id
         ]
     );
 
@@ -130,6 +130,50 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
 
     let whereClauses = ["1=1"];
     let params = [];
+
+    // Role-based filtering: Temporary candidates only see DOJO quizzes, 
+    // regular students only see non-DOJO quizzes.
+    if (req.user && req.user.isTemporary) {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        if (req.user.targetDeptId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL 
+                OR q.departmentId = '[]' 
+                OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.targetDeptId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+    } else if (req.user && req.user.role === 'STUDENT') {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 0");
+        
+        // Department filtering for regular students
+        if (req.user.departmentId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.departmentId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+
+        // Section filtering for regular students
+        if (req.user.sectionId) {
+            whereClauses.push(`(
+                q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.sectionId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.sectionId));
+        } else {
+            whereClauses.push("(q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = '')");
+        }
+    } else if (req.query.isDojo !== undefined) {
+        whereClauses.push("COALESCE(q.isDojo, 0) = ?");
+        params.push(req.query.isDojo === 'true' || req.query.isDojo === '1' || req.query.isDojo === true ? 1 : 0);
+    }
 
     if (req.query.search) {
         whereClauses.push("q.title LIKE ?");
@@ -218,7 +262,7 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     
     const { 
         title, questions, description, passingScore, timeLimit, 
-        attemptsAllowed, skillUpgradation, departmentId, sectionId 
+        attemptsAllowed, skillUpgradation, departmentId, sectionId, isDojo, isHandover, isTheoretical
     } = req.body;
 
     const [rows] = await executeQuery("SELECT * FROM quizzes WHERE id = ?", [id]);
@@ -237,6 +281,9 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (req.body.issueCertificate !== undefined) { updates.push("issueCertificate = ?"); values.push(req.body.issueCertificate); }
     if (departmentId !== undefined) { updates.push("departmentId = ?"); values.push(JSON.stringify(departmentId)); }
     if (sectionId !== undefined) { updates.push("sectionId = ?"); values.push(JSON.stringify(sectionId)); }
+    if (isDojo !== undefined) { updates.push("isDojo = ?"); values.push(isDojo ? 1 : 0); }
+    if (isHandover !== undefined) { updates.push("isHandover = ?"); values.push(isHandover ? 1 : 0); }
+    if (isTheoretical !== undefined) { updates.push("isTheoretical = ?"); values.push(isTheoretical ? 1 : 0); }
 
     if (updates.length > 0) {
         updates.push("updatedAt = GETDATE()");
@@ -390,13 +437,55 @@ export const getCourseQuizzes = asyncHandler(async (req, res) => {
     }
 
     // Fetch Course-Type Quizzes
+    let whereClauses = ["q.course = ?", "q.scope = 'course'"];
+    let params = [courseId];
+
+    if (req.user && req.user.isTemporary) {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        if (req.user.targetDeptId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL 
+                OR q.departmentId = '[]' 
+                OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.targetDeptId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+    } else if (req.user && req.user.role === 'STUDENT') {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 0");
+
+        // Department filtering for regular students
+        if (req.user.departmentId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.departmentId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+
+        // Section filtering for regular students
+        if (req.user.sectionId) {
+            whereClauses.push(`(
+                q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.sectionId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.sectionId));
+        } else {
+            whereClauses.push("(q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = '')");
+        }
+    }
+
     const [rows] = await executeQuery(`
         SELECT q.*, c.title as cTitle 
         FROM quizzes q
         LEFT JOIN courses c ON q.course = c.id
-        WHERE q.course = ? AND q.scope = 'course'
+        WHERE ${whereClauses.join(" AND ")}
         ORDER BY q.createdAt DESC
-    `, [courseId]);
+    `, params);
 
     const formatted = rows.map(q => {
         q._id = q.id; // Map for frontend
@@ -427,6 +516,49 @@ export const getQuizzesByCourse = asyncHandler(async (req, res) => {
 
     if (courses.length === 0) return res.status(200).json(new ApiResponse(200, [], "Course not found"));
     const courseId = courses[0].id;
+    let whereClauses = ["q.course = ?"];
+    let params = [courseId];
+
+    // Role-based filtering: Temporary candidates only see DOJO quizzes,
+    // regular students only see non-DOJO quizzes.
+    if (req.user && req.user.isTemporary) {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        if (req.user.targetDeptId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL 
+                OR q.departmentId = '[]' 
+                OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.targetDeptId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+    } else if (req.user && req.user.role === 'STUDENT') {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 0");
+
+        // Department filtering for regular students
+        if (req.user.departmentId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.departmentId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+
+        // Section filtering for regular students
+        if (req.user.sectionId) {
+            whereClauses.push(`(
+                q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.sectionId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.sectionId));
+        } else {
+            whereClauses.push("(q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = '')");
+        }
+    }
 
     const [rows] = await executeQuery(`
         SELECT q.*, c.title as cTitle, m.title as mTitle, u.fullName, u.email, u.role
@@ -434,9 +566,9 @@ export const getQuizzesByCourse = asyncHandler(async (req, res) => {
         LEFT JOIN courses c ON q.course = c.id
         LEFT JOIN modules m ON q.module = m.id
         LEFT JOIN users u ON q.createdBy = u.id
-        WHERE q.course = ?
+        WHERE ${whereClauses.join(" AND ")}
         ORDER BY q.createdAt DESC
-    `, [courseId]);
+    `, params);
 
     const formatted = rows.map(q => {
         q._id = q.id; // Map for frontend
@@ -469,15 +601,57 @@ export const getQuizzesByModule = asyncHandler(async (req, res) => {
     if (mods.length === 0) return res.status(200).json(new ApiResponse(200, [], "Module not found"));
     const moduleId = mods[0].id;
 
+    let whereClauses = ["q.module = ?", "q.scope = 'module'"];
+    let params = [moduleId];
+
+    if (req.user && req.user.isTemporary) {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        if (req.user.targetDeptId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL 
+                OR q.departmentId = '[]' 
+                OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.targetDeptId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+    } else if (req.user && req.user.role === 'STUDENT') {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 0");
+
+        // Department filtering for regular students
+        if (req.user.departmentId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.departmentId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+
+        // Section filtering for regular students
+        if (req.user.sectionId) {
+            whereClauses.push(`(
+                q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.sectionId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.sectionId));
+        } else {
+            whereClauses.push("(q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = '')");
+        }
+    }
+
     const [rows] = await executeQuery(`
         SELECT q.*, c.title as cTitle, m.title as mTitle, u.fullName, u.email
         FROM quizzes q
         LEFT JOIN courses c ON q.course = c.id
         LEFT JOIN modules m ON q.module = m.id
         LEFT JOIN users u ON q.createdBy = u.id
-        WHERE q.module = ? AND q.scope = 'module'
+        WHERE ${whereClauses.join(" AND ")}
         ORDER BY q.createdAt DESC
-    `, [moduleId]);
+    `, params);
 
     const formatted = rows.map(q => {
         q._id = q.id; // Map for frontend
@@ -510,15 +684,57 @@ export const getQuizzesByLesson = asyncHandler(async (req, res) => {
     if (lessons.length === 0) return res.status(200).json(new ApiResponse(200, [], "Lesson not found"));
     const lessonId = lessons[0].id;
 
+    let whereClauses = ["q.lesson = ?", "q.scope = 'lesson'"];
+    let params = [lessonId];
+
+    if (req.user && req.user.isTemporary) {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        if (req.user.targetDeptId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL 
+                OR q.departmentId = '[]' 
+                OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.targetDeptId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+    } else if (req.user && req.user.role === 'STUDENT') {
+        whereClauses.push("COALESCE(q.isDojo, 0) = 0");
+
+        // Department filtering for regular students
+        if (req.user.departmentId) {
+            whereClauses.push(`(
+                q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.departmentId));
+        } else {
+            whereClauses.push("(q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = '')");
+        }
+
+        // Section filtering for regular students
+        if (req.user.sectionId) {
+            whereClauses.push(`(
+                q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.sectionId) WHERE value = ?)
+            )`);
+            params.push(String(req.user.sectionId));
+        } else {
+            whereClauses.push("(q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = '')");
+        }
+    }
+
     const [rows] = await executeQuery(`
         SELECT q.*, c.title as cTitle, m.title as mTitle, u.fullName, u.email
         FROM quizzes q
         LEFT JOIN courses c ON q.course = c.id
         LEFT JOIN modules m ON q.module = m.id
         LEFT JOIN users u ON q.createdBy = u.id
-        WHERE q.lesson = ? AND q.scope = 'lesson'
+        WHERE ${whereClauses.join(" AND ")}
         ORDER BY q.createdAt DESC
-    `, [lessonId]);
+    `, params);
 
     const formatted = rows.map(q => {
         q._id = q.id; // Map for frontend

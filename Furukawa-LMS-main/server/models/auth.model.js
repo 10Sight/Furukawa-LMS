@@ -22,6 +22,7 @@ class User {
         this.resetPasswordExpiry = data.resetPasswordExpiry ? new Date(data.resetPasswordExpiry) : null;
         this.role = data.role || "STUDENT";
         this.currentLevel = data.currentLevel || "L1";
+        this.currentSkill = typeof data.currentSkill === 'string' ? JSON.parse(data.currentSkill) : (data.currentSkill || {});
         this.status = data.status || "PRESENT";
         this.isVerified = !!data.isVerified;
         this.enrolledCourses = typeof data.enrolledCourses === 'string' ? JSON.parse(data.enrolledCourses) : (data.enrolledCourses || []);
@@ -47,6 +48,11 @@ class User {
         this.lineId = data.resolvedLineId || data.lineId || null;
         this.stationId = data.stationId || null;
         this.departmentId = data.resolvedDeptId || data.departmentId || null;
+        this.targetDeptId = data.targetDeptId || null;
+        this.targetSectionId = data.targetSectionId || null;
+        this.targetLineId = data.targetLineId || null;
+        this.targetSubSectionId = data.targetSubSectionId || null;
+        this.targetStationId = data.targetStationId || null;
         this.fatherHusbandName = data.fatherHusbandName || null;
         this.gender = data.gender || null;
         this.dob = data.dob || null;
@@ -81,7 +87,7 @@ class User {
                     fullName NVARCHAR(255) NOT NULL,
                     userName NVARCHAR(255) NOT NULL UNIQUE,
                     slug NVARCHAR(255) UNIQUE,
-                    email NVARCHAR(255) NOT NULL,
+                    email NVARCHAR(255) NULL,
                     phoneNumber NVARCHAR(50) NULL,
                     password NVARCHAR(255) NOT NULL,
                     avatar NVARCHAR(MAX),
@@ -90,6 +96,7 @@ class User {
                     resetPasswordExpiry DATETIME,
                     role NVARCHAR(50) DEFAULT 'STUDENT',
                     currentLevel NVARCHAR(50) DEFAULT 'L1',
+                    currentSkill NVARCHAR(MAX) DEFAULT '{}',
                     status NVARCHAR(50) DEFAULT 'PRESENT',
                     isVerified BIT DEFAULT 0,
                     enrolledCourses NVARCHAR(MAX),
@@ -115,8 +122,13 @@ class User {
                     subSectionId INT,
                     lineId INT,
                     stationId INT,
-                    departmentId INT,
-                    fatherHusbandName NVARCHAR(255),
+                    departmentId INT NULL,
+                    targetDeptId INT NULL,
+                    targetSectionId INT NULL,
+                    targetLineId INT NULL,
+                    targetSubSectionId INT NULL,
+                    targetStationId INT NULL,
+                    fatherHusbandName NVARCHAR(255) NULL,
                     gender NVARCHAR(50),
                     dob NVARCHAR(50),
                     education NVARCHAR(MAX),
@@ -176,7 +188,8 @@ class User {
                 { name: 'isMentor', type: 'BIT DEFAULT 0' },
                 { name: 'isSupervisor', type: 'BIT DEFAULT 0' },
                 { name: 'isIncharge', type: 'BIT DEFAULT 0' },
-                { name: 'customRoleId', type: 'INT' }
+                { name: 'customRoleId', type: 'INT' },
+                { name: 'currentSkill', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' }
             ];
 
             for (const col of columnsToAdd) {
@@ -274,6 +287,20 @@ class User {
                 console.error("Migration error for email uniqueness:", err);
             }
 
+            // Target Assignment Columns for Temporary Users
+            await migrationHelper.ensureColumnExists('users', 'targetDeptId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('users', 'targetSectionId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('users', 'targetLineId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('users', 'targetSubSectionId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('users', 'targetStationId', 'INT NULL');
+
+            // Ensure email is nullable
+            try {
+                await executeQuery("ALTER TABLE users ALTER COLUMN email NVARCHAR(255) NULL");
+            } catch (err) {
+                console.error("Migration error making email nullable:", err);
+            }
+
             console.log("Users table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating users table in MSSQL:", error);
@@ -299,11 +326,12 @@ class User {
 
         const fields = [
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
-            "avatar", "refreshToken", "role", "currentLevel", "status", "isVerified",
+            "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
             "isDeleted", "department", "sub_section", "departments", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
+            "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "mentor", "designation",
             "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt"
         ];
@@ -320,10 +348,10 @@ class User {
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill'].includes(field)) {
                 return JSON.stringify(val || (field === 'avatar' ? {} : []));
             }
-            if (val === undefined) return null;
+            if (val === undefined || val === "") return null;
             return val;
         });
 
@@ -604,11 +632,12 @@ class User {
 
         const fields = [
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
-            "avatar", "refreshToken", "role", "currentLevel", "status", "isVerified",
+            "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
             "isDeleted", "department", "sub_section", "departments", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
+            "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "mentor", "designation",
             "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry"
         ];
@@ -618,7 +647,7 @@ class User {
         const setClause = definedFields.map(field => `${field} = ?`).join(", ");
         const values = definedFields.map(field => {
             const val = this[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill'].includes(field)) {
                 return typeof val === 'object' ? JSON.stringify(val) : val;
             }
             if (val instanceof Date) return val;

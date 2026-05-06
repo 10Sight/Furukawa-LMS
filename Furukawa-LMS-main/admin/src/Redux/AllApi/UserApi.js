@@ -154,6 +154,14 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User', 'ImportLog'],
         }),
+        importDojoCandidates: builder.mutation({
+            query: (formData) => ({
+                url: "/api/import/dojo-candidates",
+                method: "POST",
+                data: formData,
+            }),
+            invalidatesTags: ['User', 'ImportLog'],
+        }),
 
         getImportLogs: builder.query({
             query: () => ({
@@ -191,6 +199,42 @@ export const userApi = createApi({
                 return { data: { fileData: base64 } };
             },
         }),
+        getDojoImportTemplate: builder.query({
+            queryFn: async (arg, api, extraOptions, baseQuery) => {
+                const result = await baseQuery({
+                    url: "/api/import/dojo-candidates/template",
+                    method: "GET",
+                    responseHandler: (response) => response.data,
+                });
+
+                if (result.error) return { error: result.error };
+
+                const blob = result.data;
+                const base64 = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+
+                return { data: { fileData: base64 } };
+            },
+        }),
+        getTemporaryUsers: builder.query({
+            query: ({ page = 1, limit = 20, search = "", gender = "", today = "" } = {}) => ({
+                url: "/api/users/temporary",
+                method: "GET",
+                params: { page, limit, search, gender, today }
+            }),
+            providesTags: ['User'],
+        }),
+
+        getNextTemporaryId: builder.query({
+            query: (prefix) => ({
+                url: "/api/users/temporary/next-id",
+                method: "GET",
+                params: { prefix }
+            }),
+        }),
     }),
 });
 
@@ -208,7 +252,11 @@ export const {
     useRestoreUserMutation,
     useLazyExportStudentsQuery,
     useImportEmployeesMutation,
+    useImportDojoCandidatesMutation,
     useLazyGetImportTemplateQuery,
+    useLazyGetDojoImportTemplateQuery,
     useGetImportLogsQuery,
-    useGetImportLogDetailsQuery
+    useGetImportLogDetailsQuery,
+    useGetTemporaryUsersQuery,
+    useLazyGetNextTemporaryIdQuery
 } = userApi;

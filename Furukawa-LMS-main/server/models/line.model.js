@@ -16,7 +16,8 @@ class Line {
         this.requirement = data.requirement || 0;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
         this.tenCycleFormType = data.tenCycleFormType || "form1";
-        this.lineCount = data.lineCount || 0;
+        this.users = typeof data.users === 'string' ? JSON.parse(data.users) : (data.users || []);
+        this.lineCount = data.lineCount || this.users.length || 0;
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -25,7 +26,7 @@ class Line {
     static async init() {
         let attempts = 0;
         const maxAttempts = 3;
-        
+
         while (attempts < maxAttempts) {
             attempts++;
             try {
@@ -153,8 +154,19 @@ class Line {
                         DELETE FROM CTE WHERE rn > 1;
                         ALTER TABLE [lines] ADD CONSTRAINT unique_section_line UNIQUE (name, sectionId);
                     END
+
+                    IF COL_LENGTH('lines', 'users') IS NULL
+                    BEGIN
+                        ALTER TABLE [lines] ADD [users] NVARCHAR(MAX) DEFAULT '[]';
+                    END
                 `);
                 logger.info("Line table initialized successfully");
+
+                // Trigger an initial sync for all lines to populate the new 'users' column
+                const [lines] = await executeQuery("SELECT id FROM [lines]");
+                for (const line of lines) {
+                    await Line.syncUserList(line.id);
+                }
                 break; // Success, exit loop
             } catch (error) {
                 if (error.message.toLowerCase().includes('deadlock') && attempts < maxAttempts) {
@@ -165,6 +177,34 @@ class Line {
                     break;
                 }
             }
+        }
+    }
+
+    static async syncUserList(lineId) {
+        try {
+            // Aggregate all users from sub-sections belonging to this line
+            const query = `
+                SELECT DISTINCT u.[value] as userId
+                FROM [sub_sections] ss
+                CROSS APPLY OPENJSON(ISNULL(ss.users, '[]')) AS u
+                WHERE ss.lineId = ?
+            `;
+            const [rows] = await executeQuery(query, [lineId]);
+
+            const userIds = rows.map(r => r.userId).filter(id => id !== null);
+            const jsonUsers = JSON.stringify(userIds);
+
+            await executeQuery("UPDATE [lines] SET users = ?, updatedAt = GETDATE() WHERE id = ?", [jsonUsers, lineId]);
+            logger.info(`Synced user list for line ${lineId}. Total users: ${userIds.length}`);
+            
+            // Trigger Section Sync
+            const [lineData] = await executeQuery("SELECT sectionId FROM [lines] WHERE id = ?", [lineId]);
+            if (lineData.length > 0 && lineData[0].sectionId) {
+                const Section = (await import("./section.model.js")).default;
+                await Section.syncUserList(lineData[0].sectionId);
+            }
+        } catch (error) {
+            logger.error(`Error syncing user list for line ${lineId}: ${error.message}`);
         }
     }
 
@@ -195,21 +235,7 @@ class Line {
     static async findById(id) {
         const query = `
             SELECT l.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.lineId = l.id 
-                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = l.id)
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    JOIN sub_sections ss ON m.subSectionId = ss.id 
-                    WHERE ss.lineId = l.id
-                )
-             )
-            ) as lineCount
+            (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
             FROM [lines] l 
             WHERE l.id = ?`;
         const [rows] = await executeQuery(query, [id]);
@@ -220,21 +246,7 @@ class Line {
     static async findBySection(sectionId) {
         const query = `
             SELECT l.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.lineId = l.id 
-                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = l.id)
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    JOIN sub_sections ss ON m.subSectionId = ss.id 
-                    WHERE ss.lineId = l.id
-                )
-             )
-            ) as lineCount
+            (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
             FROM [lines] l 
             WHERE l.sectionId = ? 
             ORDER BY l.createdAt DESC`;

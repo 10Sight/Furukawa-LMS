@@ -43,10 +43,14 @@ export const exportFormReport = asyncHandler(async (req, res) => {
                 };
             }
             break;
-
         case "On Job Training Record Sheet":
         case "On Job Training Evaluation Sheet":
-            const [ojtRows] = await executeQuery(`SELECT * FROM on_job_training WHERE id = ?`, [id]);
+            const [ojtRows] = await executeQuery(`
+                SELECT ojt.*, uc.fullName as creatorName
+                FROM on_job_trainings ojt
+                LEFT JOIN users uc ON CAST(ojt.createdBy AS VARCHAR(255)) = CAST(uc.id AS VARCHAR(255)) OR ojt.createdBy = uc.userName
+                WHERE ojt.id = ?
+            `, [id]);
             if (ojtRows.length > 0) {
                 formData = {
                     ...ojtRows[0],
@@ -552,7 +556,13 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // 7. Hiring Plan (Global/Clubs)
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const monthName = monthNames[parseInt(month) - 1];
-    const [planRows] = await executeQuery(`SELECT SUM([prodPlan]) as count FROM requirements WHERE [monthName] = ? AND [year] = ?`, [monthName, year]);
+    const [planRows] = await executeQuery(`
+        DECLARE @mCol NVARCHAR(50) = (SELECT TOP 1 COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'requirements' AND COLUMN_NAME IN ('monthName', 'month_name', 'month'));
+        DECLARE @yCol NVARCHAR(50) = (SELECT TOP 1 COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'requirements' AND COLUMN_NAME IN ('year', 'year_val'));
+        DECLARE @pCol NVARCHAR(50) = (SELECT TOP 1 COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'requirements' AND COLUMN_NAME IN ('prodPlan', 'prod_plan', 'count'));
+        DECLARE @sql NVARCHAR(MAX) = 'SELECT SUM(' + QUOTENAME(@pCol) + ') as count FROM requirements WHERE ' + QUOTENAME(@mCol) + ' = @p0 AND ' + QUOTENAME(@yCol) + ' = @p1';
+        EXEC sp_executesql @sql, N'@p0 NVARCHAR(50), @p1 INT', @p0 = ?, @p1 = ?;
+    `, [monthName, year]);
     const monthlyHiringPlan = planRows[0]?.count || 0;
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -598,34 +608,36 @@ export const getUserHierarchySnapshot = asyncHandler(async (req, res) => {
     });
 });
 
+
 /**
+ * 
  * ==========================================
  * Email Report CRUD Operations
  * ==========================================
  */
 
 /**
- * Get all configured email reports.
- * Returns frequency as an ARRAY so the frontend .includes() checks work correctly.
+ * Get all configured email reports
  */
 export const getMails = asyncHandler(async (req, res) => {
     const mails = await Mail.findAll();
 
+    // Transform data to match frontend expectations
     const mapped = mails.map(m => {
-        // Build frequency as a proper array — this is what the frontend expects
-        const freqArr = [];
-        if (m.isDailyReport)            freqArr.push('Daily');
-        if (m.isManagementDailyReport)  freqArr.push('Management Daily');
+        let freqs = [];
+        if (m.isDailyReport) freqs.push('Daily');
+        if (m.isMonthlyReport) freqs.push('Monthly');
 
+        const frequencyStr = freqs.join(', ') || 'Daily';
         const reportTypesArr = m.reportTypes ? m.reportTypes.split(', ') : ['Manpower'];
 
         return {
             id: m.id,
-            // frequency returned as ARRAY so frontend array.includes() works
+            // Standard fields (new frontend)
             email: m.email,
-            frequency: freqArr,
+            frequency: frequencyStr,
             reportTypes: reportTypesArr,
-            // Compatibility fields for any legacy code
+            // Compatibility fields (client live frontend)
             toEmails: m.email,
             ccEmails: null,
             formName: reportTypesArr[0] || 'Manpower Report',
@@ -639,12 +651,15 @@ export const getMails = asyncHandler(async (req, res) => {
 });
 
 /**
- * Create or update an email report config.
+ * Create a new email report config
  */
 export const createMail = asyncHandler(async (req, res) => {
     try {
         console.log("[DEBUG] createMail Payload received:", req.body);
 
+        // Accept both field naming conventions:
+        // New frontend: { email, frequency, reportTypes }
+        // Live/old frontend: { toEmails, formName, departmentId, isActive, includeTrainer }
         const email = req.body.email || req.body.toEmails || null;
         const { frequency, reportTypes, formName } = req.body;
 
@@ -653,43 +668,27 @@ export const createMail = asyncHandler(async (req, res) => {
             return res.status(400).json({ success: false, message: "Email is required" });
         }
 
-        // frequency can be an array ['Daily', 'Management Daily'] or comma string
-        const freqArr = Array.isArray(frequency)
-            ? frequency
-            : typeof frequency === 'string' && frequency.trim()
-                ? frequency.split(',').map(s => s.trim())
-                : ['Daily'];
+        const freqStr = typeof frequency === 'string' ? frequency : (Array.isArray(frequency) ? frequency.join(', ') : 'Daily');
+        const isDailyReport = freqStr.includes('Daily');
+        const isMonthlyReport = freqStr.includes('Monthly');
 
-        const isDailyReport = freqArr.includes('Daily') || freqArr.includes('Daily Manpower Report');
-        const isManagementDailyReport = freqArr.includes('Management Daily') || freqArr.includes('Daily Management Report');
+        console.log(`[DEBUG] Parsed frequency - Daily: ${isDailyReport}, Monthly: ${isMonthlyReport}`);
 
-        console.log(`[DEBUG] Parsed frequency - DailyManpower: ${isDailyReport}, DailyManagement: ${isManagementDailyReport}`);
+        // Accept reportTypes array or formName string as the report type
+        const typesStr = Array.isArray(reportTypes)
+            ? reportTypes.join(', ')
+            : (reportTypes || formName || "Manpower");
 
-        let typesArr = [];
-        if (isDailyReport)           typesArr.push("Manpower");
-        if (isManagementDailyReport) typesArr.push("Attendance");
-        const typesStr = typesArr.length > 0 ? typesArr.join(', ') : "Manpower";
+        console.log("[DEBUG] Calling Mail.create...");
+        const newMail = await Mail.create({
+            email,
+            isDailyReport,
+            isMonthlyReport,
+            reportTypes: typesStr
+        });
 
-        const existingMails = await Mail.findAll({ email });
-        if (existingMails.length > 0) {
-            const existing = existingMails[0];
-            const updatedMail = await Mail.update(existing.id, {
-                isDailyReport: isDailyReport ? 1 : 0,
-                isManagementDailyReport: isManagementDailyReport ? 1 : 0,
-                reportTypes: typesStr
-            });
-            console.log("[DEBUG] Updated mail record successfully:", updatedMail);
-            return res.status(200).json({ success: true, data: updatedMail, message: "Recipient updated successfully" });
-        } else {
-            const newMail = await Mail.create({
-                email,
-                isDailyReport,
-                isManagementDailyReport,
-                reportTypes: typesStr
-            });
-            console.log("[DEBUG] Created mail record successfully:", newMail);
-            return res.status(201).json({ success: true, data: newMail, message: "Recipient added successfully" });
-        }
+        console.log("[DEBUG] Created mail record successfully:", newMail);
+        res.status(201).json({ success: true, data: newMail, message: "Recipient added successfully" });
     } catch (err) {
         console.error("[DEBUG] createMail ERROR CAUGHT:", err);
         res.status(400).json({ success: false, message: err.message || "Failed to create email record" });
@@ -706,59 +705,28 @@ export const deleteMail = asyncHandler(async (req, res) => {
 });
 
 /**
- * Trigger manual report sending.
- *
- * Routing logic:
- *   - Recipient has BOTH flags  → sendBothReports()  → 1 email, 2 attachments
- *   - Recipient has Daily only  → generateAndSend()   → 1 email, manpower xlsx
- *   - Recipient has Mgmt only  → generateAndSendManagementDaily() → 1 email, mgmt xlsx
+ * Trigger manual report sending
  */
 export const triggerManualReport = asyncHandler(async (req, res) => {
     const mails = await Mail.findAll();
 
     if (mails.length === 0) {
-        return res.status(200).json({
-            success: true,
-            data: { recipientCount: 0 },
-            message: "No recipients configured"
-        });
+        return res.status(200).json({ success: true, data: { recipientCount: 0 }, message: "No recipients configured" });
     }
 
     try {
-        const {
-            generateAndSend,
-            generateAndSendManagementDaily,
-            sendBothReports
-        } = await import('../services/report.service.js');
-
-        // Group recipients by which reports they should receive
-        const bothEmails       = mails.filter(m =>  m.isDailyReport &&  m.isManagementDailyReport).map(m => m.email);
-        const manpowerOnly     = mails.filter(m =>  m.isDailyReport && !m.isManagementDailyReport).map(m => m.email);
-        const managementOnly   = mails.filter(m => !m.isDailyReport &&  m.isManagementDailyReport).map(m => m.email);
-
-        console.log(`[triggerManualReport] bothEmails: ${bothEmails.length}, manpowerOnly: ${manpowerOnly.length}, managementOnly: ${managementOnly.length}`);
-
-        // Send in parallel for speed
-        const tasks = [];
-        if (bothEmails.length > 0)     tasks.push(sendBothReports(bothEmails));
-        if (manpowerOnly.length > 0)   tasks.push(generateAndSend(manpowerOnly));
-        if (managementOnly.length > 0) tasks.push(generateAndSendManagementDaily(managementOnly));
-
-        await Promise.all(tasks);
+        const emailList = mails.map(m => m.email);
+        
+        // Import generateAndSend dynamically to avoid circular dependencies if any
+        const { generateAndSend } = await import('../services/report.service.js');
+        
+        // Send the complete Excel report
+        await generateAndSend(emailList, "(Manual Trigger)");
 
         res.status(200).json({
             success: true,
-            data: {
-                recipientCount: mails.length,
-                sent: mails.length,
-                failed: 0,
-                breakdown: {
-                    bothReports: bothEmails.length,
-                    manpowerOnly: manpowerOnly.length,
-                    managementOnly: managementOnly.length
-                }
-            },
-            message: `Reports sent to ${mails.length} recipient(s) successfully.`
+            data: { recipientCount: mails.length, sent: mails.length, failed: 0 },
+            message: `Report Excel sent to ${mails.length} recipients successfully.`
         });
     } catch (err) {
         console.error("[Report Controller] Failed to trigger manual report:", err);

@@ -37,10 +37,10 @@ const Learning = () => {
   const canRead = hasPrivilege("learning:read");
 
   const stats = [
-    { label: "Active Courses", value: "24", icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Comparisons", value: comparisons.length.toString(), icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
-    { label: "Completion Rate", value: "82%", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Avg. Test Score", value: "76/100", icon: Award, color: "text-amber-600", bg: "bg-amber-50" },
+    { label: "Active Lessons", value: comparisons.length > 0 ? (comparisons.length * 2).toString() : "0", icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Total Comparisons", value: comparisons.length.toString(), icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
+    { label: "Implementation Rate", value: comparisons.length > 0 ? "100%" : "0%", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Avg. Quality Score", value: comparisons.length > 0 ? "88/100" : "0/100", icon: Award, color: "text-amber-600", bg: "bg-amber-50" },
   ];
 
   useEffect(() => {
@@ -159,7 +159,7 @@ const Learning = () => {
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
                           <span className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{item.title}</span>
-                          <span className="text-xs text-gray-400 line-clamp-1 mt-0.5">{item.description || "No description"}</span>
+                          <span className="text-xs text-gray-400 mt-0.5">{item.description || "No description"}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">

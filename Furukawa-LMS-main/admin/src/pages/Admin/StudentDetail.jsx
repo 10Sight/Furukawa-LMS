@@ -17,7 +17,7 @@ import OnJobTrainingTable from "@/components/admin/OnJobTrainingTable"; // Keep 
 import OJTTrainingRecordSheet from "@/components/admin/OJTTrainingRecordSheet"; // New format
 import OJTList from "@/components/admin/OJTList";
 import CreateOJTDialog from "@/components/admin/CreateOJTDialog";
-import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
+// SkillMatrixCertificate import removed (moved to Skill Matrix page)
 import OperatorObservanceSheet from "@/components/admin/OperatorObservanceSheet";
 import SixteenDayMonitoringSheet from "@/components/admin/SixteenDayMonitoringSheet";
 import ThreeDayMonitoringSheet from "@/components/admin/ThreeDayMonitoringSheet";
@@ -62,6 +62,11 @@ import {
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getMediaUrl } from "@/utils/mediaUtils";
+import { safeDateFormat, displayDate } from "@/utils/dateUtils";
+
+const safeLocaleDate = (dateValue) => {
+  return displayDate(dateValue) || "—";
+};
 
 const StudentDetail = () => {
   const { studentId } = useParams();
@@ -454,7 +459,7 @@ const StudentDetail = () => {
                   <div className="group">
                     <p className="text-[10px] text-muted-foreground mb-0.5">Gender / DOB</p>
                     <p className="text-sm font-medium">
-                      {student.gender || "—"} {student.dob ? `(${new Date(student.dob).toLocaleDateString()})` : ""}
+                      {student.gender || "—"} {student.dob ? `(${safeLocaleDate(student.dob)})` : ""}
                     </p>
                   </div>
                   <div className="group">
@@ -552,7 +557,7 @@ const StudentDetail = () => {
                   <div className="group">
                     <p className="text-[10px] text-muted-foreground mb-0.5">Joining Date</p>
                     <p className="text-sm font-medium">
-                      {student.joiningDate ? new Date(student.joiningDate).toLocaleDateString() : (student.createdAt ? new Date(student.createdAt).toLocaleDateString() : "—")}
+                      {student.joiningDate ? safeLocaleDate(student.joiningDate) : (student.createdAt ? safeLocaleDate(student.createdAt) : "—")}
                     </p>
                   </div>
                 </div>
@@ -669,7 +674,6 @@ const StudentDetail = () => {
           <TabsTrigger value="submissions">Submissions ({stats.totalSubmissions})</TabsTrigger>
           <TabsTrigger value="quizzes">Test Attempts ({stats.totalAttempts})</TabsTrigger>
           <TabsTrigger value="ojt">On Job Training</TabsTrigger>
-          <TabsTrigger value="skillMatrix">Skill Matrix Certificate</TabsTrigger>
           <TabsTrigger value="observance">Operator Observance</TabsTrigger>
           <TabsTrigger value="monitoring3">3 Day Monitoring</TabsTrigger>
           <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
@@ -736,7 +740,7 @@ const StudentDetail = () => {
                             <span className="font-medium">Last Activity: </span>
                             <span>
                               {progress.updatedAt
-                                ? new Date(progress.updatedAt).toLocaleDateString()
+                                ? safeLocaleDate(progress.updatedAt)
                                 : "No activity"
                               }
                             </span>
@@ -773,7 +777,7 @@ const StudentDetail = () => {
                         <div>
                           <p className="font-medium text-sm">{submission.assignment?.title || "Assignment"}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(submission.submittedAt).toLocaleDateString()}
+                            {safeLocaleDate(submission.submittedAt)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -817,7 +821,7 @@ const StudentDetail = () => {
                         <div>
                           <p className="font-medium text-sm">{attempt.quiz?.title || "Quiz"}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(attempt.attemptedAt).toLocaleDateString()}
+                            {safeLocaleDate(attempt.attemptedAt)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -907,7 +911,7 @@ const StudentDetail = () => {
                             <span>Last Activity:</span>
                             <span className="font-medium">
                               {progress.updatedAt
-                                ? new Date(progress.updatedAt).toLocaleDateString()
+                                ? displayDate(progress.updatedAt)
                                 : "No activity"
                               }
                             </span>
@@ -981,7 +985,7 @@ const StudentDetail = () => {
                           {submission.assignment?.course?.title || "Unknown Course"}
                         </TableCell>
                         <TableCell>
-                          {new Date(submission.submittedAt).toLocaleDateString()}
+                          {displayDate(submission.submittedAt)}
                         </TableCell>
                         <TableCell>
                           {getSubmissionStatusBadge(submission)}
@@ -1065,7 +1069,7 @@ const StudentDetail = () => {
                           {attempt.quiz?.course?.title || "Unknown Course"}
                         </TableCell>
                         <TableCell>
-                          {new Date(attempt.attemptedAt).toLocaleDateString()}
+                          {displayDate(attempt.attemptedAt)}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">{attempt.scorePercent || 0}%</Badge>
@@ -1173,14 +1177,7 @@ const StudentDetail = () => {
           />
         </TabsContent>
 
-        <TabsContent value="skillMatrix">
-          <SkillMatrixCertificate
-            studentId={studentId}
-            studentName={student?.fullName}
-            employeeCode={student?.userName || student?.empId || student?.employeeId}
-            departmentId={typeof student.department === 'object' ? (student.department?._id || student.department?.id || "GLOBAL") : (student.department || "GLOBAL")}
-          />
-        </TabsContent>
+
 
         <TabsContent value="observance">
           <OperatorObservanceSheet

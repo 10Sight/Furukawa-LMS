@@ -23,35 +23,38 @@ const resolveQuizId = async (idOrSlug) => {
 
 // Create Quiz
 export const createQuiz = asyncHandler(async (req, res) => {
-    const { 
-        courseId, moduleId, lessonId, scope, title, questions, 
-        passingScore, description, timeLimit, attemptsAllowed, 
-        skillUpgradation, issueCertificate, departmentId, sectionId, isDojo, isHandover, isTheoretical
+    const {
+        courseId, moduleId, lessonId, scope, title, questions,
+        passingScore, description, timeLimit, attemptsAllowed,
+        skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy
     } = req.body;
 
     if (!title || !questions || questions.length === 0) {
         throw new ApiError("Title and questions are required", 400);
     }
-    if (scope && !['course', 'module', 'lesson'].includes(scope)) {
-        throw new ApiError("Scope must be 'course', 'module', or 'lesson'", 400);
+    if (scope && !['course', 'module', 'lesson', 'standalone'].includes(scope)) {
+        throw new ApiError("Scope must be 'course', 'module', 'lesson', or 'standalone'", 400);
     }
 
-    const actualScope = scope || (lessonId ? 'lesson' : moduleId ? 'module' : 'course');
+    const actualScope = scope || (lessonId ? 'lesson' : moduleId ? 'module' : courseId ? 'course' : 'standalone');
 
-    if (!courseId) throw new ApiError("Course ID is required", 400);
-
-    let resolvedCourseId = courseId;
-    if (isNaN(courseId)) {
-        const [courses] = await executeQuery("SELECT id FROM courses WHERE slug = ?", [courseId]);
-        if (courses.length === 0) throw new ApiError("Course not found (by slug)", 404);
-        resolvedCourseId = courses[0].id;
-    } else {
-        const [courses] = await executeQuery("SELECT id FROM courses WHERE id = ?", [courseId]);
-        if (courses.length === 0) throw new ApiError("Course not found (by ID)", 404);
-    }
-
+    let resolvedCourseId = courseId || null;
     let finalModuleId = null;
     let finalLessonId = null;
+
+    if (actualScope !== 'standalone') {
+        if (!courseId) throw new ApiError("Course ID is required for non-standalone quizzes", 400);
+
+        if (isNaN(courseId)) {
+            const [courses] = await executeQuery("SELECT id FROM courses WHERE slug = ?", [courseId]);
+            if (courses.length === 0) throw new ApiError("Course not found (by slug)", 404);
+            resolvedCourseId = courses[0].id;
+        } else {
+            const [courses] = await executeQuery("SELECT id FROM courses WHERE id = ?", [courseId]);
+            if (courses.length === 0) throw new ApiError("Course not found (by ID)", 404);
+        }
+    }
+
 
     if (actualScope === 'module' || actualScope === 'lesson') {
         if (!moduleId) throw new ApiError(`Module ID required for ${actualScope} scope`, 400);
@@ -100,14 +103,14 @@ export const createQuiz = asyncHandler(async (req, res) => {
 
     const [insertRows] = await executeQuery(
         `INSERT INTO quizzes 
-        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, isDojo, isHandover, isTheoretical, createdBy, createdAt, updatedAt)
+        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, createdBy, createdAt, updatedAt)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
         [
             resolvedCourseId, finalModuleId, finalLessonId, actualScope, title, slug, description,
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
-            JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true, 
-            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, req.user.id
+            JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true,
+            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy || "Education Cell", req.user.id
         ]
     );
 
@@ -135,6 +138,11 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
     // regular students only see non-DOJO quizzes.
     if (req.user && req.user.isTemporary) {
         whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        whereClauses.push(`(
+            COALESCE(q.level, '') != 'L0 (Dojo User)' 
+            OR ? IS NULL
+        )`);
+        params.push(req.user.currentLevel || null);
         if (req.user.targetDeptId) {
             whereClauses.push(`(
                 q.departmentId IS NULL 
@@ -148,7 +156,7 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         }
     } else if (req.user && req.user.role === 'STUDENT') {
         whereClauses.push("COALESCE(q.isDojo, 0) = 0");
-        
+
         // Department filtering for regular students
         if (req.user.departmentId) {
             whereClauses.push(`(
@@ -214,6 +222,8 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         q.skillUpgradation = parseJSON(q.skillUpgradation);
         q.departmentId = parseJSON(q.departmentId, []);
         q.sectionId = parseJSON(q.sectionId, []);
+        q.lineId = parseJSON(q.lineId, []);
+        q.subSectionId = parseJSON(q.subSectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email, role: q.role };
@@ -248,6 +258,21 @@ export const getQuizById = asyncHandler(async (req, res) => {
     quiz.skillUpgradation = parseJSON(quiz.skillUpgradation);
     quiz.departmentId = parseJSON(quiz.departmentId, []);
     quiz.sectionId = parseJSON(quiz.sectionId, []);
+    quiz.lineId = parseJSON(quiz.lineId, []);
+    quiz.subSectionId = parseJSON(quiz.subSectionId, []);
+    
+    // Fetch sub-section names
+    let subSectionNames = [];
+    if (quiz.subSectionId && quiz.subSectionId.length > 0) {
+        const validIds = quiz.subSectionId.filter(id => !isNaN(id) && id !== null && id !== '');
+        if (validIds.length > 0) {
+            const placeholders = validIds.map(() => "?").join(",");
+            const [ssRows] = await executeQuery(`SELECT name FROM [sub_sections] WHERE id IN (${placeholders})`, validIds);
+            subSectionNames = ssRows.map(r => r.name);
+        }
+    }
+    quiz.subSectionNames = subSectionNames;
+
     quiz.course = { id: quiz.course, title: quiz.cTitle };
     quiz.createdBy = { id: quiz.createdBy, fullName: quiz.fullName, email: quiz.email };
     delete quiz.cTitle; delete quiz.fullName; delete quiz.email;
@@ -259,10 +284,10 @@ export const getQuizById = asyncHandler(async (req, res) => {
 export const updateQuiz = asyncHandler(async (req, res) => {
     const id = await resolveQuizId(req.params.id);
     if (!id) throw new ApiError("Quiz not found", 404);
-    
-    const { 
-        title, questions, description, passingScore, timeLimit, 
-        attemptsAllowed, skillUpgradation, departmentId, sectionId, isDojo, isHandover, isTheoretical
+
+    const {
+        title, questions, description, passingScore, timeLimit,
+        attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy
     } = req.body;
 
     const [rows] = await executeQuery("SELECT * FROM quizzes WHERE id = ?", [id]);
@@ -281,9 +306,13 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (req.body.issueCertificate !== undefined) { updates.push("issueCertificate = ?"); values.push(req.body.issueCertificate); }
     if (departmentId !== undefined) { updates.push("departmentId = ?"); values.push(JSON.stringify(departmentId)); }
     if (sectionId !== undefined) { updates.push("sectionId = ?"); values.push(JSON.stringify(sectionId)); }
+    if (lineId !== undefined) { updates.push("lineId = ?"); values.push(JSON.stringify(lineId)); }
+    if (subSectionId !== undefined) { updates.push("subSectionId = ?"); values.push(JSON.stringify(subSectionId)); }
+    if (level !== undefined) { updates.push("level = ?"); values.push(level); }
     if (isDojo !== undefined) { updates.push("isDojo = ?"); values.push(isDojo ? 1 : 0); }
     if (isHandover !== undefined) { updates.push("isHandover = ?"); values.push(isHandover ? 1 : 0); }
     if (isTheoretical !== undefined) { updates.push("isTheoretical = ?"); values.push(isTheoretical ? 1 : 0); }
+    if (conductedBy !== undefined) { updates.push("conductedBy = ?"); values.push(conductedBy); }
 
     if (updates.length > 0) {
         updates.push("updatedAt = GETDATE()");
@@ -298,6 +327,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     quiz.skillUpgradation = parseJSON(quiz.skillUpgradation);
     quiz.departmentId = parseJSON(quiz.departmentId, []);
     quiz.sectionId = parseJSON(quiz.sectionId, []);
+    quiz.lineId = parseJSON(quiz.lineId, []);
+    quiz.subSectionId = parseJSON(quiz.subSectionId, []);
 
     res.json(new ApiResponse(200, quiz, "Updated"));
 });
@@ -306,7 +337,7 @@ export const updateQuiz = asyncHandler(async (req, res) => {
 export const deleteQuiz = asyncHandler(async (req, res) => {
     const id = await resolveQuizId(req.params.id);
     if (!id) throw new ApiError("Quiz not found", 404);
-    
+
     const [result, metadata] = await executeQuery("DELETE FROM quizzes WHERE id = ?", [id]);
     res.json(new ApiResponse(200, null, "Deleted"));
 });
@@ -337,7 +368,7 @@ export const getAccessibleQuizzes = asyncHandler(async (req, res) => {
     } else {
         const progress = pRows[0];
         const completedModules = parseJSON(progress.completedModules, []);
-        const [mods] = await executeQuery("SELECT id, `order` FROM modules WHERE course = ? ORDER BY `order` ASC", [courseId]);
+        const [mods] = await executeQuery("SELECT id, [order] FROM modules WHERE course = ? ORDER BY [order] ASC", [courseId]);
         const modIdx = mods.findIndex(m => String(m.id) === String(moduleId));
 
         if (modIdx !== -1) {
@@ -396,6 +427,8 @@ export const getAccessibleQuizzes = asyncHandler(async (req, res) => {
         q.skillUpgradation = parseJSON(q.skillUpgradation);
         q.departmentId = parseJSON(q.departmentId, []);
         q.sectionId = parseJSON(q.sectionId, []);
+        q.lineId = parseJSON(q.lineId, []);
+        q.subSectionId = parseJSON(q.subSectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email, role: q.role };
@@ -442,6 +475,11 @@ export const getCourseQuizzes = asyncHandler(async (req, res) => {
 
     if (req.user && req.user.isTemporary) {
         whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        whereClauses.push(`(
+            COALESCE(q.level, '') != 'L0 (Dojo User)' 
+            OR ? IS NULL
+        )`);
+        params.push(req.user.currentLevel || null);
         if (req.user.targetDeptId) {
             whereClauses.push(`(
                 q.departmentId IS NULL 
@@ -493,6 +531,8 @@ export const getCourseQuizzes = asyncHandler(async (req, res) => {
         q.skillUpgradation = parseJSON(q.skillUpgradation);
         q.departmentId = parseJSON(q.departmentId, []);
         q.sectionId = parseJSON(q.sectionId, []);
+        q.lineId = parseJSON(q.lineId, []);
+        q.subSectionId = parseJSON(q.subSectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         delete q.cTitle;
         return q;
@@ -523,6 +563,11 @@ export const getQuizzesByCourse = asyncHandler(async (req, res) => {
     // regular students only see non-DOJO quizzes.
     if (req.user && req.user.isTemporary) {
         whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        whereClauses.push(`(
+            COALESCE(q.level, '') != 'L0 (Dojo User)' 
+            OR ? IS NULL
+        )`);
+        params.push(req.user.currentLevel || null);
         if (req.user.targetDeptId) {
             whereClauses.push(`(
                 q.departmentId IS NULL 
@@ -576,6 +621,8 @@ export const getQuizzesByCourse = asyncHandler(async (req, res) => {
         q.skillUpgradation = parseJSON(q.skillUpgradation);
         q.departmentId = parseJSON(q.departmentId, []);
         q.sectionId = parseJSON(q.sectionId, []);
+        q.lineId = parseJSON(q.lineId, []);
+        q.subSectionId = parseJSON(q.subSectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email, role: q.role };
@@ -606,6 +653,11 @@ export const getQuizzesByModule = asyncHandler(async (req, res) => {
 
     if (req.user && req.user.isTemporary) {
         whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        whereClauses.push(`(
+            COALESCE(q.level, '') != 'L0 (Dojo User)' 
+            OR ? IS NULL
+        )`);
+        params.push(req.user.currentLevel || null);
         if (req.user.targetDeptId) {
             whereClauses.push(`(
                 q.departmentId IS NULL 
@@ -659,6 +711,8 @@ export const getQuizzesByModule = asyncHandler(async (req, res) => {
         q.skillUpgradation = parseJSON(q.skillUpgradation);
         q.departmentId = parseJSON(q.departmentId, []);
         q.sectionId = parseJSON(q.sectionId, []);
+        q.lineId = parseJSON(q.lineId, []);
+        q.subSectionId = parseJSON(q.subSectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = { id: q.module, title: q.mTitle };
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email };
@@ -689,6 +743,11 @@ export const getQuizzesByLesson = asyncHandler(async (req, res) => {
 
     if (req.user && req.user.isTemporary) {
         whereClauses.push("COALESCE(q.isDojo, 0) = 1");
+        whereClauses.push(`(
+            COALESCE(q.level, '') != 'L0 (Dojo User)' 
+            OR ? IS NULL
+        )`);
+        params.push(req.user.currentLevel || null);
         if (req.user.targetDeptId) {
             whereClauses.push(`(
                 q.departmentId IS NULL 
@@ -742,6 +801,8 @@ export const getQuizzesByLesson = asyncHandler(async (req, res) => {
         q.skillUpgradation = parseJSON(q.skillUpgradation);
         q.departmentId = parseJSON(q.departmentId, []);
         q.sectionId = parseJSON(q.sectionId, []);
+        q.lineId = parseJSON(q.lineId, []);
+        q.subSectionId = parseJSON(q.subSectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email };
@@ -751,3 +812,4 @@ export const getQuizzesByLesson = asyncHandler(async (req, res) => {
 
     res.json(new ApiResponse(200, formatted, "Fetched"));
 });
+

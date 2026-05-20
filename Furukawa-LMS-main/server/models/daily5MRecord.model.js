@@ -230,13 +230,17 @@ class Daily5MRecord {
             }
 
             sql += `
+                ),
+                FinalSessions AS (
+                    SELECT *, COUNT(*) OVER() as totalCount FROM LatestSessions WHERE rn = 1
                 )
-                SELECT * FROM LatestSessions WHERE rn = 1
+                SELECT * FROM FinalSessions
             `;
         } else {
             sql = `
                 SELECT r.*, u.fullName as submittedByName, au.fullName as approvedByName,
-                       s.name as sectionName, d.name as departmentName
+                       s.name as sectionName, d.name as departmentName,
+                       COUNT(*) OVER() as totalCount
                 FROM daily_5m_records r
                 LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
                 LEFT JOIN users au ON r.approvedBy = au.id
@@ -286,7 +290,10 @@ class Daily5MRecord {
         params.push(offset, limit);
 
         const [rows] = await executeQuery(sql, params);
-        return rows.map(row => new Daily5MRecord(row));
+        const totalCount = rows.length > 0 ? rows[0].totalCount : 0;
+        const records = rows.map(row => new Daily5MRecord(row));
+        
+        return { records, totalCount };
     }
 
     static async findById(id) {
@@ -341,6 +348,197 @@ class Daily5MRecord {
         const query = "DELETE FROM daily_5m_records WHERE id = ?";
         const [, metadata] = await executeQuery(query, [id]);
         return metadata.affectedRows > 0;
+    }
+
+    static async getStats({ departmentId, sectionId, startDate, endDate, formType }) {
+        let sql = `
+            SELECT 
+                date,
+                status,
+                recordData
+            FROM daily_5m_records
+            WHERE 1=1
+        `;
+        let params = [];
+
+        if (departmentId && departmentId !== 'all') {
+            if (departmentId.includes(',')) {
+                const ids = departmentId.split(',');
+                sql += ` AND departmentId IN (${ids.map(() => '?').join(',')})`;
+                params.push(...ids);
+            } else {
+                sql += " AND departmentId = ?";
+                params.push(departmentId);
+            }
+        }
+
+        if (sectionId && sectionId !== 'all') {
+            sql += " AND sectionId = ?";
+            params.push(sectionId);
+        }
+        if (formType) {
+            sql += " AND formType = ?";
+            params.push(formType);
+        }
+        if (startDate) {
+            sql += " AND date >= ?";
+            params.push(startDate);
+        }
+        if (endDate) {
+            sql += " AND date <= ?";
+            params.push(endDate);
+        }
+
+        sql += " ORDER BY date ASC";
+
+        const [records] = await executeQuery(sql, params);
+        
+        // Aggregate by date
+        const dailyStatsMap = {};
+
+        records.forEach(record => {
+            // Ensure date is in YYYY-MM-DD format for grouping
+            let dateStr = record.date;
+            if (record.date instanceof Date) {
+                const year = record.date.getFullYear();
+                const month = String(record.date.getMonth() + 1).padStart(2, '0');
+                const day = String(record.date.getDate()).padStart(2, '0');
+                dateStr = `${year}-${month}-${day}`;
+            } else if (typeof record.date === 'string' && record.date.includes('T')) {
+                dateStr = record.date.split('T')[0];
+            }
+            
+            if (!dailyStatsMap[dateStr]) {
+                dailyStatsMap[dateStr] = {
+                    date: dateStr,
+                    total: 0,
+                    approved: 0,
+                    rejected: 0,
+                    pending: 0
+                };
+            }
+
+            // Parse recordData to count filled rows
+            let rowCount = 0;
+            let approvedRows = 0;
+            let rejectedRows = 0;
+            let pendingRows = 0;
+
+            if (record.recordData) {
+                try {
+                    const data = typeof record.recordData === 'string' ? JSON.parse(record.recordData) : record.recordData;
+                    // Check up to 20 rows
+                    for (let i = 0; i < 20; i++) {
+                        const rowStatus = data[`rec_${i}_RowStatus`];
+                        const line = data[`rec_${i}_Line`];
+                        const station = data[`rec_${i}_Station`];
+                        const operator = data[`rec_${i}_OperatorName`];
+
+                        // If any identifying field is filled, consider the row filled
+                        if (line || station || operator || rowStatus) {
+                            rowCount++;
+                            if (rowStatus === 'APPROVED') approvedRows++;
+                            else if (rowStatus === 'REJECTED' || rowStatus === 'DECLINED') rejectedRows++;
+                            else pendingRows++;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing recordData for stats:", e);
+                }
+            }
+
+            dailyStatsMap[dateStr].total += rowCount;
+            dailyStatsMap[dateStr].approved += approvedRows;
+            dailyStatsMap[dateStr].rejected += rejectedRows;
+            dailyStatsMap[dateStr].pending += pendingRows;
+        });
+
+        return Object.values(dailyStatsMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
+
+    static async getRowStats({ departmentId, sectionId, startDate, endDate }) {
+        let sql = `
+            SELECT 
+                r.departmentId, 
+                d.name as departmentName, 
+                r.recordData
+            FROM daily_5m_records r
+            LEFT JOIN departments d ON r.departmentId = CAST(d.id AS NVARCHAR(255))
+            WHERE 1=1
+        `;
+        let params = [];
+
+        if (departmentId && departmentId !== 'all') {
+            if (departmentId.includes(',')) {
+                const ids = departmentId.split(',');
+                sql += ` AND r.departmentId IN (${ids.map(() => '?').join(',')})`;
+                params.push(...ids);
+            } else {
+                sql += " AND r.departmentId = ?";
+                params.push(departmentId);
+            }
+        }
+
+        if (sectionId && sectionId !== 'all') {
+            sql += " AND r.sectionId = ?";
+            params.push(sectionId);
+        }
+        if (startDate) {
+            sql += " AND r.date >= ?";
+            params.push(startDate);
+        }
+        if (endDate) {
+            sql += " AND r.date <= ?";
+            params.push(endDate);
+        }
+
+        const [records] = await executeQuery(sql, params);
+
+        let overall = { approved: 0, pending: 0, rejected: 0, total: 0 };
+        let departmentMap = {};
+
+        records.forEach(record => {
+            const data = typeof record.recordData === 'string' ? JSON.parse(record.recordData) : (record.recordData || {});
+            const deptName = record.departmentName || "Unknown";
+            const deptId = record.departmentId;
+
+            if (!departmentMap[deptId]) {
+                departmentMap[deptId] = { 
+                    departmentId: deptId, 
+                    departmentName: deptName, 
+                    approved: 0, 
+                    pending: 0, 
+                    rejected: 0, 
+                    total: 0 
+                };
+            }
+
+            for (let i = 0; i < 20; i++) {
+                const hasData = data[`rec_${i}_Date`] || data[`rec_${i}_Line`] || data[`rec_${i}_StationMC`] || data[`rec_${i}_OpName`];
+                if (hasData) {
+                    const status = data[`rec_${i}_RowStatus`] || 'PENDING';
+                    
+                    overall.total++;
+                    departmentMap[deptId].total++;
+
+                    if (status === 'APPROVED') {
+                        overall.approved++;
+                        departmentMap[deptId].approved++;
+                    } else if (status === 'REJECTED' || status === 'DECLINED') {
+                        overall.rejected++;
+                        departmentMap[deptId].rejected++;
+                    } else {
+                        overall.pending++;
+                        departmentMap[deptId].pending++;
+                    }
+                }
+            }
+        });
+
+        return {
+            overallStats: overall,
+            departmentStats: Object.values(departmentMap)
+        };
     }
 }
 

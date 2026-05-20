@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
-const LAYOUTS = ["admin", "trainer", "student", "cms", "custom"];
+const LAYOUTS = ["admin", "trainer", "student", "cms", "dashboard", "custom"];
 const LAYOUT_LABELS = {
     admin: "Admin Pages",
     trainer: "Trainer Pages",
     student: "Student Pages",
     cms: "CMS Pages",
+    dashboard: "MPS Portal Pages",
     custom: "Custom Portal"
 };
 

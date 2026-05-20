@@ -19,6 +19,7 @@ import {
   IconMenu2,
   IconX,
   IconFingerprint,
+  IconUser
 } from "@tabler/icons-react";
 import { HomeIcon } from "lucide-react";
 import useTranslate from "@/hooks/useTranslate";
@@ -74,8 +75,14 @@ export function CustomRoleLayout() {
 
   // Authorization check
   useEffect(() => {
+    if (isLoading) return; // Wait for auth state to resolve
+
     // We allow /portal index, or any subpage that is explicitly allowed
-    const isAllowed = pathname === "/portal" || isPathAllowedForUser(pathname, "custom", user);
+    // Improved check: If it's in the sidebar tabs, it's definitely allowed
+    const isAllowed = 
+      pathname === "/portal" || 
+      tabs.some(tab => tab.link === pathname || pathname.startsWith(`${tab.link}/`)) ||
+      isPathAllowedForUser(pathname, "custom", user);
     
     if (isAllowed) {
         // Special case: Redirect from /portal if dashboard key is not allowed
@@ -96,7 +103,7 @@ export function CustomRoleLayout() {
         // Only redirect to / if we aren't already there (though here we are in /portal/*)
         navigate("/", { replace: true });
     }
-  }, [pathname, tabs, user, navigate]);
+  }, [pathname, tabs, user, navigate, isLoading]);
 
   const toggleSidebar = () => {
     if (isMobile) setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -153,6 +160,24 @@ export function CustomRoleLayout() {
             </div>
           )}
         </div>
+
+        {/* Back to Menu Link (Fixed at top) */}
+        {(user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM') && (
+          <div className="px-3 pt-4 border-b border-gray-100/50 pb-2">
+            <div
+              className={clsx(
+                "group relative flex items-center rounded-xl p-3 transition-all duration-200 shrink-0 cursor-pointer text-gray-600 hover:bg-gray-100",
+                collapsed && !isMobile ? "justify-center" : "px-4"
+              )}
+              onClick={() => navigate("/")}
+            >
+              <IconUser size={22} className="shrink-0 transition-transform group-hover:scale-110" />
+              {(!collapsed || isMobile) && (
+                <span className="ml-3 text-sm font-medium truncate">Back to Main Menu</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Navigation Tabs */}
         <div className="flex-1 overflow-y-auto py-6 px-3 space-y-1 scrollbar-thin scrollbar-thumb-gray-200">

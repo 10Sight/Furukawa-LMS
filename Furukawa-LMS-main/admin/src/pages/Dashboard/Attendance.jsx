@@ -16,10 +16,12 @@ import { toast } from 'sonner'; // Assuming sonner is used, or I'll use simple a
 const Attendance = () => {
     const [activeTab, setActiveTab] = useState("employees");
 
+    const [departments, setDepartments] = useState([]);
     const [sections, setSections] = useState([]);
     const [lines, setLines] = useState([]);
 
     const [filters, setFilters] = useState({
+        departmentId: "all",
         sectionId: "all",
         lineId: "all",
         date: new Date().toISOString().split('T')[0]
@@ -42,6 +44,7 @@ const Attendance = () => {
             try {
                 const res = await axiosInstance.get('/api/attendance/filters');
                 if (res.data.success) {
+                    setDepartments(res.data.departments || []);
                     setSections(res.data.sections || []);
                     setLines(res.data.lines || []);
                 }
@@ -58,6 +61,7 @@ const Attendance = () => {
         try {
             const queryParams = new URLSearchParams({
                 date: filters.date,
+                departmentId: filters.departmentId,
                 sectionId: filters.sectionId,
                 lineId: filters.lineId
             }).toString();
@@ -82,7 +86,22 @@ const Attendance = () => {
     }, [filters]);
 
     const handleFilterChange = (key, value) => {
-        setFilters(prev => ({ ...prev, [key]: value }));
+        if (key === 'departmentId') {
+            setFilters(prev => ({ 
+                ...prev, 
+                departmentId: value,
+                sectionId: "all",
+                lineId: "all"
+            }));
+        } else if (key === 'sectionId') {
+            setFilters(prev => ({ 
+                ...prev, 
+                sectionId: value,
+                lineId: "all"
+            }));
+        } else {
+            setFilters(prev => ({ ...prev, [key]: value }));
+        }
     };
 
     const handleFileUpload = async (event) => {
@@ -127,9 +146,18 @@ const Attendance = () => {
         }
     };
 
-    // Filter lines based on selected section
+    // --- Cascading Logic ---
+    const filteredSections = filters.departmentId === 'all'
+        ? sections
+        : sections.filter(s => s.departmentId && s.departmentId.toString() === filters.departmentId.toString());
+
     const filteredLines = filters.sectionId === 'all'
-        ? lines
+        ? lines.filter(l => {
+            if (filters.departmentId === 'all') return true;
+            // If only department selected, show lines of all sections in that department
+            const sectionOfLine = sections.find(s => s.id === l.sectionId);
+            return sectionOfLine && sectionOfLine.departmentId?.toString() === filters.departmentId.toString();
+        })
         : lines.filter(l => l.sectionId && l.sectionId.toString() === filters.sectionId.toString());
 
     // --- Search & Filter Logic ---
@@ -170,7 +198,7 @@ const Attendance = () => {
 
                 <div className="flex flex-wrap items-center gap-3">
                     {/* Filter Group */}
-                    <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1 border border-slate-200">
+                    <div className="flex flex-wrap items-center gap-2 bg-slate-50 rounded-lg p-1 border border-slate-200">
                         {/* Search Input */}
                         <div className="relative">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
@@ -178,21 +206,37 @@ const Attendance = () => {
                                 placeholder="Search..."
                                 value={searchTerm}
                                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                                className="h-8 w-[180px] pl-8 bg-transparent border-none text-slate-700 text-xs focus-visible:ring-0 shadow-none placeholder:text-slate-400"
+                                className="h-8 w-[150px] pl-8 bg-transparent border-none text-slate-700 text-xs focus-visible:ring-0 shadow-none placeholder:text-slate-400"
                             />
                         </div>
 
                         <div className="h-4 w-[1px] bg-slate-300"></div>
 
-                        <span className="text-xs text-slate-500 pl-2 uppercase font-bold tracking-wider">Filters:</span>
+                        <span className="text-[10px] text-slate-500 pl-1 uppercase font-bold tracking-wider">Filters:</span>
 
+                        {/* Department Filter */}
+                        <Select value={filters.departmentId} onValueChange={(val) => handleFilterChange('departmentId', val)}>
+                            <SelectTrigger className="w-[120px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 text-xs shadow-none">
+                                <SelectValue placeholder="Dept" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Depts</SelectItem>
+                                {departments.map(d => (
+                                    <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+
+                        <div className="h-4 w-[1px] bg-slate-300"></div>
+
+                        {/* Section Filter */}
                         <Select value={filters.sectionId} onValueChange={(val) => handleFilterChange('sectionId', val)}>
-                            <SelectTrigger className="w-[130px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 text-xs shadow-none">
-                                <SelectValue placeholder="All Sections" />
+                            <SelectTrigger className="w-[120px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 text-xs shadow-none">
+                                <SelectValue placeholder="Section" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Sections</SelectItem>
-                                {sections.map(s => (
+                                {filteredSections.map(s => (
                                     <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
                                 ))}
                             </SelectContent>
@@ -200,9 +244,10 @@ const Attendance = () => {
 
                         <div className="h-4 w-[1px] bg-slate-300"></div>
 
+                        {/* Line Filter */}
                         <Select value={filters.lineId} onValueChange={(val) => handleFilterChange('lineId', val)}>
-                            <SelectTrigger className="w-[130px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 text-xs shadow-none">
-                                <SelectValue placeholder="All Lines" />
+                            <SelectTrigger className="w-[110px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 text-xs shadow-none">
+                                <SelectValue placeholder="Line" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Lines</SelectItem>
@@ -214,7 +259,7 @@ const Attendance = () => {
 
                         <div className="h-4 w-[1px] bg-slate-300"></div>
 
-                        <div className="flex items-center gap-2 px-2">
+                        <div className="flex items-center gap-1 px-1">
                             <Input
                                 type="date"
                                 value={filters.date}

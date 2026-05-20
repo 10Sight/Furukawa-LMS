@@ -71,12 +71,19 @@ export const get5MRecords = async (req, res, next) => {
         // Visibility restriction removed: All users can now see history for their departments
         // Previously: filters.submittedBy = userId; for regular users
 
-        const records = await Daily5MRecord.findAll(filters);
+        const { records, totalCount } = await Daily5MRecord.findAll(filters);
+        const limitInt = parseInt(limit) || 50;
 
         res.status(200).json({
             success: true,
             message: "Records fetched successfully",
-            data: records
+            data: records,
+            pagination: {
+                total: totalCount,
+                pages: Math.ceil(totalCount / limitInt),
+                currentPage: Math.floor((parseInt(offset) || 0) / limitInt) + 1,
+                pageSize: limitInt
+            }
         });
     } catch (error) {
         return next(new ApiError(error.message, 500));
@@ -267,6 +274,50 @@ export const getApprovalStatus = async (req, res, next) => {
         res.status(200).json({
             success: true,
             data: rows
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};// Get daily stats for bar chart
+export const getDaily5MStats = async (req, res, next) => {
+    try {
+        const { departmentId } = req.params;
+        const { sectionId, startDate, endDate, formType } = req.query;
+
+        const stats = await Daily5MRecord.getStats({
+            departmentId,
+            sectionId,
+            startDate,
+            endDate,
+            formType
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Stats fetched successfully",
+            data: stats
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+
+export const getDaily5MRowStats = async (req, res, next) => {
+    try {
+        const { departmentId } = req.params;
+        const { sectionId, startDate, endDate } = req.query;
+
+        const rowStats = await Daily5MRecord.getRowStats({
+            departmentId,
+            sectionId,
+            startDate,
+            endDate
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Row stats fetched successfully",
+            data: rowStats
         });
     } catch (error) {
         return next(new ApiError(error.message, 500));

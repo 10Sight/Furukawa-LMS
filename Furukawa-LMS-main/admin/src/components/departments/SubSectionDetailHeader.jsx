@@ -22,12 +22,14 @@ const SubSectionDetailHeader = ({ subSection, lineName }) => {
         </div>
       </div>
 
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-        <div className="flex items-center gap-2">
-          <div className="flex flex-col">
-            <p className="text-sm text-muted-foreground">Description</p>
-            <p className="text-sm">{subSection.description || "No description provided"}</p>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+        <div className="flex flex-col">
+          <p className="text-sm text-muted-foreground">Description</p>
+          <p className="text-sm">{subSection.description || "No description provided"}</p>
+        </div>
+        <div className="flex flex-col">
+          <p className="text-sm text-muted-foreground">Operators</p>
+          <p className="text-sm font-semibold text-blue-600">{subSection.subSectionCount || 0}</p>
         </div>
       </div>
     </div>

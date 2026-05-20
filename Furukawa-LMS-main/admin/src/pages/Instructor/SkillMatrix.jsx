@@ -18,11 +18,18 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
 
 const InstructorSkillMatrix = () => {
     const componentRef = useRef();
     const [selectedDepartment, setSelectedDepartment] = useState("");
     const [selectedLine, setSelectedLine] = useState("");
+    const [activeTab, setActiveTab] = useState("skillMatrix");
+    const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
+    const [evalDepartment, setEvalDepartment] = useState("");
+    const [evalLine, setEvalLine] = useState("");
+    const [evalSearchText, setEvalSearchText] = useState("");
 
     // --- Saved Data Fetching ---
     const { data: savedMatrixData, refetch: refetchMatrix } = useGetSkillMatrixQuery({
@@ -100,6 +107,59 @@ const InstructorSkillMatrix = () => {
 
         return users;
     }, [selectedDepartment, departmentsData]);
+
+    // Fetch Lines for Evaluation Dropdown based on Eval Department
+    const { data: evalLinesData } = useGetLinesByDepartmentQuery(evalDepartment, {
+        skip: !evalDepartment
+    });
+
+    // Memoize Department Users for Evaluation Tab
+    const evalDepartmentUsers = React.useMemo(() => {
+        if (!evalDepartment || !departmentsData?.data?.departments) return [];
+
+        const selectedDept = departmentsData.data.departments.find(d => String(d._id) === String(evalDepartment));
+        if (!selectedDept) return [];
+
+        const users = [];
+
+        // Add Instructor (TNR)
+        if (selectedDept.instructor) {
+            users.push({
+                ...selectedDept.instructor,
+                type: 'TNR'
+            });
+        }
+
+        // Add Students (EMP)
+        if (selectedDept.students && Array.isArray(selectedDept.students)) {
+            selectedDept.students.forEach(student => {
+                users.push({
+                    ...student,
+                    type: 'EMP'
+                });
+            });
+        }
+
+        return users;
+    }, [evalDepartment, departmentsData]);
+
+    const filteredEvalUsers = React.useMemo(() => {
+        if (!evalDepartmentUsers) return [];
+        
+        // Filter by evalLine if selected
+        let users = evalDepartmentUsers;
+        if (evalLine) {
+            // Filter users who belong to the selected line if applicable, or list all
+            // To be safe, we list department users and search them
+        }
+
+        if (!evalSearchText.trim()) return users;
+        const searchLower = evalSearchText.toLowerCase();
+        return users.filter(u => 
+            (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
+            (u.cardNo || "").toLowerCase().includes(searchLower)
+        );
+    }, [evalDepartmentUsers, evalLine, evalSearchText]);
 
     // Initialize Matrix on Line Selection (Merge Logic)
     useEffect(() => {
@@ -197,6 +257,17 @@ const InstructorSkillMatrix = () => {
             setMatrixEntries([]);
         }
     }, [selectedLine, machinesData, departmentUsers, savedMatrixData]);
+
+    useEffect(() => {
+        setSelectedOperatorForEval(null);
+    }, [selectedDepartment, selectedLine]);
+
+    useEffect(() => {
+        const actualOps = matrixEntries.filter(e => !e.isManual);
+        if (actualOps.length > 0 && !selectedOperatorForEval) {
+            setSelectedOperatorForEval(actualOps[0]._id);
+        }
+    }, [matrixEntries, selectedOperatorForEval]);
 
     const handleSave = async () => {
         if (!selectedDepartment || !selectedLine) {
@@ -751,7 +822,14 @@ const InstructorSkillMatrix = () => {
                     No users or machines found for this selection.
                 </div>
             ) : (
-                <div id="printable-matrix" className="bg-white text-xs text-black border-2 border-black">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="no-print mb-4 flex gap-2 w-fit bg-gray-100 p-1 rounded-md">
+                        <TabsTrigger value="skillMatrix" className="text-xs font-bold px-4 py-2">Skill Matrix</TabsTrigger>
+                        <TabsTrigger value="evaluation" className="text-xs font-bold px-4 py-2">Skill Matrix Evaluation</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="skillMatrix" className="space-y-4">
+                        <div id="printable-matrix" className="bg-white text-xs text-black border-2 border-black">
                     {/* Header Section */}
                     <div className="flex border-b border-black">
                         <div className="w-[150px] border-r border-black p-2 flex items-center justify-center">
@@ -825,7 +903,18 @@ const InstructorSkillMatrix = () => {
                                         </SelectContent>
                                     </Select>
                                 ) : (
-                                    row.name
+                                    <button
+                                        onClick={() => {
+                                            setEvalDepartment(selectedDepartment);
+                                            setEvalLine(selectedLine);
+                                            setSelectedOperatorForEval(row._id);
+                                            setActiveTab("evaluation");
+                                        }}
+                                        className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full"
+                                        title="Click to view/edit Skill Matrix Evaluation Certificate"
+                                    >
+                                        {row.name}
+                                    </button>
                                 )}
                             </div>
                             <div className="w-12 border-r border-black p-2 flex items-center justify-center font-bold">{row.type}</div>
@@ -1015,6 +1104,118 @@ const InstructorSkillMatrix = () => {
                         </div>
                     </div>
                 </div>
+                    </TabsContent>
+
+                    <TabsContent value="evaluation" className="space-y-6">
+                        {/* Control Bar for selecting operator */}
+                        <div className="no-print p-6 bg-white border rounded-lg shadow-sm space-y-4 mb-6 text-black">
+                            <div className="flex justify-between items-center border-b pb-2">
+                                <div>
+                                    <h2 className="text-lg font-bold text-gray-800">Operator Evaluation Finder</h2>
+                                    <p className="text-xs text-gray-500">Filter and select an operator to view/edit their skill certificate</p>
+                                </div>
+                                <Button variant="outline" size="sm" onClick={() => setActiveTab("skillMatrix")}>
+                                    Back to Matrix Grid
+                                </Button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Department</label>
+                                    <Select value={evalDepartment} onValueChange={(val) => {
+                                        setEvalDepartment(val);
+                                        setEvalLine("");
+                                        setSelectedOperatorForEval(null);
+                                    }}>
+                                        <SelectTrigger className="h-9"><SelectValue placeholder="Select Department" /></SelectTrigger>
+                                        <SelectContent>
+                                            {departmentsData?.data?.departments?.map(dept => (
+                                                <SelectItem key={String(dept._id)} value={String(dept._id)}>{dept.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Line</label>
+                                    <Select value={evalLine} onValueChange={(val) => {
+                                        setEvalLine(val);
+                                        setSelectedOperatorForEval(null);
+                                    }} disabled={!evalDepartment}>
+                                        <SelectTrigger className="h-9"><SelectValue placeholder="All Lines" /></SelectTrigger>
+                                        <SelectContent>
+                                            {evalLinesData?.data?.map(line => (
+                                                <SelectItem key={String(line._id)} value={String(line._id)}>{line.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                
+                                <div className="flex flex-col gap-1 sm:col-span-2">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Search User</label>
+                                    <Input
+                                        placeholder="Type name or card no..."
+                                        value={evalSearchText}
+                                        onChange={(e) => {
+                                            setEvalSearchText(e.target.value);
+                                            setSelectedOperatorForEval(null);
+                                        }}
+                                        className="h-9"
+                                        disabled={!evalDepartment}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col gap-1 pt-2 border-t">
+                                <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold text-blue-600">Select Operator to Evaluate</label>
+                                <Select 
+                                    value={selectedOperatorForEval || ""} 
+                                    onValueChange={setSelectedOperatorForEval}
+                                    disabled={!evalDepartment || filteredEvalUsers.length === 0}
+                                >
+                                    <SelectTrigger className="h-9">
+                                        <SelectValue placeholder={
+                                            !evalDepartment 
+                                                ? "Please select a department first" 
+                                                : filteredEvalUsers.length === 0 
+                                                    ? "No operators found matching the criteria" 
+                                                    : "Select an operator"
+                                        } />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {filteredEvalUsers.map(u => (
+                                            <SelectItem key={u._id} value={u._id}>
+                                                {u.fullName || u.name} {u.cardNo ? `(${u.cardNo})` : ""}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        {selectedOperatorForEval ? (
+                            <div className="bg-white border rounded p-4 shadow">
+                                <SkillMatrixCertificate
+                                    studentId={selectedOperatorForEval}
+                                    studentName={
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.name || 
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.fullName || 
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.name
+                                    }
+                                    employeeCode={
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.cardNo || 
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo
+                                    }
+                                    departmentId={evalDepartment || selectedDepartment}
+                                />
+                            </div>
+                        ) : (
+                            <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
+                                No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                            </div>
+                        )}
+                    </TabsContent>
+                </Tabs>
             )}
         </div>
     );

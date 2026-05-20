@@ -1,14 +1,29 @@
 import { useRef, useState, useEffect } from "react";
+import { useSelector } from "react-redux";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { IconPrinter, IconDeviceFloppy, IconArrowLeft, IconCamera, IconTrash, IconDownload } from "@tabler/icons-react";
+import { IconPrinter, IconDeviceFloppy, IconArrowLeft, IconCamera, IconTrash, IconDownload, IconPlus, IconSend, IconCheck, IconX } from "@tabler/icons-react";
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
 import { useGetOnJobTrainingByIdQuery, useUpdateOnJobTrainingMutation } from "@/Redux/AllApi/OnJobTrainingApi";
+import UserAutocomplete from "@/components/common/UserAutocomplete";
 
 const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnly = false, onBack }) => {
+    const { user: authUser } = useSelector((state) => state.auth);
+
+    const hasPermission = (permission) => {
+        if (!authUser) return false;
+        if (authUser.role === "SUPERADMIN" || authUser.isAdmin) return true;
+        if (authUser.role === "INSTRUCTOR" || authUser.isTrainer) return true;
+        return authUser.customRole?.permissions?.includes(permission);
+    };
+
+    const hasSignOffPermission = () => {
+        return hasPermission("on_job_training:checked_by") || hasPermission("on_job_training:approved_by");
+    };
+
     const componentRef = useRef();
 
     // API Hooks
@@ -34,12 +49,33 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
     useEffect(() => {
         if (ojtData?.data) {
             const data = ojtData.data;
+            const computedAreaLine = data.section?.name
+                ? `${data.section.name}${data.subSection?.name ? ` / ${data.subSection.name}` : ""}`
+                : (data.areaLine || "New Manpower");
+                
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "";
+                return dateStr.split('T')[0];
+            };
+
+            const rawRecords = data.attendanceRecords || [];
+            const minRows = Math.max(20, rawRecords.length);
+            const formattedAttendance = Array(minRows).fill({}).map((_, idx) => {
+                const rec = rawRecords[idx] || {};
+                return {
+                    date: formatDate(rec.date),
+                    name: rec.name || "",
+                    ecode: rec.ecode || "",
+                    department: rec.department || ""
+                };
+            });
+
             setTrainingData(prev => ({
                 ...prev,
-                areaLine: data.areaLine || "New Manpower",
-                date: data.trainingDate || data.date || new Date().toISOString().split('T')[0],
-                trainingGivenBy: data.trainingGivenBy || "",
-                trainingTopic: data.trainingTopic || "",
+                areaLine: computedAreaLine,
+                date: formatDate(data.trainingDate || data.date) || new Date().toISOString().split('T')[0],
+                trainingGivenBy: data.trainingGivenBy || data.creatorName || "",
+                trainingTopic: data.trainingTopic || data.name || "",
                 trainingStartTime: data.trainingStartTime || "",
                 trainingEndTime: data.trainingEndTime || "",
                 // trainingDetail/Image kept for fallback, but main source is trainingLog
@@ -50,7 +86,7 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                     : (data.trainingDetail || data.trainingDetailImage)
                         ? [{ id: 1, image: data.trainingDetailImage, description: data.trainingDetail }]
                         : [{ id: 1, image: null, description: "" }],
-                attendanceRecords: data.attendanceRecords || Array(20).fill({})
+                attendanceRecords: formattedAttendance
             }));
         }
     }, [ojtData]);
@@ -62,9 +98,20 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
 
     const handleAttendanceChange = (index, field, value) => {
         if (readOnly) return;
-        const newRecords = [...trainingData.attendanceRecords];
-        newRecords[index] = { ...newRecords[index], [field]: value };
-        setTrainingData(prev => ({ ...prev, attendanceRecords: newRecords }));
+        setTrainingData(prev => {
+            const newRecords = [...prev.attendanceRecords];
+            newRecords[index] = { ...newRecords[index], [field]: value };
+            return { ...prev, attendanceRecords: newRecords };
+        });
+    };
+
+    const handleMultipleAttendanceChange = (index, updates) => {
+        if (readOnly) return;
+        setTrainingData(prev => {
+            const newRecords = [...prev.attendanceRecords];
+            newRecords[index] = { ...newRecords[index], ...updates };
+            return { ...prev, attendanceRecords: newRecords };
+        });
     };
 
     const handleImageChange = (e) => {
@@ -85,7 +132,26 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
         }
     };
 
-    const handleSave = async () => {
+    const handleStatusUpdate = async (newStatus) => {
+        if (!ojtId) {
+            toast.error("OJT ID is missing");
+            return;
+        }
+        try {
+            await updateOnJobTraining({
+                id: ojtId,
+                data: {
+                    result: newStatus
+                }
+            }).unwrap();
+            toast.success(`Sheet ${newStatus} successfully!`);
+            refetch();
+        } catch (error) {
+            toast.error(error?.data?.message || `Failed to update sheet status to ${newStatus}`);
+        }
+    };
+
+    const handleSave = async (sendEmail = false) => {
         if (!ojtId) {
             toast.error("OJT ID is missing");
             return;
@@ -95,12 +161,13 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                 id: ojtId,
                 data: {
                     ...trainingData,
-                    trainingDate: trainingData.date // Map to backend field name
+                    trainingDate: trainingData.date, // Map to backend field name
+                    sendEmail: sendEmail
                 }
             };
 
             await updateOnJobTraining(payload).unwrap();
-            toast.success("Training record saved successfully!");
+            toast.success(sendEmail ? "Training record submitted and email sent successfully!" : "Training record saved successfully!");
             refetch();
         } catch (error) {
             toast.error(error?.data?.message || "Failed to save training record");
@@ -162,12 +229,55 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                         <p className="text-sm text-gray-500">Training record and attendance</p>
                     </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     {!readOnly && (
-                        <Button onClick={handleSave} disabled={isSaving} className="gap-2 bg-blue-600 hover:bg-blue-700">
-                            <IconDeviceFloppy className="w-4 h-4" />
-                            {isSaving ? "Saving..." : "Save"}
-                        </Button>
+                        <>
+                            {/* Save OJT (Standard Save) */}
+                            {hasPermission("on_job_training:update") && (
+                                <Button 
+                                    onClick={() => handleSave(false)} 
+                                    disabled={isSaving} 
+                                    className="gap-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold shadow-sm transition-all"
+                                >
+                                    <IconDeviceFloppy className="w-4 h-4" />
+                                    {isSaving ? "Saving..." : "Save OJT"}
+                                </Button>
+                            )}
+
+                            {/* Submit & Send Email */}
+                            {hasPermission("on_job_training:update") && (
+                                <Button 
+                                    onClick={() => handleSave(true)} 
+                                    disabled={isSaving} 
+                                    className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm transition-all"
+                                >
+                                    <IconSend className="w-4 h-4" />
+                                    {isSaving ? "Submitting..." : "Submit & Send Email"}
+                                </Button>
+                            )}
+
+                            {/* Prominent Approve OJT Button */}
+                            {ojtData?.data?.result === "Pending" && hasSignOffPermission() && (
+                                <Button 
+                                    onClick={() => handleStatusUpdate("Approved")} 
+                                    className="gap-2 bg-green-600 hover:bg-green-700 text-white font-bold shadow-md transition-all px-4"
+                                >
+                                    <IconCheck className="w-4 h-4" />
+                                    Approve OJT
+                                </Button>
+                            )}
+
+                            {/* Prominent Reject OJT Button */}
+                            {ojtData?.data?.result === "Pending" && hasSignOffPermission() && (
+                                <Button 
+                                    onClick={() => handleStatusUpdate("Rejected")} 
+                                    className="gap-2 bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md transition-all px-4"
+                                >
+                                    <IconX className="w-4 h-4" />
+                                    Reject OJT
+                                </Button>
+                            )}
+                        </>
                     )}
                     <Button
                         variant="outline"
@@ -224,12 +334,12 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                 </div>
                             </div>
 
-                            <div className="flex border-b border-black">
+                            <div className="flex border-b border-black text-xs">
                                 <div className="flex-1 p-1 pl-2 flex items-center">
-                                    <span className="font-bold whitespace-nowrap w-32">Training Given By</span>
+                                    <span className="font-bold whitespace-nowrap">Training Given By :-</span>
                                     <Input
                                         disabled={readOnly}
-                                        className="inline border-none h-auto p-0 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-center"
+                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-left"
                                         value={trainingData.trainingGivenBy}
                                         onChange={e => handleInputChange('trainingGivenBy', e.target.value)}
                                         placeholder="Trainer Name"
@@ -237,12 +347,12 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                 </div>
                             </div>
 
-                            <div className="flex border-b border-black">
+                            <div className="flex border-b border-black text-xs">
                                 <div className="flex-1 p-1 pl-2 flex items-center">
-                                    <span className="font-bold whitespace-nowrap w-32">Training Topic</span>
+                                    <span className="font-bold whitespace-nowrap">Training Topic :-</span>
                                     <Input
                                         disabled={readOnly}
-                                        className="inline border-none h-auto p-0 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-center text-lg" // Larger text for topic
+                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-left"
                                         value={trainingData.trainingTopic}
                                         onChange={e => handleInputChange('trainingTopic', e.target.value)}
                                         placeholder="Topic Name"
@@ -274,13 +384,23 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                 <div className="flex-1 p-1 pl-2 flex items-center">
                                     <span className="font-bold whitespace-nowrap">Training Duration :-</span>
                                     <span className="ml-2 text-blue-600 font-semibold">
-                                        {/* Calculate duration simply for display if possible, or just user input? Image shows "10 min". Let's stick strictly to input or calculation. Since there is no state for duration, I will calculate it if both times exist, else show placeholder. */}
                                         {(() => {
                                             if (trainingData.trainingStartTime && trainingData.trainingEndTime) {
-                                                const start = new Date(`1970-01-01T${trainingData.trainingStartTime} `);
-                                                const end = new Date(`1970-01-01T${trainingData.trainingEndTime} `);
-                                                const diff = (end - start) / 60000; // minutes
-                                                return diff > 0 ? `${diff} min` : "--";
+                                                const startParts = trainingData.trainingStartTime.split(':');
+                                                const endParts = trainingData.trainingEndTime.split(':');
+                                                if (startParts.length >= 2 && endParts.length >= 2) {
+                                                    const startMinutes = Number(startParts[0]) * 60 + Number(startParts[1]);
+                                                    const endMinutes = Number(endParts[0]) * 60 + Number(endParts[1]);
+                                                    let diff = endMinutes - startMinutes;
+                                                    if (diff < 0) {
+                                                        diff += 1440; // overnight training shift adjustment (24 hours)
+                                                    }
+                                                    if (diff === 0) return "0 min";
+                                                    if (diff < 60) return `${diff} min`;
+                                                    const hrs = Math.floor(diff / 60);
+                                                    const mins = diff % 60;
+                                                    return `${hrs} hr${hrs > 1 ? 's' : ''}${mins > 0 ? ` ${mins} min` : ''}`;
+                                                }
                                             }
                                             return "--";
                                         })()}
@@ -395,79 +515,164 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
 
 
                             {/* Attendance Header */}
-                            <div className="text-center font-bold text-xs p-1 border-b border-black">Attendance</div>
+                            <div className="relative flex items-center justify-center p-2 border-b border-black bg-gray-50 print:bg-transparent min-h-[32px]">
+                                <span className="font-bold text-xs">Attendance</span>
+                                {!readOnly && (
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1.5 no-print">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-5 px-2 bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 border-blue-200 text-[10px] flex items-center gap-1 font-medium transition-colors"
+                                            onClick={() => {
+                                                setTrainingData(prev => ({
+                                                    ...prev,
+                                                    attendanceRecords: [...prev.attendanceRecords, {}]
+                                                }));
+                                            }}
+                                        >
+                                            <IconPlus className="w-3.5 h-3.5" /> Add Row
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Attendance Table */}
                             <div className="border-b border-black">
-                                <table className="w-full border-collapse text-[10px]">
+                                <table className="w-full border-collapse text-[10px] table-fixed">
                                     <thead>
                                         <tr className="border-b border-black bg-gray-50 print:bg-transparent">
-                                            <th className="border-r border-black p-1 w-8">S.No</th>
-                                            <th className="border-r border-black p-1 w-20">Date</th>
-                                            <th className="border-r border-black p-1 text-left pl-2">Name</th>
-                                            <th className="border-r border-black p-1 w-16">E.Code</th>
-                                            <th className="border-r border-black p-1 w-16">Section</th>
+                                            <th className="border-r border-black p-1 w-[5%] text-center font-bold">S.No</th>
+                                            <th className="border-r border-black p-1 w-[13%] text-center font-bold">Date</th>
+                                            <th className="border-r border-black p-1 w-[24%] text-left pl-2 font-bold">Name</th>
+                                            <th className="border-r border-black p-1 w-[8%] text-center font-bold">E.Code</th>
 
-                                            <th className="border-r border-black p-1 w-8">S.No</th>
-                                            <th className="border-r border-black p-1 w-20">Date</th>
-                                            <th className="border-r border-black p-1 text-left pl-2">Name</th>
-                                            <th className="border-r border-black p-1 w-16">E.Code</th>
-                                            <th className="p-1 w-16">Section</th>
+                                            <th className="border-r border-black p-1 w-[5%] text-center font-bold">S.No</th>
+                                            <th className="border-r border-black p-1 w-[13%] text-center font-bold">Date</th>
+                                            <th className="border-r border-black p-1 w-[24%] text-left pl-2 font-bold">Name</th>
+                                            <th className="p-1 w-[8%] text-center font-bold">E.Code</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {Array(10).fill(0).map((_, i) => (
-                                            <tr key={i} className="h-6 border-b border-black last:border-b-0">
-                                                {/* Left Side (1-10) */}
-                                                <td className="border-r border-black text-center font-bold text-blue-600">{i + 1}</td>
-                                                <td className="border-r border-black p-0">
-                                                    <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0"
-                                                        value={trainingData.attendanceRecords[i]?.date || ""} onChange={e => handleAttendanceChange(i, 'date', e.target.value)} />
-                                                </td>
-                                                <td className="border-r border-black p-0">
-                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase"
-                                                        value={trainingData.attendanceRecords[i]?.name || ""} onChange={e => handleAttendanceChange(i, 'name', e.target.value)} />
-                                                </td>
-                                                <td className="border-r border-black p-0">
-                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase"
-                                                        value={trainingData.attendanceRecords[i]?.ecode || ""} onChange={e => handleAttendanceChange(i, 'ecode', e.target.value)} />
-                                                </td>
-                                                <td className="border-r border-black p-0">
-                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase"
-                                                        value={trainingData.attendanceRecords[i]?.department || ""} onChange={e => handleAttendanceChange(i, 'department', e.target.value)} />
-                                                </td>
+                                        {(() => {
+                                            const N = trainingData.attendanceRecords.length;
+                                            const half = Math.ceil(N / 2);
+                                            return Array(half).fill(0).map((_, i) => {
+                                                const leftIndex = i;
+                                                const rightIndex = i + half;
+                                                return (
+                                                    <tr key={i} className="h-6 border-b border-black last:border-b-0">
+                                                        {/* Left Side */}
+                                                        <td className="border-r border-black text-center font-bold text-blue-600">{leftIndex + 1}</td>
+                                                        <td className="border-r border-black p-0">
+                                                            <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent"
+                                                                value={trainingData.attendanceRecords[leftIndex]?.date || ""} onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)} />
+                                                        </td>
+                                                        <td className="border-r border-black p-0 overflow-visible relative">
+                                                            <UserAutocomplete
+                                                                compact
+                                                                disabled={readOnly}
+                                                                mode="all"
+                                                                departmentId={ojtData?.data?.department?.id}
+                                                                value={trainingData.attendanceRecords[leftIndex]?.name || ""}
+                                                                onChange={(user) => {
+                                                                    handleMultipleAttendanceChange(leftIndex, {
+                                                                        name: user.fullName,
+                                                                        ecode: user.empId || ""
+                                                                    });
+                                                                }}
+                                                                onTextChange={(val) => handleAttendanceChange(leftIndex, 'name', val)}
+                                                                placeholder="Search Name..."
+                                                                inputClassName="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase text-left bg-transparent rounded-none"
+                                                            />
+                                                        </td>
+                                                        <td className="border-r border-black p-0">
+                                                            <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent"
+                                                                value={trainingData.attendanceRecords[leftIndex]?.ecode || ""} onChange={e => handleAttendanceChange(leftIndex, 'ecode', e.target.value)} />
+                                                        </td>
 
-                                                {/* Right Side (11-20) */}
-                                                <td className="border-r border-black text-center font-bold text-blue-600">{i + 11}</td>
-                                                <td className="border-r border-black p-0">
-                                                    <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0"
-                                                        value={trainingData.attendanceRecords[i + 10]?.date || ""} onChange={e => handleAttendanceChange(i + 10, 'date', e.target.value)} />
-                                                </td>
-                                                <td className="border-r border-black p-0">
-                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase"
-                                                        value={trainingData.attendanceRecords[i + 10]?.name || ""} onChange={e => handleAttendanceChange(i + 10, 'name', e.target.value)} />
-                                                </td>
-                                                <td className="border-r border-black p-0">
-                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase"
-                                                        value={trainingData.attendanceRecords[i + 10]?.ecode || ""} onChange={e => handleAttendanceChange(i + 10, 'ecode', e.target.value)} />
-                                                </td>
-                                                <td className="p-0">
-                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase"
-                                                        value={trainingData.attendanceRecords[i + 10]?.department || ""} onChange={e => handleAttendanceChange(i + 10, 'department', e.target.value)} />
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                        {/* Right Side */}
+                                                        <td className="border-r border-black text-center font-bold text-blue-600">{rightIndex + 1}</td>
+                                                        {rightIndex < N ? (
+                                                            <>
+                                                                <td className="border-r border-black p-0">
+                                                                    <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent"
+                                                                        value={trainingData.attendanceRecords[rightIndex]?.date || ""} onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)} />
+                                                                </td>
+                                                                <td className="border-r border-black p-0 overflow-visible relative">
+                                                                    <UserAutocomplete
+                                                                        compact
+                                                                        disabled={readOnly}
+                                                                        mode="all"
+                                                                        departmentId={ojtData?.data?.department?.id}
+                                                                        value={trainingData.attendanceRecords[rightIndex]?.name || ""}
+                                                                        onChange={(user) => {
+                                                                            handleMultipleAttendanceChange(rightIndex, {
+                                                                                name: user.fullName,
+                                                                                ecode: user.empId || ""
+                                                                            });
+                                                                        }}
+                                                                        onTextChange={(val) => handleAttendanceChange(rightIndex, 'name', val)}
+                                                                        placeholder="Search Name..."
+                                                                        inputClassName="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase text-left bg-transparent rounded-none"
+                                                                    />
+                                                                </td>
+                                                                <td className="p-0">
+                                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent"
+                                                                        value={trainingData.attendanceRecords[rightIndex]?.ecode || ""} onChange={e => handleAttendanceChange(rightIndex, 'ecode', e.target.value)} />
+                                                                </td>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <td className="border-r border-black bg-gray-50/50"></td>
+                                                                <td className="border-r border-black bg-gray-50/50"></td>
+                                                                <td className="bg-gray-50/50"></td>
+                                                            </>
+                                                        )}
+                                                    </tr>
+                                                );
+                                            });
+                                        })()}
                                     </tbody>
                                 </table>
                             </div>
 
                             {/* Footer Section */}
                             <div className="grid grid-cols-2 text-xs border-b border-black">
-                                <div className="border-r border-black p-1 flex items-center h-8">
+                                <div className="border-r border-black p-1 flex items-center h-8 gap-2">
                                     <span className="font-bold">Prepared By :-</span>
+                                    <span className="text-blue-600 font-semibold uppercase">{ojtData?.data?.creatorName || trainingData.trainingGivenBy || "--"}</span>
                                 </div>
-                                <div className="p-1 flex items-center h-8">
-                                    <span className="font-bold">Checked By :-</span>
+                                <div className="p-1 flex items-center h-8 justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold">Checked By :-</span>
+                                        {ojtData?.data?.result && ojtData?.data?.result !== "Pending" && (
+                                            <span className="text-blue-600 font-semibold uppercase">
+                                                {ojtData.data.result === "Approved" 
+                                                    ? (ojtData.data.approverName || "--") 
+                                                    : `Rejected By: ${ojtData.data.approverName || "--"}`}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {!readOnly && ojtData?.data?.result === "Pending" && hasSignOffPermission() && (
+                                        <div className="flex gap-1.5 no-print">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-5 px-2 bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border-green-200 text-[10px] font-semibold transition-colors"
+                                                onClick={() => handleStatusUpdate("Approved")}
+                                            >
+                                                Approve
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-5 px-2 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-800 border-rose-200 text-[10px] font-semibold transition-colors"
+                                                onClick={() => handleStatusUpdate("Rejected")}
+                                            >
+                                                Reject
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

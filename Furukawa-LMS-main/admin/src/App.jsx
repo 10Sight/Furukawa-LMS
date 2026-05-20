@@ -63,7 +63,10 @@ const OperatorImportLogs = lazy(() => import("./pages/Admin/OperatorImportLogs")
 const Analytics = lazy(() => import("./pages/Admin/Analytics"));
 const ExamHistory = lazy(() => import("./pages/Admin/ExamHistory"));
 const AdminQuizMonitoring = lazy(() => import("./pages/Admin/QuizMonitoring"));
+const QuizAttemptReviewPage = lazy(() => import("./pages/Admin/QuizAttemptReviewPage"));
 const TestPaper = lazy(() => import("./pages/Admin/TestPaper"));
+const AddTestPaper = lazy(() => import("./pages/Admin/AddTestPaper"));
+const EditTestPaper = lazy(() => import("./pages/Admin/EditTestPaper"));
 const AdminAttemptRequests = lazy(() => import("./pages/Admin/AttemptRequests"));
 const StudentLevelManagement = lazy(() => import("./pages/Admin/StudentLevelManagement"));
 const CertificateTemplates = lazy(() => import("./pages/Admin/CertificateTemplates"));
@@ -87,6 +90,7 @@ const HandoverSheetPage = lazy(() => import("./pages/Admin/HandoverSheetPage"));
 const MultiSkilling = lazy(() => import("./pages/Admin/MultiSkilling"));
 const DojoHiring = lazy(() => import("./pages/Admin/DojoHiring"));
 const DojoCandidateDetail = lazy(() => import("./pages/Admin/DojoCandidateDetail"));
+const OnJobTraining = lazy(() => import("./pages/Admin/OnJobTraining"));
 
 
 const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
@@ -188,7 +192,7 @@ const App = () => {
             path="/dashboard"
             element={
               <ProtectedRoute>
-                {user?.isAdmin || user?.role === 'SUPERADMIN' || (user?.role === 'CUSTOM' && user?.customRole?.targetLayout?.toLowerCase() === 'admin') ? (
+                {user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM' ? (
                   <DashboardLayout />
                 ) : (
                   <Navigate to="/" replace />
@@ -204,6 +208,8 @@ const App = () => {
             <Route path="requirement-logs" element={<RequirementUpdateLogs />} />
             <Route path="email-reports" element={<EmailReports />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />
+            <Route path="role-manager" element={<RoleManager />} />
+            <Route path="manage-role/:roleId" element={<RoleUserManager />} />
           </Route>
 
           {/* Admin routes */}
@@ -241,7 +247,10 @@ const App = () => {
             <Route path="add-resource/:courseId" element={<AddResourcePage />} />
             <Route path="edit-lesson/:moduleId/:lessonId" element={<EditLessonPage />} />
             <Route path="quiz-monitoring" element={<AdminQuizMonitoring />} />
+            <Route path="quiz-monitoring/review/:attemptId" element={<QuizAttemptReviewPage />} />
             <Route path="test-paper" element={<TestPaper />} />
+            <Route path="add-test-paper" element={<AddTestPaper />} />
+            <Route path="edit-test-paper/:quizId" element={<EditTestPaper />} />
             <Route path="take-test/:quizId" element={<TakeQuiz />} />
             <Route path="attempt-requests" element={<AdminAttemptRequests />} />
             <Route path="analytics" element={<Analytics pageName="Analytics" />} />
@@ -256,6 +265,7 @@ const App = () => {
             <Route path="10-cycle" element={<Cycle10 />} />
             <Route path="daily-production-report" element={<DailyProductionReport />} />
             <Route path="dpr-manage" element={<DPRManage />} />
+            <Route path="on-job-training" element={<OnJobTraining />} />
             <Route path="16-day-monitoring/:studentId?" element={<SixteenDayMonitoring />} />
             <Route path="3-day-monitoring/:studentId?" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
@@ -321,11 +331,13 @@ const App = () => {
             <Route path="employees/import-logs" element={<OperatorImportLogs />} />
             <Route path="employees/:studentId" element={<InstructorStudentDetail />} />
             <Route path="quiz-monitoring" element={<QuizMonitoring />} />
+            <Route path="quiz-monitoring/review/:attemptId" element={<QuizAttemptReviewPage />} />
             <Route path="assignment-monitoring" element={<AssignmentMonitoring />} />
             <Route path="certificate-issuance" element={<CertificateIssuance />} />
             <Route path="attempt-requests" element={<InstructorAttemptRequests />} />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
             <Route path="skill-matrix" element={<InstructorSkillMatrix />} />
+            <Route path="on-job-training" element={<OnJobTraining />} />
           </Route>
 
           {/* SuperAdmin routes */}
@@ -426,14 +438,25 @@ const App = () => {
             <Route path="courses/:courseId" element={<CourseDetailPage />} />
             <Route path="departments" element={<Departments pageName="Departments" />} />
             <Route path="departments/:departmentId" element={<DepartmentDetail />} />
+            <Route path="departments/:departmentId/lines/:lineId" element={<LineDetail />} />
+            <Route path="departments/:departmentId/lines/:lineId/sub-sections/:subSectionId" element={<SubSectionDetail />} />
+            <Route path="departments/:departmentId/lines/:lineId/sub-sections/:subSectionId/machines/:machineId" element={<MachineDetail />} />
             <Route path="employees" element={<Students pageName="Trainees" />} />
+            <Route path="employees/:studentId" element={<StudentDetail />} />
             <Route path="trainees" element={<Students pageName="Trainees" />} />
+            <Route path="trainees/:studentId" element={<StudentDetail />} />
+            <Route path="trainers/:id" element={<InstructorDetail />} />
+            <Route path="dojo-hiring/:studentId" element={<DojoCandidateDetail />} />
+            <Route path="manage-role/:roleId" element={<RoleUserManager />} />
             <Route path="quiz-monitoring" element={<AdminQuizMonitoring />} />
             <Route path="test-paper" element={<TestPaper />} />
+            <Route path="add-test-paper" element={<AddTestPaper />} />
+            <Route path="edit-test-paper/:quizId" element={<EditTestPaper />} />
             <Route path="take-test/:quizId" element={<TakeQuiz />} />
             <Route path="attempt-requests" element={<AdminAttemptRequests />} />
             <Route path="10-cycle" element={<Cycle10 />} />
             <Route path="daily-production-report" element={<DailyProductionReport />} />
+            <Route path="on-job-training" element={<OnJobTraining />} />
             <Route path="onboarding-id" element={<OnboardingID />} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />
@@ -441,6 +464,10 @@ const App = () => {
             <Route path="16-day-monitoring" element={<SixteenDayMonitoring />} />
             <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
+            <Route path="learning" element={<Learning />} />
+            <Route path="learning/create" element={<CreateLearningComparison />} />
+            <Route path="learning/edit/:id" element={<EditLearningComparison />} />
+            <Route path="learning/:id" element={<LearningComparisonDetail />} />
           </Route>
         </Routes>
       </Suspense>

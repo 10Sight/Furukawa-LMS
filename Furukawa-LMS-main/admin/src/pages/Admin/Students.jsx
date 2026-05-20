@@ -99,6 +99,7 @@ import StatCard from "@/components/common/StatCard";
 import FilterBar from "@/components/common/FilterBar";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getMediaUrl } from "@/utils/mediaUtils";
+import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
 
 
 const normalizeStatus = (status) => {
@@ -114,6 +115,10 @@ const normalizeStatus = (status) => {
     default:
       return s;
   }
+};
+
+const safeDateToISO = (dateValue) => {
+  return dateToInputFormat(dateValue);
 };
 
 const Students = () => {
@@ -165,7 +170,7 @@ const Students = () => {
     busRoute: "",
     email: "",
     phoneNumber: "",
-    currentLevel: "L1",
+    currentLevel: null,
     status: "PRESENT",
     leavingDate: "",
     reasonOfLeaving: "",
@@ -227,7 +232,7 @@ const Students = () => {
           setCourseLevels(sortedLevels);
           // Set default level if it's a new form
           if (!isEditDialogOpen && !formData.currentLevel) {
-            setFormData(prev => ({ ...prev, currentLevel: sortedLevels[0]?.name || "L1" }));
+            setFormData(prev => ({ ...prev, currentLevel: null }));
           }
         }
       } catch (e) {
@@ -454,7 +459,7 @@ const Students = () => {
       busRoute: "",
       email: "",
       phoneNumber: "",
-      currentLevel: courseLevels[0]?.name || "L1",
+      currentLevel: null,
       status: "PRESENT",
       leavingDate: "",
       reasonOfLeaving: "",
@@ -872,10 +877,8 @@ const Students = () => {
           stationNo: student.stationName || "",
           mentor: student.mentor || "",
           designation: student.designation || "",
-          dob: student.dob ? format(new Date(student.dob), "yyyy-MM-dd") : "",
-          joiningDate: student.joiningDate
-            ? format(new Date(student.joiningDate), "yyyy-MM-dd")
-            : "",
+          dob: safeDateFormat(student.dob, "yyyy-MM-dd"),
+          joiningDate: safeDateFormat(student.joiningDate, "yyyy-MM-dd"),
           education: student.education || "",
           district: student.district || "",
           state: student.state || "",
@@ -884,9 +887,7 @@ const Students = () => {
           email: student.email || "",
           phoneNumber: student.phoneNumber || "",
           currentLevel: student.currentLevel || "L1",
-          leavingDate: student.leavingDate
-            ? format(new Date(student.leavingDate), "yyyy-MM-dd")
-            : "",
+          leavingDate: safeDateFormat(student.leavingDate, "yyyy-MM-dd"),
           reasonOfLeaving: student.reasonOfLeaving || "",
           status: student.status || "PRESENT",
         });
@@ -936,15 +937,15 @@ const Students = () => {
       supervisor: student.supervisor || student.Supervisor || "",
       incharge: student.incharge || student.Incharge || "",
       isEmployee: student.isEmployee !== undefined ? student.isEmployee : (student.IsEmployee !== undefined ? student.IsEmployee : true),
-      dob: (student.dob || student.DOB) ? new Date(student.dob || student.DOB).toISOString().split('T')[0] : "",
-      joiningDate: (student.joiningDate || student.JoiningDate) ? new Date(student.joiningDate || student.JoiningDate).toISOString().split('T')[0] : "",
+      dob: safeDateToISO(student.dob || student.DOB),
+      joiningDate: safeDateToISO(student.joiningDate || student.JoiningDate),
       education: student.education || student.Education || "",
       district: student.district || student.District || "",
       state: student.state || student.State || "",
       pin: student.pin || student.PIN || student.Pin || "",
       busRoute: student.busRoute || student.BusRoute || "",
       currentLevel: student.currentLevel || student.CurrentLevel || "L1",
-      leavingDate: (student.leavingDate || student.LeavingDate) ? new Date(student.leavingDate || student.LeavingDate).toISOString().split('T')[0] : "",
+      leavingDate: safeDateToISO(student.leavingDate || student.LeavingDate),
       reasonOfLeaving: student.reasonOfLeaving || student.ReasonOfLeaving || "",
       customRoleId: (student.customRoleId || student.CustomRoleId) ? String(student.customRoleId || student.CustomRoleId) : "",
     });
@@ -1400,7 +1401,7 @@ const Students = () => {
                 <TableHead>Contact</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Department</TableHead>
-                <TableHead>Joining</TableHead>
+                <TableHead>Joining / Leaving</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1462,7 +1463,7 @@ const Students = () => {
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500 whitespace-nowrap">
-                      {student.logDate ? format(new Date(student.logDate), "dd MMM yyyy") : "-"}
+                      {safeDateFormat(student.logDate, "dd MMM yyyy") || "-"}
                     </TableCell>
                     <TableCell>
                       <div>
@@ -1521,10 +1522,23 @@ const Students = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
-                        {student.joiningDate ? (
+                        {student.status === "LEFT" ? (
+                          student.leavingDate ? (
+                            <>
+                              <span className="text-sm text-red-600 font-medium">
+                                {safeDateFormat(student.leavingDate, "dd/MM/yyyy")}
+                              </span>
+                              <span className="text-xs text-red-400">
+                                Left
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-sm text-muted-foreground italic">Left (Date not set)</span>
+                          )
+                        ) : student.joiningDate ? (
                           <>
                             <span className="text-sm">
-                              {new Date(student.joiningDate).toLocaleDateString()}
+                              {safeDateFormat(student.joiningDate, "dd/MM/yyyy")}
                             </span>
                             <span className="text-xs text-muted-foreground">
                               Joined
@@ -1533,6 +1547,7 @@ const Students = () => {
                         ) : (
                           <span className="text-sm text-muted-foreground">Not set</span>
                         )}
+
                       </div>
                     </TableCell>
                     <TableCell className="text-right">

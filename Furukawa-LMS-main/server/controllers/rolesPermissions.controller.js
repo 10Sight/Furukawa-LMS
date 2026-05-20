@@ -138,12 +138,28 @@ const SYSTEM_PERMISSIONS = {
   // Test Paper Management
   TEST_PAPER_READ: "test_paper:read",
   TEST_PAPER_CREATE: "test_paper:create",
+  TEST_PAPER_ACCESS_ALL: "test_paper:access_all",
+  TEST_PAPER_EDIT: "test_paper:edit",
+  TEST_PAPER_DELETE: "test_paper:delete",
 
   // Learning Management
   LEARNING_READ: "learning:read",
   LEARNING_CREATE: "learning:create",
   LEARNING_UPDATE: "learning:update",
   LEARNING_DELETE: "learning:delete",
+  
+  // Skill Matrix Approvals
+  SKILL_MATRIX_QA_APPROVE: "skill_matrix:qa_approve",
+  SKILL_MATRIX_SAFETY_APPROVE: "skill_matrix:safety_approve",
+  SKILL_MATRIX_PROCESS_APPROVE: "skill_matrix:process_approve",
+
+  // On Job Training (OJT) Management
+  ON_JOB_TRAINING_READ: "on_job_training:read",
+  ON_JOB_TRAINING_CREATE: "on_job_training:create",
+  ON_JOB_TRAINING_UPDATE: "on_job_training:update",
+  ON_JOB_TRAINING_DELETE: "on_job_training:delete",
+  ON_JOB_TRAINING_CHECKED_BY: "on_job_training:checked_by",
+  ON_JOB_TRAINING_APPROVED_BY: "on_job_training:approved_by",
 };
 
 // Define default role permissions
@@ -160,7 +176,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.ASSIGNMENT_READ,
       SYSTEM_PERMISSIONS.CERTIFICATE_READ,
       SYSTEM_PERMISSIONS.DAILY_5M_READ,
-      SYSTEM_PERMISSIONS.LEARNING_READ
+      SYSTEM_PERMISSIONS.LEARNING_READ,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ
     ],
     isSystemRole: true,
     color: "#3B82F6"
@@ -221,7 +238,13 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE,
-      SYSTEM_PERMISSIONS.LEARNING_READ
+      SYSTEM_PERMISSIONS.LEARNING_READ,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CREATE,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_UPDATE,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_DELETE,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CHECKED_BY,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_APPROVED_BY
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -375,13 +398,29 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
       ],
       "Test Paper Management": [
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_READ, name: "View Test Papers", description: "Access and view the list of test papers" },
-        { id: SYSTEM_PERMISSIONS.TEST_PAPER_CREATE, name: "Create/Manage Test Papers", description: "Create or modify test paper entries" }
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_CREATE, name: "Create/Manage Test Papers", description: "Create or modify test paper entries" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_ACCESS_ALL, name: "Access All Test Papers", description: "View all test papers and use all department/section/line/sub-section/level filters freely" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_EDIT, name: "Edit Test Papers", description: "Allows editing of existing test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_DELETE, name: "Delete Test Papers", description: "Allows deleting of existing test papers" }
       ],
       "Learning Management": [
         { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Learning Dashboard", description: "View the learning management dashboard and statistics" },
         { id: SYSTEM_PERMISSIONS.LEARNING_CREATE, name: "Create Learning Content", description: "Create new before & after learning comparisons" },
         { id: SYSTEM_PERMISSIONS.LEARNING_UPDATE, name: "Update Learning Content", description: "Edit existing learning comparison entries" },
         { id: SYSTEM_PERMISSIONS.LEARNING_DELETE, name: "Delete Learning Content", description: "Remove learning comparison entries from the system" }
+      ],
+      "Skill Matrix Management": [
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_QA_APPROVE, name: "QA In-charge Approval", description: "Approve or reject the Skill Matrix as QA In-charge" },
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_SAFETY_APPROVE, name: "Safety In-charge Approval", description: "Approve or reject the Skill Matrix as Safety In-charge" },
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_PROCESS_APPROVE, name: "Process In-charge Approval", description: "Approve or reject the Skill Matrix as Process In-charge" }
+      ],
+      "On Job Training (OJT) Management": [
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ, name: "View OJT", description: "Access and view On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CREATE, name: "Create OJT", description: "Create new On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_UPDATE, name: "Manage/Update OJT", description: "Modify, edit or score On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_DELETE, name: "Delete OJT", description: "Delete On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CHECKED_BY, name: "Checked By sign-off", description: "Sign off On the Job Training sheets as Checked By" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_APPROVED_BY, name: "Approved By sign-off", description: "Sign off On the Job Training sheets as Approved By" }
       ]
     };
 

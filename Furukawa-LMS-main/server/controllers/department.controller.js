@@ -11,6 +11,7 @@ import HandoverSheetConfig from "../models/handoverSheetConfig.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import sendMail from "../utils/mail.util.js";
 
 // Helper to resolve department by ID or Slug
 async function resolveDepartmentId(idOrSlug) {
@@ -1175,4 +1176,36 @@ export const getHandoverSheetHistory = asyncHandler(async (req, res) => {
     return res.status(200).json(
         new ApiResponse(200, history, "History fetched successfully")
     );
+});
+
+export const sendHandoverPDF = asyncHandler(async (req, res) => {
+    const { email, pdfBase64, departmentName, date } = req.body;
+
+    if (!email || !pdfBase64) {
+        throw new ApiError("Email and PDF data are required", 400);
+    }
+
+    // Convert base64 to buffer
+    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const subject = `Handover Sheet - ${departmentName} (${date})`;
+    const message = `
+        <div style="font-family: sans-serif; line-height: 1.5;">
+            <h2>Handover Sheet</h2>
+            <p>Please find the attached Handover Sheet for <b>${departmentName}</b> on <b>${date}</b>.</p>
+            <hr />
+            <p style="font-size: 12px; color: #666;">This is an automated email from Furukawa Minda LMS.</p>
+        </div>
+    `;
+
+    const attachments = [{
+        filename: `Handover_Sheet_${departmentName.replace(/\s+/g, '_')}_${date}.pdf`,
+        content: buffer,
+        contentType: 'application/pdf'
+    }];
+
+    await sendMail(email, subject, message, attachments);
+
+    res.json(new ApiResponse(200, null, "Email sent successfully with PDF attachment"));
 });

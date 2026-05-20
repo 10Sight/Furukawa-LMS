@@ -6,6 +6,27 @@ import bcrypt from "bcryptjs";
 import User from "../models/auth.model.js";
 
 /**
+ * Robust date normalization to YYYY-MM-DD
+ */
+const normalizeDate = (val) => {
+    if (!val) return null;
+    
+    let d;
+    if (val instanceof Date) {
+        d = val;
+    } else {
+        d = new Date(val);
+    }
+
+    if (isNaN(d.getTime())) return null;
+    
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+/**
  * Helper to sync user ID to department's students array
  * Ensures the operator is removed from old departments if they are reassigned
  */
@@ -105,11 +126,11 @@ export const importEmployees = async (req, res) => {
             throw new ApiError(400, "No file uploaded");
         }
 
-        // Read the Excel file
-        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        // Read the worksheet as a 2D array to find the header row
+        // Use cellDates: true to handle Excel date objects properly
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        // Read the worksheet as a 2D array to find the header row
         const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
         let hRowIndex = -1;
         
@@ -224,8 +245,8 @@ export const importEmployees = async (req, res) => {
                     stationNo: (row["Station No."] || row["Station No"])?.toString().trim(),
                     mentor: (row["Mentor"])?.toString().trim(),
                     designation: (row["Designation"])?.toString().trim(),
-                    dob: (row["D.O.B."] || row["DOB"] || row["D.O.B"]) || null,
-                    joiningDate: (row["D.O.J."] || row["DOJ"] || row["D.O.J"]) || null,
+                    dob: normalizeDate(row["D.O.B."] || row["DOB"] || row["D.O.B"]),
+                    joiningDate: normalizeDate(row["D.O.J."] || row["DOJ"] || row["D.O.J"]),
                     education: (row["Education"])?.toString().trim(),
                     district: (row["District"] || row["Distt"] || row["Dist"])?.toString().trim(),
                     state: (row["State"])?.toString().trim(),
@@ -234,7 +255,7 @@ export const importEmployees = async (req, res) => {
                     email: (row["E-Mail ID"] || row["Email"])?.toString().trim(),
                     phoneNumber: (row["Mobile No."] || row["Mobile No"] || row["Mobile Number"])?.toString().trim(),
                     currentLevel: (row["L"] || row["Lavel"] || row["Level"])?.toString().trim(),
-                    leavingDate: (row["Date of Leaving"]) || null,
+                    leavingDate: normalizeDate(row["Date of Leaving"]),
                     reasonOfLeaving: (row["Reason of Leaving"])?.toString().trim(),
                     status: (row["Status"])?.toString().trim() || "PRESENT",
                 };
@@ -282,16 +303,7 @@ export const importEmployees = async (req, res) => {
                 }
 
                 // Helper for date comparison
-                const safeDate = (val) => {
-                    if (!val) return null;
-                    const d = new Date(val);
-                    if (isNaN(d.getTime())) return null;
-                    try {
-                        return d.toISOString().split('T')[0];
-                    } catch (e) {
-                        return null;
-                    }
-                };
+                const safeDate = (val) => normalizeDate(val);
 
                 // Check for duplicate phone number if provided
                 if (normalizedRow.phoneNumber) {
@@ -543,10 +555,10 @@ export const importInstructors = async (req, res) => {
             throw new ApiError(400, "No file uploaded");
         }
 
-        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(worksheet);
+        const data = XLSX.utils.sheet_to_json(worksheet, { raw: false });
 
         if (!data || data.length === 0) {
             throw new ApiError(400, "Excel file is empty");
@@ -581,7 +593,7 @@ export const importInstructors = async (req, res) => {
                     isEmployee: false,
                     isAdmin: false,
                     isTrainer: true,
-                    joiningDate: row.joiningDate || null,
+                    joiningDate: normalizeDate(row.joiningDate),
                     status: "PRESENT",
                 };
 
@@ -690,7 +702,7 @@ export const importDojoUsers = async (req, res) => {
         }
 
         // Read the Excel file
-        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
@@ -760,8 +772,8 @@ export const importDojoUsers = async (req, res) => {
                     phoneNumber: (row["Mobile No"] || row["Mobile No."] || row["Mobile Number"])?.toString().trim(),
                     email: (row["E-Mail ID"] || row["Email"])?.toString().trim(),
                     designation: (row["Designation"])?.toString().trim(),
-                    dob: row["DOB"] || row["D.O.B."] || null,
-                    joiningDate: row["D.O.J."] || row["DOJ"] || null,
+                    dob: normalizeDate(row["DOB"] || row["D.O.B."]),
+                    joiningDate: normalizeDate(row["D.O.J."] || row["DOJ"]),
                     fatherHusbandName: row["Father / Husband Name"] || row["Father/HusbandName"] || null,
                     education: row["Education"] || null,
                     district: row["Distt"] || row["District"] || null,

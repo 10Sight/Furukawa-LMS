@@ -7,11 +7,11 @@ import { Loader2, Search, User } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { cn } from '@/lib/utils';
 
-const UserAutocomplete = ({ 
-  departmentId, 
-  value, 
-  onChange, 
-  placeholder = "Search user...", 
+const UserAutocomplete = ({
+  departmentId,
+  value,
+  onChange,
+  placeholder = "Search user...",
   disabled = false,
   className = "",
   compact = false,
@@ -26,7 +26,7 @@ const UserAutocomplete = ({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
   const debouncedSearch = useDebounce(search, 500);
-  
+
   const [triggerStudents, { data: studentsData, isFetching: isFetchingStudents }] = useLazyGetAllStudentsQuery();
   const [triggerAll, { data: allUsersData, isFetching: isFetchingAll }] = useLazyGetAllUsersQuery();
 
@@ -35,9 +35,9 @@ const UserAutocomplete = ({
 
   useEffect(() => {
     if (open && debouncedSearch.length >= 2) {
-      const searchParams = { 
-        search: debouncedSearch, 
-        limit: 10 
+      const searchParams = {
+        search: debouncedSearch,
+        limit: 10
       };
       if (departmentId) {
         searchParams.departmentId = departmentId;
@@ -102,7 +102,7 @@ const UserAutocomplete = ({
                 if (onTextChange) onTextChange(val);
               }}
               onFocus={() => setOpen(true)}
-              className={cn(compact ? "h-7 py-0 px-1 text-[10px] text-center" : "h-9", inputClassName)}
+              className={cn(compact ? "h-7 py-0 px-0 text-[10px] text-center" : "h-9", inputClassName)}
             />
             {!compact && (
               <div className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
@@ -115,8 +115,8 @@ const UserAutocomplete = ({
             )}
           </div>
         </PopoverTrigger>
-        <PopoverContent 
-          className="p-0 w-[250px] z-[9999]" 
+        <PopoverContent
+          className="p-0 w-[250px] z-[9999]"
           align="start"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
@@ -127,7 +127,7 @@ const UserAutocomplete = ({
                 Searching...
               </div>
             )}
-            
+
             {!isFetching && debouncedSearch.length >= 2 && users.length === 0 && (
               <div className="p-4 text-center text-sm text-gray-500">
                 No users found.
@@ -163,3 +163,4 @@ const UserAutocomplete = ({
 };
 
 export default UserAutocomplete;
+

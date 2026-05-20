@@ -31,6 +31,15 @@ export const attemptedQuizApi = createApi({
             providesTags: (result, error, quizId) => [{ type: 'AttemptedQuiz', id: quizId }],
         }),
 
+        getMonitoringAttempts: builder.query({
+            query: (params = {}) => ({
+                url: "/api/attempts/monitoring",
+                method: "GET",
+                params
+            }),
+            providesTags: ['AttemptedQuiz'],
+        }),
+
         getAttemptById: builder.query({
             query: (id) => ({
                 url: `/api/attempts/${id}`,
@@ -150,4 +159,5 @@ export const {
     useApproveExtraAttemptMutation,
     useRejectExtraAttemptMutation,
     useAdminUpdateAttemptMutation,
+    useGetMonitoringAttemptsQuery,
 } = attemptedQuizApi;

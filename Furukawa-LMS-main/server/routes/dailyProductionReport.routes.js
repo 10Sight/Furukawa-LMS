@@ -1,14 +1,15 @@
 import express from 'express';
-import { 
-    getDailyProductionReport, 
-    saveDailyProductionReport, 
-    listDailyProductionReports, 
+import {
+    getDailyProductionReport,
+    saveDailyProductionReport,
+    listDailyProductionReports,
     deleteDailyProductionReport,
     getManpowerStats,
     getBatchMachineAssignments,
     checkDailyProductionReport
 } from '../controllers/dailyProductionReport.controller.js';
 import { getDPRConfig, saveDPRConfig, getDPRConfigHistory } from '../controllers/dailyProductionReportConfig.controller.js';
+import { getDPRManualStats, saveDPRManualStats } from '../controllers/dprManualStatistics.controller.js';
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 
@@ -18,6 +19,10 @@ router.use(verifyJWT);
 
 router.get('/manpower-stats', getManpowerStats);
 router.get('/machine-assignments', getBatchMachineAssignments);
+
+router.route('/manual-stats')
+    .get(getDPRManualStats)
+    .post(authorizeRoles('ADMIN', 'SUPERADMIN', 'INSTRUCTOR'), saveDPRManualStats);
 
 router.route('/')
     .get(getDailyProductionReport)

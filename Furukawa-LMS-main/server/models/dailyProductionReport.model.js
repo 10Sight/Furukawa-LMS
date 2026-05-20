@@ -3,12 +3,16 @@ import logger from "../logger/winston.logger.js";
 
 class DailyProductionReport {
     constructor(data) {
+        if (!data) return;
         this.id = data.id;
         this.date = data.date;
         this.department = data.department || data.department_id;
         this.line = data.line || data.line_id;
         this.shift = data.shift;
         this.leaderName = data.leaderName;
+        this.lineName = data.lineName;
+        this.sectionName = data.sectionName;
+        this.departmentName = data.departmentName;
 
         this.delivery = typeof data.delivery === 'string'
             ? JSON.parse(data.delivery)
@@ -158,10 +162,11 @@ class DailyProductionReport {
 
     static async findAll(filters = {}) {
         let query = `
-            SELECT r.*, d.name as departmentName, l.name as lineName 
+            SELECT r.*, d.name as departmentName, s.name as sectionName, l.name as lineName 
             FROM daily_production_reports r
             LEFT JOIN departments d ON r.department_id = d.id
             LEFT JOIN lines l ON r.line_id = l.id
+            LEFT JOIN sections s ON l.sectionId = s.id
             WHERE 1=1
         `;
         const values = [];
@@ -177,6 +182,10 @@ class DailyProductionReport {
         if (filters.departmentId && filters.departmentId !== 'all') {
             query += ` AND r.department_id = ?`;
             values.push(filters.departmentId);
+        }
+        if (filters.sectionId && filters.sectionId !== 'all') {
+            query += ` AND l.sectionId = ?`;
+            values.push(filters.sectionId);
         }
         if (filters.lineId && filters.lineId !== 'all') {
             query += ` AND r.line_id = ?`;

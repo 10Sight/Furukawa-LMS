@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
-import { format } from "date-fns";
+import { format, startOfMonth } from "date-fns";
 import {
     Save as IconSave,
     Printer as IconPrinter,
     RefreshCw as IconRefresh,
-    Download as IconDownload
+    Download as IconDownload,
+    Plus,
+    ChevronRight,
+    Settings as IconSettings
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { exportToExcel } from "@/utils/exportHelper";
@@ -41,7 +44,9 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings as IconSettings } from "lucide-react";
+import DPREfficiencyChart from "@/components/charts/DPREfficiencyChart";
+import DPRQualityChart from "@/components/charts/DPRQualityChart";
+import DPRManualChartsContainer from "@/components/charts/DPRManualChartsContainer";
 
 // ----- Subcomponents for the Complex Table Sections -----
 
@@ -146,7 +151,7 @@ const getInitialManpowerRows = (configRows) => {
             process: r.process || "",
             stationId: r.stationId,
             data: [
-                ["", "", "", "", ""], 
+                ["", "", "", "", ""],
                 ["", "", "", "", ""],
                 ["", "", "", "", ""],
                 [null, null, null, null, null]
@@ -160,7 +165,7 @@ const getInitialManpowerRows = (configRows) => {
         stNo: i < 2 ? "-" : (i < 23 ? i - 1 : i - 22),
         process: "",
         data: [
-            ["", "", "", "", ""], 
+            ["", "", "", "", ""],
             ["", "", "", "", ""],
             ["", "", "", "", ""],
             [null, null, null, null, null]
@@ -189,7 +194,7 @@ const getInitialManpowerRows = (configRows) => {
     setProcess(38, "Dimension");
     setProcess(39, "ECT Inspection");
     setProcess(40, "High Voltage");
-    
+
     return rows;
 };
 
@@ -252,7 +257,7 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
 
     const onNameClick = (userData) => {
         if (!userData || !navigate) return;
-        
+
         // Pass full metadata in playUser state
         const playUser = {
             ...userData,
@@ -260,7 +265,7 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
             shift: shift,
             logShift: shift
         };
-        
+
         navigate('/cms/daily-5m-recording', { state: { playUser } });
     };
 
@@ -284,7 +289,7 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                     const currentProcess = (row.process || "").trim();
                     const prevProcess = idx > 0 ? (rows[idx - 1].process || "").trim() : null;
                     const showProcess = idx === 0 || currentProcess !== prevProcess;
-                    
+
                     const processRowSpan = rows.slice(idx).findIndex(r => (r.process || "").trim() !== currentProcess);
                     const spanCount = processRowSpan === -1 ? rows.length - idx : processRowSpan;
 
@@ -307,7 +312,7 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                                         <td key={cIdx} className={`border border-black p-0 relative ${isAbsent ? 'bg-red-50' : isPresent ? 'bg-green-50' : ''}`}>
                                             <div className="flex items-center h-full">
                                                 {isAbsent && val ? (
-                                                    <div 
+                                                    <div
                                                         className="w-full h-full px-1 py-0.5 text-red-600 font-bold cursor-pointer hover:underline flex items-center"
                                                         onClick={() => onNameClick(userData)}
                                                         title="Click to record Daily 5M"
@@ -315,9 +320,9 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                                                         {val}
                                                     </div>
                                                 ) : (
-                                                    <TextCell 
-                                                        value={val} 
-                                                        onChange={(v) => onChange(globalIdx, 0, cIdx, v)} 
+                                                    <TextCell
+                                                        value={val}
+                                                        onChange={(v) => onChange(globalIdx, 0, cIdx, v)}
                                                         fontSize="text-[8px]"
                                                         padding="p-0.5"
                                                         disabled={disabled}
@@ -339,16 +344,16 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                                     return (
                                         <td key={cIdx} className={`border border-black p-0 relative ${isAbsent ? 'bg-red-50' : isPresent ? 'bg-green-50' : ''}`}>
                                             <div className="flex items-center h-full">
-                                                <TextCell 
-                                                    value={val} 
-                                                    onChange={(v) => onChange(globalIdx, 1, cIdx, v)} 
+                                                <TextCell
+                                                    value={val}
+                                                    onChange={(v) => onChange(globalIdx, 1, cIdx, v)}
                                                     fontSize="text-[8px]"
                                                     padding="p-0.5"
                                                     disabled={disabled}
                                                     className={isAbsent ? 'text-red-600 font-bold' : isPresent ? 'text-green-600 font-bold' : ''}
                                                 />
                                                 {isAbsent && val && (
-                                                    <span className="absolute right-0 top-0 text-[6px] bg-blue-600 text-white px-0.5 rounded-bl font-bold">5M</span>
+                                                    <span className="absolute right-0 top-0 text-[6px] bg-red-600 text-white px-0.5 rounded-bl font-bold">5M</span>
                                                 )}
                                             </div>
                                         </td>
@@ -384,12 +389,19 @@ const DailyProductionReport = () => {
     const isShiftIncharge = user?.role === "SHIFT_INCHARGE" || user?.customRole?.name?.toUpperCase() === "SHIFT INCHARGE";
     const canApprove = isAdmin || isShiftIncharge;
 
+    const activeReportKey = React.useRef("");
+
     // Filter State
+    const [dashboardDate, setDashboardDate] = useState(format(new Date(), "yyyy-MM-dd"));
     const [selectedDate, setSelectedDate] = useState(location.state?.date || format(new Date(), "yyyy-MM-dd"));
     const [selectedDepartment, setSelectedDepartment] = useState(location.state?.department || "");
     const [selectedSection, setSelectedSection] = useState("");
     const [selectedLine, setSelectedLine] = useState(location.state?.line || "");
-    const [selectedShift, setSelectedShift] = useState(location.state?.shift || "A");
+    const [selectedShift, setSelectedShift] = useState(location.state?.shift || "all");
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 10;
 
     // Options Data
     const { data: deptData } = useGetAllDepartmentsQuery({ limit: 100 });
@@ -401,11 +413,36 @@ const DailyProductionReport = () => {
     );
     const sections = sectionData?.data || [];
 
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedDepartment, selectedSection, selectedLine, selectedShift, dashboardDate]);
+
     const { data: lineData, isFetching: linesFetching } = useGetLinesBySectionQuery(
         selectedSection,
-        { skip: !selectedSection }
+        { skip: !selectedSection || selectedSection === 'all' }
     );
     const lines = lineData?.data || [];
+
+    // Create Form States
+    const [createDate, setCreateDate] = useState(format(new Date(), "yyyy-MM-dd"));
+    const [createDepartment, setCreateDepartment] = useState("");
+    const [createSection, setCreateSection] = useState("");
+    const [createLine, setCreateLine] = useState("");
+    const [createShift, setCreateShift] = useState("A");
+
+    // Create Dialog Options
+    const { data: createSectionData } = useGetSectionsByDepartmentQuery(
+        createDepartment,
+        { skip: !createDepartment }
+    );
+    const createSections = createSectionData?.data || [];
+
+    const { data: createLineData } = useGetLinesBySectionQuery(
+        createSection,
+        { skip: !createSection }
+    );
+    const createLines = createLineData?.data || [];
 
     // Report Form State
     const defaultFormData = {
@@ -462,11 +499,14 @@ const DailyProductionReport = () => {
         manpowerAttendance: initialManpowerRows,
         kaizenDetails: Array(2).fill({ ...emptyKaizenRow }),
         madeBy: "",
-                        checkedBy: "",
+        checkedBy: "",
         isSubmitted: false
     };
 
     const [formData, setFormData] = useState(defaultFormData);
+    const [isReportOpen, setIsReportOpen] = useState(false);
+    const [createOpen, setCreateOpen] = useState(false);
+
 
     const [checkReport, { isLoading: isChecking }] = useCheckDailyProductionReportMutation();
 
@@ -504,14 +544,44 @@ const DailyProductionReport = () => {
     const [saveConfig, { isLoading: isSavingConfig }] = useSaveDPRConfigMutation();
     const [saveReport, { isLoading: isSaving }] = useSaveDailyProductionReportMutation();
 
-    // Daily Stats
-    const { data: dailyStatsResp } = useListDailyProductionReportsQuery(
-        { date: selectedDate },
-        { skip: !selectedDate }
+    // Daily Stats & Reports List
+    const { data: reportListData, isFetching: isListFetching } = useListDailyProductionReportsQuery(
+        {
+            startDate: dashboardDate || undefined,
+            endDate: dashboardDate || undefined,
+            departmentId: selectedDepartment === 'all' ? undefined : selectedDepartment,
+            sectionId: selectedSection === 'all' ? undefined : selectedSection,
+            lineId: selectedLine === 'all' ? undefined : selectedLine,
+            shift: selectedShift === 'all' ? undefined : selectedShift,
+            limit: pageSize,
+            offset: (currentPage - 1) * pageSize
+        },
+        { skip: isReportOpen }
+    );
+    const totalCount = reportListData?.totalCount || 0;
+    const totalPages = Math.ceil(totalCount / pageSize);
+
+    // Unpaginated reports query specifically for the daily stats and analytical charts
+    const { data: chartListData } = useListDailyProductionReportsQuery(
+        {
+            startDate: dashboardDate || undefined,
+            endDate: dashboardDate || undefined,
+            departmentId: selectedDepartment === 'all' ? undefined : selectedDepartment,
+            sectionId: selectedSection === 'all' ? undefined : selectedSection,
+            lineId: selectedLine === 'all' ? undefined : selectedLine,
+            shift: selectedShift === 'all' ? undefined : selectedShift,
+            limit: 1000,
+            offset: 0
+        },
+        { skip: isReportOpen || !dashboardDate }
     );
 
     const dailyStats = React.useMemo(() => {
-        const reports = dailyStatsResp?.data || [];
+        const allReports = chartListData?.data || [];
+        const reports = allReports.filter(r => {
+            const reportDate = r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : "";
+            return reportDate === dashboardDate;
+        });
         return {
             total: reports.length,
             approved: reports.filter(r => r.status === 'APPROVED').length,
@@ -519,7 +589,78 @@ const DailyProductionReport = () => {
             submitted: reports.filter(r => r.status === 'SUBMITTED').length,
             draft: reports.filter(r => r.status === 'DRAFT' || !r.status).length,
         };
-    }, [dailyStatsResp]);
+    }, [chartListData, dashboardDate]);
+
+    const efficiencyData = React.useMemo(() => {
+        const allReports = chartListData?.data || [];
+        const reports = allReports.filter(r => {
+            const reportDate = r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : "";
+            return reportDate === dashboardDate;
+        });
+        const lineData = {};
+
+        reports.forEach(report => {
+            const sectionLabel = report.sectionName ? `${report.sectionName} - ` : "";
+            const lineLabel = report.lineName || report.line || "Unknown Line";
+            const shiftLabel = report.shift ? ` (${report.shift})` : "";
+            const label = `${sectionLabel}${lineLabel}${shiftLabel}`;
+
+            if (!lineData[label]) {
+                lineData[label] = { name: label, plan: 0, actual: 0 };
+            }
+
+            const delivery = Array.isArray(report.delivery) ? report.delivery : [];
+            delivery.forEach(row => {
+                lineData[label].plan += Number(row.plan) || 0;
+                lineData[label].actual += Number(row.total) || 0;
+            });
+        });
+
+        const result = Object.values(lineData);
+
+        if (result.length === 0) {
+            return [{ name: 'No Data', plan: 0, actual: 0 }];
+        }
+
+        return result;
+    }, [chartListData, dashboardDate]);
+
+    const qualityData = React.useMemo(() => {
+        const allReports = chartListData?.data || [];
+        const reports = allReports.filter(r => {
+            const reportDate = r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : "";
+            return reportDate === dashboardDate;
+        });
+        const lineData = {};
+
+        reports.forEach(report => {
+            const sectionLabel = report.sectionName ? `${report.sectionName} - ` : "";
+            const lineLabel = report.lineName || report.line || "Unknown Line";
+            const shiftLabel = report.shift ? ` (${report.shift})` : "";
+            const label = `${sectionLabel}${lineLabel}${shiftLabel}`;
+
+            if (!lineData[label]) {
+                lineData[label] = { name: label, productionQty: 0, defectQty: 0, ppm: 0, count: 0 };
+            }
+
+            const internalDefect = report.quality?.internalDefect || {};
+            lineData[label].productionQty += Number(internalDefect.productionQty) || 0;
+            lineData[label].defectQty += Number(internalDefect.defectQty) || 0;
+            lineData[label].ppm += Number(internalDefect.ppm) || 0;
+            lineData[label].count += 1;
+        });
+
+        const result = Object.values(lineData).map(item => ({
+            ...item,
+            ppm: item.productionQty > 0 ? Math.round((item.defectQty / item.productionQty) * 1000000) : 0
+        }));
+
+        if (result.length === 0) {
+            return [{ name: 'No Data', productionQty: 0, defectQty: 0, ppm: 0 }];
+        }
+
+        return result;
+    }, [chartListData, dashboardDate]);
 
     // Stats fetching
     const [getManpowerStats] = useLazyGetManpowerStatsQuery();
@@ -612,10 +753,10 @@ const DailyProductionReport = () => {
                         // Find stationId from config if missing in row (important for legacy or mismatched rows)
                         const configRow = globalAttendanceRows.find(cr => String(cr.srNo) === String(row.srNo));
                         const sId = row.stationId || configRow?.stationId;
-                        
+
                         // Use string key to match JSON response
                         const assignments = sId ? assignmentMap[String(sId)] : null;
-                        
+
                         if (assignments && assignments.length > 0) {
                             // Clone specific row data
                             const newNameRow = [...row.data[0]];
@@ -672,13 +813,18 @@ const DailyProductionReport = () => {
 
     // Populate form data on fetch
     useEffect(() => {
+        if (reportFetching) return;
+
+        const currentKey = `${selectedDate}-${selectedDepartment}-${selectedLine}-${selectedShift}`;
+        const selectionChanged = currentKey !== activeReportKey.current;
+
         // Global rows take priority if configured via Setup page
         const configMoralRows = globalConfigResp?.data?.config?.moral?.rows || tableConfig?.moral?.rows || null;
         const configAttendanceRows = globalConfigResp?.data?.config?.attendance?.rows || tableConfig?.attendance?.rows || null;
 
         if (reportResp?.data) {
             // Merge fetched data with defaults to ensure all arrays/objects exist
-            const loadedData = reportResp.data.data || {};
+            const loadedData = reportResp.data;
 
             // Pad arrays if they don't have enough entries
             const deliveryCount = tableConfig?.delivery?.rows || 6;
@@ -692,8 +838,8 @@ const DailyProductionReport = () => {
             // Merge moral: prioritize saved report data, fallback to config rows, then to default
             const baseMoralRows = configMoralRows || defaultFormData.moral;
             const mergedMoral = baseMoralRows.map((defItem, idx) => {
-                return (loadedData.moral && loadedData.moral[idx]) 
-                    ? loadedData.moral[idx] 
+                return (loadedData.moral && loadedData.moral[idx])
+                    ? loadedData.moral[idx]
                     : { ...defItem, handover: "", present: 0, absent: 0, present2: 0 };
             });
 
@@ -707,15 +853,12 @@ const DailyProductionReport = () => {
             // Pad / Merge Manpower
             const runtimeInitialRows = getInitialManpowerRows(configAttendanceRows);
             const mergedManpower = runtimeInitialRows.map((row) => {
-                // Match primarily by stationId (unique DB identifier)
-                // Fallback to srNo if stationId is missing (e.g. legacy or custom rows)
-                const found = (loadedData.manpowerAttendance || []).find(m => 
-                    (row.stationId && m.stationId && String(m.stationId) === String(row.stationId)) || 
+                const found = (loadedData.manpowerAttendance || []).find(m =>
+                    (row.stationId && m.stationId && String(m.stationId) === String(row.stationId)) ||
                     (!row.stationId && String(m.srNo) === String(row.srNo))
                 );
-                
+
                 if (found) {
-                    // Ensure the data array has 3 sub-arrays (Name, Code, Status)
                     const mergedData = [...found.data];
                     while (mergedData.length < 3) mergedData.push(Array(5).fill(""));
                     return { ...row, ...found, data: mergedData };
@@ -738,10 +881,11 @@ const DailyProductionReport = () => {
                 manpowerAttendance: mergedManpower,
                 kaizenDetails: paddedKaizens
             });
-        } else {
+            activeReportKey.current = currentKey;
+        } else if (selectionChanged) {
             // New report: use defaults BUT with custom moral rows if config exists
             const runtimeInitialRows = getInitialManpowerRows(configAttendanceRows);
-            
+
             if (configMoralRows) {
                 setFormData({
                     ...defaultFormData,
@@ -760,9 +904,25 @@ const DailyProductionReport = () => {
                     manpowerAttendance: runtimeInitialRows
                 });
             }
+            activeReportKey.current = currentKey;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [reportResp, tableConfig, globalConfigResp]);
+    }, [reportResp, reportFetching, tableConfig, globalConfigResp, selectedDate, selectedDepartment, selectedLine, selectedShift]);
+
+    // Auto-populate Leader Name when Line changes
+    useEffect(() => {
+        // Only auto-populate if it's a new report (no saved data) or if leaderName is currently empty
+        const isNewReport = !reportResp?.data;
+        if (selectedLine && lines.length > 0) {
+            const currentLine = lines.find(l => String(l.id || l._id) === String(selectedLine));
+            const leaders = currentLine?.lineLeader ? currentLine.lineLeader.split(/[,/]/).map(s => s.trim()).filter(Boolean) : [];
+
+            // If only one leader, auto-fill it. If multiple, let user select from dropdown.
+            if (leaders.length === 1 && (isNewReport || !formData.leaderName)) {
+                setFormData(prev => ({ ...prev, leaderName: leaders[0] }));
+            }
+        }
+    }, [selectedLine, lines, reportResp, formData.leaderName]);
 
     // Handlers
     const handleDeliveryChange = (index, field, value) => {
@@ -887,6 +1047,27 @@ const DailyProductionReport = () => {
         window.print();
     };
 
+    const handleCreateReport = () => {
+        if (!createDepartment || !createLine || !createDate || !createShift) {
+            toast.error("Please select all required fields");
+            return;
+        }
+        setSelectedDate(createDate);
+        setSelectedDepartment(createDepartment);
+        setSelectedLine(createLine);
+        setSelectedShift(createShift);
+        setIsReportOpen(true);
+        setCreateOpen(false);
+    };
+
+    const handleOpenReport = (report) => {
+        setSelectedDate(report.date);
+        setSelectedDepartment(report.department);
+        setSelectedLine(report.line);
+        setSelectedShift(report.shift);
+        setIsReportOpen(true);
+    };
+
     const openEditor = (section) => {
         setEditingSection(section);
         setJsonConfigStr(JSON.stringify(tableConfig[section], null, 2));
@@ -921,46 +1102,56 @@ const DailyProductionReport = () => {
 
     // Extract selected names for header
     const departmentName = departments.find(d => (d._id || d.id) === selectedDepartment)?.name || "Select Dept";
-    const lineName = lines.find(l => (l._id || l.id) === selectedLine)?.name || "Select Line";
+    const currentLineData = lines.find(l => (l._id || l.id) === selectedLine);
+    const lineName = currentLineData?.name || "Select Line";
+    const lineLeaders = currentLineData?.lineLeader ? currentLineData.lineLeader.split(/[,/]/).map(s => s.trim()).filter(Boolean) : [];
     const canEdit = !formData.isSubmitted || isAdmin;
 
-    return (
-        <div className="space-y-6 pb-20">
-            {/* Top Filter Controls (No Print Area) */}
-            <div className="print:hidden space-y-4">
-                <div>
-                    <h1 className={`text-2xl font-bold tracking-tight ${theme.textMain}`}>
-                        Daily Production Report
-                    </h1>
-                    <p className={`text-sm ${theme.textMuted}`}>
-                        Select Department, Line, Date, and Shift to view or manage reports.
-                    </p>
+    if (!isReportOpen) {
+        const reports = reportListData?.data || [];
+        return (
+            <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className={`text-2xl font-bold tracking-tight ${theme.textMain}`}>
+                            Daily Production Reports
+                        </h1>
+                        <p className={`text-sm ${theme.textMuted}`}>
+                            Manage and track daily production reports across departments.
+                        </p>
+                    </div>
+                    <Button onClick={() => setCreateOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create DPR Report
+                    </Button>
                 </div>
 
-                <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm flex flex-wrap gap-4 items-end`}>
-                    <div className="space-y-1.5 flex-1 min-w-[200px]">
+                {/* Filters */}
+                <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end`}>
+                    <div className="space-y-1.5 md:col-span-1 lg:col-span-1">
                         <Label>Date</Label>
                         <Input
                             type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
+                            value={dashboardDate}
+                            onChange={(e) => setDashboardDate(e.target.value)}
                         />
                     </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[200px]">
+                    <div className="space-y-1.5">
                         <Label>Department</Label>
-                        <Select 
-                            value={selectedDepartment} 
+                        <Select
+                            value={selectedDepartment}
                             onValueChange={(val) => {
                                 setSelectedDepartment(val);
-                                setSelectedSection("");
-                                setSelectedLine("");
+                                setSelectedSection("all");
+                                setSelectedLine("all");
                             }}
                         >
                             <SelectTrigger>
-                                <SelectValue placeholder="Select Department" />
+                                <SelectValue placeholder="All Departments" />
                             </SelectTrigger>
                             <SelectContent>
+                                <SelectItem value="all">All Departments</SelectItem>
                                 {departments.map((dept) => (
                                     <SelectItem key={dept.id || dept._id} value={dept.id || dept._id}>
                                         {dept.name}
@@ -970,52 +1161,59 @@ const DailyProductionReport = () => {
                         </Select>
                     </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[200px]">
+                    <div className="space-y-1.5">
                         <Label>Section</Label>
-                        <Select 
-                            value={selectedSection} 
+                        <Select
+                            value={selectedSection}
                             onValueChange={(val) => {
                                 setSelectedSection(val);
-                                setSelectedLine("");
-                            }} 
-                            disabled={!selectedDepartment || sectionsFetching}
+                                setSelectedLine("all");
+                            }}
+                            disabled={!selectedDepartment || selectedDepartment === 'all'}
                         >
                             <SelectTrigger>
-                                <SelectValue placeholder={sectionsFetching ? "Loading..." : "Select Section"} />
+                                <SelectValue placeholder="All Sections" />
                             </SelectTrigger>
                             <SelectContent>
+                                <SelectItem value="all">All Sections</SelectItem>
                                 {sections.map((sec) => (
                                     <SelectItem key={sec.id || sec._id} value={sec.id || sec._id}>
-                                        {sec.name} ({sec.category})
+                                        {sec.name}
                                     </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[200px]">
+                    <div className="space-y-1.5">
                         <Label>Line</Label>
-                        <Select value={selectedLine} onValueChange={setSelectedLine} disabled={!selectedSection || linesFetching}>
+                        <Select
+                            value={selectedLine}
+                            onValueChange={setSelectedLine}
+                            disabled={!selectedSection || selectedSection === 'all'}
+                        >
                             <SelectTrigger>
-                                <SelectValue placeholder={linesFetching ? "Loading..." : "Select Line"} />
+                                <SelectValue placeholder="All Lines" />
                             </SelectTrigger>
                             <SelectContent>
-                                {lines.map((line) => (
-                                    <SelectItem key={line.id || line._id} value={line.id || line._id}>
-                                        {line.name}
+                                <SelectItem value="all">All Lines</SelectItem>
+                                {lines.map((l) => (
+                                    <SelectItem key={l.id || l._id} value={l.id || l._id}>
+                                        {l.name}
                                     </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[150px]">
+                    <div className="space-y-1.5">
                         <Label>Shift</Label>
                         <Select value={selectedShift} onValueChange={setSelectedShift}>
                             <SelectTrigger>
-                                <SelectValue placeholder="Select Shift" />
+                                <SelectValue placeholder="All Shifts" />
                             </SelectTrigger>
                             <SelectContent>
+                                <SelectItem value="all">All Shifts</SelectItem>
                                 <SelectItem value="A">A-Shift</SelectItem>
                                 <SelectItem value="B">B-Shift</SelectItem>
                                 <SelectItem value="C">C-Shift</SelectItem>
@@ -1024,65 +1222,269 @@ const DailyProductionReport = () => {
                         </Select>
                     </div>
 
-                    <div className="flex gap-2 ml-auto">
-                        <Button
-                            variant="outline"
-                            onClick={() => refetch()}
-                            disabled={!selectedLine || reportFetching}
-                        >
-                            <IconRefresh className="w-4 h-4 mr-2" />
-                            Reload
-                        </Button>
-                        <Button onClick={handlePrint}>
-                            <IconPrinter className="w-4 h-4 mr-2" />
-                            Print
-                        </Button>
-                        <Button
-                            variant="outline"
-                            className="border-green-600 text-green-600 hover:bg-green-50"
-                            onClick={() => exportToExcel("Daily Production Report Sheet", {
-                                date: selectedDate,
-                                departmentId: selectedDepartment,
-                                lineId: selectedLine,
-                                shift: selectedShift
-                            })}
-                            disabled={!selectedLine || reportFetching}
-                        >
-                            <IconDownload className="w-4 h-4 mr-2" />
-                            Export
+                    <div className="md:col-span-3 lg:col-span-6 flex justify-end">
+                        <Button variant="outline" size="sm" onClick={() => {
+                            setDashboardDate(format(new Date(), "yyyy-MM-dd"));
+                            setSelectedDepartment("all");
+                            setSelectedSection("all");
+                            setSelectedLine("all");
+                            setSelectedShift("all");
+                            setCurrentPage(1);
+                        }}>
+                            Clear Filters
                         </Button>
                     </div>
                 </div>
-            </div>
 
-            {/* Daily Summary Table */}
-            <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm print:hidden`}>
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500">
-                        Daily Report Summary ({selectedDate})
-                    </h3>
-                </div>
+                {/* Stats Summary */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+                    <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm`}>
                         <div className="text-xs text-gray-500 uppercase font-bold mb-1">Total Reports</div>
                         <div className="text-2xl font-black">{dailyStats.total}</div>
                     </div>
-                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                    <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/30">
                         <div className="text-xs text-blue-500 uppercase font-bold mb-1">Submitted</div>
                         <div className="text-2xl font-black text-blue-600">{dailyStats.submitted}</div>
                     </div>
-                    <div className="p-3 rounded-lg bg-green-50 border border-green-100">
+                    <div className="p-4 rounded-xl border border-green-100 bg-green-50/30">
                         <div className="text-xs text-green-500 uppercase font-bold mb-1">Approved</div>
                         <div className="text-2xl font-black text-green-600">{dailyStats.approved}</div>
                     </div>
-                    <div className="p-3 rounded-lg bg-red-50 border border-red-100">
+                    <div className="p-4 rounded-xl border border-red-100 bg-red-50/30">
                         <div className="text-xs text-red-500 uppercase font-bold mb-1">Rejected</div>
                         <div className="text-2xl font-black text-red-600">{dailyStats.rejected}</div>
                     </div>
-                    <div className="p-3 rounded-lg bg-orange-50 border border-orange-100">
+                    <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/30">
                         <div className="text-xs text-orange-500 uppercase font-bold mb-1">In Draft</div>
                         <div className="text-2xl font-black text-orange-600">{dailyStats.draft}</div>
                     </div>
+                </div>
+
+                {/* Charts Section */}
+                <div className="grid grid-cols-1 gap-6">
+                    <DPREfficiencyChart data={efficiencyData} theme={theme} />
+                    <DPRQualityChart data={qualityData} theme={theme} />
+                    <DPRManualChartsContainer dashboardDate={dashboardDate} theme={theme} />
+                </div>
+
+                {/* Reports List Table */}
+                <div className={`rounded-xl border ${theme.border} ${theme.card} shadow-sm overflow-hidden`}>
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                            <tr>
+                                <th className="p-4 border-b">Date</th>
+                                <th className="p-4 border-b">Department</th>
+                                <th className="p-4 border-b">Section</th>
+                                <th className="p-4 border-b">Line</th>
+                                <th className="p-4 border-b">Shift</th>
+                                <th className="p-4 border-b">Status</th>
+                                <th className="p-4 border-b">Made By</th>
+                                <th className="p-4 border-b">Submitted By</th>
+                                <th className="p-4 border-b">Last Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {isListFetching ? (
+                                <tr><td colSpan={8} className="p-8 text-center text-gray-500">Loading reports...</td></tr>
+                            ) : reports.length === 0 ? (
+                                <tr><td colSpan={8} className="p-8 text-center text-gray-500">No reports found for the selected criteria.</td></tr>
+                            ) : (
+                                reports.map((report, idx) => (
+                                    <tr
+                                        key={report._id || idx}
+                                        className="hover:bg-gray-50 cursor-pointer border-b last:border-0 transition-colors"
+                                        onClick={() => handleOpenReport(report)}
+                                    >
+                                        <td className="p-4 font-medium">{report.date}</td>
+                                        <td className="p-4">{report.departmentName || departments.find(d => (d._id || d.id) === report.department)?.name || report.department}</td>
+                                        <td className="p-4">{report.sectionName || "-"}</td>
+                                        <td className="p-4">{report.lineName || report.line}</td>
+                                        <td className="p-4 text-center">
+                                            <span className="bg-gray-100 px-2 py-0.5 rounded text-[10px] font-bold">Shift {report.shift}</span>
+                                        </td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${report.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                                    report.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                                        report.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' :
+                                                            'bg-gray-100 text-gray-700'
+                                                }`}>
+                                                {report.status || 'DRAFT'}
+                                            </span>
+                                        </td>
+                                        <td className="p-4">{report.madeBy || '-'}</td>
+                                        <td className="p-4">{report.submittedBy || '-'}</td>
+                                        <td className="p-4 text-xs text-gray-500">
+                                            {report.updatedAt ? format(new Date(report.updatedAt), "dd MMM yyyy HH:mm") : '-'}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between mt-4 px-1">
+                    <div className={`text-xs ${theme.textMuted}`}>
+                        Showing <span className="font-bold">{reports.length}</span> of <span className="font-bold">{totalCount}</span> reports
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                setCurrentPage(prev => Math.max(1, prev - 1));
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            disabled={currentPage === 1 || isListFetching}
+                            className="h-8 w-8 p-0"
+                        >
+                            <ChevronRight className="w-4 h-4 rotate-180" />
+                        </Button>
+                        <div className="flex items-center gap-1 text-xs">
+                            <span className={theme.textMuted}>Page</span>
+                            <span className="font-bold">{currentPage}</span>
+                            <span className={theme.textMuted}>of</span>
+                            <span className="font-bold">{totalPages || 1}</span>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                setCurrentPage(prev => Math.min(totalPages, prev + 1));
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            disabled={currentPage >= totalPages || isListFetching}
+                            className="h-8 w-8 p-0"
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Create Dialog */}
+                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                    <DialogContent className="max-w-md bg-white">
+                        <DialogHeader>
+                            <DialogTitle>Create New DPR Report</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                                <Label>Date</Label>
+                                <Input type="date" value={createDate} onChange={e => setCreateDate(e.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Department</Label>
+                                <Select value={createDepartment} onValueChange={val => {
+                                    setCreateDepartment(val);
+                                    setCreateSection("");
+                                    setCreateLine("");
+                                }}>
+                                    <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
+                                    <SelectContent>
+                                        {departments.map(d => <SelectItem key={d.id || d._id} value={d.id || d._id}>{d.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Section</Label>
+                                <Select
+                                    value={createSection}
+                                    onValueChange={val => {
+                                        setCreateSection(val);
+                                        setCreateLine("");
+                                    }}
+                                    disabled={!createDepartment}
+                                >
+                                    <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
+                                    <SelectContent>
+                                        {createSections.map(s => <SelectItem key={s.id || s._id} value={s.id || s._id}>{s.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Line</Label>
+                                <Select value={createLine} onValueChange={setCreateLine} disabled={!createSection}>
+                                    <SelectTrigger><SelectValue placeholder="Select Line" /></SelectTrigger>
+                                    <SelectContent>
+                                        {createLines.map(l => <SelectItem key={l.id || l._id} value={l.id || l._id}>{l.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Shift</Label>
+                                <Select value={createShift} onValueChange={setCreateShift}>
+                                    <SelectTrigger><SelectValue placeholder="Select Shift" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="A">A-Shift</SelectItem>
+                                        <SelectItem value="B">B-Shift</SelectItem>
+                                        <SelectItem value="C">C-Shift</SelectItem>
+                                        <SelectItem value="G">G-Shift</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
+                            <Button onClick={handleCreateReport} disabled={!createLine}>Create Report</Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6 pb-20">
+            {/* Top Filter Controls (No Print Area) */}
+            <div className="print:hidden flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                    <Button variant="ghost" size="sm" onClick={() => setIsReportOpen(false)} className="h-9 px-3">
+                        <ChevronRight className="w-4 h-4 mr-2 rotate-180" />
+                        Back to List
+                    </Button>
+                    <h1 className={`text-xl font-bold tracking-tight ${theme.textMain}`}>
+                        DPR Report: {lineName}
+                    </h1>
+                    <div className="flex items-center gap-2">
+                        <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-xs font-bold border border-blue-100">
+                            Shift {selectedShift}
+                        </span>
+                        <span className="bg-gray-50 text-gray-600 px-3 py-1 rounded-full text-xs font-bold border border-gray-100">
+                            {selectedDate}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => refetch()}
+                        disabled={!selectedLine || reportFetching}
+                    >
+                        <IconRefresh className="w-4 h-4 mr-2" />
+                        Reload
+                    </Button>
+                    <Button size="sm" onClick={handlePrint}>
+                        <IconPrinter className="w-4 h-4 mr-2" />
+                        Print
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-green-600 text-green-600 hover:bg-green-50"
+                        onClick={() => exportToExcel("Daily Production Report Sheet", {
+                            date: selectedDate,
+                            departmentId: selectedDepartment,
+                            lineId: selectedLine,
+                            shift: selectedShift
+                        })}
+                        disabled={!selectedLine || reportFetching}
+                    >
+                        <IconDownload className="w-4 h-4 mr-2" />
+                        Export
+                    </Button>
                 </div>
             </div>
 
@@ -1116,7 +1518,33 @@ const DailyProductionReport = () => {
                                         Line Name- {lineName}
                                     </td>
                                     <td className="border border-black p-1 font-bold w-1/4">
-                                        leader Name- <input type="text" disabled={!canEdit} className="w-32 bg-transparent outline-none border-none border-b border-gray-400 disabled:opacity-70" value={formData.leaderName} onChange={e => setFormData({ ...formData, leaderName: e.target.value })} />
+                                        <div className="flex items-center gap-1">
+                                            <span className="whitespace-nowrap">leader Name-</span>
+                                            {lineLeaders.length > 1 ? (
+                                                <select
+                                                    disabled={!canEdit}
+                                                    className="flex-1 bg-transparent outline-none border-none border-b border-gray-400 disabled:opacity-70 min-w-[100px] text-[11px]"
+                                                    value={formData.leaderName}
+                                                    onChange={e => setFormData({ ...formData, leaderName: e.target.value })}
+                                                >
+                                                    <option value="">Select Leader</option>
+                                                    {lineLeaders.map((l, i) => (
+                                                        <option key={i} value={l}>{l}</option>
+                                                    ))}
+                                                    {formData.leaderName && !lineLeaders.includes(formData.leaderName) && (
+                                                        <option value={formData.leaderName}>{formData.leaderName}</option>
+                                                    )}
+                                                </select>
+                                            ) : (
+                                                <input
+                                                    type="text"
+                                                    disabled={!canEdit}
+                                                    className="flex-1 bg-transparent outline-none border-none border-b border-gray-400 disabled:opacity-70 min-w-[100px] text-[11px]"
+                                                    value={formData.leaderName}
+                                                    onChange={e => setFormData({ ...formData, leaderName: e.target.value })}
+                                                />
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="border border-black p-1 font-bold w-1/4">
                                         Shift- {selectedShift}
@@ -1542,22 +1970,22 @@ const DailyProductionReport = () => {
 
                         {/* Defect Detail Tables (Now in the Middle) */}
                         <div className="w-full mt-1">
-                        <DefectDetailSection 
-                                title="Customer End Defect Detail" 
-                                data={formData.customerEndDefectDetails} 
-                                onChange={(idx, field, val) => handleDefectDetailChange('customerEndDefectDetails', idx, field, val)} 
+                            <DefectDetailSection
+                                title="Customer End Defect Detail"
+                                data={formData.customerEndDefectDetails}
+                                onChange={(idx, field, val) => handleDefectDetailChange('customerEndDefectDetails', idx, field, val)}
                                 disabled={!canEdit}
                             />
-                            <DefectDetailSection 
-                                title="Internal Defect Detail:" 
-                                data={formData.internalDefectDetails} 
-                                onChange={(idx, field, val) => handleDefectDetailChange('internalDefectDetails', idx, field, val)} 
+                            <DefectDetailSection
+                                title="Internal Defect Detail:"
+                                data={formData.internalDefectDetails}
+                                onChange={(idx, field, val) => handleDefectDetailChange('internalDefectDetails', idx, field, val)}
                                 disabled={!canEdit}
                             />
                         </div>
 
                         {/* Manpower Attendance Summary */}
-                        <ManpowerAttendanceSection 
+                        <ManpowerAttendanceSection
                             data={formData.manpowerAttendance}
                             onChange={handleManpowerChange}
                             disabled={!canEdit}
@@ -1567,7 +1995,7 @@ const DailyProductionReport = () => {
                         />
 
                         {/* Kaizen Details (New) */}
-                        <KaizenSection 
+                        <KaizenSection
                             data={formData.kaizenDetails}
                             onChange={handleKaizenChange}
                             disabled={!canEdit}
@@ -1584,10 +2012,10 @@ const DailyProductionReport = () => {
                                 <tr>
                                     <td className="border border-black p-1 text-right pr-4 bg-gray-100 w-[40%]">{tableConfig?.footer?.madeByLabel || "Made By (Line Leader):"}</td>
                                     <td className="border border-black p-0 w-[60%]">
-                                        <TextCell 
-                                            value={formData.madeBy || (formData.isSubmitted ? "..." : "")} 
-                                            onChange={(v) => setFormData({ ...formData, madeBy: v })} 
-                                            disabled={!canEdit} 
+                                        <TextCell
+                                            value={formData.madeBy || (formData.isSubmitted ? "..." : "")}
+                                            onChange={(v) => setFormData({ ...formData, madeBy: v })}
+                                            disabled={!canEdit}
                                         />
                                     </td>
                                 </tr>
@@ -1600,16 +2028,16 @@ const DailyProductionReport = () => {
                                             </span>
                                             {formData.isSubmitted && formData.status === 'SUBMITTED' && canApprove && (
                                                 <div className="flex gap-2 print:hidden">
-                                                    <Button 
-                                                        size="xs" 
+                                                    <Button
+                                                        size="xs"
                                                         className="h-7 bg-green-600 hover:bg-green-700 text-white text-[10px]"
                                                         onClick={() => handleCheck('approve')}
                                                         disabled={isChecking}
                                                     >
                                                         Approve
                                                     </Button>
-                                                    <Button 
-                                                        size="xs" 
+                                                    <Button
+                                                        size="xs"
                                                         variant="destructive"
                                                         className="h-7 text-[10px]"
                                                         onClick={() => handleCheck('reject')}
@@ -1633,22 +2061,21 @@ const DailyProductionReport = () => {
                     <div className="mt-6 flex justify-between items-center print:hidden">
                         <div className="flex gap-2 items-center">
                             {formData.status && (
-                                <div className={`px-4 py-2 rounded-full font-bold text-sm ${
-                                    formData.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                                    formData.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                                    formData.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' :
-                                    'bg-gray-100 text-gray-700'
-                                }`}>
+                                <div className={`px-4 py-2 rounded-full font-bold text-sm ${formData.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                        formData.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                            formData.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' :
+                                                'bg-gray-100 text-gray-700'
+                                    }`}>
                                     Status: {formData.status}
                                 </div>
                             )}
                         </div>
 
                         <div className="flex gap-3">
-                            <Button 
-                                variant="outline" 
-                                size="lg" 
-                                onClick={() => handleSubmit('save')} 
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                onClick={() => handleSubmit('save')}
                                 disabled={isSaving || !canEdit || formData.status === 'APPROVED'}
                             >
                                 {isSaving ? (
@@ -1659,10 +2086,10 @@ const DailyProductionReport = () => {
                                 Save as Draft
                             </Button>
 
-                            <Button 
-                                size="lg" 
+                            <Button
+                                size="lg"
                                 className="bg-blue-600 hover:bg-blue-700 text-white"
-                                onClick={() => handleSubmit('submit')} 
+                                onClick={() => handleSubmit('submit')}
                                 disabled={isSaving || !canEdit || formData.status === 'APPROVED'}
                             >
                                 {isSaving ? (
@@ -1681,10 +2108,11 @@ const DailyProductionReport = () => {
             {!reportFetching && (!selectedDepartment || !selectedLine) && (
                 <div className={`text-center p-12 mt-6 rounded-xl border border-dashed ${theme.border} ${theme.card}`}>
                     <IconRefresh className="mx-auto w-12 h-12 text-gray-400 mb-4 opacity-50" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Filters Required</h3>
-                    <p className="text-gray-500 max-w-sm mx-auto">
-                        Please select a Department and Line above to view or start filling out today's production report.
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Report Selected</h3>
+                    <p className="text-gray-500 max-w-sm mx-auto mb-4">
+                        Please select a report from the list or create a new one to view details.
                     </p>
+                    <Button onClick={() => setIsReportOpen(false)}>Back to List</Button>
                 </div>
             )}
 

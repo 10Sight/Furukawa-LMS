@@ -113,13 +113,13 @@ export const getAdminHomeHandoverStats = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get Test Paper Pass stats for the Admin Home page
- * Counts PASSED attempts categorized by isTheoritical flag
+ * Get Test Paper stats for the Admin Home page
+ * Returns distribution of total attempts and pass/fail results
  */
 export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, departmentId, isDojo } = req.query;
     
-    let whereClause = "WHERE aq.status = 'PASSED'";
+    let whereClause = "WHERE 1=1";
     let params = [];
 
     if (startDate && endDate) {
@@ -127,36 +127,62 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
         params.push(startDate, endDate);
     }
 
-    const query = `
+    if (departmentId && departmentId !== 'all') {
+        whereClause += " AND u.departmentId = ?";
+        params.push(departmentId);
+    }
+
+    if (isDojo !== undefined && isDojo !== 'all') {
+        whereClause += " AND u.isTemporary = ?";
+        params.push(isDojo === 'true' || isDojo === '1' ? 1 : 0);
+    }
+
+    // Query 1: Total distribution (Theoritical vs Practical)
+    const totalQuery = `
         SELECT 
-            CASE 
-                WHEN q.isTheoretical = 1 THEN 'Theoretical'
-                ELSE 'Practical'
-            END as name,
+            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END as name,
             COUNT(*) as value
         FROM attempted_quizzes aq
         JOIN quizzes q ON aq.quiz = q.id
+        JOIN users u ON aq.student = u.id
         ${whereClause}
-        GROUP BY q.isTheoretical
+        GROUP BY CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END
     `;
 
-    const [rows] = await executeQuery(query, params);
+    // Query 2: Pass/Fail distribution grouped by type
+    const passFailQuery = `
+        SELECT 
+            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END as type,
+            CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END as status,
+            COUNT(*) as value
+        FROM attempted_quizzes aq
+        JOIN quizzes q ON aq.quiz = q.id
+        JOIN users u ON aq.student = u.id
+        ${whereClause}
+        GROUP BY 
+            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END, 
+            CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END
+    `;
 
-    // If a category is missing (e.g., no practical passes yet), we should still show it with 0
-    const results = [
+    const [totalRows] = await executeQuery(totalQuery, params);
+    const [passFailRows] = await executeQuery(passFailQuery, params);
+
+    // Format total distribution
+    const totalDistribution = [
         { name: 'Theoretical', value: 0 },
         { name: 'Practical', value: 0 }
     ];
 
-    rows.forEach(row => {
-        const index = results.findIndex(r => r.name === row.name);
-        if (index !== -1) {
-            results[index].value = row.value;
-        }
+    totalRows.forEach(row => {
+        const item = totalDistribution.find(d => d.name === row.name);
+        if (item) item.value = row.value;
     });
 
     res.status(200).json(
-        new ApiResponse(200, results, "Test paper pass stats fetched successfully")
+        new ApiResponse(200, {
+            totalDistribution,
+            passFailData: passFailRows
+        }, "Test paper stats fetched successfully")
     );
 });
 

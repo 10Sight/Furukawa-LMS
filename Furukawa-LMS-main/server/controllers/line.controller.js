@@ -70,7 +70,7 @@ export const createLine = asyncHandler(async (req, res) => {
 
     const [newLine] = await executeQuery(`
         SELECT l.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
         FROM [lines] l WHERE l.id = ?`, [result[0].id]);
 
     res.status(201).json(
@@ -88,7 +88,7 @@ export const getLinesBySection = asyncHandler(async (req, res) => {
 
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId = ? OR l.department = ?) ORDER BY l.createdAt DESC`,
         [sid, sid]
     );
@@ -108,7 +108,7 @@ export const getLinesByDepartment = asyncHandler(async (req, res) => {
 
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department = ? ORDER BY l.createdAt DESC`,
         [did]
     );
@@ -176,7 +176,7 @@ export const updateLine = asyncHandler(async (req, res) => {
                 const LineRequirement = (await import("../models/lineRequirement.model.js")).default;
                 const LineRequirementHistory = (await import("../models/lineRequirementHistory.model.js")).default;
                 const now = new Date();
-                
+
                 // We default to MONTHLY update for the current month when using the legacy UI
                 await LineRequirement.createOrUpdate({
                     lineId: id,
@@ -203,7 +203,7 @@ export const updateLine = asyncHandler(async (req, res) => {
 
     const [updatedLine] = await executeQuery(`
         SELECT l.*,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
         FROM [lines] l WHERE l.id = ?`, [id]);
 
     res.status(200).json(
@@ -230,7 +230,7 @@ export const deleteLine = asyncHandler(async (req, res) => {
     if (subSectionIds.length > 0) {
         // 2. Delete all machines for these sub-sections
         await executeQuery(`DELETE FROM machines WHERE subSectionId IN (${subSectionIds.join(",")})`);
-        
+
         // 3. Delete all sub-sections for this line
         await executeQuery("DELETE FROM [sub_sections] WHERE lineId = ?", [id]);
     }
@@ -260,7 +260,7 @@ export const getAllLines = asyncHandler(async (req, res) => {
 
     let querySQL = `
         SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id`;
     let params = [];
     let conditions = [];

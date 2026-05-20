@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { useGetAdminHomeUserStatusStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { Skeleton } from "@/components/ui/skeleton";
 import { IconUsers, IconCalendar, IconChartPie, IconChartBar } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
+import highcharts3d from 'highcharts/highcharts-3d';
+
+// Initialize 3D module
+if (typeof highcharts3d === 'function') {
+    highcharts3d(Highcharts);
+}
 
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#94a3b8', '#8b5cf6']; // Green (Present), Amber (Leave), Red (Left)
 
@@ -14,7 +21,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
     const { data: statsData, isLoading, error } = useGetAdminHomeUserStatusStatsQuery(dateRange);
     const [userType, setUserType] = useState('operator');
     const [viewType, setViewType] = useState('pie'); // 'pie' or 'bar'
-    
+
     const allData = statsData?.data || { operator: [], dojo: [] };
     const chartData = allData[userType] || [];
     const totalUsers = chartData.reduce((acc, curr) => acc + curr.value, 0);
@@ -45,6 +52,60 @@ const UserStatusDistributionChart = ({ dateRange }) => {
 
     const hasData = totalUsers > 0;
 
+    const getPieOptions = () => ({
+        chart: {
+            type: 'pie',
+            options3d: {
+                enabled: true,
+                alpha: 0,
+                beta: 0
+            },
+            backgroundColor: 'transparent',
+            height: 450
+        },
+        title: { text: '' },
+        tooltip: {
+            pointFormat: '{series.name}: <b>{point.percentage:.1f}%</b>'
+        },
+        plotOptions: {
+            pie: {
+                allowPointSelect: true,
+                cursor: 'pointer',
+                depth: 35,
+                dataLabels: {
+                    enabled: true,
+                    format: '{point.name}: {point.y}'
+                },
+                colors: COLORS,
+                point: {
+                    events: {
+                        mouseOver: function () { this.slice(); },
+                        mouseOut: function () { this.slice(); }
+                    }
+                }
+            }
+        },
+        series: [{
+            name: 'Status Share',
+            data: chartData.map(item => ({ name: item.name, y: item.value }))
+        }],
+        credits: { enabled: false }
+    });
+
+    const getBarOptions = () => ({
+        chart: { type: 'column', backgroundColor: 'transparent', height: 450 },
+        title: { text: '' },
+        xAxis: { categories: chartData.map(item => item.name) },
+        yAxis: { title: { text: 'Users' } },
+        series: [{
+            name: 'Users',
+            data: chartData.map(item => item.value),
+            colorByPoint: true,
+            colors: COLORS
+        }],
+        credits: { enabled: false }
+    });
+
     return (
         <Card className="col-span-1">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -67,9 +128,9 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                             <SelectItem value="dojo">Dojo Users</SelectItem>
                         </SelectContent>
                     </Select>
-                    <Button 
-                        variant="outline" 
-                        size="icon" 
+                    <Button
+                        variant="outline"
+                        size="icon"
                         className="h-8 w-8"
                         onClick={() => setViewType(viewType === 'pie' ? 'bar' : 'pie')}
                         title={viewType === 'pie' ? 'Switch to Bar Chart' : 'Switch to Pie Chart'}
@@ -81,47 +142,11 @@ const UserStatusDistributionChart = ({ dateRange }) => {
             <CardContent>
                 <div className="h-[450px] w-full relative mt-4">
                     {hasData ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                            {viewType === 'pie' ? (
-                                <PieChart>
-                                    <Pie
-                                        data={chartData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={0}
-                                        outerRadius={150}
-                                        paddingAngle={2}
-                                        dataKey="value"
-                                        labelLine={true}
-                                        label={({ name, value }) => value > 0 ? `${name} (${value})` : null}
-                                    >
-                                        {chartData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip 
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    />
-                                    <Legend verticalAlign="bottom" height={36}/>
-                                </PieChart>
-                            ) : (
-                                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="name" />
-                                    <YAxis />
-                                    <Tooltip 
-                                        cursor={{ fill: 'transparent' }}
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    />
-                                    <Legend verticalAlign="bottom" height={36}/>
-                                    <Bar dataKey="value" name="Users" radius={[4, 4, 0, 0]}>
-                                        {chartData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Bar>
-                                </BarChart>
-                            )}
-                        </ResponsiveContainer>
+                        <HighchartsReact
+                            key={viewType}
+                            highcharts={Highcharts}
+                            options={viewType === 'pie' ? getPieOptions() : getBarOptions()}
+                        />
                     ) : (
                         <div className="h-full flex flex-col items-center justify-center text-gray-500 bg-gray-50/50 rounded-xl border border-dashed">
                             <IconCalendar className="h-10 w-10 mb-2 opacity-20" />
@@ -129,7 +154,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                         </div>
                     )}
                 </div>
-                
+
                 <div className="mt-6 grid grid-cols-3 gap-2">
                     {chartData.map((item, index) => (
                         <div key={item.name} className="flex flex-col items-center p-2 rounded-lg bg-gray-50/50 border border-gray-100">
@@ -148,3 +173,4 @@ const UserStatusDistributionChart = ({ dateRange }) => {
 };
 
 export default UserStatusDistributionChart;
+

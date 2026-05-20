@@ -429,20 +429,18 @@ app.use('/api', (req, res) => {
 
 const startServer = async () => {
     try {
-
         // Validate DB Connection
         await connectDB();
-        await HandoverSheet.init();
-        await Requirement.init();
-        await SubSection.init();
-        await SectionHead.init();
-
-        // Initialize schedulers after DB connection
+        
+        // Initialize Schedulers
         timelineScheduler.init();
         departmentStatusScheduler.init();
         reportScheduler.init();
 
-        // Initialize Tables
+        // Initialize Core Tables
+        await HandoverSheet.init();
+        await Requirement.init();
+        await SectionHead.init();
         await HeadcountReport.init();
         await import("./models/skillMatrixConfig.model.js").then(m => m.SkillMatrixConfig.init());
         await import("./models/skillMatrixEvaluation.model.js").then(m => m.SkillMatrixEvaluation.init());
@@ -452,7 +450,13 @@ const startServer = async () => {
         await SkillMatrixDashboardConfig.init();
         await Course.init();
         await Quiz.init();
+
+        // Initialize Hierarchy in Order: Section -> Line -> SubSection
+        const Section = (await import("./models/section.model.js")).default;
+        await Section.init();
         await Line.init();
+        await SubSection.init();
+
         await LineRequirement.init();
         await LineRequirementHistory.init();
         await ReportClub.init();

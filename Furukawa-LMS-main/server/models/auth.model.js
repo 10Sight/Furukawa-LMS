@@ -344,7 +344,7 @@ class User {
         if (dataToInsert.isDeleted === undefined) dataToInsert.isDeleted = 0;
         if (dataToInsert.isVerified === undefined) dataToInsert.isVerified = 0;
         if (dataToInsert.isTemporary === undefined) dataToInsert.isTemporary = 0;
-        if (dataToInsert.currentLevel === undefined || dataToInsert.currentLevel === null) dataToInsert.currentLevel = 'L1';
+        // if (dataToInsert.currentLevel === undefined || dataToInsert.currentLevel === null) dataToInsert.currentLevel = 'L1';
 
         const values = fields.map(field => {
             let val = dataToInsert[field];

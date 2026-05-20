@@ -73,6 +73,8 @@ export function CmsLayout() {
     const isPathAllowed = useMemo(() => isPathAllowedForUser(pathname, "cms", user), [pathname, user]);
 
     useEffect(() => {
+        if (isLoading) return; // Prevent redirect while loading user data
+
         if (isPathAllowed) {
             const currentTab = tabs.find(tab =>
                 pathname === tab.link ||
@@ -102,7 +104,7 @@ export function CmsLayout() {
                 }
             }
         }
-    }, [pathname, language, tabs, isPathAllowed, navigate]);
+    }, [pathname, language, tabs, isPathAllowed, navigate, isLoading]);
 
     const [deferredPrompt, setDeferredPrompt] = useState(null);
 
@@ -197,7 +199,21 @@ export function CmsLayout() {
                     )}
                 </div>
 
-                <div className="px-3 flex flex-col w-full py-6 space-y-1 overflow-y-auto max-h-[calc(100vh-12rem)] scrollbar-thin scrollbar-thumb-gray-300">
+                {/* Back to Menu Link (Fixed at top) */}
+                {(user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM') && (
+                    <div className="px-3 pt-4 border-b border-gray-100/50 pb-2">
+                        <div
+                            className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-600 hover:bg-gray-100
+                    ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
+                            onClick={() => navigate('/')}
+                        >
+                            <IconUser className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"}`} />
+                            {!collapsed && <span className="ml-3 text-sm font-medium">Back to Main Menu</span>}
+                        </div>
+                    </div>
+                )}
+
+                <div className="px-3 flex flex-col w-full py-6 space-y-1 overflow-y-auto max-h-[calc(100vh-14rem)] scrollbar-thin scrollbar-thumb-gray-300">
                     {tabs.map((item) => {
                         const isActive = pathname === item.link || (item.link !== "/cms" && pathname.startsWith(item.link));
                         return (
@@ -231,17 +247,7 @@ export function CmsLayout() {
                         );
                     })}
 
-                    {/* Back to Admin Link */}
-                    {user?.role !== 'CUSTOM' && (
-                        <div
-                            className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-600 hover:bg-gray-100
-                    ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
-                            onClick={() => navigate('/')}
-                        >
-                            <IconUser className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"}`} />
-                            {!collapsed && <span className="ml-3 text-sm font-medium">Back to Main Menu</span>}
-                        </div>
-                    )}
+
 
                 </div>
 

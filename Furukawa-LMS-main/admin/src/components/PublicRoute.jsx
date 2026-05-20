@@ -7,7 +7,9 @@ const PublicRoute = ({ children }) => {
   const { isLoggedIn, user } = useSelector((state) => state.auth);
 
   // Get the intended destination from location state, default to dashboard
-  const from = location.state?.from?.pathname || '/';
+  const from = location.state?.from 
+    ? `${location.state.from.pathname}${location.state.from.search || ""}` 
+    : '/';
 
   // If user is authenticated, redirect to the intended destination or dashboard
   if (isLoggedIn && user) {

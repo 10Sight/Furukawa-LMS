@@ -9,6 +9,7 @@ import {
     Copy, 
     Download, 
     Eye,
+    EyeOff,
     ArrowLeft,
     Clock,
     User,
@@ -27,6 +28,7 @@ const LearningComparisonDetail = () => {
     const navigate = useNavigate();
     const [content, setContent] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [showBefore, setShowBefore] = useState(false);
 
     const baseUrl = BASE_URL;
 
@@ -44,10 +46,37 @@ const LearningComparisonDetail = () => {
         fetchData();
     }, [id]);
 
-    const copyToClipboard = (path) => {
+    const copyToClipboard = async (path) => {
         const fullUrl = `${baseUrl}${path}`;
-        navigator.clipboard.writeText(fullUrl);
-        toast.success("Link copied to clipboard!");
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(fullUrl);
+                toast.success("Link copied to clipboard!");
+            } else {
+                throw new Error('Clipboard API not available');
+            }
+        } catch (err) {
+            // Fallback for non-secure contexts or older browsers
+            try {
+                const textArea = document.createElement("textarea");
+                textArea.value = fullUrl;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-9999px";
+                textArea.style.top = "0";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                if (successful) {
+                    toast.success("Link copied to clipboard!");
+                } else {
+                    toast.error("Failed to copy link");
+                }
+            } catch (fallbackErr) {
+                toast.error("Failed to copy link");
+            }
+        }
     };
 
     const handleDownload = (path, fileName) => {
@@ -154,68 +183,91 @@ const LearningComparisonDetail = () => {
                     >
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
-                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Learning Comparison</Badge>
+                    <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Learning Comparison</Badge>
+                    </div>
                 </div>
                 
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="space-y-2">
                         <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">{content.title}</h1>
-                        <p className="text-lg text-gray-500 max-w-2xl">{content.description || "No description provided."}</p>
+                        <p className="text-lg text-gray-500">{content.description || "No description provided."}</p>
                     </div>
-                    <div className="flex items-center gap-6 text-sm text-gray-400 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                        <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4" />
-                            <span>{new Date(content.createdAt).toLocaleDateString()}</span>
-                        </div>
-                        <div className="w-px h-4 bg-gray-200" />
-                        <div className="flex items-center gap-2">
-                            <User className="w-4 h-4" />
-                            <span>ID: #{content.id}</span>
+                    
+                    <div className="flex flex-col md:flex-row items-center gap-4">
+                        <Button 
+                            onClick={() => setShowBefore(!showBefore)}
+                            variant="outline"
+                            className={`group relative overflow-hidden rounded-2xl px-5 py-6 transition-all duration-300 border-2 ${showBefore ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-amber-100 shadow-lg' : 'border-gray-100 hover:border-amber-300 hover:bg-amber-50/50'}`}
+                        >
+                            <div className="flex items-center gap-3 relative z-10">
+                                <div className={`p-2 rounded-xl transition-colors duration-300 ${showBefore ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-amber-100 group-hover:text-amber-600'}`}>
+                                    {showBefore ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </div>
+                                <div className="text-left">
+                                    <span className="block text-[10px] font-bold uppercase tracking-widest opacity-60">View Mode</span>
+                                    <span className="block text-sm font-extrabold">{showBefore ? "Full Comparison" : "Final State Only"}</span>
+                                </div>
+                            </div>
+                        </Button>
+
+                        <div className="flex items-center gap-6 text-sm text-gray-400 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                            <div className="flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                <span>{new Date(content.createdAt).toLocaleDateString()}</span>
+                            </div>
+                            <div className="w-px h-4 bg-gray-200" />
+                            <div className="flex items-center gap-2">
+                                <User className="w-4 h-4" />
+                                <span>ID: #{content.id}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             {/* Comparison Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className={`grid grid-cols-1 ${showBefore ? 'lg:grid-cols-2' : 'max-w-4xl mx-auto'} gap-8 transition-all duration-500`}>
                 {/* Before State */}
-                <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-2xl font-bold text-amber-600 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center">
-                                <Clock className="w-5 h-5 text-amber-600" />
-                            </div>
-                            Before Implementation
-                        </h2>
-                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Initial State</Badge>
+                {showBefore && (
+                    <div className="space-y-6 animate-in slide-in-from-left duration-500">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-2xl font-bold text-amber-600 flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center">
+                                    <Clock className="w-5 h-5 text-amber-600" />
+                                </div>
+                                Before Implementation
+                            </h2>
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Initial State</Badge>
+                        </div>
+                        <Card className="border-none shadow-sm bg-gray-50/30 overflow-hidden">
+                            <CardContent className="p-6 space-y-8">
+                                {content.beforeDescription && (
+                                    <div className="p-4 rounded-xl bg-amber-50/30 border border-amber-100 text-amber-900 text-sm italic">
+                                        {content.beforeDescription}
+                                    </div>
+                                )}
+                                <MediaPreview label="Before Video" path={content.beforeVideo} type="video" />
+                                <div className="space-y-3 pt-4 border-t border-gray-100">
+                                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Documents</h4>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        <FileCard label="SOP Document" path={content.beforePdf} icon={FileText} color="text-red-500" />
+                                        <FileCard label="Data Sheet" path={content.beforeExcel} icon={FileSpreadsheet} color="text-emerald-500" />
+                                        <FileCard label="Word Manual" path={content.beforeWord} icon={FileIcon} color="text-blue-500" />
+                                        <FileCard label="Presentation" path={content.beforePpt} icon={Presentation} color="text-orange-500" />
+                                    </div>
+                                </div>
+                                
+                                {![content.beforeVideo, content.beforePdf, content.beforeExcel, content.beforeWord, content.beforePpt].some(x => x) && (
+                                    <div className="text-center py-12 text-gray-400 italic">No files uploaded for this section</div>
+                                )}
+                            </CardContent>
+                        </Card>
                     </div>
-                    <Card className="border-none shadow-sm bg-gray-50/30 overflow-hidden">
-                        <CardContent className="p-6 space-y-8">
-                            {content.beforeDescription && (
-                                <div className="p-4 rounded-xl bg-amber-50/30 border border-amber-100 text-amber-900 text-sm italic">
-                                    {content.beforeDescription}
-                                </div>
-                            )}
-                            <MediaPreview label="Before Video" path={content.beforeVideo} type="video" />
-                            <div className="space-y-3 pt-4 border-t border-gray-100">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Documents</h4>
-                                <div className="grid grid-cols-1 gap-3">
-                                    <FileCard label="SOP Document" path={content.beforePdf} icon={FileText} color="text-red-500" />
-                                    <FileCard label="Data Sheet" path={content.beforeExcel} icon={FileSpreadsheet} color="text-emerald-500" />
-                                    <FileCard label="Word Manual" path={content.beforeWord} icon={FileIcon} color="text-blue-500" />
-                                    <FileCard label="Presentation" path={content.beforePpt} icon={Presentation} color="text-orange-500" />
-                                </div>
-                            </div>
-                            
-                            {![content.beforeVideo, content.beforePdf, content.beforeExcel, content.beforeWord, content.beforePpt].some(x => x) && (
-                                <div className="text-center py-12 text-gray-400 italic">No files uploaded for this section</div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
+                )}
 
                 {/* After State */}
-                <div className="space-y-6">
+                <div className={`space-y-6 ${!showBefore ? 'animate-in fade-in duration-700' : ''}`}>
                     <div className="flex items-center justify-between">
                         <h2 className="text-2xl font-bold text-emerald-600 flex items-center gap-3">
                             <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center">

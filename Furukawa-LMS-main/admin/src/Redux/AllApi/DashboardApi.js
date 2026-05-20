@@ -6,7 +6,17 @@ export const dashboardApi = createApi({
     baseQuery: axiosBaseQuery,
     endpoints: (builder) => ({
         getDashboardStats: builder.query({
-            query: ({ department, section, line, machine, startDate, endDate }) => ({
+            query: ({
+                department,
+                section,
+                line,
+                machine,
+                startDate,
+                endDate,
+                stateFilter,
+                districtFilter,
+                masterAttendanceMode,
+            } = {}) => ({
                 url: "/api/dashboard/stats",
                 method: "GET",
                 params: {
@@ -16,6 +26,9 @@ export const dashboardApi = createApi({
                     machine,
                     startDate,
                     endDate,
+                    stateFilter,
+                    districtFilter,
+                    masterAttendanceMode,
                 },
             }),
             keepUnusedDataFor: 0,
@@ -26,8 +39,8 @@ export const dashboardApi = createApi({
                 url: "/api/dashboard/attendance",
                 method: "GET",
                 params: {
-                    section: section || 'ALL',
-                    line:    line    || 'ALL',
+                    section: section || "ALL",
+                    line: line || "ALL",
                 },
             }),
             keepUnusedDataFor: 0,

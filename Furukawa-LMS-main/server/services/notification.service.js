@@ -88,7 +88,7 @@ class NotificationService {
                 htmlMessage = `
                     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                         <p>Dear All,</p>
-                        <p style="font-weight: bold; color: #000000;">Safety First!</p>
+                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
                         <p><strong>Sub:</strong> (Daily 5M Recording - ${deptName} (${date}))</p>
                         <p>Please find the attached Daily 5M Recording sheet for <strong>${deptName}</strong> on <strong>${date}</strong>.</p>
                         
@@ -96,6 +96,30 @@ class NotificationService {
                             <a href="${reviewUrl}" 
                                style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
                                 Review & Approve Recording
+                            </a>
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
+                    </div>
+                `;
+            } else if (formName === "On Job Training Evaluation Sheet" || formName === "On Job Training Record Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const ojtId = formData.ojtId || "";
+                const reviewUrl = `${adminUrl}/admin/on-job-training?ojtId=${ojtId}`;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <p>Dear All,</p>
+                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
+                        <p><strong>Sub:</strong> (${formName} Update - ${deptName})</p>
+                        <p>The <strong>${formName}</strong> for department <strong>${deptName}</strong> has been successfully filled and submitted.</p>
+                        <p>Please find the attached Excel report for your reference.</p>
+                        
+                        <div style="margin: 25px 0;">
+                            <a href="${reviewUrl}" 
+                               style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                                View & Review OJT Sheet
                             </a>
                         </div>
 
@@ -114,7 +138,7 @@ class NotificationService {
                 htmlMessage = `
                     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                         <p>Dear All,</p>
-                        <p style="font-weight: bold; color: #000000;">Safety First!</p>
+                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
                         <p><strong>Sub:</strong> (${formName} Update - ${deptName})</p>
                         <p>The <strong>${formName}</strong> for <strong>${formData.employeeName || 'Operator'}</strong> in department <strong>${deptName}</strong> has been updated.</p>
                         <p>Please find the attached report for your reference.</p>
@@ -147,6 +171,43 @@ class NotificationService {
                     date: formData.date,
                     entries: formData.entries || [],
                     portalUrl: reviewUrl
+                });
+            } else if (formName === "Skill Matrix Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const month = formData.month || new Date().toISOString().slice(0, 7);
+                const sectionId = formData.section || "";
+                const lineId = formData.line || "";
+                const subSectionId = formData.subSection || "";
+                const stationId = formData.station || "";
+                
+                const reviewUrl = `${adminUrl}/admin/skill-matrix?dept=${departmentId}&section=${sectionId}&line=${lineId}&subSection=${subSectionId}&station=${stationId}&month=${month}`;
+
+                // Resolve hierarchy names
+                let sectionName = "-";
+                if (sectionId) {
+                    const [secRows] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [sectionId]);
+                    if (secRows.length > 0) sectionName = secRows[0].name;
+                }
+                let lineName = "-";
+                if (lineId) {
+                    const [lineRows] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [lineId]);
+                    if (lineRows.length > 0) lineName = lineRows[0].name;
+                }
+                let subSectionName = "-";
+                if (subSectionId) {
+                    const [subSecRows] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [subSectionId]);
+                    if (subSecRows.length > 0) subSectionName = subSecRows[0].name;
+                }
+
+                htmlMessage = emailTemplates.generateSkillMatrixEmail({
+                    departmentName: deptName,
+                    sectionName: sectionName,
+                    lineName: lineName,
+                    subSectionName: subSectionName,
+                    month: month,
+                    entries: formData.entries || [],
+                    portalUrl: reviewUrl,
+                    config: formData.footerInfo?.config || {}
                 });
             }
 
@@ -564,14 +625,41 @@ class NotificationService {
         attHeader.eachCell(cell => this._applyHeaderStyle(cell));
 
         const attendance = formData.attendanceRecords || [];
-        for (let i = 0; i < 10; i++) {
-            const left = attendance[i] || {};
-            const right = attendance[i + 10] || {};
+        const N = attendance.length;
+        const half = Math.ceil(N / 2);
+        for (let i = 0; i < half; i++) {
+            const leftIndex = i;
+            const rightIndex = i + half;
+            const left = attendance[leftIndex] || {};
+            const right = attendance[rightIndex] || {};
             const row = worksheet.addRow([
-                i + 1, left.date || '', left.name || '', left.ecode || '', left.department || '',
-                i + 11, right.date || '', right.name || '', right.ecode || '', right.department || ''
+                leftIndex + 1, left.date || '', left.name || '', left.ecode || '', left.department || '',
+                rightIndex + 1, rightIndex < N ? (right.date || '') : '', rightIndex < N ? (right.name || '') : '', rightIndex < N ? (right.ecode || '') : '', rightIndex < N ? (right.department || '') : ''
             ]);
             row.eachCell(cell => this._applyBorderStyle(cell));
+        }
+
+        // --- Prepared By / Checked By Footer ---
+        worksheet.addRow([]);
+        const signRow = worksheet.addRow([
+            'Prepared By :-', formData.creatorName || formData.trainingGivenBy || '', '', '', '',
+            'Checked By :-', '', '', '', ''
+        ]);
+        signRow.font = { bold: true, size: 10 };
+        worksheet.mergeCells(signRow.number, 1, signRow.number, 1);
+        worksheet.mergeCells(signRow.number, 2, signRow.number, 5);
+        worksheet.mergeCells(signRow.number, 6, signRow.number, 6);
+        worksheet.mergeCells(signRow.number, 7, signRow.number, 10);
+        
+        for (let c = 1; c <= 10; c++) {
+            const cell = signRow.getCell(c);
+            cell.alignment = { vertical: 'middle', horizontal: c === 2 ? 'left' : 'center' };
+            cell.border = {
+                top: { style: 'thin' },
+                bottom: { style: 'thin' },
+                left: c === 1 || c === 6 ? { style: 'thin' } : undefined,
+                right: c === 5 || c === 10 ? { style: 'thin' } : undefined
+            };
         }
 
         // --- Footer ---

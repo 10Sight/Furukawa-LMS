@@ -444,7 +444,10 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                                     <TableCell className="py-2">
                                             <div 
                                                 className="cursor-pointer hover:text-blue-600 transition-colors"
-                                                onClick={() => navigate(`/admin/departments/${departmentId}/lines/${line.id || line._id}`)}
+                                                onClick={() => {
+                                                    const baseLayout = window.location.pathname.split('/')[1] || 'admin';
+                                                    navigate(`/${baseLayout}/departments/${departmentId}/lines/${line.id || line._id}`);
+                                                }}
                                             >
                                                 <p className="font-medium text-sm">{line.name}</p>
                                                 {line.uniCode && (

@@ -52,6 +52,7 @@ const LandingPage = () => {
                 'employee': '/student',
                 'admin': '/admin',
                 'cms': '/cms',
+                'dashboard': '/dashboard',
                 'custom': '/portal'
             }[layout] || '/portal';
 

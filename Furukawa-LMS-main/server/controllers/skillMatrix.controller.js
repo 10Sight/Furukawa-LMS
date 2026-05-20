@@ -17,29 +17,51 @@ const parseJSON = (data, fallback = null) => {
 
 // Runtime migration guard for existing DBs that don't yet have month-based skill matrix schema.
 const ensureSkillMatrixMonthSchema = async () => {
-    // Add month column if missing and backfill from createdAt for old rows
+    // Add missing hierarchy columns if they don't exist
     await executeQuery(`
         IF COL_LENGTH('skill_matrices', 'month') IS NULL
         BEGIN
             ALTER TABLE skill_matrices ADD month VARCHAR(7);
             UPDATE skill_matrices SET month = FORMAT(createdAt, 'yyyy-MM') WHERE month IS NULL;
         END
+
+        IF COL_LENGTH('skill_matrices', 'section') IS NULL
+            ALTER TABLE skill_matrices ADD section VARCHAR(255);
+
+        IF COL_LENGTH('skill_matrices', 'subSection') IS NULL
+            ALTER TABLE skill_matrices ADD subSection VARCHAR(255);
+
+        IF COL_LENGTH('skill_matrices', 'station') IS NULL
+            ALTER TABLE skill_matrices ADD station VARCHAR(255);
     `);
 
-    // Drop old unique constraint if present
+    // Drop old narrow constraint if present
     await executeQuery(`
-        IF EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_dept_line')
+        IF EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_dept_line_month')
         BEGIN
-            ALTER TABLE skill_matrices DROP CONSTRAINT uq_skill_matrix_dept_line;
+            ALTER TABLE skill_matrices DROP CONSTRAINT uq_skill_matrix_dept_line_month;
         END
     `);
 
-    // Ensure month-based unique constraint exists
+    // Ensure broad unique constraint exists (including all hierarchy levels)
     await executeQuery(`
-        IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_dept_line_month')
+        IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_full_hierarchy')
         BEGIN
+            -- First, clean up any existing duplicates that would violate the new constraint
+            -- We keep the most recently updated record for each unique combination
+            WITH CTE AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY department, section, line, subSection, station, month 
+                           ORDER BY updatedAt DESC, id DESC
+                       ) AS rn
+                FROM skill_matrices
+            )
+            DELETE FROM skill_matrices WHERE id IN (SELECT id FROM CTE WHERE rn > 1);
+
+            -- Now add the constraint
             ALTER TABLE skill_matrices
-            ADD CONSTRAINT uq_skill_matrix_dept_line_month UNIQUE (department, line, month);
+            ADD CONSTRAINT uq_skill_matrix_full_hierarchy UNIQUE (department, section, line, subSection, station, month);
         END
     `);
 };
@@ -112,39 +134,72 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
 
             for (const entry of entries) {
                 if (entry.userId) { // Skip manual
-                    // Calculate Max Level from Stations
-                    let maxWeight = 1;
-                    if (entry.stations && Array.isArray(entry.stations)) {
-                        entry.stations.forEach(s => {
-                            // Format expected: L-1, L1, L-2, etc.
-                            const val = s.curr || "";
-                            const match = val.match(/\d+/);
-                            if (match) {
-                                const w = parseInt(match[0]);
-                                if (w > maxWeight) maxWeight = w;
-                            }
-                        });
-                    }
-                    const newLevel = `L${maxWeight}`; // e.g., L1, L2, L3
-
-                    // Check Current Level in DB
-                    const [uRows] = await executeQuery("SELECT currentLevel FROM users WHERE id = ?", [entry.userId]);
+                    // 1. Fetch User Data and Current Assignments
+                    const [uRows] = await executeQuery(
+                        "SELECT currentLevel, currentSkill, stationId FROM users WHERE id = ?", 
+                        [entry.userId]
+                    );
+                    
                     if (uRows.length > 0) {
-                        const current = uRows[0].currentLevel || 'L1';
-                        // Normalize current
-                        const currentMatch = current.match(/\d+/);
-                        const currentWeight = currentMatch ? parseInt(currentMatch[0]) : 1;
+                        const userData = uRows[0];
+                        let currentSkillMap = parseJSON(userData.currentSkill, {});
+                        const primaryStationId = String(userData.stationId || "");
 
-                        if (maxWeight !== currentWeight) {
-                            console.log(`[SkillMatrix] Updating User ${entry.userId} from ${current} to ${newLevel}`);
+                        // Fetch secondary assignments from junction table
+                        const [aRows] = await executeQuery(
+                            "SELECT machine_id FROM machine_assignments WHERE user_id = ?",
+                            [entry.userId]
+                        );
+                        const assignedMachineIds = aRows.map(r => String(r.machine_id));
+                        if (primaryStationId) assignedMachineIds.push(primaryStationId);
+                        
+                        let maxWeight = 1;
+                        let skillMapChanged = false;
 
-                            // Update User Table
-                            await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [newLevel, entry.userId]);
+                        if (entry.stations && Array.isArray(entry.stations)) {
+                            entry.stations.forEach(s => {
+                                const levelStr = s.curr || "L-1";
+                                const stationIdStr = String(s.machineId || "");
+
+                                // A. Track Max Weight from THIS matrix for potential upgrade
+                                const match = levelStr.match(/\d+/);
+                                if (match) {
+                                    const w = parseInt(match[0]);
+                                    if (w > maxWeight) maxWeight = w;
+                                }
+
+                                // B. Sync Station-Specific Proficiency
+                                // Only update operator profile if they are assigned to this specific station
+                                if (assignedMachineIds.includes(stationIdStr)) {
+                                    if (currentSkillMap[stationIdStr] !== levelStr) {
+                                        currentSkillMap[stationIdStr] = levelStr;
+                                        skillMapChanged = true;
+                                    }
+                                }
+                            });
+                        }
+
+                        // Determine New Global Level
+                        // We take the MAX of their existing level and the new matrix levels
+                        const currentGlobal = userData.currentLevel || "L1";
+                        const globalMatch = currentGlobal.match(/\d+/);
+                        const currentGlobalWeight = globalMatch ? parseInt(globalMatch[0]) : 1;
+                        
+                        const finalMaxWeight = Math.max(maxWeight, currentGlobalWeight);
+                        const newGlobalLevel = `L${finalMaxWeight}`;
+
+                        if (skillMapChanged || finalMaxWeight !== currentGlobalWeight) {
+                            console.log(`[SkillMatrix] Syncing User ${entry.userId}: Level ${currentGlobal}->${newGlobalLevel}, MapChanged: ${skillMapChanged}`);
+                            
+                            await executeQuery(
+                                "UPDATE users SET currentLevel = ?, currentSkill = ?, updatedAt = GETDATE() WHERE id = ?",
+                                [newGlobalLevel, JSON.stringify(currentSkillMap), entry.userId]
+                            );
 
                             // Trigger Handover if upgraded
-                            if (maxWeight > 1) { // Only if > L1
-                                await checkAndProcessHandover(entry.userId, newLevel);
-                                await checkAndProcessMaxLevelNotification(entry.userId, newLevel);
+                            if (finalMaxWeight > currentGlobalWeight && finalMaxWeight > 1) {
+                                await checkAndProcessHandover(entry.userId, newGlobalLevel);
+                                await checkAndProcessMaxLevelNotification(entry.userId, newGlobalLevel);
                             }
                         }
                     }
@@ -158,8 +213,10 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
     // -------------------------------------------
 
     // Trigger Email Notification
-    NotificationService.sendFormReport("Skill Matrix Sheet", department, req.body)
-        .catch(err => console.error("[SkillMatrix] Notification failed:", err));
+    if (req.body.sendEmail) {
+        NotificationService.sendFormReport("Skill Matrix Sheet", department, req.body)
+            .catch(err => console.error("[SkillMatrix] Notification failed:", err));
+    }
 
     res.status(200).json(
         new ApiResponse(200, matrix, "Skill Matrix saved successfully")
@@ -225,6 +282,7 @@ const listSkillMatrices = asyncHandler(async (req, res) => {
     let sql = `
         SELECT 
             sm.id, sm.department, sm.section, sm.line, sm.subSection, sm.station, sm.month, sm.createdAt, sm.updatedAt,
+            sm.footerInfo,
             d.name AS departmentName,
             sec.name AS sectionName,
             l.name AS lineName,
@@ -234,11 +292,11 @@ const listSkillMatrices = asyncHandler(async (req, res) => {
             -- Calculate User Count based on most granular hierarchy level
             COALESCE(
               CASE 
-                WHEN sm.station IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE stationId = CAST(sm.station AS VARCHAR(255)) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
-                WHEN sm.subSection IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE subSectionId = CAST(sm.subSection AS VARCHAR(255)) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
-                WHEN sm.line IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE (lineId = CAST(sm.line AS VARCHAR(255)) OR subSectionId IN (SELECT id FROM sub_sections WHERE lineId = CAST(sm.line AS VARCHAR(255)))) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
-                WHEN sm.section IS NOT NULL THEN (SELECT COUNT(*) FROM users WHERE (sectionId = CAST(sm.section AS VARCHAR(255)) OR lineId IN (SELECT id FROM [lines] WHERE sectionId = CAST(sm.section AS VARCHAR(255)))) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
-                ELSE (SELECT COUNT(*) FROM users WHERE departmentId = CAST(sm.department AS VARCHAR(255)) AND (isDeleted = 0 OR isDeleted IS NULL) AND role = 'Student')
+                WHEN sm.station IS NOT NULL AND TRY_CAST(sm.station AS INT) IS NOT NULL THEN (SELECT COUNT(DISTINCT u.id) FROM users u WHERE (u.stationId = CAST(sm.station AS INT) OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = CAST(sm.station AS INT))) AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND u.role IN ('STUDENT', 'CUSTOM'))
+                WHEN sm.subSection IS NOT NULL AND TRY_CAST(sm.subSection AS INT) IS NOT NULL THEN (SELECT COUNT(*) FROM OPENJSON((SELECT users FROM sub_sections WHERE id = CAST(sm.subSection AS INT))))
+                WHEN sm.line IS NOT NULL AND TRY_CAST(sm.line AS INT) IS NOT NULL THEN (SELECT COUNT(*) FROM OPENJSON((SELECT users FROM [lines] WHERE id = CAST(sm.line AS INT))))
+                WHEN sm.section IS NOT NULL AND TRY_CAST(sm.section AS INT) IS NOT NULL THEN (SELECT COUNT(*) FROM OPENJSON((SELECT users FROM [sections] WHERE id = CAST(sm.section AS INT))))
+                ELSE (SELECT COUNT(DISTINCT u_inner.[value]) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = TRY_CAST(sm.department AS INT) OR s2.departmentId IN (SELECT id FROM departments WHERE name = sm.department))
               END, 0) as userCount
         FROM skill_matrices sm
         LEFT JOIN departments d ON (sm.department = CAST(d.id AS VARCHAR(255)) OR sm.department = d.name)
@@ -261,8 +319,14 @@ const listSkillMatrices = asyncHandler(async (req, res) => {
 
     const [rows] = await executeQuery(sql, params);
 
+    // Parse JSON fields for the list
+    const parsedRows = (rows || []).map(row => ({
+        ...row,
+        footerInfo: parseJSON(row.footerInfo)
+    }));
+
     res.status(200).json(
-        new ApiResponse(200, rows || [], "Skill Matrix list fetched successfully")
+        new ApiResponse(200, parsedRows, "Skill Matrix list fetched successfully")
     );
 });
 

@@ -275,11 +275,29 @@ export function StudentLayout() {
           {((!collapsed && !isMobile) || (isMobile && isMobileMenuOpen)) && (
             <img
               src="/fme_transparent.png"
-              alt="Marelli Motherson"
+              alt="Furukawa Minda"
               className="ml-4 h-8 w-auto object-contain"
             />
           )}
         </div>
+
+        {/* Back to Menu Link (Fixed at top) */}
+        {(user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM') && (
+          <div className="px-2 pt-4 border-b border-gray-100/50 pb-2">
+            <button
+              onClick={() => handleNavigate("/")}
+              className={`group relative flex items-center w-full px-3 py-3 text-sm font-medium rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-700 hover:bg-gray-100
+                          ${(collapsed && !isMobile) ? "justify-center px-2 mx-1" : ""}`}
+            >
+              <IconUser
+                className={`shrink-0 transition-all duration-300 group-hover:scale-110 ${(collapsed && !isMobile) ? "w-6 h-6" : "w-5 h-5"}`}
+              />
+              {((!collapsed && !isMobile) || isMobile) && (
+                <span className="ml-3 truncate transition-all duration-300">Back to Main Menu</span>
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Sidebar Navigation */}
         <div className="flex-1 overflow-y-auto px-2 py-4">

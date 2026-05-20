@@ -7,7 +7,7 @@ export const quizApi = createApi({
     tagTypes: ['Quiz', 'Course', 'Module', 'Lesson'], // Add Module and Lesson to tagTypes
     endpoints: (builder) => ({
         createQuiz: builder.mutation({
-            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate, isDojo, isHandover, isTheoretical }) => ({
+            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy }) => ({
                 url: "/api/quizzes",
                 method: "POST",
                 data: {
@@ -20,13 +20,17 @@ export const quizApi = createApi({
                     passingScore,
                     departmentId,
                     sectionId,
+                    ...(lineId !== undefined ? { lineId } : {}),
+                    ...(subSectionId !== undefined ? { subSectionId } : {}),
+                    ...(level !== undefined ? { level } : {}),
                     ...(timeLimit !== undefined ? { timeLimit } : {}),
                     ...(attemptsAllowed !== undefined ? { attemptsAllowed } : {}),
                     ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
                     ...(issueCertificate !== undefined ? { issueCertificate } : {}),
                     ...(isDojo !== undefined ? { isDojo } : {}),
                     ...(isHandover !== undefined ? { isHandover } : {}),
-                    ...(isTheoretical !== undefined ? { isTheoretical } : {})
+                    ...(isTheoretical !== undefined ? { isTheoretical } : {}),
+                    ...(conductedBy !== undefined ? { conductedBy } : {})
                 }
             }),
             invalidatesTags: ['Quiz', 'Course', 'Module', 'Lesson'], // Invalidate all relevant caches
@@ -36,10 +40,10 @@ export const quizApi = createApi({
             query: ({ page = 1, limit = 20, search = "", courseId, departmentId, sectionId, isDojo } = {}) => ({
                 url: "/api/quizzes",
                 method: "GET",
-                params: { 
-                    page, 
-                    limit, 
-                    search, 
+                params: {
+                    page,
+                    limit,
+                    search,
                     ...(courseId && { courseId }),
                     ...(departmentId && { departmentId }),
                     ...(sectionId && { sectionId }),
@@ -65,7 +69,7 @@ export const quizApi = createApi({
         }),
 
         updateQuiz: builder.mutation({
-            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, issueCertificate, isDojo, isHandover, isTheoretical }) => ({
+            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy }) => ({
                 url: `/api/quizzes/${id}`,
                 method: "PUT",
                 data: {
@@ -78,10 +82,14 @@ export const quizApi = createApi({
                     ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
                     ...(departmentId !== undefined ? { departmentId } : {}),
                     ...(sectionId !== undefined ? { sectionId } : {}),
+                    ...(lineId !== undefined ? { lineId } : {}),
+                    ...(subSectionId !== undefined ? { subSectionId } : {}),
+                    ...(level !== undefined ? { level } : {}),
                     ...(issueCertificate !== undefined ? { issueCertificate } : {}),
                     ...(isDojo !== undefined ? { isDojo } : {}),
                     ...(isHandover !== undefined ? { isHandover } : {}),
-                    ...(isTheoretical !== undefined ? { isTheoretical } : {})
+                    ...(isTheoretical !== undefined ? { isTheoretical } : {}),
+                    ...(conductedBy !== undefined ? { conductedBy } : {})
                 }
             }),
             invalidatesTags: (result, error, arg) => [

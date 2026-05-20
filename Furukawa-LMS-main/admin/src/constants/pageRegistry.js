@@ -42,29 +42,24 @@ export const getPageByLink = (link, layout) =>
         .sort((a, b) => b.link.length - a.link.length)[0];
 
 export const getKeyByPath = (path, layout) => {
-    // Check for portal-prefixed paths for custom roles
+    let lookupPaths = [path];
     if (path.startsWith("/portal/")) {
-        // Map /portal/xyz to /admin/xyz to find the correct key
-        const subPath = path.substring(7); // e.g. "/departments/123"
-        const mappedPath = `/admin${subPath}`;
-        
-        // Try to find the key using the mapped path in the admin layout
-        const key = getKeyByPath(mappedPath, "admin");
-        if (key) return key;
-
-        // Fallback: search for any page that matches the subPath suffix
-        const match = PAGE_REGISTRY.find(p => p.link && p.link.endsWith(subPath.split('/')[1]));
-        if (match) return match.key;
+        const subPath = path.slice(8); // remove "/portal/"
+        lookupPaths.push(`/admin/${subPath}`);
+        lookupPaths.push(`/cms/${subPath}`);
+        lookupPaths.push(`/dashboard/${subPath}`);
     }
 
-    // Check direct registry matches
-    const page = getPageByLink(path, layout);
-    if (page) return page.key;
+    for (const p of lookupPaths) {
+        // Check aliases/prefixes FIRST
+        const aliases = PAGE_REGISTRY.filter(item => item.prefix && p.startsWith(item.prefix) && item.layout === layout);
+        if (aliases.length > 0) {
+            return aliases.sort((a, b) => b.prefix.length - a.prefix.length)[0].key;
+        }
 
-    // Check aliases/prefixes
-    const aliases = PAGE_REGISTRY.filter(p => p.prefix && path.startsWith(p.prefix) && p.layout === layout);
-    if (aliases.length > 0) {
-        return aliases.sort((a, b) => b.prefix.length - a.prefix.length)[0].key;
+        // Check direct registry matches SECOND
+        const page = getPageByLink(p, layout);
+        if (page) return page.key;
     }
 
     return null;
@@ -78,6 +73,8 @@ export const isPageAllowed = (key, allowedPages) => {
 export const getAllowedPagesForLayout = (layout, user) => {
     const layoutPages = getPagesByLayout(layout);
     if (!hasRestrictions(user)) return layoutPages;
+    if (layout === 'student' && user?.isEmployee) return layoutPages;
+    if (layout === 'trainer' && user?.isTrainer) return layoutPages;
 
     const allowed = new Set(normalizeAllowedPages(user));
     return layoutPages.filter((p) => allowed.has(p.key));
@@ -105,6 +102,8 @@ export const filterTabsByAllowedPages = (tabs, layout, user) => {
 
 export const isPathAllowedForUser = (pathname, layout, user) => {
     if (!hasRestrictions(user)) return true;
+    if (layout === 'student' && user?.isEmployee) return true;
+    if (layout === 'trainer' && user?.isTrainer) return true;
 
     // For specific system layouts, check if restricted
     if (pathname === `/${layout}`) {
@@ -126,6 +125,12 @@ export const isPathAllowedForUser = (pathname, layout, user) => {
             allowed.includes('dashboard');
     }
 
+    // Custom check: if they are accessing quiz page or take-test page, they can access if they have test-paper OR student-courses OR courses
+    const allowed = normalizeAllowedPages(user);
+    if (pathname.includes("/quiz/") || pathname.includes("/take-test/")) {
+        if (allowed.includes("test-paper") || allowed.includes("student-courses") || allowed.includes("courses")) return true;
+    }
+
     const pageKey = getKeyByPath(pathname, layout);
     if (!pageKey) {
         // Fallback: Check if the path is within any layout the user has access to
@@ -139,13 +144,12 @@ export const isPathAllowedForUser = (pathname, layout, user) => {
         // Allow common dynamic paths if we can't map them but they are within the layout
         if (pathname.startsWith(`/${layout}/`)) {
             // For student/trainer/cms we are stricter
-            if (layout !== 'admin') return false;
+            if (layout !== 'admin' && layout !== 'dashboard' && layout !== 'custom') return false;
             return true;
         }
         return false;
     }
 
-    const allowed = normalizeAllowedPages(user);
     if (layout === 'student' && user?.isEmployee) return true;
     return allowed.includes(pageKey);
 };
@@ -165,29 +169,49 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
 
     const tabs = sidebarPages.filter(p => {
         const isCurrentLayout = p.layout === currentLayout;
-        const isAllowed = !isRestricted || allowedKeys.has(p.key) || (p.layout === 'student' && user?.isEmployee);
+        const isAllowed = !isRestricted || allowedKeys.has(p.key) || (p.layout === 'student' && user?.isEmployee) || (p.layout === 'trainer' && user?.isTrainer);
         const isPrivileged = !p.privilege || hasPrivilege(p.privilege);
 
         // Root dashboard rule: Only show the dashboard of the CURRENT layout
         const isOtherLayoutDashboard = p.link === `/${p.layout}` && !isCurrentLayout;
 
-        // Condition 1: Pages in the current layout that the user has permission for
-        if (isCurrentLayout) return isAllowed && isPrivileged;
+        // Condition 1: If we are in a specific layout (admin, cms, dashboard, trainer, student),
+        // strictly show only pages belonging to THAT layout.
+        if (currentLayout !== "custom") {
+            return isCurrentLayout && isAllowed && isPrivileged && !isOtherLayoutDashboard;
+        }
 
-        // Condition 2: Pages in other layouts ONLY if they are SPECIFICALLY granted via a custom role
-        // This prevents Full Admins/SuperAdmins from seeing every single page in every sidebar
+        // Condition 2: If we are in the unified 'custom' layout, show pages across
+        // all layouts that are explicitly granted via the custom role.
         const isExplicitlyAllowed = user?.customRole && allowedKeys.has(p.key);
-
         return isExplicitlyAllowed && isPrivileged && !isOtherLayoutDashboard;
     });
 
     // Map to the format layouts expect
-    return tabs.map(p => ({
-        link: currentLayout === "custom" ? p.link.replace(/^\/[^/]+/, "/portal") : p.link,
-        label: p.labelKey ? t(p.labelKey, p.label) : p.label,
-        icon: getIcon(p.icon),
-        key: p.key
-    }));
+    return tabs.map(p => {
+        let link = p.link;
+        if (currentLayout === "custom") {
+            if (link.startsWith("/admin/")) {
+                link = "/portal/" + link.slice(7);
+            } else if (link.startsWith("/admin")) {
+                link = "/portal" + link.slice(6);
+            } else if (link.startsWith("/cms/")) {
+                link = "/portal/" + link.slice(5);
+            } else if (link.startsWith("/cms")) {
+                link = "/portal" + link.slice(4);
+            } else if (link.startsWith("/dashboard/")) {
+                link = "/portal/" + link.slice(11);
+            } else if (link.startsWith("/dashboard")) {
+                link = "/portal" + link.slice(10);
+            }
+        }
+        return {
+            link,
+            label: p.labelKey ? t(p.labelKey, p.label) : p.label,
+            icon: getIcon(p.icon),
+            key: p.key
+        };
+    });
 };
 
 export const getFirstAllowedPage = (layout, user, t) => {
@@ -217,6 +241,7 @@ export const PAGE_REGISTRY = [
     { key: "skill-matrix", label: "Skill Matrix", labelKey: "nav.skillMatrix", layout: "admin", link: "/admin/skill-matrix", icon: "IconStars" },
     { key: "daily-production-report", label: "Daily Production Report", labelKey: "nav.dailyProductionReport", layout: "admin", link: "/admin/daily-production-report", icon: "IconReportAnalytics" },
     { key: "dpr-manage", label: "DPR Setup", labelKey: "nav.dprManage", layout: "admin", link: "/admin/dpr-manage", icon: "IconSettings" },
+    { key: "on-job-training", label: "On Job Training (OJT)", labelKey: "nav.onJobTraining", layout: "admin", link: "/admin/on-job-training", icon: "IconClipboardList" },
     { key: "role-manager", label: "Roles & Permissions", labelKey: "nav.rolesPermissions", layout: "admin", link: "/admin/role-manager", icon: "IconSettings" },
     { key: "all-users", label: "All Users", labelKey: "nav.allUsers", layout: "admin", link: "/admin/all-users", icon: "IconUsers" },
     { key: "mentors", label: "Mentors", labelKey: "nav.mentors", layout: "admin", link: "/admin/mentors", icon: "IconUserHeart" },
@@ -230,14 +255,16 @@ export const PAGE_REGISTRY = [
 
     // Dashboard-specific pages (often considered core Admin functions)
     { key: "dashboard-home", label: "Dashboard", labelKey: "nav.dashboard", layout: "dashboard", link: "/dashboard", icon: "IconLayoutDashboardFilled" },
-    { key: "onboarding-id", label: "Onboarding & ID", layout: "dashboard", link: "/dashboard/onboarding-id", icon: "IconId" },
+    // { key: "onboarding-id", label: "Onboarding & ID", layout: "dashboard", link: "/dashboard/onboarding-id", icon: "IconId" },
     { key: "attendance", label: "Attendance", layout: "dashboard", link: "/dashboard/attendance", icon: "IconFingerprint" },
     { key: "requirements", label: "Set Requirements", layout: "dashboard", link: "/dashboard/requirements", icon: "IconSettings" },
     { key: "users", label: "User Management", layout: "dashboard", link: "/dashboard/users", icon: "IconUsers", privilege: "user management" },
     { key: "requirement-logs", label: "History", layout: "dashboard", link: "/dashboard/requirement-logs", icon: "IconHistory" },
     { key: "email-reports", label: "Email Reports", layout: "dashboard", link: "/dashboard/email-reports", icon: "IconMail", privilege: "email_reports" },
+    // { key: "dashboard-role-manager", label: "Roles & Permissions", layout: "dashboard", link: "/dashboard/role-manager", icon: "IconSettings" },
 
     // Admin Aliases (No label/icon means they don't show in sidebar)
+    { layout: "dashboard", prefix: "/dashboard/manage-role/", key: "dashboard-role-manager" },
     { layout: "admin", prefix: "/admin/manage-role/", key: "role-manager" },
     { layout: "admin", prefix: "/admin/courses/", key: "courses" },
     { layout: "admin", prefix: "/admin/add-course", key: "courses" },
@@ -256,6 +283,11 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/departments/", key: "departments" },
     { layout: "admin", prefix: "/admin/learning/", key: "learning" },
     { layout: "admin", prefix: "/admin/learning/create", key: "learning" },
+    { layout: "admin", prefix: "/admin/test-paper", key: "test-paper" },
+    { layout: "admin", prefix: "/admin/add-test-paper", key: "test-paper" },
+    { layout: "admin", prefix: "/admin/edit-test-paper/", key: "test-paper" },
+    { layout: "admin", prefix: "/admin/take-test/", key: "test-paper" },
+    { layout: "admin", prefix: "/admin/on-job-training", key: "on-job-training" },
 
     // Trainer layout
     { key: "trainer-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "trainer", link: "/trainer", icon: "IconLayoutDashboardFilled" },
@@ -267,6 +299,7 @@ export const PAGE_REGISTRY = [
     { key: "trainer-certificates", label: "Certificate Issuance", labelKey: "nav.certificates", layout: "trainer", link: "/trainer/certificate-issuance", icon: "IconTemplate" },
     { key: "trainer-attempt-requests", label: "Attempt Requests", labelKey: "nav.attemptRequests", layout: "trainer", link: "/trainer/attempt-requests", icon: "IconBell" },
     { key: "trainer-skill-matrix", label: "Skill Matrix", labelKey: "nav.skillMatrix", layout: "trainer", link: "/trainer/skill-matrix", icon: "IconStars" },
+    { key: "trainer-on-job-training", label: "On Job Training (OJT)", labelKey: "nav.onJobTraining", layout: "trainer", link: "/trainer/on-job-training", icon: "IconClipboardList" },
 
     // Trainer route aliases
     { layout: "trainer", prefix: "/trainer/courses/", key: "trainer-courses" },
@@ -280,6 +313,7 @@ export const PAGE_REGISTRY = [
     { layout: "trainer", prefix: "/trainer/edit-quiz/", key: "trainer-courses" },
     { layout: "trainer", prefix: "/trainer/departments/", key: "trainer-departments" },
     { layout: "trainer", prefix: "/trainer/employees/", key: "trainer-employees" },
+    { layout: "trainer", prefix: "/trainer/on-job-training", key: "trainer-on-job-training" },
 
     // Student layout
     { key: "student-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "student", link: "/student", icon: "IconLayoutDashboardFilled" },
@@ -295,6 +329,6 @@ export const PAGE_REGISTRY = [
     { key: "cms-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "cms", link: "/cms", icon: "IconLayoutDashboardFilled" },
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
-    { key: "landing-page", label: "Landing Page (Portal Selector)", layout: "custom", link: "/", icon: "IconLayoutGrid" },
+    { key: "landing-page", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];
 

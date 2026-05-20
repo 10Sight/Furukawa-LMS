@@ -28,6 +28,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 
 const MachineManager = ({ subSectionId, lineId }) => {
@@ -42,13 +43,13 @@ const MachineManager = ({ subSectionId, lineId }) => {
 
     const [newMachineName, setNewMachineName] = useState("");
     const [newMachineDescription, setNewMachineDescription] = useState("");
-    const [newMachineMinLevel, setNewMachineMinLevel] = useState("");
+    const [newMachineCriticality, setNewMachineCriticality] = useState("Non-Critical");
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingMachine, setEditingMachine] = useState(null);
     const [editName, setEditName] = useState("");
     const [editDescription, setEditDescription] = useState("");
-    const [editMinLevel, setEditMinLevel] = useState("");
+    const [editCriticality, setEditCriticality] = useState("Non-Critical");
 
     const handleCreateMachine = async () => {
         if (!newMachineName.trim()) {
@@ -62,12 +63,11 @@ const MachineManager = ({ subSectionId, lineId }) => {
                 lineId,
                 subSectionId,
                 description: newMachineDescription,
-                minimumRequiredLevel: newMachineMinLevel || null
+                criticality: newMachineCriticality
             }).unwrap();
             toast.success("Station created successfully");
             setNewMachineName("");
             setNewMachineDescription("");
-            setNewMachineMinLevel("");
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create station");
@@ -97,7 +97,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
         setEditingMachine(machine);
         setEditName(machine.name || "");
         setEditDescription(machine.description || "");
-        setEditMinLevel(machine.minimumRequiredLevel || "none");
+        setEditCriticality(machine.criticality || "Non-Critical");
         setIsEditDialogOpen(true);
     };
 
@@ -113,7 +113,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
                 id: editingMachine.id || editingMachine._id,
                 name: editName,
                 description: editDescription,
-                minimumRequiredLevel: editMinLevel === "none" ? null : editMinLevel
+                criticality: editCriticality
             }).unwrap();
             toast.success("Machine updated successfully");
             setIsEditDialogOpen(false);
@@ -178,21 +178,17 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="minLevel">Minimum Required Level (Optional)</Label>
+                                    <Label htmlFor="criticality">Criticality</Label>
                                     <Select 
-                                        value={newMachineMinLevel} 
-                                        onValueChange={setNewMachineMinLevel}
+                                        value={newMachineCriticality} 
+                                        onValueChange={setNewMachineCriticality}
                                     >
-                                        <SelectTrigger id="minLevel">
-                                            <SelectValue placeholder="Select level" />
+                                        <SelectTrigger id="criticality">
+                                            <SelectValue placeholder="Select criticality" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="none">None</SelectItem>
-                                            {activeLevels.map((level) => (
-                                                <SelectItem key={level.name} value={level.name}>
-                                                    {level.name}
-                                                </SelectItem>
-                                            ))}
+                                            <SelectItem value="Critical">Critical</SelectItem>
+                                            <SelectItem value="Non-Critical">Non-Critical</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -232,21 +228,17 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="editMinLevel">Minimum Required Level (Optional)</Label>
+                                    <Label htmlFor="editCriticality">Criticality</Label>
                                     <Select 
-                                        value={editMinLevel} 
-                                        onValueChange={setEditMinLevel}
+                                        value={editCriticality} 
+                                        onValueChange={setEditCriticality}
                                     >
-                                        <SelectTrigger id="editMinLevel">
-                                            <SelectValue placeholder="Select level" />
+                                        <SelectTrigger id="editCriticality">
+                                            <SelectValue placeholder="Select criticality" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="none">None</SelectItem>
-                                            {activeLevels.map((level) => (
-                                                <SelectItem key={level.name} value={level.name}>
-                                                    {level.name}
-                                                </SelectItem>
-                                            ))}
+                                            <SelectItem value="Critical">Critical</SelectItem>
+                                            <SelectItem value="Non-Critical">Non-Critical</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -276,7 +268,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
                             <TableRow>
                                 <TableHead>Station Name</TableHead>
                                 <TableHead>Description</TableHead>
-                                <TableHead>Min. Level</TableHead>
+                                <TableHead>Criticality</TableHead>
                                 <TableHead>Operators</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
@@ -295,13 +287,9 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                     </TableCell>
                                     <TableCell>{machine.description || "-"}</TableCell>
                                     <TableCell>
-                                        {machine.minimumRequiredLevel ? (
-                                            <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">
-                                                {machine.minimumRequiredLevel}
-                                            </span>
-                                        ) : (
-                                            <span className="text-muted-foreground text-xs">None</span>
-                                        )}
+                                        <Badge variant={machine.criticality === "Critical" ? "destructive" : "secondary"} className="text-[10px] uppercase font-bold">
+                                            {machine.criticality || "Non-Critical"}
+                                        </Badge>
                                     </TableCell>
                                     <TableCell className="text-sm font-medium">{machine.machineCount || 0}</TableCell>
                                     <TableCell className="text-right">

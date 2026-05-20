@@ -103,7 +103,8 @@ const DojoHiring = () => {
         designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0], 
         departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "", 
         education: "", email: "", phoneNumber: "", district: "", state: "", 
-        pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT"
+        pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
+        leavingDate: "", reasonOfLeaving: ""
     });
 
     const { data: tempUsersData, isLoading: isLoadingUsers, refetch } = useGetTemporaryUsersQuery({ 
@@ -306,7 +307,9 @@ const DojoHiring = () => {
             pin: user.pin || "",
             busRoute: user.busRoute || "",
             unit: user.unit || "UNIT_1",
-            status: user.status || "PRESENT"
+            status: user.status || "PRESENT",
+            leavingDate: user.leavingDate ? new Date(user.leavingDate).toISOString().split('T')[0] : "",
+            reasonOfLeaving: user.reasonOfLeaving || ""
         });
         setIsAddModalOpen(true);
     };
@@ -319,7 +322,8 @@ const DojoHiring = () => {
             designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0], 
             departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "", 
             education: "", email: "", phoneNumber: "", district: "", state: "", 
-            pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT"
+            pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
+            leavingDate: "", reasonOfLeaving: ""
         });
     };
 
@@ -445,6 +449,7 @@ const DojoHiring = () => {
                                         <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Professional Info</TableHead>
                                         <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Status</TableHead>
                                         <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Contact</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Joining / Leaving</TableHead>
                                         <TableHead className="pr-6 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -501,6 +506,33 @@ const DojoHiring = () => {
                                                             <IconMapPin className="w-3.5 h-3.5 text-slate-300" />
                                                             {user.district || user.state || "N/A"}
                                                         </div>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="flex flex-col">
+                                                        {user.status === "LEFT" ? (
+                                                            user.leavingDate ? (
+                                                                <>
+                                                                    <div className="text-rose-600 font-bold text-sm">
+                                                                        {new Date(user.leavingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-rose-400 font-black uppercase">Left</div>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-slate-400 text-xs italic">Date not set</span>
+                                                            )
+                                                        ) : (
+                                                            user.joiningDate ? (
+                                                                <>
+                                                                    <div className="text-slate-700 font-bold text-sm">
+                                                                        {new Date(user.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-slate-400 font-black uppercase">Joined</div>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-slate-400 text-xs">N/A</span>
+                                                            )
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="pr-6 text-right">
@@ -682,6 +714,31 @@ const DojoHiring = () => {
                                 </SelectContent>
                             </Select>
                         </div>
+                        
+                        {formData.status === "LEFT" && (
+                            <>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="leavingDate">Date of Leaving</Label>
+                                    <Input 
+                                        id="leavingDate" 
+                                        type="date" 
+                                        name="leavingDate" 
+                                        value={formData.leavingDate} 
+                                        onChange={handleInputChange} 
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="reasonOfLeaving">Reason of Leaving</Label>
+                                    <Input 
+                                        id="reasonOfLeaving" 
+                                        name="reasonOfLeaving" 
+                                        value={formData.reasonOfLeaving} 
+                                        onChange={handleInputChange} 
+                                        placeholder="Enter reason..."
+                                    />
+                                </div>
+                            </>
+                        )}
                         <div className="grid gap-2">
                             <Label htmlFor="designation">Designation</Label>
                             <Input id="designation" name="designation" value={formData.designation} onChange={handleInputChange} placeholder="Trainee / Operator" />

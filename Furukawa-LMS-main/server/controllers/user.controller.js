@@ -48,17 +48,17 @@ const handleInstructorAssignments = async (userId, departmentIds) => {
 
 const getHierarchyJoinSQL = `
   OUTER APPLY (
-    SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 
+    SELECT TOP 1 ss.id as subSectionId, ss.name as subSectionName, ss.lineId as ssLineId 
     FROM sub_sections ss 
     WHERE ss.id = COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END))
   ) ss_res
   OUTER APPLY (
-    SELECT TOP 1 l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
+    SELECT TOP 1 l.id as lineId, l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
     FROM [lines] l 
     WHERE l.id = COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), ss_res.ssLineId)
   ) l_res
   OUTER APPLY (
-    SELECT TOP 1 s.name as sectionName, s.departmentId as sDeptId, s.id as sectionId
+    SELECT TOP 1 s.id as sectionId, s.name as sectionName, s.departmentId as sDeptId
     FROM [sections] s 
     WHERE s.id = COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), l_res.lSectionId)
   ) s_res
@@ -130,15 +130,15 @@ const sanitize = (val) => (val && val !== "N/A" && val.toLowerCase() !== "none")
 export const formatUser = (u) => {
   const assignments = parseJSON(u.assignments, []);
   const currentSkill = parseJSON(u.currentSkill, {});
-  
+
   // Resolve TRUE primary level: Strict check against primary stationId
-  let resolvedPrimaryLevel = "L1";
+  let resolvedPrimaryLevel = null;
   if (u.stationId) {
     // If they have a primary station assigned, their level MUST come from that station's skill in the map
-    resolvedPrimaryLevel = currentSkill[u.stationId] || "L1";
+    resolvedPrimaryLevel = currentSkill[u.stationId] || null;
   } else {
     // Fallback to global level only if no primary station is assigned
-    resolvedPrimaryLevel = u.currentLevel || "L1";
+    resolvedPrimaryLevel = u.currentLevel || null;
   }
 
   const formatted = {
@@ -148,16 +148,16 @@ export const formatUser = (u) => {
     assignments,
     primaryStationName: u.stationName || sanitize(u.stationNo) || "No Station",
     primaryLevel: resolvedPrimaryLevel,
-    allStations: assignments?.length > 0 
-      ? assignments.map(a => a.stationName).join(', ') 
+    allStations: assignments?.length > 0
+      ? assignments.map(a => a.stationName).join(', ')
       : (u.stationName || sanitize(u.stationNo) || "No Station"),
     department: u.deptName ? { _id: String(u.actualDeptId || u.departmentId || u.targetDeptId), name: u.deptName, instructor: u.deptInstructor } : (sanitize(u.department) ? { _id: String(u.department), name: u.department } : null),
     deptName: u.deptName || sanitize(u.department) || "",
     sectionName: u.sectionName || sanitize(u.section) || "",
     lineName: u.lineName || sanitize(u.line) || "",
     subSectionName: u.subSectionName || sanitize(u.sub_section) || "",
-    stationName: assignments?.length > 0 
-      ? assignments.map(a => a.stationName).join(', ') 
+    stationName: assignments?.length > 0
+      ? assignments.map(a => a.stationName).join(', ')
       : (u.stationName || sanitize(u.stationNo) || ""),
     fromInfo: [u.deptName || sanitize(u.department), u.sectionName || sanitize(u.section), u.lineName || sanitize(u.line), u.subSectionName || sanitize(u.sub_section), u.stationName || sanitize(u.stationNo)].filter(Boolean).join(' / '),
     currentSkill,
@@ -199,22 +199,35 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   }
 
   if (req.query.unit) { whereClauses.push("u.unit = ?"); params.push(req.query.unit); }
-  if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
+  if (req.query.departmentId) {
+    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = ?)");
+    params.push(req.query.departmentId);
+  }
   if (req.query.sectionId) {
-    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))");
-    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId);
+    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id = ?)");
+    params.push(req.query.sectionId);
   }
   if (req.query.lineId) {
-    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))");
-    params.push(req.query.lineId, req.query.lineId);
+    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id = ?)");
+    params.push(req.query.lineId);
   }
-  if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
-  if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
-  if (req.query.role) { whereClauses.push("u.role = ?"); params.push(req.query.role); }
+  if (req.query.subSectionId) {
+    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id = ?)");
+    params.push(req.query.subSectionId);
+  }
+  if (req.query.stationId) {
+    whereClauses.push("(u.stationId = ? OR (u.isTemporary = 1 AND u.targetStationId = ?) OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = ?))");
+    params.push(req.query.stationId, req.query.stationId, req.query.stationId);
+  }
+  if (req.query.role) {
+    const roles = req.query.role.split(",");
+    whereClauses.push(`u.role IN (${roles.map(() => "?").join(",")})`);
+    params.push(...roles);
+  }
   if (req.query.customRoleId) { whereClauses.push("u.customRoleId = ?"); params.push(req.query.customRoleId); }
   if (req.query.isEmployee === "true") { whereClauses.push("u.isEmployee = 1"); }
   if (req.query.isTrainer === "true") { whereClauses.push("u.isTrainer = 1"); }
-  
+
   if (req.query.excludeRoles) {
     const roles = req.query.excludeRoles.split(",");
     whereClauses.push(`u.role NOT IN (${roles.map(() => "?").join(",")})`);
@@ -447,7 +460,7 @@ export const createUser = asyncHandler(async (req, res) => {
     data.targetLineId = data.lineId;
     data.targetSubSectionId = data.subSectionId;
     data.targetStationId = data.stationId;
-    
+
     data.departmentId = null;
     data.sectionId = null;
     data.lineId = null;
@@ -470,6 +483,21 @@ export const createUser = asyncHandler(async (req, res) => {
   const [result] = await executeQuery(`INSERT INTO users (${fields.join(",")}) OUTPUT INSERTED.id VALUES (${placeholders})`, values);
 
   const newUserId = result[0].id;
+
+  // Trigger Hierarchy Sync for new user
+  if (data.lineId || data.subSectionId || data.stationId) {
+    try {
+      const SubSection = (await import("../models/subSection.model.js")).default;
+      const Line = (await import("../models/line.model.js")).default;
+      if (data.subSectionId) {
+        await SubSection.syncUserList(data.subSectionId);
+      } else if (data.lineId) {
+        await Line.syncUserList(data.lineId);
+      }
+    } catch (error) {
+      logger.error(`Failed to trigger hierarchy sync in createUser: ${error.message}`);
+    }
+  }
   if (data.departments && Array.isArray(data.departments)) {
     await handleInstructorAssignments(newUserId, data.departments);
   }
@@ -512,10 +540,15 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (data.stationId && data.stationId !== oldUser.stationId) {
     let currentSkill = oldUser.currentSkill || {};
     if (typeof currentSkill === 'string') {
-        try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+      try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
     }
     // Set currentLevel to the level associated with the new station, default to L1
     data.currentLevel = currentSkill[data.stationId] || "L1";
+  }
+
+  // Auto-set leavingDate if status is changed to LEFT and no date is provided
+  if (data.status === "LEFT" && !data.leavingDate && oldUser.status !== "LEFT") {
+    data.leavingDate = new Date().toISOString().split('T')[0];
   }
 
   // Promotion Logic: If transitioning from temporary to permanent
@@ -571,6 +604,26 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   if (updates.length > 1) {
     await executeQuery(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, [...values, userId]);
+  }
+
+  // Trigger Hierarchy Sync
+  if (data.lineId || data.subSectionId || data.stationId || data.status !== undefined || data.isDeleted !== undefined) {
+    try {
+      const SubSection = (await import("../models/subSection.model.js")).default;
+      const Line = (await import("../models/line.model.js")).default;
+      
+      // If we know the previous location, we should sync it too, but for simplicity we sync current
+      const [u] = await executeQuery("SELECT lineId, subSectionId FROM users WHERE id = ?", [userId]);
+      if (u.length > 0) {
+        if (u[0].subSectionId) {
+          await SubSection.syncUserList(u[0].subSectionId);
+        } else if (u[0].lineId) {
+          await Line.syncUserList(u[0].lineId);
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to trigger hierarchy sync in updateUser: ${error.message}`);
+    }
   }
 
   // Sync stationId to machine_assignments to support multi-station assignment history
@@ -891,13 +944,13 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   } else if (req.user.role === "CUSTOM") {
     let allowedDepts = [];
     if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
-    
+
     try {
       const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
       if (Array.isArray(parsedDepts)) {
         parsedDepts.forEach(d => allowedDepts.push(String(d)));
       }
-    } catch (e) {}
+    } catch (e) { }
 
     allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
 
@@ -1244,7 +1297,7 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
   try {
     const placeholders = ids.map(() => "?").join(",");
     const [usersWithDepts] = await executeQuery(`SELECT id, departmentId FROM users WHERE id IN (${placeholders}) AND departmentId IS NOT NULL`, ids);
-    
+
     // Group by department to minimize updates
     const deptMap = {};
     usersWithDepts.forEach(u => {
@@ -1363,12 +1416,12 @@ export const getNextTemporaryId = asyncHandler(async (req, res) => {
 
   if (rows.length > 0) {
     const lastId = rows[0].empId;
-    
+
     // Attempt to parse sequence from the end (last 3 digits)
     const seqMatch = lastId.match(/(\d{3})$/);
     if (seqMatch) {
       nextSeq = parseInt(seqMatch[1]) + 1;
-      
+
       // Attempt to extract the random part (3 digits before the sequence)
       // We look for 3 digits that precede the last 3 digits
       const randMatch = lastId.match(/(\d{3})\d{3}$/);
@@ -1380,6 +1433,6 @@ export const getNextTemporaryId = asyncHandler(async (req, res) => {
 
   const formattedSeq = String(nextSeq).padStart(3, '0');
   const nextId = `${cleanPrefix}${randomPart}${formattedSeq}`;
-  
+
   res.json(new ApiResponse(200, { nextId }, "Next sequence generated"));
 });

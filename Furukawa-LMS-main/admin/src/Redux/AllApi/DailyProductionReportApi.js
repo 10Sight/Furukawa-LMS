@@ -4,7 +4,7 @@ import axiosBaseQuery from "@/Helper/axiosBaseQuery";
 export const DailyProductionReportApi = createApi({
     reducerPath: "DailyProductionReportApi",
     baseQuery: axiosBaseQuery,
-    tagTypes: ["DailyProductionReport", "DailyProductionReportConfig", "DailyProductionReportConfigHistory"],
+    tagTypes: ["DailyProductionReport", "DailyProductionReportConfig", "DailyProductionReportConfigHistory", "DPRManualStats"],
     endpoints: (builder) => ({
         getDailyProductionReport: builder.query({
             query: (params) => ({
@@ -84,6 +84,22 @@ export const DailyProductionReportApi = createApi({
                 params, // { machineIds, date, shift }
             }),
         }),
+        getDPRManualStats: builder.query({
+            query: (params) => ({
+                url: "/api/daily-production-report/manual-stats",
+                method: "GET",
+                params, // { date }
+            }),
+            providesTags: ["DPRManualStats"],
+        }),
+        saveDPRManualStats: builder.mutation({
+            query: (data) => ({
+                url: "/api/daily-production-report/manual-stats",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ["DPRManualStats"],
+        }),
     }),
 });
 
@@ -101,4 +117,6 @@ export const {
     useLazyGetManpowerStatsQuery,
     useGetBatchMachineAssignmentsQuery,
     useLazyGetBatchMachineAssignmentsQuery,
+    useGetDPRManualStatsQuery,
+    useSaveDPRManualStatsMutation,
 } = DailyProductionReportApi;

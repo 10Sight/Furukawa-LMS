@@ -553,14 +553,15 @@ export const uploadAttendance = async (req, res, next) => {
         };
 
         const parseDateFromSheetText = (rows) => {
-            for (let i = 0; i < Math.min(rows.length, 15); i++) {
+            for (let i = 0; i < Math.min(rows.length, 25); i++) {
                 const row = rows[i] || [];
 
                 for (const cell of row) {
                     const text = String(cell || "").trim();
                     if (!text) continue;
 
-                    const match = text.match(/date\s*[:\-]?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+                    // Match formats like DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
+                    const match = text.match(/date\s*[:\-]?\s*(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/i);
                     if (match) {
                         const day = parseInt(match[1], 10);
                         const month = parseInt(match[2], 10);
@@ -581,23 +582,28 @@ export const uploadAttendance = async (req, res, next) => {
 
         const attendanceDate =
             parseDateFromFilename(uploadedFileName) ||
-            parseDateFromSheetText(rows2D);
+            parseDateFromSheetText(rows2D) ||
+            req.query.date; // Fallback to query param if available
 
         if (!attendanceDate) {
+            logger.warn(`Could not determine attendance date for file: ${uploadedFileName}`);
             return res.status(400).json({
                 success: false,
-                message: "Attendance date not found from file name or sheet content"
+                message: "Attendance date not found from file name or sheet content. Please ensure the filename contains a date (DD-MM-YYYY) or the sheet has 'Date: DD/MM/YYYY'."
             });
         }
 
+        logger.info(`Processing attendance for date: ${attendanceDate}`);
+
         let headerRowIndex = -1;
 
-        for (let i = 0; i < Math.min(rows2D.length, 20); i++) {
+        for (let i = 0; i < Math.min(rows2D.length, 25); i++) {
             const row = rows2D[i].map(clean);
 
             if (
                 row.includes("paycode") ||
                 row.includes("cardno") ||
+                row.includes("employeename") ||
                 (row.some(c => c.includes("pay")) && row.some(c => c.includes("card")))
             ) {
                 headerRowIndex = i;
@@ -606,59 +612,76 @@ export const uploadAttendance = async (req, res, next) => {
         }
 
         if (headerRowIndex === -1) {
+            logger.warn("Header row not found in Excel sheet");
             return res.status(400).json({
                 success: false,
-                message: "Header row not found"
+                message: "Required headers (PayCode, Card No, Employee Name) not found. Please check your Excel format."
             });
         }
 
         const headers = rows2D[headerRowIndex].map(clean);
+        logger.info(`Found headers at row ${headerRowIndex + 1}: ${headers.join(", ")}`);
 
         const columnMap = {
             payCode: headers.findIndex(h => h === "paycode" || h.includes("paycode") || h.includes("pay")),
             cardNo: headers.findIndex(h => h === "cardno" || h.includes("card")),
             employeeName: headers.findIndex(h => h === "employeename" || h.includes("name")),
             department: headers.findIndex(h => h.includes("department") || h.includes("dept")),
+            designation: headers.findIndex(h => h.includes("designation") || h.includes("desig")),
             shift: headers.findIndex(h => h.includes("shift")),
+            startTime: headers.findIndex(h => h.includes("start")),
             inTime: headers.findIndex(h => h === "in" || h.includes("intime")),
             outTime: headers.findIndex(h => h === "out" || h.includes("outtime")),
-            hrsWorked: headers.findIndex(h => h.includes("hrsworks") || h.includes("hrsworked") || h.includes("hrs")),
-            status: headers.findIndex(h => h.includes("status"))
+            hrsWorked: headers.findIndex(h => h.includes("hrsworks") || h.includes("hrsworked") || (h.includes("hrs") && h.includes("work"))),
+            status: headers.findIndex(h => h.includes("status")),
+            lateArrival: headers.findIndex(h => (h.includes("late") && h.includes("arriv")) || h === "latearriv"),
+            earlyDeparture: headers.findIndex(h => (h.includes("early") && h.includes("depart")) || h === "shiftearly"),
+            otHrs: headers.findIndex(h => h === "ot" || h.includes("othrs")),
+            otAmount: headers.findIndex(h => h.includes("ot") && h.includes("amount"))
         };
 
-        if (columnMap.cardNo === -1) {
+        logger.info(`Column mapping: ${JSON.stringify(columnMap)}`);
+
+        if (columnMap.payCode === -1 && columnMap.cardNo === -1) {
             return res.status(400).json({
                 success: false,
-                message: "Card No column not found in Excel"
+                message: "Neither 'PayCode' nor 'Card No' column was found in the Excel file."
             });
         }
 
         const dataRows = rows2D
             .slice(headerRowIndex + 1)
             .filter(row => {
-                const cardNo = row[columnMap.cardNo];
-                return normalizeText(cardNo);
+                const payCode = columnMap.payCode !== -1 ? row[columnMap.payCode] : null;
+                const cardNo = columnMap.cardNo !== -1 ? row[columnMap.cardNo] : null;
+                return normalizeText(payCode) || normalizeText(cardNo);
             });
+
+        logger.info(`Found ${dataRows.length} data rows to process.`);
 
         const pool = await poolPromise;
 
+        // Fetch users to build maps for both empId and idCard
         const usersResult = await pool.request().query(`
-            SELECT id, idCard
+            SELECT id, empId, idCard
             FROM users
-            WHERE idCard IS NOT NULL
-              AND LTRIM(RTRIM(idCard)) <> ''
+            WHERE isDeleted = 0
         `);
 
+        const userMapByEmpId = new Map();
         const userMapByIdCard = new Map();
 
         usersResult.recordset.forEach((u) => {
-            const normalizedIdCard = normalizeCardNo(u.idCard);
-            if (normalizedIdCard) {
-                userMapByIdCard.set(normalizedIdCard, u.id);
+            if (u.empId) {
+                userMapByEmpId.set(normalizeText(u.empId).toLowerCase(), u.id);
+            }
+            if (u.idCard) {
+                userMapByIdCard.set(normalizeCardNo(u.idCard), u.id);
             }
         });
 
-        // ✅ FIXED: Removed createdAt from INSERT — column does not exist in attendance_logs table
+        logger.info(`Users mapped: ${userMapByEmpId.size} by empId, ${userMapByIdCard.size} by idCard.`);
+
         const mergeSql = `
             MERGE attendance_logs AS target
             USING (SELECT @userId AS userId, @date AS [date]) AS source
@@ -669,107 +692,106 @@ export const uploadAttendance = async (req, res, next) => {
                     cardNo = @cardNo,
                     employeeName = @empName,
                     department = @dept,
+                    designation = @desig,
                     shift = @shift,
+                    startTime = @startTime,
                     inTime = @inT,
                     outTime = @outT,
                     hrsWorked = @hrs,
                     status = @status,
+                    lateArrival = @late,
+                    earlyDeparture = @early,
+                    otHrs = @otH,
+                    otAmount = @otA,
                     updatedAt = GETDATE()
             WHEN NOT MATCHED THEN
                 INSERT (
-                    userId,
-                    payCode,
-                    cardNo,
-                    employeeName,
-                    [date],
-                    department,
-                    shift,
-                    inTime,
-                    outTime,
-                    hrsWorked,
-                    status,
-                    updatedAt
+                    userId, payCode, cardNo, employeeName, [date],
+                    department, designation, shift, startTime,
+                    inTime, outTime, hrsWorked, status,
+                    lateArrival, earlyDeparture, otHrs, otAmount, updatedAt
                 )
                 VALUES (
-                    @userId,
-                    @payCode,
-                    @cardNo,
-                    @empName,
-                    @date,
-                    @dept,
-                    @shift,
-                    @inT,
-                    @outT,
-                    @hrs,
-                    @status,
-                    GETDATE()
+                    @userId, @payCode, @cardNo, @empName, @date,
+                    @dept, @desig, @shift, @startTime,
+                    @inT, @outT, @hrs, @status,
+                    @late, @early, @otH, @otA, GETDATE()
                 );
         `;
 
         let inserted = 0;
         let skipped = 0;
-        const skippedRows = [];
+        const skippedLog = [];
 
         for (let index = 0; index < dataRows.length; index++) {
             const row = dataRows[index];
 
-            const rawCardNo = row[columnMap.cardNo];
-            const normalizedCardNo = normalizeCardNo(rawCardNo);
+            const rawPayCode = columnMap.payCode !== -1 ? row[columnMap.payCode] : null;
+            const rawCardNo = columnMap.cardNo !== -1 ? row[columnMap.cardNo] : null;
 
-            if (!normalizedCardNo) {
-                skipped++;
-                skippedRows.push({
-                    rowNumber: headerRowIndex + 2 + index,
-                    reason: "Card No missing"
-                });
-                continue;
-            }
+            const normalizedPayCode = rawPayCode ? normalizeText(rawPayCode).toLowerCase().replace(/\.0$/, "") : null;
+            const normalizedCardNo = rawCardNo ? normalizeCardNo(rawCardNo) : null;
 
-            const userId = userMapByIdCard.get(normalizedCardNo);
+            // Try to find user by PayCode (empId) first, then CardNo (idCard)
+            let userId = null;
+            if (normalizedPayCode) userId = userMapByEmpId.get(normalizedPayCode);
+            if (!userId && normalizedCardNo) userId = userMapByIdCard.get(normalizedCardNo);
 
             if (!userId) {
                 skipped++;
-                skippedRows.push({
-                    rowNumber: headerRowIndex + 2 + index,
-                    cardNo: rawCardNo,
-                    reason: "No matching user found by idCard"
-                });
+                if (skippedLog.length < 50) {
+                    skippedLog.push({
+                        row: headerRowIndex + index + 2,
+                        payCode: rawPayCode,
+                        cardNo: rawCardNo,
+                        reason: "User not found in database"
+                    });
+                }
                 continue;
             }
 
-            const payCode =
-                columnMap.payCode !== -1
-                    ? normalizeText(row[columnMap.payCode]).replace(/\.0$/, "")
-                    : null;
-
             const reqDB = pool.request();
-
             reqDB.input("userId", sql.Int, userId);
-            reqDB.input("payCode", sql.VarChar, payCode || null);
+            reqDB.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
             reqDB.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
             reqDB.input("empName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
             reqDB.input("date", sql.Date, attendanceDate);
             reqDB.input("dept", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
+            reqDB.input("desig", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
             reqDB.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
+            reqDB.input("startTime", sql.VarChar, columnMap.startTime !== -1 ? parseTime(row[columnMap.startTime]) : null);
             reqDB.input("inT", sql.VarChar, columnMap.inTime !== -1 ? parseTime(row[columnMap.inTime]) : null);
             reqDB.input("outT", sql.VarChar, columnMap.outTime !== -1 ? parseTime(row[columnMap.outTime]) : null);
             reqDB.input("hrs", sql.Float, columnMap.hrsWorked !== -1 ? parseHours(row[columnMap.hrsWorked]) : 0);
             reqDB.input("status", sql.VarChar, columnMap.status !== -1 ? normalizeStatus(row[columnMap.status]) : "Present");
+            reqDB.input("late", sql.Float, columnMap.lateArrival !== -1 ? parseHours(row[columnMap.lateArrival]) : 0);
+            reqDB.input("early", sql.Float, columnMap.earlyDeparture !== -1 ? parseHours(row[columnMap.earlyDeparture]) : 0);
+            reqDB.input("otH", sql.Float, columnMap.otHrs !== -1 ? parseHours(row[columnMap.otHrs]) : 0);
+            reqDB.input("otA", sql.Float, columnMap.otAmount !== -1 ? parseHours(row[columnMap.otAmount]) : 0);
 
-            await reqDB.query(mergeSql);
-            inserted++;
+            try {
+                await reqDB.query(mergeSql);
+                inserted++;
+            } catch (err) {
+                logger.error(`Error processing row ${index + 1}: ${err.message}`);
+                skipped++;
+            }
         }
+
+        logger.info(`Upload complete: ${inserted} inserted/updated, ${skipped} skipped.`);
 
         return res.status(200).json({
             success: true,
-            message: "Attendance uploaded successfully",
-            fileName: uploadedFileName,
-            attendanceDate,
-            insertedRecords: inserted,
-            skippedEmployees: skipped,
-            totalRows: dataRows.length,
-            skippedRows
+            message: `Successfully processed ${inserted} records for ${attendanceDate}.`,
+            data: {
+                attendanceDate,
+                inserted,
+                skipped,
+                total: dataRows.length,
+                skippedLog: skipped > 0 ? skippedLog : undefined
+            }
         });
+
 
     } catch (error) {
         console.error("Attendance Upload Error:", error);
@@ -798,8 +820,7 @@ const formatMssqlDate = (val) => {
 
 export const getAttendance = async (req, res, next) => {
     try {
-        console.log("getAttendance called");
-        const { date, sectionId, lineId } = req.query;
+        const { date, departmentId, sectionId, lineId } = req.query;
 
         if (!date) {
             return res.status(400).json({ success: false, message: "Date is required" });
@@ -808,16 +829,16 @@ export const getAttendance = async (req, res, next) => {
         const pool = await poolPromise;
         const request = pool.request();
 
-        // Ab hum sirf attendance_logs se data le rahe hain, par empId users table se chahiye
         let sqlQuery = `
             SELECT 
                 al.id as attendanceId,
                 al.userId,
-                u.fullName, 
+                u.fullName,
                 u.empId,
-                al.date,
+                al.[date],
                 al.payCode,
                 al.cardNo,
+                al.employeeName as attEmployeeName,
                 al.department as attDepartment,
                 al.designation,
                 al.shift,
@@ -840,32 +861,23 @@ export const getAttendance = async (req, res, next) => {
 
         request.input('date', sql.VarChar, date);
 
-        // Filters
+        // Hierarchical Filters
+        if (departmentId && departmentId !== 'all') {
+            sqlQuery += ` AND u.departmentId = @deptId`;
+            request.input('deptId', sql.Int, departmentId);
+        }
+
         if (sectionId && sectionId !== 'all') {
-            const isNumeric = !isNaN(parseInt(sectionId));
-            if (isNumeric) {
-                sqlQuery += ` AND u.sectionId = @sectionId`;
-                request.input('sectionId', sql.Int, sectionId);
-            } else {
-                // If it's a name like 'C&C'
-                sqlQuery += ` AND u.department = @sectionName`;
-                request.input('sectionName', sql.VarChar, sectionId);
-            }
+            sqlQuery += ` AND u.sectionId = @sectionId`;
+            request.input('sectionId', sql.Int, sectionId);
         }
 
         if (lineId && lineId !== 'all') {
-            const isNumeric = !isNaN(parseInt(lineId));
-            if (isNumeric) {
-                sqlQuery += ` AND u.subSectionId = @lineId`;
-                request.input('lineId', sql.Int, lineId);
-            } else {
-                // If it's a name
-                sqlQuery += ` AND u.lineName = @lineName`;
-                request.input('lineName', sql.VarChar, lineId);
-            }
+            sqlQuery += ` AND u.lineId = @lineId`;
+            request.input('lineId', sql.Int, lineId);
         }
 
-        logger.info(`📝 SQL Query: ${sqlQuery}`);
+        logger.info(`Attendance SQL Query: ${sqlQuery}`);
 
         sqlQuery += ` ORDER BY al.cardNo ASC`;
 
@@ -876,7 +888,7 @@ export const getAttendance = async (req, res, next) => {
         const attendanceData = rows.map(row => ({
             id: row.attendanceId,
             userId: row.userId,
-            name: row.fullName || "N/A",
+            name: row.fullName || row.attEmployeeName || "N/A",
             empId: row.empId,
             date: formatMssqlDate(row.date),
             payCode: row.payCode,
@@ -910,15 +922,20 @@ export const getFilters = async (req, res, next) => {
     try {
         const pool = await poolPromise;
         const request = pool.request();
-        const sections = await request.query("SELECT id, name FROM departments ORDER BY name");
+
+        // Fetch full hierarchy
+        const departments = await request.query("SELECT id, name FROM departments ORDER BY name");
+        const sections = await request.query("SELECT id, name, departmentId FROM sections ORDER BY name");
         const lines = await request.query("SELECT id, name, sectionId FROM [lines] ORDER BY name");
 
         res.status(200).json({
             success: true,
+            departments: departments.recordset,
             sections: sections.recordset,
             lines: lines.recordset
         });
     } catch (error) {
+        console.error("Get filters error:", error);
         next(error);
     }
 };

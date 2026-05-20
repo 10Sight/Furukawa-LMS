@@ -23,6 +23,7 @@ class Quiz {
         this.isDojo = !!data.isDojo;
         this.isHandover = !!data.isHandover;
         this.isTheoretical = !!data.isTheoretical;
+        this.conductedBy = data.conductedBy || "Education Cell";
 
         // Resource linking & Legacy fields
         this.courseId = data.courseId || data.course;
@@ -42,6 +43,9 @@ class Quiz {
         // Multi-department and section support
         this.departmentId = typeof data.departmentId === 'string' ? JSON.parse(data.departmentId || "[]") : (data.departmentId || []);
         this.sectionId = typeof data.sectionId === 'string' ? JSON.parse(data.sectionId || "[]") : (data.sectionId || []);
+        this.lineId = typeof data.lineId === 'string' ? JSON.parse(data.lineId || "[]") : (data.lineId || []);
+        this.subSectionId = typeof data.subSectionId === 'string' ? JSON.parse(data.subSectionId || "[]") : (data.subSectionId || []);
+        this.level = data.level;
     }
 
     calculateType() {
@@ -54,8 +58,10 @@ class Quiz {
             return "lesson";
         } else if (this.moduleId || this.module) {
             return "module";
-        } else {
+        } else if (this.courseId || this.course) {
             return "course";
+        } else {
+            return "standalone";
         }
     }
 
@@ -104,9 +110,13 @@ class Quiz {
                             scope NVARCHAR(50),
                             departmentId NVARCHAR(MAX),
                             sectionId NVARCHAR(MAX),
+                            lineId NVARCHAR(MAX),
+                            subSectionId NVARCHAR(MAX),
+                            level NVARCHAR(50),
                             isDojo BIT DEFAULT 0,
                             isHandover BIT DEFAULT 0,
                             isTheoretical BIT DEFAULT 0,
+                            conductedBy NVARCHAR(255) DEFAULT 'Education Cell',
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
                         );
@@ -115,14 +125,18 @@ class Quiz {
                     END
                 `;
                 await executeQuery(query);
-                
+
                 // Manual migration check for columns using INFORMATION_SCHEMA
                 const columns = [
                     { name: 'departmentId', type: 'NVARCHAR(MAX)' },
                     { name: 'sectionId', type: 'NVARCHAR(MAX)' },
+                    { name: 'lineId', type: 'NVARCHAR(MAX)' },
+                    { name: 'subSectionId', type: 'NVARCHAR(MAX)' },
+                    { name: 'level', type: 'NVARCHAR(50)' },
                     { name: 'isDojo', type: 'BIT DEFAULT 0' },
                     { name: 'isHandover', type: 'BIT DEFAULT 0' },
-                    { name: 'isTheoretical', type: 'BIT DEFAULT 0' }
+                    { name: 'isTheoretical', type: 'BIT DEFAULT 0' },
+                    { name: 'conductedBy', type: "NVARCHAR(255) DEFAULT 'Education Cell'" }
                 ];
 
                 for (const col of columns) {
@@ -141,7 +155,9 @@ class Quiz {
                 // Ensure correct types
                 await migrationHelper.ensureColumnType('quizzes', 'departmentId', 'NVARCHAR(MAX)');
                 await migrationHelper.ensureColumnType('quizzes', 'sectionId', 'NVARCHAR(MAX)');
-                
+                await migrationHelper.ensureColumnType('quizzes', 'lineId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('quizzes', 'subSectionId', 'NVARCHAR(MAX)');
+
                 logger.info("Quiz table initialized successfully");
                 break; // Success
             } catch (error) {
@@ -176,14 +192,14 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "isDojo", "isHandover", "isTheoretical", "createdAt"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "createdAt"
         ];
 
         if (!quiz.createdAt) quiz.createdAt = new Date();
 
         const values = fields.map(field => {
             let val = quiz[field];
-            if (field === 'questions' || field === 'departmentId' || field === 'sectionId') return JSON.stringify(val || []);
+            if (field === 'questions' || field === 'departmentId' || field === 'sectionId' || field === 'lineId' || field === 'subSectionId') return JSON.stringify(val || []);
             if (val === undefined) return null;
             return val;
         });
@@ -265,13 +281,13 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "isDojo", "isHandover", "isTheoretical"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => {
             let val = this[field];
-            if (field === 'questions' || field === 'departmentId' || field === 'sectionId') return JSON.stringify(val || []);
+            if (field === 'questions' || field === 'departmentId' || field === 'sectionId' || field === 'lineId' || field === 'subSectionId') return JSON.stringify(val || []);
             return val;
         });
         values.push(this.id);

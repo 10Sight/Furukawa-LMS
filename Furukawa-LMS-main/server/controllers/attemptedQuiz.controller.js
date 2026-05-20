@@ -28,20 +28,81 @@ const populateAttempt = async (attempt) => {
                 // Populate quiz details needed (course, module)
                 if (q.course) q.course = await Course.findById(q.course).then(c => c ? { id: c.id, title: c.title, _id: c.id } : null);
                 if (q.module) q.module = await Module.findById(q.module).then(m => m ? { id: m.id, title: m.title, _id: m.id } : null);
+                
+                // Fetch sub-section names for the quiz
+                let subSectionNames = [];
+                if (q.subSectionId && q.subSectionId.length > 0) {
+                    const validIds = q.subSectionId.filter(id => !isNaN(id) && id !== null && id !== '');
+                    if (validIds.length > 0) {
+                        const placeholders = validIds.map(() => "?").join(",");
+                        const [ssRows] = await executeQuery(`SELECT name FROM [sub_sections] WHERE id IN (${placeholders})`, validIds);
+                        subSectionNames = ssRows.map(r => r.name);
+                    }
+                }
+                q.subSectionNames = subSectionNames;
+
                 attempt.quiz = q;
             }
         }
     }
     if (attempt.student) {
         if (typeof attempt.student !== 'object') {
-            attempt.student = await User.findById(attempt.student).then(u => u ? { id: u.id, fullName: u.fullName, email: u.email, _id: u.id } : null);
+            attempt.student = await User.findById(attempt.student).then(async (u) => {
+                if (!u) return null;
+                let deptName = u.department || null;
+                let secName = null;
+                let lineName = null;
+                let subSecName = null;
+
+                try {
+                    if (u.departmentId) {
+                        const [r] = await executeQuery("SELECT name FROM departments WHERE id = ?", [u.departmentId]);
+                        if (r && r.length > 0) deptName = r[0].name;
+                    }
+                    if (u.sectionId) {
+                        const [r] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [u.sectionId]);
+                        if (r && r.length > 0) secName = r[0].name;
+                    }
+                    if (u.lineId) {
+                        const [r] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [u.lineId]);
+                        if (r && r.length > 0) lineName = r[0].name;
+                    }
+                    if (u.subSectionId) {
+                        const [r] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [u.subSectionId]);
+                        if (r && r.length > 0) subSecName = r[0].name;
+                    }
+                } catch (err) {
+                    console.error("Failed to populate hierarchy names in populateAttempt:", err.message);
+                }
+
+                return {
+                    id: u.id,
+                    _id: u.id,
+                    fullName: u.fullName,
+                    email: u.email,
+                    empId: u.empId,
+                    departmentId: u.departmentId,
+                    departmentName: deptName,
+                    sectionId: u.sectionId,
+                    sectionName: secName,
+                    lineId: u.lineId,
+                    lineName: lineName,
+                    subSectionId: u.subSectionId,
+                    subSectionName: subSecName,
+                    role: u.role
+                };
+            });
         }
+    }
+    if (attempt && (!attempt.conductedBy || attempt.conductedBy === "Education Cell")) {
+        // Fallback to quiz's conductedBy if the attempt's conductedBy is default or empty
+        attempt.conductedBy = attempt.conductedBy || (attempt.quiz && attempt.quiz.conductedBy) || "Education Cell";
     }
     return attempt;
 };
 
 export const attemptQuiz = asyncHandler(async (req, res) => {
-    const { quizId, answers } = req.body;
+    const { quizId, answers, conductedBy } = req.body;
     const userId = req.user.id;
 
     if (!quizId) throw new ApiError("Quiz ID is required", 400);
@@ -128,7 +189,8 @@ export const attemptQuiz = asyncHandler(async (req, res) => {
         status: passed ? "PASSED" : "FAILED",
         completedAt: new Date(),
         attemptNumber: 1,
-        timeTaken: 0
+        timeTaken: 0,
+        conductedBy: conductedBy || quiz.conductedBy || "Education Cell"
     });
 
     res.status(201)
@@ -195,7 +257,7 @@ export const deleteAttempt = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, null, "Attempt deleted successfully"));
 });
 
-// ADMIN: Update attempt answers/scores manually
+// ADMIN/TRAINER: Update attempt answers/scores manually
 export const adminUpdateAttempt = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { answersOverride, adjustmentNotes } = req.body || {};
@@ -205,9 +267,16 @@ export const adminUpdateAttempt = asyncHandler(async (req, res) => {
 
     attempt = await populateAttempt(attempt); // Need quiz populated
 
-    // Only ADMIN can edit
-    if (!req.user || !req.user.role || (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERADMIN')) {
-        throw new ApiError("Only admin can modify attempts", 403);
+    // Allow ADMIN, TRAINER, or INSTRUCTOR to edit
+    const hasEditRights = req.user && (
+        req.user.isAdmin == true || 
+        req.user.isTrainer == true || 
+        ['ADMIN', 'SUPERADMIN', 'TRAINER', 'INSTRUCTOR'].includes(req.user.role) ||
+        (req.user.role === 'CUSTOM' && ['admin', 'superadmin', 'trainer', 'instructor'].includes(String(req.user.customRole?.targetLayout).toLowerCase()))
+    );
+
+    if (!hasEditRights) {
+        throw new ApiError("Only admins and trainers can modify attempts", 403);
     }
 
     if (!Array.isArray(answersOverride)) {
@@ -226,9 +295,9 @@ export const adminUpdateAttempt = asyncHandler(async (req, res) => {
 
     let newScore = 0;
     // attempt.answer is parsed from JSON in SQL model
-    const newAnswers = attempt.answer.map(ans => {
+    const newAnswers = attempt.answer.map((ans, idx) => {
         const key = String(ans.questionId);
-        const override = overrideMap.get(key);
+        const override = overrideMap.get(key) || overrideMap.get(String(idx));
         if (!override) {
             newScore += (ans.marksObtained || 0);
             return ans;
@@ -325,16 +394,16 @@ export const startQuiz = asyncHandler(async (req, res) => {
     const isTemporaryCandidate = req.user && req.user.isTemporary;
 
     if (!isAdminOrTrainer && !isTemporaryCandidate) {
-        if (quiz.module && quiz.type === "MODULE") {
-            const accessCheck = await checkModuleAccessForAssessments(userId, quiz.course.id, quiz.module.id);
+        if (quiz.module && quiz.type === "MODULE" && quiz.course) {
+            const accessCheck = await checkModuleAccessForAssessments(userId, quiz.course.id || quiz.course, quiz.module.id || quiz.module);
             if (!accessCheck.hasAccess) {
                 throw new ApiError(accessCheck.reason || "Access denied to this quiz. Complete all lessons in the module first.", 403);
             }
-        } else if (quiz.type === "COURSE") {
-            const [modRows] = await executeQuery("SELECT COUNT(*) as count FROM modules WHERE course = ?", [quiz.course.id]);
+        } else if (quiz.type === "COURSE" && quiz.course) {
+            const [modRows] = await executeQuery("SELECT COUNT(*) as count FROM modules WHERE course = ?", [quiz.course.id || quiz.course]);
             const totalModules = modRows[0].count;
 
-            const progress = await Progress.findOne({ student: userId, course: quiz.course.id });
+            const progress = await Progress.findOne({ student: userId, course: quiz.course.id || quiz.course });
 
             if (!progress) {
                 throw new ApiError("No progress found. Complete all modules first.", 403);
@@ -366,7 +435,7 @@ export const startQuiz = asyncHandler(async (req, res) => {
 
     const isUnlimited = quiz.attemptsAllowed === 0;
 
-    if (!isUnlimited && attemptsRemainingWithExtra <= 0) {
+    if (!isAdminOrTrainer && !isUnlimited && attemptsRemainingWithExtra <= 0) {
         return res.json(new ApiResponse(200, {
             canAttempt: false,
             reason: "No attempts remaining",
@@ -376,9 +445,21 @@ export const startQuiz = asyncHandler(async (req, res) => {
                 _id: quiz.id,
                 title: quiz.title,
                 course: quiz.course,
-                module: quiz.module
+                module: quiz.module,
+                level: quiz.level
             }
         }, "No attempts remaining for this quiz"));
+    }
+
+    // Fetch sub-section names for the quiz
+    let subSectionNames = [];
+    if (quiz.subSectionId && quiz.subSectionId.length > 0) {
+        const validIds = quiz.subSectionId.filter(id => !isNaN(id) && id !== null && id !== '');
+        if (validIds.length > 0) {
+            const placeholders = validIds.map(() => "?").join(",");
+            const [ssRows] = await executeQuery(`SELECT name FROM [sub_sections] WHERE id IN (${placeholders})`, validIds);
+            subSectionNames = ssRows.map(r => r.name);
+        }
     }
 
     const quizForTaking = {
@@ -389,15 +470,33 @@ export const startQuiz = asyncHandler(async (req, res) => {
         module: quiz.module,
         timeLimit: quiz.timeLimit,
         passingScore: quiz.passingScore,
+        subSectionNames: subSectionNames,
+        level: quiz.level,
+        conductedBy: quiz.conductedBy || "Education Cell",
         attemptsAllowed: isUnlimited ? 0 : attemptsAllowedWithExtra,
         attemptsUsed: previousAttempts,
         attemptsRemaining: isUnlimited ? null : attemptsRemainingWithExtra,
         questions: (quiz.questions || []).map((q, index) => ({
             questionNumber: index + 1,
             questionText: q.questionText,
+            questionTextSec: q.questionTextSec || "",
+            type: q.type || "mcq",
             image: q.image,
-            options: (q.options || []).map(opt => ({ text: opt.text })),
-            marks: q.marks
+            options: (q.options || []).map(opt => ({ 
+                text: opt.text, 
+                textSec: opt.textSec || "",
+                image: opt.image 
+            })),
+            pairs: (q.pairs || []).map(p => ({
+                leftText: p.leftText,
+                leftTextSec: p.leftTextSec || "",
+                leftImage: p.leftImage,
+                rightText: p.rightText,
+                rightTextSec: p.rightTextSec || "",
+                rightImage: p.rightImage
+            })),
+            marks: q.marks,
+            correctAnswerSec: q.correctAnswerSec || ""
         }))
     };
 
@@ -408,12 +507,114 @@ export const startQuiz = asyncHandler(async (req, res) => {
 });
 
 export const submitQuiz = asyncHandler(async (req, res) => {
-    const { quizId, answers, timeTaken, studentId } = req.body;
+    const { quizId, answers, timeTaken, studentId, candidateName, eCode, conductedBy } = req.body;
     let userId = req.user.id;
 
     const isAdminOrTrainer = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPERADMIN' || req.user.role === 'INSTRUCTOR' || req.user.role === 'TRAINER');
 
-    if (isAdminOrTrainer && studentId) {
+    // Handle student mapping/creation when custom candidateName & eCode are passed
+    if (candidateName && candidateName.trim()) {
+        const trimmedName = candidateName.trim();
+        const trimmedECode = (eCode || "").trim();
+
+        // 1. Try to find if user with this empId / eCode already exists in the database
+        let existingUser = null;
+        if (trimmedECode) {
+            const [rows] = await executeQuery("SELECT id FROM users WHERE empId = ? OR userName = ?", [trimmedECode, trimmedECode.toLowerCase()]);
+            if (rows.length > 0) {
+                existingUser = rows[0];
+            }
+        } else {
+            // Fallback: look up by name
+            const [rows] = await executeQuery("SELECT id FROM users WHERE fullName = ? AND role = 'STUDENT'", [trimmedName]);
+            if (rows.length > 0) {
+                existingUser = rows[0];
+            }
+        }
+
+        if (existingUser) {
+            userId = existingUser.id;
+        } else {
+            // 2. Automatically create a student user dynamically on the backend (system level, no front-end check needed)
+            const generatedUsername = trimmedECode 
+                ? trimmedECode.toLowerCase() 
+                : trimmedName.toLowerCase().replace(/\s+/g, "_") + "_" + Math.floor(Math.random() * 1000);
+            
+            const empIdValue = trimmedECode || generatedUsername.toUpperCase();
+            const bcrypt = (await import("bcryptjs")).default;
+            const hashedPassword = await bcrypt.hash("fme@" + (trimmedECode || "123"), 10);
+            const slug = generatedUsername.replace(/ /g, '-');
+
+            const [currentUserRows] = await executeQuery(
+                "SELECT unit, departmentId, department, sectionId, lineId, subSectionId, stationId FROM users WHERE id = ?",
+                [req.user.id]
+            );
+            const parentUnit = currentUserRows[0]?.unit || "FME";
+            const parentDeptId = currentUserRows[0]?.departmentId || null;
+            const parentDeptName = currentUserRows[0]?.department || null;
+            const parentSectionId = currentUserRows[0]?.sectionId || null;
+            const parentLineId = currentUserRows[0]?.lineId || null;
+            const parentSubSectionId = currentUserRows[0]?.subSectionId || null;
+            const parentStationId = currentUserRows[0]?.stationId || null;
+
+            const fields = [
+                "fullName", "userName", "slug", "email", "role", "password", "unit", "status",
+                "empId", "isEmployee", "isAdmin", "isTrainer", "currentLevel", "isTemporary",
+                "departmentId", "department", "sectionId", "lineId", "subSectionId", "stationId",
+                "createdAt", "updatedAt"
+            ];
+
+            const values = [
+                trimmedName,
+                generatedUsername,
+                slug,
+                generatedUsername + "@fme-minda.co.in",
+                "STUDENT",
+                hashedPassword,
+                parentUnit,
+                "ACTIVE",
+                empIdValue,
+                1, // isEmployee
+                0, // isAdmin
+                0, // isTrainer
+                "L1",
+                0, // isTemporary
+                parentDeptId,
+                parentDeptName,
+                parentSectionId,
+                parentLineId,
+                parentSubSectionId,
+                parentStationId,
+                new Date(),
+                new Date()
+            ];
+
+            const placeholders = fields.map(() => "?").join(",");
+            const [result] = await executeQuery(`INSERT INTO users (${fields.join(",")}) OUTPUT INSERTED.id VALUES (${placeholders})`, values);
+            
+            if (result && result.length > 0) {
+                userId = result[0].id;
+                console.log(`[DEBUG] Automatically created student ${trimmedName} with E.code ${empIdValue} and ID ${userId} on submit.`);
+                
+                // Trigger Hierarchy Sync for the new user's location
+                if (parentSubSectionId || parentLineId) {
+                    try {
+                        const SubSection = (await import("../models/subSection.model.js")).default;
+                        const Line = (await import("../models/line.model.js")).default;
+                        if (parentSubSectionId) {
+                            await SubSection.syncUserList(parentSubSectionId);
+                        } else if (parentLineId) {
+                            await Line.syncUserList(parentLineId);
+                        }
+                    } catch (syncErr) {
+                        console.error("Failed to sync hierarchy on auto-create:", syncErr.message);
+                    }
+                }
+            } else {
+                throw new ApiError("Failed to auto-create student user during submission", 500);
+            }
+        }
+    } else if (isAdminOrTrainer && studentId) {
         userId = studentId;
     }
 
@@ -472,12 +673,48 @@ export const submitQuiz = asyncHandler(async (req, res) => {
 
     questions.forEach((question, index) => {
         const userAnswer = answers[index];
-        // find correct option: in JSON it's `isCorrect: true`
-        const correctOption = (question.options || []).find(opt => opt && opt.isCorrect === true);
+        let isCorrect = false;
+        let correctAnswerText = "";
 
-        const isCorrect = userAnswer && correctOption &&
-            typeof userAnswer.text === 'string' &&
-            userAnswer.text === correctOption.text;
+        const qType = question.type || "mcq";
+
+        let correctAnswerSecText = "";
+
+        if (qType === "shortAnswer") {
+            correctAnswerText = question.correctAnswer || "";
+            correctAnswerSecText = question.correctAnswerSec || "";
+            isCorrect = userAnswer && typeof userAnswer.text === 'string' &&
+                userAnswer.text.trim().toLowerCase() === correctAnswerText.trim().toLowerCase();
+        } else if (qType === "matching") {
+            const pairs = question.pairs || [];
+            correctAnswerText = pairs.map(p => `${p.leftText} -> ${p.rightText}`).join(", ");
+            correctAnswerSecText = pairs.map(p => {
+                const left = p.leftTextSec ? `${p.leftText} (${p.leftTextSec})` : p.leftText;
+                const right = p.rightTextSec ? `${p.rightText} (${p.rightTextSec})` : p.rightText;
+                return `${left} -> ${right}`;
+            }).join(", ");
+            
+            if (userAnswer && userAnswer.matches && typeof userAnswer.matches === 'object') {
+                isCorrect = true;
+                for (const p of pairs) {
+                    const matchedRight = userAnswer.matches[p.leftText];
+                    if (!matchedRight || String(matchedRight).trim().toLowerCase() !== String(p.rightText).trim().toLowerCase()) {
+                        isCorrect = false;
+                        break;
+                    }
+                }
+            } else {
+                isCorrect = false;
+            }
+        } else {
+            // MCQ (default)
+            const correctOption = (question.options || []).find(opt => opt && opt.isCorrect === true);
+            correctAnswerText = correctOption ? correctOption.text : "";
+            correctAnswerSecText = correctOption && correctOption.textSec ? correctOption.textSec : "";
+            isCorrect = userAnswer && correctOption &&
+                typeof userAnswer.text === 'string' &&
+                userAnswer.text === correctOption.text;
+        }
 
         totalMarks += (question.marks || 1);
         if (isCorrect) {
@@ -487,8 +724,10 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         detailedAnswers.push({
             questionNumber: index + 1,
             questionText: question.questionText || `Question ${index + 1}`,
+            questionTextSec: question.questionTextSec || "",
             userAnswer: userAnswer && userAnswer.text ? userAnswer.text : null,
-            correctAnswer: correctOption ? correctOption.text : null,
+            correctAnswer: correctAnswerText,
+            correctAnswerSec: correctAnswerSecText,
             isCorrect,
             marksObtained: isCorrect ? (question.marks || 1) : 0,
             totalMarks: (question.marks || 1)
@@ -515,7 +754,8 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         status: passed ? "PASSED" : "FAILED",
         completedAt: new Date(),
         attemptNumber: previousAttempts + 1,
-        timeTaken: timeTaken || 0
+        timeTaken: timeTaken || 0,
+        conductedBy: conductedBy || quiz.conductedBy || "Education Cell"
     };
 
     const attempt = await AttemptedQuiz.create(attemptData);
@@ -910,4 +1150,155 @@ export const rejectExtraAttempt = asyncHandler(async (req, res) => {
     await requestObj.save();
 
     res.json(new ApiResponse(200, requestObj, "Request rejected"));
+});
+
+export const getMonitoringAttempts = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId, lineId, subSectionId, level, testType, search } = req.query;
+
+    let sql = `
+        SELECT 
+            aq.id as id,
+            aq.quiz as quizId,
+            aq.student as studentId,
+            aq.score as score,
+            aq.status as status,
+            aq.startedAt as startedAt,
+            aq.completedAt as completedAt,
+            aq.timeTaken as timeTaken,
+            aq.createdAt as createdAt,
+            
+            q.title as quizTitle,
+            q.type as quizType,
+            q.level as quizLevel,
+            q.isDojo as quizIsDojo,
+            q.isHandover as quizIsHandover,
+            q.isTheoretical as quizIsTheoretical,
+            q.questions as quizQuestions,
+            q.passingScore as quizPassingScore,
+            
+            u.fullName as studentName,
+            u.empId as studentECode,
+            u.userName as studentUserName,
+            u.email as studentEmail,
+            u.role as studentRole,
+            u.currentLevel as studentLevel,
+            u.departmentId as studentDepartmentId,
+            u.department as studentDepartmentName,
+            u.sectionId as studentSectionId,
+            u.lineId as studentLineId,
+            u.subSectionId as studentSubSectionId,
+            
+            dept.name as deptName,
+            sec.name as secName,
+            lin.name as lineName,
+            sub.name as subSecName
+        FROM attempted_quizzes aq
+        LEFT JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+        LEFT JOIN users u ON CAST(u.id AS NVARCHAR(255)) = aq.student
+        LEFT JOIN departments dept ON dept.id = u.departmentId
+        LEFT JOIN [sections] sec ON sec.id = u.sectionId
+        LEFT JOIN [lines] lin ON lin.id = u.lineId
+        LEFT JOIN sub_sections sub ON sub.id = u.subSectionId
+        WHERE 1=1
+    `;
+
+    const values = [];
+
+    if (departmentId) {
+        sql += " AND u.departmentId = ?";
+        values.push(parseInt(departmentId));
+    }
+    if (sectionId) {
+        sql += " AND u.sectionId = ?";
+        values.push(parseInt(sectionId));
+    }
+    if (lineId) {
+        sql += " AND u.lineId = ?";
+        values.push(parseInt(lineId));
+    }
+    if (subSectionId) {
+        sql += " AND u.subSectionId = ?";
+        values.push(parseInt(subSectionId));
+    }
+    if (level) {
+        sql += " AND q.level = ?";
+        values.push(level);
+    }
+    
+    if (testType) {
+        if (testType === "DOJO") {
+            sql += " AND q.isDojo = 1";
+        } else if (testType === "HANDOVER") {
+            sql += " AND q.isHandover = 1";
+        } else if (testType === "THEORETICAL") {
+            sql += " AND q.isTheoretical = 1";
+        } else if (testType === "REGULAR") {
+            sql += " AND q.isDojo = 0 AND q.isHandover = 0 AND q.isTheoretical = 0";
+        }
+    }
+
+    if (search) {
+        const searchQuery = `%${search}%`;
+        sql += " AND (u.fullName LIKE ? OR u.empId LIKE ? OR q.title LIKE ?)";
+        values.push(searchQuery, searchQuery, searchQuery);
+    }
+
+    sql += " ORDER BY aq.createdAt DESC";
+
+    const [rows] = await executeQuery(sql, values);
+
+    const attempts = rows.map(row => {
+        let quizQuestionsParsed = [];
+        try {
+            quizQuestionsParsed = typeof row.quizQuestions === "string" ? JSON.parse(row.quizQuestions) : (row.quizQuestions || []);
+        } catch (e) {
+            quizQuestionsParsed = [];
+        }
+        
+        const totalMarks = quizQuestionsParsed.reduce((sum, q) => sum + (q.marks || 1), 0) || 0;
+
+        return {
+            _id: row.id,
+            id: row.id,
+            score: row.score,
+            status: row.status,
+            startedAt: row.startedAt,
+            completedAt: row.completedAt,
+            createdAt: row.createdAt,
+            timeTaken: row.timeTaken,
+            quiz: {
+                _id: row.quizId,
+                id: row.quizId,
+                title: row.quizTitle,
+                type: row.quizType,
+                level: row.quizLevel,
+                isDojo: !!row.quizIsDojo,
+                isHandover: !!row.quizIsHandover,
+                isTheoretical: !!row.quizIsTheoretical,
+                passingScore: row.quizPassingScore,
+                questions: quizQuestionsParsed
+            },
+            student: {
+                _id: row.studentId,
+                id: row.studentId,
+                fullName: row.studentName,
+                empId: row.studentECode,
+                userName: row.studentUserName,
+                email: row.studentEmail,
+                role: row.studentRole,
+                currentLevel: row.studentLevel,
+                departmentId: row.studentDepartmentId,
+                departmentName: row.deptName || row.studentDepartmentName,
+                sectionId: row.studentSectionId,
+                sectionName: row.secName,
+                lineId: row.studentLineId,
+                lineName: row.lineName,
+                subSectionId: row.studentSubSectionId,
+                subSectionName: row.subSecName
+            },
+            totalScore: totalMarks
+        };
+    });
+
+    res.json(new ApiResponse(200, attempts, "Monitoring attempts fetched successfully"));
 });

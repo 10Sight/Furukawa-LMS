@@ -1,23 +1,21 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { IconArrowLeft, IconLoader } from "@tabler/icons-react";
 import SubSectionDetailHeader from "@/components/departments/SubSectionDetailHeader";
 import MachineManager from "@/components/departments/MachineManager";
-import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetSubSectionByIdQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 
 const SubSectionDetail = () => {
     const { departmentId, lineId, subSectionId } = useParams();
     const navigate = useNavigate();
 
-    // Fetch line to get Line name if needed (optional optimization)
-    // For now we just fetch sub-sections for this line to find the specific one
-    const { data: subSectionsData, isLoading: subLoading } = useGetSubSectionsByLineQuery(lineId, {
-        skip: !lineId || isNaN(lineId)
+    // Fetch specific sub-section detail including dynamic users
+    const { data: subSectionResult, isLoading: subLoading } = useGetSubSectionByIdQuery(subSectionId, {
+        skip: !subSectionId || isNaN(subSectionId)
     });
-    const subSection = subSectionsData?.data?.find(s => String(s.id || s._id) === String(subSectionId));
+    const subSection = subSectionResult?.data;
 
     if (subLoading) {
         return (
@@ -52,14 +50,9 @@ const SubSectionDetail = () => {
 
             <SubSectionDetailHeader subSection={subSection} lineName={`Line ${lineId}`} />
 
-            <Tabs defaultValue="stations" className="w-full">
-                <TabsList className="grid w-full grid-cols-1 md:w-[200px]">
-                    <TabsTrigger value="stations">Stations</TabsTrigger>
-                </TabsList>
-                <TabsContent value="stations" className="mt-6">
-                    <MachineManager subSectionId={subSectionId} lineId={lineId} />
-                </TabsContent>
-            </Tabs>
+            <div className="mt-6">
+                <MachineManager subSectionId={subSectionId} lineId={lineId} />
+            </div>
         </div>
     );
 };

@@ -31,6 +31,10 @@ import {
   Pencil,
   Trash2,
   Loader2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
@@ -88,6 +92,126 @@ const makeGroupKey = (req) => {
   return `${sectionCode}||${lineCode}||${year}`;
 };
 
+const normalizeApprovalStatus = (status, isActive) => {
+  const s = String(status || "").trim().toLowerCase();
+
+  if (s === "approved") return "approved";
+  if (s === "system_approved") return "system_approved";
+  if (s === "rejected") return "rejected";
+  if (s === "pending") return "pending";
+
+  if (isActive === true || isActive === 1) return "approved";
+
+  return "pending";
+};
+
+const getSalesPlanClass = (cell) => {
+  const status = normalizeApprovalStatus(cell?.approvalStatus, cell?.isActive);
+
+  if (status === "approved" || status === "system_approved") {
+    return "text-blue-700";
+  }
+
+  return "text-red-600";
+};
+
+const getProdPlanClass = (cell) => {
+  const status = normalizeApprovalStatus(cell?.approvalStatus, cell?.isActive);
+
+  if (status === "approved" || status === "system_approved") {
+    return "text-emerald-700";
+  }
+
+  return "text-red-600";
+};
+
+const getRowApprovalSummary = (row) => {
+  const statuses = MONTHS
+    .map((m) => normalizeApprovalStatus(row?.monthData?.[m]?.approvalStatus, row?.monthData?.[m]?.isActive))
+    .filter(Boolean);
+
+  if (statuses.includes("rejected")) return "rejected";
+  if (statuses.includes("pending")) return "pending";
+  if (statuses.includes("system_approved")) return "system_approved";
+  if (statuses.includes("approved")) return "approved";
+
+  return "pending";
+};
+
+const getStatusBadge = (status) => {
+  const s = normalizeApprovalStatus(status);
+
+  if (s === "approved") {
+    return {
+      label: "Approved",
+      className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      icon: CheckCircle2,
+    };
+  }
+
+  if (s === "system_approved") {
+    return {
+      label: "Approved by System",
+      className: "bg-amber-50 text-amber-700 border-amber-200",
+      icon: ShieldCheck,
+    };
+  }
+
+  if (s === "rejected") {
+    return {
+      label: "Rejected",
+      className: "bg-red-50 text-red-700 border-red-200",
+      icon: XCircle,
+    };
+  }
+
+  return {
+    label: "Approval Pending",
+    className: "bg-red-50 text-red-700 border-red-200",
+    icon: AlertCircle,
+  };
+};
+
+const MonthStatusLabel = ({ cell }) => {
+  const status = normalizeApprovalStatus(cell?.approvalStatus, cell?.isActive);
+  const badge = getStatusBadge(status);
+  const Icon = badge.icon;
+
+  if (cell?.salesPlan === null && cell?.prodPlan === null) return null;
+
+  let label = badge.label;
+
+  if (status === "approved") {
+    label = cell?.approvedBy
+      ? `Approved`
+      : "Approved";
+  }
+
+  if (status === "system_approved") {
+    label = `System Approved${cell?.approvalOwnerName ? ` (${cell.approvalOwnerName})` : ""}`;
+  }
+
+  if (status === "rejected") {
+    label = cell?.rejectedBy ? "Rejected" : "Rejected";
+  }
+
+  if (status === "pending") {
+    label = cell?.approvalOwnerName
+      ? `Pending (${cell.approvalOwnerName})`
+      : "Approval Pending";
+  }
+
+  return (
+    <div
+      className={`mt-1 inline-flex items-center justify-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold leading-none ${badge.className}`}
+      title={label}
+    >
+      <Icon className="w-2.5 h-2.5 flex-shrink-0" />
+      <span className="max-w-[85px] truncate">{label}</span>
+    </div>
+  );
+};
+
 export default function SetRequirements() {
   const { hasPrivilege } = usePrivileges();
   const canManageRequirements = hasPrivilege("setrequirement");
@@ -139,11 +263,15 @@ export default function SetRequirements() {
       }
 
       const selected = departments.find((d) => d.name === filterState.section);
-      if (!selected) return;
+      if (!selected) {
+        setSections([]);
+        return;
+      }
 
       try {
         const res = await axiosInstance.get(`/api/lines?sectionId=${selected.id}`);
         if (res.data?.success) setSections(res.data.data || []);
+        else setSections([]);
       } catch (e) {
         console.error(e);
         setSections([]);
@@ -153,7 +281,18 @@ export default function SetRequirements() {
   }, [filterState.section, departments]);
 
   const handleFilterChange = (key, value) => {
-    setFilterState((prev) => ({ ...prev, [key]: value }));
+    setFilterState((prev) => {
+      if (key === "section") {
+        return {
+          ...prev,
+          section: value,
+          sub_section: "",
+        };
+      }
+
+      return { ...prev, [key]: value };
+    });
+
     setPage(1);
   };
 
@@ -168,7 +307,20 @@ export default function SetRequirements() {
         const monthIds = {};
 
         for (const m of MONTHS) {
-          monthData[m] = { salesPlan: null, prodPlan: null };
+          monthData[m] = {
+            salesPlan: null,
+            prodPlan: null,
+            isActive: true,
+            approvalStatus: "pending",
+            approvalOwnerName: null,
+            approvalOwnerEmail: null,
+            approvedBy: null,
+            approvedByEmail: null,
+            approvedAt: null,
+            approvalSource: null,
+            rejectedBy: null,
+            rejectedAt: null,
+          };
           monthIds[m] = [];
         }
 
@@ -181,6 +333,10 @@ export default function SetRequirements() {
           year: req?.year || "",
           monthData,
           monthIds,
+          isActive: true,
+          approvalStatus: "pending",
+          approvalOwnerName: null,
+          approvalOwnerEmail: null,
         });
       }
 
@@ -190,15 +346,46 @@ export default function SetRequirements() {
       if (month && MONTHS.includes(month)) {
         const sp = safeNum(req?.salesPlan);
         const pp = safeNum(req?.prodPlan);
+        const isActive = req?.isActive === true || req?.is_active === true || req?.is_active === 1;
+        const approvalStatus = normalizeApprovalStatus(req?.approvalStatus, isActive);
 
-        row.monthData[month].salesPlan = sp;
-        row.monthData[month].prodPlan = pp;
+        row.monthData[month] = {
+          salesPlan: sp,
+          prodPlan: pp,
+          isActive,
+          approvalStatus,
+          approvalOwnerName: req?.approvalOwnerName || null,
+          approvalOwnerEmail: req?.approvalOwnerEmail || null,
+          approvedBy: req?.approvedBy || null,
+          approvedByEmail: req?.approvedByEmail || null,
+          approvedAt: req?.approvedAt || null,
+          approvalSource: req?.approvalSource || null,
+          rejectedBy: req?.rejectedBy || null,
+          rejectedAt: req?.rejectedAt || null,
+        };
 
         if (req?.id) row.monthIds[month].push(req.id);
+
+        if (approvalStatus === "pending" || approvalStatus === "rejected") {
+          row.isActive = false;
+        }
+
+        if (!row.approvalOwnerName && req?.approvalOwnerName) {
+          row.approvalOwnerName = req.approvalOwnerName;
+        }
+
+        if (!row.approvalOwnerEmail && req?.approvalOwnerEmail) {
+          row.approvalOwnerEmail = req.approvalOwnerEmail;
+        }
       }
     }
 
-    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const groupedRows = Array.from(map.values()).map((row) => ({
+      ...row,
+      approvalStatus: getRowApprovalSummary(row),
+    }));
+
+    return groupedRows.sort((a, b) => a.key.localeCompare(b.key));
   };
 
   const fetchAllRequirements = async () => {
@@ -338,7 +525,7 @@ export default function SetRequirements() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      toast.success("Requirements uploaded successfully");
+      toast.success("Requirements uploaded successfully. Approval mail sent to section head.");
       setIsUploadOpen(false);
       setSelectedFile(null);
       await fetchAllRequirements();
@@ -400,58 +587,95 @@ export default function SetRequirements() {
     }));
   };
 
-  const handleSaveRowEdit = async () => {
-    if (!currentRow || !editForm) return;
-    if (!canManageRequirements) return toast.error("You don't have privilege to save.");
+  const valuesAreSame = (a, b) => {
+  const n1 = safeNum(a);
+  const n2 = safeNum(b);
 
-    setSavingEdit(true);
-    try {
-      for (const month of MONTHS) {
-        const ids = currentRow.monthIds?.[month] || [];
-        const newSP = safeNum(editForm?.monthData?.[month]?.salesPlan);
-        const newPP = safeNum(editForm?.monthData?.[month]?.prodPlan);
+  if (n1 === null && n2 === null) return true;
+  return Number(n1 || 0) === Number(n2 || 0);
+  };
 
-        if (ids.length > 0) {
-          await axiosInstance.patch(`/api/requirements/${ids[0]}`, {
-            sectionCode: currentRow.sectionCode,
-            sectionName: currentRow.sectionName,
-            lineCode: currentRow.lineCode,
-            lineDescription: currentRow.lineDescription,
-            monthName: month,
-            year: currentRow.year,
-            salesPlan: newSP,
-            prodPlan: newPP,
-          });
+const handleSaveRowEdit = async () => {
+  if (!currentRow || !editForm) return;
+  if (!canManageRequirements) return toast.error("You don't have privilege to save.");
 
-          for (const extraId of ids.slice(1)) {
-            await axiosInstance.delete(`/api/requirements/${extraId}`);
-          }
-        } else if (newSP !== null || newPP !== null) {
-          await axiosInstance.post(`/api/requirements`, {
-            sectionCode: currentRow.sectionCode,
-            sectionName: currentRow.sectionName,
-            lineCode: currentRow.lineCode,
-            lineDescription: currentRow.lineDescription,
-            monthName: month,
-            year: currentRow.year,
-            salesPlan: newSP,
-            prodPlan: newPP,
-          });
-        }
+  setSavingEdit(true);
+
+  try {
+    let changedCount = 0;
+
+    for (const month of MONTHS) {
+      const ids = currentRow.monthIds?.[month] || [];
+
+      const oldSP = currentRow?.monthData?.[month]?.salesPlan;
+      const oldPP = currentRow?.monthData?.[month]?.prodPlan;
+
+      const newSP = safeNum(editForm?.monthData?.[month]?.salesPlan);
+      const newPP = safeNum(editForm?.monthData?.[month]?.prodPlan);
+
+      const spChanged = !valuesAreSame(oldSP, newSP);
+      const ppChanged = !valuesAreSame(oldPP, newPP);
+
+      // IMPORTANT: unchanged month backend par nahi jayega
+      if (!spChanged && !ppChanged) {
+        continue;
       }
 
-      toast.success("Requirement updated successfully");
-      setEditModalOpen(false);
-      setCurrentRow(null);
-      setEditForm(null);
-      await fetchAllRequirements();
-    } catch (e) {
-      console.error(e);
-      toast.error(e?.response?.data?.message || "Failed to update requirement");
-    } finally {
-      setSavingEdit(false);
+      changedCount++;
+
+      if (ids.length > 0) {
+        const patchRes = await axiosInstance.patch(`/api/requirements/${ids[0]}`, {
+          sectionCode: currentRow.sectionCode,
+          sectionName: currentRow.sectionName,
+          lineCode: currentRow.lineCode,
+          lineDescription: currentRow.lineDescription,
+          monthName: month,
+          year: currentRow.year,
+          salesPlan: newSP,
+          prodPlan: newPP,
+        });
+
+        console.log("Requirement update response:", patchRes.data);
+
+        for (const extraId of ids.slice(1)) {
+          await axiosInstance.delete(`/api/requirements/${extraId}`);
+        }
+      } else if (newSP !== null || newPP !== null) {
+        await axiosInstance.post(`/api/requirements`, {
+          sectionCode: currentRow.sectionCode,
+          sectionName: currentRow.sectionName,
+          lineCode: currentRow.lineCode,
+          lineDescription: currentRow.lineDescription,
+          monthName: month,
+          year: currentRow.year,
+          salesPlan: newSP,
+          prodPlan: newPP,
+        });
+      }
     }
-  };
+
+    if (changedCount === 0) {
+      toast.info("No changes found.");
+      return;
+    }
+
+    toast.success(
+      changedCount === 1
+        ? "Requirement updated successfully. Approval mail sent for changed month."
+        : `${changedCount} requirements updated successfully. Approval mails sent for changed months.`
+    );
+
+    setEditModalOpen(false);
+    setCurrentRow(null);
+    setEditForm(null);
+    await fetchAllRequirements();
+  } catch (e) {
+    console.error(e);
+    toast.error(e?.response?.data?.message || "Failed to update requirement");
+  } finally {
+    setSavingEdit(false);
+  }
+};
 
   return (
     <div className="space-y-6 min-h-screen pb-10">
@@ -459,7 +683,7 @@ export default function SetRequirements() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">Set Requirements</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Manage Sales & Production plans. Edit/Delete row.
+            Manage Sales & Production plans. Pending/rejected plans stay red until approval.
           </p>
         </div>
 
@@ -587,9 +811,45 @@ export default function SetRequirements() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <div className="text-xs font-bold text-slate-500 uppercase">Pending</div>
+          <div className="text-2xl font-bold text-red-600 mt-1">
+            {rows.filter((r) => r.approvalStatus === "pending").length}
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <div className="text-xs font-bold text-slate-500 uppercase">Approved</div>
+          <div className="text-2xl font-bold text-emerald-600 mt-1">
+            {rows.filter((r) => r.approvalStatus === "approved").length}
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <div className="text-xs font-bold text-slate-500 uppercase">System Approved</div>
+          <div className="text-2xl font-bold text-amber-600 mt-1">
+            {rows.filter((r) => r.approvalStatus === "system_approved").length}
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <div className="text-xs font-bold text-slate-500 uppercase">Rejected</div>
+          <div className="text-2xl font-bold text-red-700 mt-1">
+            {rows.filter((r) => r.approvalStatus === "rejected").length}
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <h2 className="text-lg font-bold text-slate-900">Requirements Database (12 Months)</h2>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Requirements Database (12 Months)</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              SP = Sales Plan, PP = Production Plan. Red means approval pending/rejected.
+            </p>
+          </div>
+
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -617,13 +877,14 @@ export default function SetRequirements() {
                 <th className="px-3 py-3 sticky left-[140px] z-40 bg-slate-50 border-r border-slate-200" style={{ width: "180px", minWidth: "180px" }}>Section Name</th>
                 <th className="px-3 py-3 sticky left-[320px] z-40 bg-slate-50 border-r border-slate-200" style={{ width: "140px", minWidth: "140px" }}>Line Code</th>
                 <th className="px-3 py-3 sticky left-[460px] z-40 bg-slate-50 border-r-2 border-slate-300" style={{ width: "220px", minWidth: "220px" }}>Line Description</th>
-                <th className="px-3 py-3 text-center" style={{ width: "70px" }}>Year</th>
+                <th className="px-3 py-3 text-center" style={{ width: "90px", minWidth: "90px" }}>Year</th>
+                <th className="px-3 py-3 text-center border-l border-slate-200" style={{ width: "160px", minWidth: "160px" }}>Approval</th>
 
                 {MONTHS.map((m) => (
                   <th
                     key={m}
                     className="px-2 py-2 text-center border-l border-slate-200"
-                    style={{ width: "120px", minWidth: "120px" }}
+                    style={{ width: "145px", minWidth: "145px" }}
                   >
                     <div className="font-bold text-slate-700">{MONTHS_SHORT[m]}</div>
                     <div className="flex justify-between px-2 mt-1 text-[10px] text-slate-400 font-semibold">
@@ -633,7 +894,7 @@ export default function SetRequirements() {
                   </th>
                 ))}
 
-                <th className="px-3 py-3 text-right" style={{ width: "120px" }}>
+                <th className="px-3 py-3 text-right" style={{ width: "120px", minWidth: "120px" }}>
                   Actions
                 </th>
               </tr>
@@ -642,7 +903,7 @@ export default function SetRequirements() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={19} className="px-6 py-12 text-center">
+                  <td colSpan={20} className="px-6 py-12 text-center">
                     <div className="flex justify-center items-center gap-2 text-slate-500">
                       <Loader2 className="h-5 w-5 animate-spin" /> Loading...
                     </div>
@@ -650,81 +911,143 @@ export default function SetRequirements() {
                 </tr>
               ) : pagedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={19} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={20} className="px-6 py-12 text-center text-slate-400">
                     No matching records found.
                   </td>
                 </tr>
               ) : (
-                pagedRows.map((r) => (
-                  <tr key={r.key} className="group hover:bg-slate-50 transition-colors">
-                    <td className="px-3 py-3 sticky left-0 z-30 bg-white group-hover:bg-slate-50 transition-colors border-r border-slate-200">
-                      <div className="font-medium text-slate-900 text-xs truncate">{r.sectionCode || "-"}</div>
-                    </td>
+                pagedRows.map((r) => {
+                  const rowBadge = getStatusBadge(r.approvalStatus);
+                  const RowIcon = rowBadge.icon;
 
-                    <td className="px-3 py-3 sticky left-[140px] z-30 bg-white group-hover:bg-slate-50 transition-colors border-r border-slate-200">
-                      <span className="text-slate-700 text-xs truncate block">{r.sectionName || "-"}</span>
-                    </td>
+                  return (
+                    <tr
+                      key={r.key}
+                      className={`group hover:bg-slate-50 transition-colors ${
+                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                          ? "bg-red-50/40 hover:bg-red-50"
+                          : r.approvalStatus === "system_approved"
+                            ? "bg-amber-50/30 hover:bg-amber-50/50"
+                            : ""
+                      }`}
+                    >
+                      <td className={`px-3 py-3 sticky left-0 z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${
+                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                          ? "bg-red-50 text-red-700 font-bold"
+                          : r.approvalStatus === "system_approved"
+                            ? "bg-amber-50 text-amber-700 font-bold"
+                            : "bg-white"
+                      }`}>
+                        <div className="font-medium text-xs truncate">{r.sectionCode || "-"}</div>
+                      </td>
 
-                    <td className="px-3 py-3 sticky left-[320px] z-30 bg-white group-hover:bg-slate-50 transition-colors border-r border-slate-200">
-                      <span className="text-slate-700 text-xs truncate block">{r.lineCode || "-"}</span>
-                    </td>
+                      <td className={`px-3 py-3 sticky left-[140px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${
+                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                          ? "bg-red-50 text-red-700"
+                          : r.approvalStatus === "system_approved"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-white"
+                      }`}>
+                        <span className="text-xs truncate block">{r.sectionName || "-"}</span>
+                      </td>
 
-                    <td className="px-3 py-3 sticky left-[460px] z-30 bg-white group-hover:bg-slate-50 transition-colors border-r-2 border-slate-300">
-                      <span className="text-slate-700 text-xs truncate block">{r.lineDescription || "-"}</span>
-                    </td>
+                      <td className={`px-3 py-3 sticky left-[320px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${
+                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                          ? "bg-red-50 text-red-700"
+                          : r.approvalStatus === "system_approved"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-white"
+                      }`}>
+                        <span className="text-xs truncate block">{r.lineCode || "-"}</span>
+                      </td>
 
-                    <td className="px-3 py-3 text-center">
-                      <div className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">
-                        <Clock className="w-2.5 h-2.5" />
-                        {r.year || "-"}
-                      </div>
-                    </td>
+                      <td className={`px-3 py-3 sticky left-[460px] z-30 group-hover:bg-slate-50 transition-colors border-r-2 border-slate-300 ${
+                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                          ? "bg-red-50 text-red-700"
+                          : r.approvalStatus === "system_approved"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-white"
+                      }`}>
+                        <span className="text-xs truncate block">{r.lineDescription || "-"}</span>
+                      </td>
 
-                    {MONTHS.map((m) => {
-                      const sp = safeNum(r?.monthData?.[m]?.salesPlan);
-                      const pp = safeNum(r?.monthData?.[m]?.prodPlan);
-                      return (
-                        <td key={m} className="px-2 py-3 text-center border-l border-slate-100">
-                          <div className="flex justify-between items-center gap-1">
-                            <span className="w-full text-center text-xs text-blue-700 font-medium">
-                              {sp !== null ? sp : <span className="text-slate-300">—</span>}
-                            </span>
-                            <span className="text-slate-200">|</span>
-                            <span className="w-full text-center text-xs text-emerald-700 font-medium">
-                              {pp !== null ? pp : <span className="text-slate-300">—</span>}
-                            </span>
-                          </div>
-                        </td>
-                      );
-                    })}
-
-                    <td className="px-3 py-3 text-right">
-                      {canManageRequirements && (
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-500 hover:text-blue-600"
-                            onClick={() => openEditRow(r)}
-                            title="Edit"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-500 hover:text-red-600"
-                            onClick={() => handleDeleteRow(r)}
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                      <td className="px-3 py-3 text-center">
+                        <div className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">
+                          <Clock className="w-2.5 h-2.5" />
+                          {r.year || "-"}
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      <td className="px-3 py-3 text-center border-l border-slate-100">
+                        <div
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${rowBadge.className}`}
+                          title={
+                            r.approvalStatus === "system_approved" && r.approvalOwnerName
+                              ? `Approved by system for ${r.approvalOwnerName}`
+                              : rowBadge.label
+                          }
+                        >
+                          <RowIcon className="w-3 h-3" />
+                          <span>
+                            {r.approvalStatus === "system_approved" && r.approvalOwnerName
+                              ? `System (${r.approvalOwnerName})`
+                              : rowBadge.label}
+                          </span>
+                        </div>
+                      </td>
+
+                      {MONTHS.map((m) => {
+                        const cell = r?.monthData?.[m] || {};
+                        const sp = safeNum(cell?.salesPlan);
+                        const pp = safeNum(cell?.prodPlan);
+
+                        return (
+                          <td key={m} className="px-2 py-3 text-center border-l border-slate-100 align-top">
+                            <div className="flex justify-between items-start gap-1">
+                              <span className={`w-full text-center text-xs font-bold ${getSalesPlanClass(cell)}`}>
+                                {sp !== null ? sp : <span className="text-slate-300">—</span>}
+                              </span>
+
+                              <span className="text-slate-200">|</span>
+
+                              <span className={`w-full text-center text-xs font-bold ${getProdPlanClass(cell)}`}>
+                                {pp !== null ? pp : <span className="text-slate-300">—</span>}
+                              </span>
+                            </div>
+
+                            <MonthStatusLabel cell={cell} />
+                          </td>
+                        );
+                      })}
+
+                      <td className="px-3 py-3 text-right">
+                        {canManageRequirements && (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-slate-500 hover:text-blue-600"
+                              onClick={() => openEditRow(r)}
+                              title="Edit"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-slate-500 hover:text-red-600"
+                              onClick={() => handleDeleteRow(r)}
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -773,7 +1096,7 @@ export default function SetRequirements() {
               </DialogTitle>
             </div>
             <DialogDescription className="text-slate-500 ml-4.5">
-              Upload Excel file to update Sales & Production plans.
+              Upload Excel file to update Sales & Production plans. Records will remain red until section head approval.
             </DialogDescription>
           </DialogHeader>
 

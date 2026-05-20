@@ -12,16 +12,34 @@ import {
     getRequirementLogs,
     updateRequirement,
     batchUpdateRequirements,
-    deleteRequirement
+    deleteRequirement,
+    approveBatchRequirements,
 } from "../controllers/requirement.controller.js";
 
 const router = Router();
-// Limit upload size to 5MB? Using memory storage or file storage? 
-// Controller expects req.file.buffer (for ExcelJS loaded from buffer), so use memoryStorage.
+
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Public approval links from email
+router.get("/approve-batch", approveBatchRequirements);
+
+// IMPORTANT: edit requirement approve/reject link
+// Example: /api/requirements/123?token=xxx&action=approve
+router.get("/:id", (req, res, next) => {
+    if (req.query.token && req.query.action) {
+        return updateRequirement(req, res, next);
+    }
+    return next();
+});
+
 // Create manually
-router.post("/", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("setrequirement"), createRequirement);
+router.post(
+    "/",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    checkPrivilege("setrequirement"),
+    createRequirement
+);
 
 // Upload Requirements Excel
 router.post(
@@ -34,24 +52,69 @@ router.post(
 );
 
 // Get Filters
-router.get("/filters", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getRequirementFilters);
+router.get(
+    "/filters",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    getRequirementFilters
+);
 
 // Get Logs
-router.get("/logs", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getRequirementLogs);
-router.get("/logs/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getRequirementLogs);
+router.get(
+    "/logs",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    getRequirementLogs
+);
 
-// Get All (Filterable)
-router.get("/", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getRequirements);
+router.get(
+    "/logs/:id",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    getRequirementLogs
+);
+
+// Batch Update
+router.put(
+    "/batch-update",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    checkPrivilege("setrequirement"),
+    batchUpdateRequirements
+);
+
+// Get All
+router.get(
+    "/",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    getRequirements
+);
 
 // Get One
-router.get("/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getRequirementById);
+router.get(
+    "/:id",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    getRequirementById
+);
 
 // Update One
-router.patch("/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("setrequirement"), updateRequirement);
-// Batch Update (metadata like supervisor/mentor/line)
-router.put("/batch-update", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("setrequirement"), batchUpdateRequirements);
+router.patch(
+    "/:id",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    checkPrivilege("setrequirement"),
+    updateRequirement
+);
 
 // Delete One
-router.delete("/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("setrequirement"), deleteRequirement);
+router.delete(
+    "/:id",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN"),
+    checkPrivilege("setrequirement"),
+    deleteRequirement
+);
 
 export default router;

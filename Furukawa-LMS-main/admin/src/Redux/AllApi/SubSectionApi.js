@@ -35,6 +35,15 @@ export const SubSectionApi = createApi({
             providesTags: (result, error, lineId) => [{ type: 'SubSection', id: `line-${lineId}` }],
         }),
 
+        // Get Sub-Section by ID
+        getSubSectionById: builder.query({
+            query: (id) => ({
+                url: `/api/sub-sections/${id}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, id) => [{ type: "SubSection", id }],
+        }),
+
         // Update Sub-Section
         updateSubSection: builder.mutation({
             query: ({ id, ...data }) => ({
@@ -60,6 +69,7 @@ export const {
     useCreateSubSectionMutation,
     useGetSubSectionsQuery,
     useGetSubSectionsByLineQuery,
+    useGetSubSectionByIdQuery,
     useUpdateSubSectionMutation,
     useDeleteSubSectionMutation,
 } = SubSectionApi;

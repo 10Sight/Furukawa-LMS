@@ -7,18 +7,24 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
-import { useGetAllQuizzesQuery } from "@/Redux/AllApi/QuizApi";
-import { 
-  IconFileText, 
-  IconSearch, 
-  IconFilter, 
+import { useGetAllQuizzesQuery, useDeleteQuizMutation } from "@/Redux/AllApi/QuizApi";
+import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetLinesQuery } from "@/Redux/AllApi/LineApi";
+import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
+import {
+  IconFileText,
+  IconSearch,
+  IconFilter,
   IconExternalLink,
   IconRefresh,
   IconClock,
   IconCertificate,
   IconPlayerPlay,
-  IconLayoutGrid
+  IconLayoutGrid,
+  IconEdit,
+  IconTrash
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -36,8 +42,47 @@ const TestPaper = () => {
   const canRead = hasPermission("test_paper:read") || currentUser?.role === "STUDENT" || currentUser?.isEmployee;
   const canManage = hasPermission("test_paper:create");
 
-  const [selectedDepartment, setSelectedDepartment] = useState("ALL");
-  const [selectedSection, setSelectedSection] = useState("ALL");
+  const isAuthorizedToAccessAll = currentUser?.role === "SUPERADMIN" || 
+                                  currentUser?.role === "ADMIN" || 
+                                  hasPermission("test_paper:access_all");
+
+  const canEdit = currentUser?.role === "SUPERADMIN" || 
+                  currentUser?.role === "ADMIN" || 
+                  hasPermission("test_paper:edit");
+
+  const canDelete = currentUser?.role === "SUPERADMIN" || 
+                    currentUser?.role === "ADMIN" || 
+                    hasPermission("test_paper:delete");
+
+  const [selectedDepartment, setSelectedDepartment] = useState(() => {
+    if (!isAuthorizedToAccessAll && currentUser?.departmentId) {
+      return String(currentUser.departmentId);
+    }
+    return "ALL";
+  });
+
+  const [selectedSection, setSelectedSection] = useState(() => {
+    if (!isAuthorizedToAccessAll && currentUser?.sectionId) {
+      return String(currentUser.sectionId);
+    }
+    return "ALL";
+  });
+
+  const [selectedLine, setSelectedLine] = useState(() => {
+    if (!isAuthorizedToAccessAll && currentUser?.lineId) {
+      return String(currentUser.lineId);
+    }
+    return "ALL";
+  });
+
+  const [selectedSubSection, setSelectedSubSection] = useState(() => {
+    if (!isAuthorizedToAccessAll && currentUser?.subSectionId) {
+      return String(currentUser.subSectionId);
+    }
+    return "ALL";
+  });
+  const [selectedLevel, setSelectedLevel] = useState("ALL");
+  const [selectedTestType, setSelectedTestType] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
 
@@ -52,6 +97,44 @@ const TestPaper = () => {
   );
   const sections = sectionsData?.data || [];
 
+  // Fetch all lines
+  const { data: linesData } = useGetLinesQuery();
+  const allLines = linesData?.data || [];
+
+  // Filtered lines based on selectedSection
+  const lines = useMemo(() => {
+    if (selectedSection !== "ALL") {
+      return allLines.filter(l => String(l.sectionId || l._id) === selectedSection);
+    }
+    if (selectedDepartment !== "ALL") {
+      return allLines.filter(l => String(l.department || l.departmentId) === selectedDepartment);
+    }
+    return allLines;
+  }, [allLines, selectedSection, selectedDepartment]);
+
+  // Fetch all sub-sections for rendering names
+  const { data: subSectionsData } = useGetSubSectionsQuery({ limit: 1000 });
+  const subSections = Array.isArray(subSectionsData?.data)
+    ? subSectionsData.data
+    : (subSectionsData?.data?.subSections || []);
+
+  // Filtered sub-sections options based on selectedLine
+  const filteredSubSections = useMemo(() => {
+    if (selectedLine !== "ALL") {
+      return subSections.filter(s => String(s.lineId) === selectedLine);
+    }
+    if (selectedSection !== "ALL") {
+      // Find lines that belong to this section
+      const sectionLineIds = allLines.filter(l => String(l.sectionId) === selectedSection).map(l => String(l.id || l._id));
+      return subSections.filter(s => sectionLineIds.includes(String(s.lineId)));
+    }
+    return subSections;
+  }, [subSections, selectedLine, selectedSection, allLines]);
+
+  // Fetch active config levels
+  const { data: activeConfigData } = useGetActiveConfigQuery();
+  const activeLevels = activeConfigData?.data?.levels || [];
+
   // Fetch Quizzes with filters
   const { data: quizzesData, isLoading: quizzesLoading, refetch } = useGetAllQuizzesQuery({
     page,
@@ -62,12 +145,67 @@ const TestPaper = () => {
     isDojo: currentUser?.isTemporary ? true : undefined,
   });
 
-  const quizzes = quizzesData?.data?.quizzes || [];
+  const [deleteQuiz] = useDeleteQuizMutation();
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Are you sure you want to delete this test paper? This action cannot be undone.")) {
+      try {
+        await deleteQuiz(id).unwrap();
+        toast.success("Test paper deleted successfully");
+        refetch();
+      } catch (err) {
+        toast.error(err?.data?.message || "Failed to delete test paper");
+      }
+    }
+  };
+
+  const rawQuizzes = quizzesData?.data?.quizzes || [];
   const pagination = quizzesData?.data?.pagination || {};
 
+  const quizzes = useMemo(() => {
+    return rawQuizzes.filter(quiz => {
+      // 1. Line Filter
+      if (selectedLine !== "ALL") {
+        const quizLineIds = (quiz.lineId || []).map(String);
+        if (!quizLineIds.includes(selectedLine)) {
+          return false;
+        }
+      }
+
+      // 2. Sub-section Filter
+      if (selectedSubSection !== "ALL") {
+        const quizSubSectionIds = (quiz.subSectionId || []).map(String);
+        if (!quizSubSectionIds.includes(selectedSubSection)) {
+          return false;
+        }
+      }
+
+      // 3. Level Filter
+      if (selectedLevel !== "ALL") {
+        if (quiz.level !== selectedLevel) {
+          return false;
+        }
+      }
+
+      // 4. Test Type Filter
+      if (selectedTestType !== "ALL") {
+        if (selectedTestType === "dojo" && !quiz.isDojo) return false;
+        if (selectedTestType === "handover" && !quiz.isHandover) return false;
+        if (selectedTestType === "theoretical" && !quiz.isTheoretical) return false;
+        if (selectedTestType === "practical" && (quiz.isDojo || quiz.isHandover || quiz.isTheoretical)) return false;
+      }
+
+      return true;
+    });
+  }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType]);
+
   const handleReset = () => {
-    setSelectedDepartment("ALL");
-    setSelectedSection("ALL");
+    setSelectedDepartment(!isAuthorizedToAccessAll && currentUser?.departmentId ? String(currentUser.departmentId) : "ALL");
+    setSelectedSection(!isAuthorizedToAccessAll && currentUser?.sectionId ? String(currentUser.sectionId) : "ALL");
+    setSelectedLine(!isAuthorizedToAccessAll && currentUser?.lineId ? String(currentUser.lineId) : "ALL");
+    setSelectedSubSection(!isAuthorizedToAccessAll && currentUser?.subSectionId ? String(currentUser.subSectionId) : "ALL");
+    setSelectedLevel("ALL");
+    setSelectedTestType("ALL");
     setSearchTerm("");
     setPage(1);
   };
@@ -195,7 +333,7 @@ const TestPaper = () => {
                         </Badge>
                       </TableCell>
                       <TableCell className="pr-8 text-right">
-                        <Button 
+                        <Button
                           className="bg-blue-600 hover:bg-blue-700 text-white font-semibold h-11 px-6 rounded-xl shadow-lg shadow-blue-100 group-hover:scale-105 transition-transform"
                           onClick={() => navigate(`/student/quiz/${quiz._id}`)}
                         >
@@ -230,9 +368,12 @@ const TestPaper = () => {
             Refresh
           </Button>
           {canManage && (
-            <Button onClick={() => navigate("/admin/courses")} className="gap-2">
+            <Button onClick={() => {
+                const base = "/" + (window.location.pathname.split('/')[1] || "admin");
+                navigate(`${base}/add-test-paper`);
+            }} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
               <IconFileText className="h-4 w-4" />
-              Manage Courses
+              Create Test Paper
             </Button>
           )}
         </div>
@@ -246,15 +387,18 @@ const TestPaper = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Department</label>
-              <Select 
-                value={selectedDepartment} 
+              <Select
+                value={selectedDepartment}
                 onValueChange={(val) => {
                   setSelectedDepartment(val);
                   setSelectedSection("ALL");
+                  setSelectedLine("ALL");
+                  setSelectedSubSection("ALL");
                 }}
+                disabled={!isAuthorizedToAccessAll && !!currentUser?.departmentId}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Select Department" />
@@ -272,10 +416,14 @@ const TestPaper = () => {
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Section</label>
-              <Select 
-                value={selectedSection} 
-                onValueChange={setSelectedSection}
-                disabled={selectedDepartment === "ALL"}
+              <Select
+                value={selectedSection}
+                onValueChange={(val) => {
+                  setSelectedSection(val);
+                  setSelectedLine("ALL");
+                  setSelectedSubSection("ALL");
+                }}
+                disabled={(!isAuthorizedToAccessAll && !!currentUser?.sectionId) || selectedDepartment === "ALL"}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={selectedDepartment === "ALL" ? "Select department first" : "Select Section"} />
@@ -292,11 +440,102 @@ const TestPaper = () => {
             </div>
 
             <div className="space-y-2">
+              <label className="text-sm font-medium">Line</label>
+              <Select
+                value={selectedLine}
+                onValueChange={(val) => {
+                  setSelectedLine(val);
+                  setSelectedSubSection("ALL");
+                }}
+                disabled={(!isAuthorizedToAccessAll && !!currentUser?.lineId) || (selectedSection === "ALL" && selectedDepartment === "ALL")}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder={
+                    selectedSection === "ALL" && selectedDepartment === "ALL"
+                      ? "Select section first"
+                      : "Select Line"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Lines</SelectItem>
+                  {lines.map((line) => (
+                    <SelectItem key={line.id || line._id} value={String(line.id || line._id)}>
+                      {line.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Sub-Section</label>
+              <Select
+                value={selectedSubSection}
+                onValueChange={setSelectedSubSection}
+                disabled={(!isAuthorizedToAccessAll && !!currentUser?.subSectionId) || (selectedLine === "ALL" && selectedSection === "ALL")}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder={
+                    selectedLine === "ALL" && selectedSection === "ALL"
+                      ? "Select line first"
+                      : "Select Sub-Section"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Sub-Sections</SelectItem>
+                  {filteredSubSections.map((subSec) => (
+                    <SelectItem key={subSec.id || subSec._id} value={String(subSec.id || subSec._id)}>
+                      {subSec.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Level</label>
+              <Select
+                value={selectedLevel}
+                onValueChange={setSelectedLevel}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Select Level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Levels</SelectItem>
+                  <SelectItem value="L0">L0 (Dojo User)</SelectItem>
+                  {activeLevels.map((lvl) => (
+                    <SelectItem key={lvl.name} value={lvl.name}>
+                      {lvl.name} {lvl.description ? `- ${lvl.description}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Test Type</label>
+              <Select
+                value={selectedTestType}
+                onValueChange={setSelectedTestType}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Select Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Types</SelectItem>
+                  <SelectItem value="dojo">Dojo Hiring</SelectItem>
+                  <SelectItem value="handover">Handover</SelectItem>
+                  <SelectItem value="theoretical">Theoretical</SelectItem>
+                  <SelectItem value="practical">Practical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium">Search</label>
               <div className="relative">
                 <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search quiz title..." 
+                <Input
+                  placeholder="Search quiz title..."
                   className="pl-9 bg-background"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -305,7 +544,7 @@ const TestPaper = () => {
             </div>
 
             <div className="flex items-end">
-              <Button variant="ghost" onClick={handleReset} className="w-full text-muted-foreground">
+              <Button variant="ghost" onClick={handleReset} className="w-full text-muted-foreground hover:bg-slate-100">
                 Reset Filters
               </Button>
             </div>
@@ -319,9 +558,11 @@ const TestPaper = () => {
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
                 <TableHead className="font-semibold">Test Paper Title</TableHead>
+                <TableHead className="font-semibold">Target Sub-Section</TableHead>
+                <TableHead className="font-semibold">Test Type</TableHead>
                 <TableHead className="font-semibold">Course / Module</TableHead>
-                <TableHead className="font-semibold">Scope</TableHead>
-                <TableHead className="font-semibold">Details</TableHead>
+                <TableHead className="font-semibold">Passing Criteria</TableHead>
+                <TableHead className="font-semibold">Total Marks</TableHead>
                 <TableHead className="font-semibold text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -330,15 +571,17 @@ const TestPaper = () => {
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell><Skeleton className="h-5 w-48" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                     <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto rounded-md" /></TableCell>
                   </TableRow>
                 ))
               ) : quizzes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-64 text-center">
+                  <TableCell colSpan={7} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
                       <IconFileText className="h-12 w-12 mb-3 opacity-20" />
                       <p className="text-lg font-medium">No test papers found</p>
@@ -347,75 +590,153 @@ const TestPaper = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                quizzes.map((quiz) => (
-                  <TableRow key={quiz._id} className="group hover:bg-muted/30 transition-colors">
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground group-hover:text-primary transition-colors">
-                          {quiz.title}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {quiz.questions?.length || 0} Questions • {quiz.timeLimit || 0} mins
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <Badge variant="outline" className="w-fit font-normal text-[10px] uppercase tracking-wider">
-                          {quiz.course?.title || "No Course"}
-                        </Badge>
-                        {quiz.module && (
-                          <span className="text-xs text-muted-foreground italic">
-                            {quiz.module.title}
+                quizzes.map((quiz) => {
+                  const totalMarks = quiz.questions?.reduce((sum, q) => sum + (q.marks || 1), 0) || 0;
+                  const passingMarks = Math.ceil((totalMarks * (quiz.passingScore || 70)) / 100);
+
+                  return (
+                    <TableRow key={quiz._id} className="group hover:bg-muted/30 transition-colors">
+                      <TableCell className="align-middle">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                            {quiz.title}
                           </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant="secondary" 
-                        className={cn(
-                          "capitalize font-medium",
-                          quiz.scope === 'course' ? "bg-blue-50 text-blue-700" : 
-                          quiz.scope === 'module' ? "bg-purple-50 text-purple-700" : 
-                          "bg-orange-50 text-orange-700"
-                        )}
-                      >
-                        {quiz.scope}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1 text-xs">
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <IconClock size={14} />
-                          <span>Pass: {quiz.passingScore}%</span>
+                          <span className="text-xs text-muted-foreground">
+                            {quiz.questions?.length || 0} Questions • {quiz.timeLimit || 0} mins
+                          </span>
                         </div>
-                        {quiz.issueCertificate && (
-                          <div className="flex items-center gap-1.5 text-green-600 font-medium">
-                            <IconCertificate size={14} />
-                            <span>Certificate</span>
+                      </TableCell>
+                      <TableCell className="align-middle">
+                        <div className="flex flex-col gap-1 max-w-[200px]">
+                          {(() => {
+                            const quizSubSections = (quiz.subSectionId || [])
+                              .map(id => subSections.find(s => String(s.id) === String(id))?.name)
+                              .filter(Boolean);
+                              
+                            if (quizSubSections.length > 0) {
+                              return (
+                                <div className="flex flex-wrap gap-1">
+                                  {quizSubSections.map((name, index) => (
+                                    <Badge key={index} variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-[10px] py-0 px-1 font-semibold truncate max-w-[120px]">
+                                      {name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              );
+                            }
+                            return <span className="text-xs text-muted-foreground italic">No target</span>;
+                          })()}
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-middle">
+                        <div className="flex flex-wrap gap-1">
+                          {quiz.isDojo && (
+                            <Badge className="bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100/50 text-[10px] font-semibold tracking-wider">
+                              Dojo Hiring
+                            </Badge>
+                          )}
+                          {quiz.isHandover && (
+                            <Badge className="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/50 text-[10px] font-semibold tracking-wider">
+                              Handover
+                            </Badge>
+                          )}
+                          {quiz.isTheoretical && (
+                            <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100/50 text-[10px] font-semibold tracking-wider">
+                              Theoretical
+                            </Badge>
+                          )}
+                          {!quiz.isDojo && !quiz.isHandover && !quiz.isTheoretical && (
+                            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold tracking-wider">
+                              Practical
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-middle">
+                        <div className="flex flex-col gap-1">
+                          <Badge variant="outline" className="w-fit font-normal text-[10px] uppercase tracking-wider">
+                            {quiz.course?.title || "No Course"}
+                          </Badge>
+                          {quiz.module && (
+                            <span className="text-xs text-muted-foreground italic">
+                              {quiz.module.title}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-middle">
+                        <div className="flex flex-col gap-1 text-xs">
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <IconClock size={14} className="text-slate-400" />
+                            <span className="font-medium text-slate-700">{quiz.passingScore}% ({passingMarks} Marks)</span>
                           </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button 
-                        variant="default" 
-                        size="sm" 
-                        onClick={() => {
-                          const base = window.location.pathname.startsWith("/portal") ? "/portal" : 
-                                       window.location.pathname.startsWith("/student") ? "/student" : "/admin";
-                          const quizPath = base === "/student" ? "quiz" : "take-test";
-                          navigate(`${base}/${quizPath}/${quiz._id}`);
-                        }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
-                      >
-                        <IconPlayerPlay className="h-4 w-4" />
-                        <span className="ml-2 font-semibold">Take Test</span>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                          {quiz.issueCertificate && (
+                            <div className="flex items-center gap-1.5 text-green-600 font-medium">
+                              <IconCertificate size={14} />
+                              <span>Certificate</span>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-middle">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold text-foreground text-sm">
+                            {totalMarks} Marks
+                          </span>
+                          {quiz.level && (
+                            <Badge variant="outline" className="w-fit bg-teal-50 text-teal-700 border-teal-200 uppercase font-semibold text-[10px] tracking-wider py-0 px-1.5">
+                              {quiz.level}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right align-middle">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              const base = "/" + (window.location.pathname.split('/')[1] || "admin");
+                              const quizPath = base === "/student" ? "quiz" : "take-test";
+                              navigate(`${base}/${quizPath}/${quiz._id}`);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
+                          >
+                            <IconPlayerPlay className="h-4 w-4" />
+                            <span className="ml-2 font-semibold">Take Test</span>
+                          </Button>
+
+                          {canEdit && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const base = "/" + (window.location.pathname.split('/')[1] || "admin");
+                                navigate(`${base}/edit-test-paper/${quiz._id}`);
+                              }}
+                              className="border-slate-200 hover:bg-slate-50 text-slate-700"
+                              title="Edit Test Paper"
+                            >
+                              <IconEdit className="h-4 w-4 mr-1.5" />
+                              Edit
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(quiz._id)}
+                              className="border-red-200 hover:bg-red-50 text-red-600 hover:text-red-700"
+                              title="Delete Test Paper"
+                            >
+                              <IconTrash className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>

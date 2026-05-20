@@ -3,7 +3,9 @@ import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { IconDeviceFloppy, IconPrinter, IconDownload } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconDownload, IconPhoto, IconMail } from "@tabler/icons-react";
+import jsPDF from 'jspdf';
+import { toPng } from 'html-to-image';
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
 import { exportToExcel } from "@/utils/exportHelper";
@@ -45,6 +47,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const [configHistory, setConfigHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [loadingConfig, setLoadingConfig] = useState(false);
+
+    // Export State
+    const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+    const [emailForPDF, setEmailForPDF] = useState("");
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+    const tableRef = useRef(null);
     const hasInitialized = useRef(false);
     const lastSessionKey = useRef("");
 
@@ -364,7 +372,145 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     };
 
     const handlePrint = () => {
-        window.print();
+        setIsPrintDialogOpen(true);
+    };
+
+    const generatePDFBlob = async () => {
+        if (!tableRef.current) return null;
+        setIsGeneratingPDF(true);
+        try {
+            const margin = 40;
+            const logoHeight = 50;
+            const logoWidth = 150;
+
+            // Use the printable area ref
+            const printableArea = tableRef.current;
+            const tableWidth = printableArea.scrollWidth;
+            const tableHeight = printableArea.scrollHeight;
+
+            const logoUrl = '/fme_transparent.png';
+            const logoImg = await new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => resolve(null);
+                img.src = logoUrl;
+            });
+
+            const tableDataUrl = await toPng(printableArea, {
+                width: tableWidth,
+                height: tableHeight,
+                style: {
+                    transform: 'none',
+                    margin: '0',
+                },
+                backgroundColor: '#ffffff',
+                pixelRatio: 1.5,
+            });
+
+            const pdfWidth = tableWidth + (margin * 2);
+            const pdfHeight = tableHeight + (logoImg ? logoHeight + margin : 0) + (margin * 2);
+
+            const pdf = new jsPDF({
+                orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
+                unit: 'px',
+                format: [pdfWidth, pdfHeight]
+            });
+
+            let currentY = margin;
+            if (logoImg) {
+                pdf.addImage(logoImg, 'PNG', (pdfWidth - logoWidth) / 2, currentY, logoWidth, logoHeight);
+                currentY += logoHeight + margin;
+            }
+
+            pdf.addImage(tableDataUrl, 'PNG', margin, currentY, tableWidth, tableHeight);
+
+            return pdf;
+        } catch (error) {
+            console.error("PDF Generation error:", error);
+            toast.error("Failed to generate PDF.");
+            return null;
+        } finally {
+            setIsGeneratingPDF(false);
+        }
+    };
+
+    const handleDownloadPDF = async () => {
+        const pdf = await generatePDFBlob();
+        if (pdf) {
+            pdf.save(`Handover_Sheet_${departmentName.replace(/\s+/g, '_')}_${date}.pdf`);
+            setIsPrintDialogOpen(false);
+            toast.success("PDF downloaded successfully");
+        }
+    };
+
+    const handleDownloadHighResImage = async () => {
+        if (!tableRef.current) return;
+        const loadingToast = toast.info("Generating high-resolution image...", { duration: 0 });
+        setIsGeneratingPDF(true);
+
+        try {
+            const printableArea = tableRef.current;
+            const tableWidth = printableArea.scrollWidth;
+            const tableHeight = printableArea.scrollHeight;
+
+            const dataUrl = await toPng(printableArea, {
+                width: tableWidth,
+                height: tableHeight,
+                style: {
+                    transform: 'none',
+                    margin: '0',
+                },
+                backgroundColor: '#ffffff',
+                pixelRatio: 3,
+                quality: 1,
+            });
+
+            const link = document.createElement('a');
+            link.download = `Handover_Sheet_${departmentName.replace(/\s+/g, '_')}_${date}.png`;
+            link.href = dataUrl;
+            link.click();
+
+            toast.success("High-res image downloaded!");
+            setIsPrintDialogOpen(false);
+        } catch (error) {
+            console.error("Image export error:", error);
+            toast.error("Failed to generate high-res image.");
+        } finally {
+            toast.dismiss(loadingToast);
+            setIsGeneratingPDF(false);
+        }
+    };
+
+    const handleEmailPDF = async () => {
+        if (!emailForPDF || !emailForPDF.includes('@')) {
+            toast.error("Please enter a valid email address");
+            return;
+        }
+
+        const loadingToast = toast.info("Preparing PDF and sending email...", { duration: 0 });
+        try {
+            const pdf = await generatePDFBlob();
+            if (pdf) {
+                const pdfBase64 = pdf.output('datauristring');
+                setIsGeneratingPDF(true);
+                await axiosInstance.post('/api/departments/handover-sheet/pdf/send', {
+                    email: emailForPDF,
+                    pdfBase64,
+                    departmentName: departmentName,
+                    date: date
+                });
+                toast.success("Email sent successfully!");
+                toast.dismiss(loadingToast);
+                setIsPrintDialogOpen(false);
+                setEmailForPDF("");
+            }
+        } catch (error) {
+            console.error("Email error:", error);
+            toast.error("Failed to send email");
+            toast.dismiss(loadingToast);
+        } finally {
+            setIsGeneratingPDF(false);
+        }
     };
 
     if (loading) return <div className="flex justify-center p-8"><IconDeviceFloppy className="h-8 w-8 animate-spin" /></div>;
@@ -372,157 +518,245 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     return (
         <>
             <Card className="w-full shadow-lg print:shadow-none">
-                <CardHeader className="border-b bg-gray-50/50">
-                    <div className="grid grid-cols-[1fr_2fr_1fr] items-start gap-4 py-4 min-h-[100px]">
-                        <div className="flex items-center h-full">
-                            {/* Logo or empty space for symmetry */}
-                            <img src="/fme_transparent.png" alt="FURUKAWA" className="h-12 w-auto object-contain" />
-                        </div>
-                        <CardTitle className="text-xl font-bold text-center uppercase self-center">
-                            List of Employees Handed Over to Shop Floor After Induction Training
-                        </CardTitle>
-                        <div className="text-[10px] text-right text-muted-foreground space-y-1 self-start">
-                            <div className="flex items-center justify-end gap-1">
-                                <span className="font-semibold whitespace-nowrap">DOCUMENT NO.</span>
-                                <Input
-                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                    value={metadata.docNo}
-                                    onChange={(e) => handleMetadataChange('docNo', e.target.value)}
-                                />
+                <div ref={tableRef} className="bg-white">
+                    <CardHeader className="border-b bg-gray-50/50">
+                        <div className="grid grid-cols-[1fr_2fr_1fr] items-start gap-4 py-4 min-h-[100px]">
+                            <div className="flex items-center h-full">
+                                {/* Logo or empty space for symmetry */}
+                                <img src="/fme_transparent.png" alt="FURUKAWA" className="h-12 w-auto object-contain" />
                             </div>
-                            <div className="flex items-center justify-end gap-1">
-                                <span className="font-semibold whitespace-nowrap">REVISION No.</span>
-                                <Input
-                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                    value={metadata.revNo}
-                                    onChange={(e) => handleMetadataChange('revNo', e.target.value)}
-                                />
-                            </div>
-                            <div className="flex items-center justify-end gap-1">
-                                <span className="font-semibold whitespace-nowrap">REVISION DATE:</span>
-                                <Input
-                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                    value={metadata.revDate}
-                                    onChange={(e) => handleMetadataChange('revDate', e.target.value)}
-                                />
-                            </div>
-                            <div className="flex items-center justify-end gap-1">
-                                <span className="font-semibold whitespace-nowrap">ISSUE DT.</span>
-                                <Input
-                                    className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                    value={metadata.issueDate}
-                                    onChange={(e) => handleMetadataChange('issueDate', e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-6 space-y-6">
-                    {/* Meta Info */}
-                    <div className="grid grid-cols-2 gap-8 text-sm font-medium">
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-2">
-                                <span>From:</span>
-                                <span className="text-blue-600">Education Centre</span>
+                            <CardTitle className="text-xl font-bold text-center uppercase self-center">
+                                List of Employees Handed Over to Shop Floor After Induction Training
+                            </CardTitle>
+                            <div className="text-[10px] text-right text-muted-foreground space-y-1 self-start">
+                                <div className="flex items-center justify-end gap-1">
+                                    <span className="font-semibold whitespace-nowrap">DOCUMENT NO.</span>
+                                    <Input
+                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
+                                        value={metadata.docNo}
+                                        onChange={(e) => handleMetadataChange('docNo', e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span className="font-semibold whitespace-nowrap">REVISION No.</span>
+                                    <Input
+                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
+                                        value={metadata.revNo}
+                                        onChange={(e) => handleMetadataChange('revNo', e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span className="font-semibold whitespace-nowrap">REVISION DATE:</span>
+                                    <Input
+                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
+                                        value={metadata.revDate}
+                                        onChange={(e) => handleMetadataChange('revDate', e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span className="font-semibold whitespace-nowrap">ISSUE DT.</span>
+                                    <Input
+                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
+                                        value={metadata.issueDate}
+                                        onChange={(e) => handleMetadataChange('issueDate', e.target.value)}
+                                    />
+                                </div>
                             </div>
                         </div>
-                        <div className="space-y-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                                <span>To:</span>
-                                <span className="text-blue-600">{(sectionName ? `${departmentName} - ${sectionName}` : departmentName) || "Department"}</span>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                        {/* Meta Info */}
+                        <div className="grid grid-cols-2 gap-8 text-sm font-medium">
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <span>From:</span>
+                                    <span className="text-blue-600">Education Centre</span>
+                                </div>
                             </div>
-                            <div className="flex items-center justify-end gap-2">
-                                <span>Date:</span>
-                                <Input
-                                    type="date"
-                                    value={date}
-                                    onChange={(e) => setDate(e.target.value)}
-                                    className="w-40 h-8"
-                                />
-                            </div>
-                            <div className="flex items-center gap-2 justify-end no-print">
-                                {isSubmitted && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold border border-green-200 animate-in fade-in zoom-in duration-300">
-                                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                                        SUBMITTED {submittedAt && `ON ${format(new Date(submittedAt), "PP")}`}
-                                    </div>
-                                )}
-                                <Button variant="outline" onClick={fetchHistory}>
-                                    <IconHistory className="h-4 w-4 mr-2" />
-                                    History
-                                </Button>
-                                <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
-                                    <IconSettings className="h-4 w-4 mr-2" />
-                                    Edit Layout
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    className="border-green-600 text-green-600 hover:bg-green-50"
-                                    onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
-                                >
-                                    <IconDownload className="h-4 w-4 mr-2" />
-                                    Export
-                                </Button>
-                                <Button variant="outline" onClick={handlePrint}>
-                                    <IconPrinter className="h-4 w-4 mr-2" />
-                                    Print
-                                </Button>
-                                <Button
-                                    className="bg-green-600 hover:bg-green-700 text-white border-green-700"
-                                    onClick={() => handleSave(false)}
-                                    disabled={saving}
-                                >
-                                    <IconDeviceFloppy className="h-4 w-4 mr-2" />
-                                    {saving ? "Saving..." : "Save Progress"}
-                                </Button>
-                                <Button
-                                    className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all"
-                                    onClick={() => handleSave(true)}
-                                    disabled={saving}
-                                >
-                                    <Save className="h-4 w-4 mr-2" />
-                                    {saving ? "Submitting..." : "Submit & Email"}
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Main Table */}
-                    <div className="border border-gray-300 overflow-x-auto">
-                        <table className="w-full text-xs border-collapse">
-                            <thead>
-                                <tr className="bg-gray-100">
-                                    {tableConfig && tableConfig.columns ? (
-                                        tableConfig.columns.map((col, idx) => (
-                                            <th key={idx} className={`border p-2 ${col.className || ""}`} style={col.style || {}}>
-                                                {col.header}
-                                            </th>
-                                        ))
-                                    ) : (
-                                        <>
-                                            <th className="border p-2 whitespace-nowrap">SN.</th>
-                                            <th className="border p-2 whitespace-nowrap">Employee Name</th>
-                                            <th className="border p-2 whitespace-nowrap">Emp. Code</th>
-                                            <th className="border p-2 whitespace-nowrap">Marks Secured in Induction Training</th>
-                                            <th className="border p-2 whitespace-nowrap">Department</th>
-                                            <th className="border p-2 whitespace-nowrap">Process</th>
-                                            <th className="border p-2 whitespace-nowrap">Mentor</th>
-                                            <th className="border p-2 whitespace-nowrap">1st Interview Accident</th>
-                                            <th className="border p-2 whitespace-nowrap">2nd Interview Practical</th>
-                                            <th className="border p-2 whitespace-nowrap">Approve / Reject</th>
-                                        </>
+                            <div className="space-y-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                    <span>To:</span>
+                                    <span className="text-blue-600">{(sectionName ? `${departmentName} - ${sectionName}` : departmentName) || "Department"}</span>
+                                </div>
+                                <div className="flex items-center justify-end gap-2">
+                                    <span>Date:</span>
+                                    <Input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        className="w-40 h-8"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2 justify-end no-print">
+                                    {isSubmitted && (
+                                        <div className="flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold border border-green-200 animate-in fade-in zoom-in duration-300">
+                                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                                            SUBMITTED {submittedAt && `ON ${format(new Date(submittedAt), "PP")}`}
+                                        </div>
                                     )}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {entries.map((entry, index) => (
-                                    <tr key={entry.studentId || index} className="hover:bg-gray-50">
+                                    <Button variant="outline" onClick={fetchHistory}>
+                                        <IconHistory className="h-4 w-4 mr-2" />
+                                        History
+                                    </Button>
+                                    <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
+                                        <IconSettings className="h-4 w-4 mr-2" />
+                                        Edit Layout
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        className="border-green-600 text-green-600 hover:bg-green-50"
+                                        onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
+                                    >
+                                        <IconDownload className="h-4 w-4 mr-2" />
+                                        Export
+                                    </Button>
+                                    <Button variant="outline" onClick={handlePrint}>
+                                        <IconPrinter className="h-4 w-4 mr-2" />
+                                        Print
+                                    </Button>
+                                    <Button
+                                        className="bg-green-600 hover:bg-green-700 text-white border-green-700"
+                                        onClick={() => handleSave(false)}
+                                        disabled={saving}
+                                    >
+                                        <IconDeviceFloppy className="h-4 w-4 mr-2" />
+                                        {saving ? "Saving..." : "Save Progress"}
+                                    </Button>
+                                    <Button
+                                        className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all"
+                                        onClick={() => handleSave(true)}
+                                        disabled={saving}
+                                    >
+                                        <Save className="h-4 w-4 mr-2" />
+                                        {saving ? "Submitting..." : "Submit & Email"}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Main Table */}
+                        <div className="border border-gray-300">
+                            <table className="w-full text-xs border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-100">
                                         {tableConfig && tableConfig.columns ? (
-                                            tableConfig.columns.map((col, colIdx) => (
-                                                <td key={colIdx} className="border p-1">
-                                                    {col.field === 'sn' ? (
-                                                        <div className="text-center">{index + 1}</div>
-                                                    ) : col.field === 'employeeName' && !col.readOnly ? (
+                                            tableConfig.columns.map((col, idx) => (
+                                                <th key={idx} className={`border p-2 ${col.className || ""}`} style={col.style || {}}>
+                                                    {col.header}
+                                                </th>
+                                            ))
+                                        ) : (
+                                            <>
+                                                <th className="border p-2">SN.</th>
+                                                <th className="border p-2">Employee Name</th>
+                                                <th className="border p-2">Emp. Code</th>
+                                                <th className="border p-2">Marks Secured in Induction Training</th>
+                                                <th className="border p-2">Department</th>
+                                                <th className="border p-2">Process</th>
+                                                <th className="border p-2">Mentor</th>
+                                                <th className="border p-2">1st Interview Accident</th>
+                                                <th className="border p-2">2nd Interview Practical</th>
+                                                <th className="border p-2">Approve / Reject</th>
+                                            </>
+                                        )}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {entries.map((entry, index) => (
+                                        <tr key={entry.studentId || index} className="hover:bg-gray-50">
+                                            {tableConfig && tableConfig.columns ? (
+                                                tableConfig.columns.map((col, colIdx) => (
+                                                    <td key={colIdx} className="border p-1">
+                                                        {col.field === 'sn' ? (
+                                                            <div className="text-center">{index + 1}</div>
+                                                        ) : col.field === 'employeeName' && !col.readOnly ? (
+                                                            <UserAutocomplete
+                                                                mode="all"
+                                                                excludeAdmins={true}
+                                                                excludeTrainers={true}
+                                                                value={entry.employeeName}
+                                                                onChange={(user) => handleUserSelect(index, user)}
+                                                                onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
+                                                                placeholder="Search..."
+                                                                compact={true}
+                                                                className="w-full"
+                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
+                                                            />
+                                                        ) : col.field === 'mentor' && !col.readOnly ? (
+                                                            <UserAutocomplete
+                                                                mode="all"
+                                                                excludeAdmins={true}
+                                                                value={entry.mentor}
+                                                                onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
+                                                                onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
+                                                                placeholder="Search..."
+                                                                compact={true}
+                                                                className="w-full"
+                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
+                                                            />
+                                                        ) : (col.field === 'department' || col.field === 'departmentId') && !col.readOnly ? (
+                                                            <Select
+                                                                key={`dept-select-${index}-${entry.studentId || 'new'}`}
+                                                                value={entry.departmentId ? String(entry.departmentId) : undefined}
+                                                                onValueChange={(val) => {
+                                                                    const deptId = val;
+                                                                    const dept = departments.find(d => String(d.id || d._id) === String(deptId));
+                                                                    handleEntryChange(index, 'departmentId', deptId);
+                                                                    handleEntryChange(index, 'department', dept?.name || "");
+                                                                }}
+                                                            >
+                                                                <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs font-medium text-blue-600 bg-transparent">
+                                                                    <SelectValue placeholder="Dept" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {departments.map(d => (
+                                                                        <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
+                                                                            {d.name || d.deptName}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        ) : col.field === 'process' ? (
+                                                            <Select
+                                                                key={`process-select-${index}-${entry.studentId || 'new'}`}
+                                                                value={entry.process || ""}
+                                                                onValueChange={(val) => handleEntryChange(index, 'process', val)}
+                                                            >
+                                                                <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
+                                                                    <SelectValue placeholder="Process" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {machines.length > 0 ? (
+                                                                        machines.map((m, i) => (
+                                                                            <SelectItem key={m.id || m._id || i} value={m.name || m.machineName}>
+                                                                                {m.name || m.machineName}
+                                                                            </SelectItem>
+                                                                        ))
+                                                                    ) : (
+                                                                        <SelectItem value="none" disabled>No Processes Found</SelectItem>
+                                                                    )}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        ) : col.readOnly ? (
+                                                            <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
+                                                                {entry[col.field]}
+                                                            </div>
+                                                        ) : (
+                                                            <Input
+                                                                value={entry[col.field] || ""}
+                                                                onChange={(e) => handleEntryChange(index, col.field, e.target.value)}
+                                                                className="h-7 min-w-[20px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                                size={Math.max((entry[col.field] || "").toString().length || 1, 5)}
+                                                            />
+                                                        )}
+                                                    </td>
+                                                ))
+                                            ) : (
+                                                <>
+                                                    <td className="border p-1 text-center font-medium">
+                                                        {index + 1}
+                                                    </td>
+                                                    <td className="border p-1">
                                                         <UserAutocomplete
                                                             mode="all"
                                                             excludeAdmins={true}
@@ -530,26 +764,32 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             value={entry.employeeName}
                                                             onChange={(user) => handleUserSelect(index, user)}
                                                             onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
-                                                            placeholder="Search..."
+                                                            placeholder="Search Employee..."
                                                             compact={true}
-                                                            className="w-full"
+                                                            includeTemporary="only"
+                                                            className="min-w-[150px]"
                                                             inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                         />
-                                                    ) : col.field === 'mentor' && !col.readOnly ? (
-                                                        <UserAutocomplete
-                                                            mode="all"
-                                                            excludeAdmins={true}
-                                                            value={entry.mentor}
-                                                            onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
-                                                            onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
-                                                            placeholder="Search..."
-                                                            compact={true}
-                                                            className="w-full"
-                                                            inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
+                                                    </td>
+                                                    <td className="border p-1 text-center">
+                                                        <Input
+                                                            value={entry.empCode || ""}
+                                                            onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
+                                                            className="h-7 min-w-[40px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                            size={Math.max((entry.empCode || "").length || 1, 8)}
                                                         />
-                                                    ) : (col.field === 'department' || col.field === 'departmentId') && !col.readOnly ? (
+                                                    </td>
+                                                    <td className="border p-1 text-center">
+                                                        <Input
+                                                            value={entry.marks}
+                                                            onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
+                                                            className="h-7 min-w-[30px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                            size={Math.max((entry.marks || "").toString().length || 1, 4)}
+                                                        />
+                                                    </td>
+                                                    <td className="border p-1 text-center">
                                                         <Select
-                                                            key={`dept-select-${index}-${entry.studentId || 'new'}`}
+                                                            key={`dept-select-def-${index}-${entry.studentId || 'new'}`}
                                                             value={entry.departmentId ? String(entry.departmentId) : undefined}
                                                             onValueChange={(val) => {
                                                                 const deptId = val;
@@ -559,7 +799,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             }}
                                                         >
                                                             <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs font-medium text-blue-600 bg-transparent">
-                                                                <SelectValue placeholder="Dept" />
+                                                                <SelectValue placeholder="Select Dept" />
                                                             </SelectTrigger>
                                                             <SelectContent>
                                                                 {departments.map(d => (
@@ -569,9 +809,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 ))}
                                                             </SelectContent>
                                                         </Select>
-                                                    ) : col.field === 'process' ? (
+                                                    </td>
+                                                    <td className="border p-1 text-center">
                                                         <Select
-                                                            key={`process-select-${index}-${entry.studentId || 'new'}`}
+                                                            key={`process-select-def-${index}-${entry.studentId || 'new'}`}
                                                             value={entry.process || ""}
                                                             onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                         >
@@ -590,236 +831,220 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 )}
                                                             </SelectContent>
                                                         </Select>
-                                                    ) : col.readOnly ? (
-                                                        <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
-                                                            {entry[col.field]}
-                                                        </div>
-                                                    ) : (
-                                                        <Input
-                                                            value={entry[col.field] || ""}
-                                                            onChange={(e) => handleEntryChange(index, col.field, e.target.value)}
-                                                            className="h-7 min-w-[20px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                            size={Math.max((entry[col.field] || "").toString().length || 1, 5)}
+                                                    </td>
+                                                    <td className="border p-1">
+                                                        <UserAutocomplete
+                                                            mode="all"
+                                                            excludeAdmins={true}
+                                                            value={entry.mentor}
+                                                            onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
+                                                            onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
+                                                            placeholder="Search Mentor..."
+                                                            compact={true}
+                                                            className="min-w-[120px]"
+                                                            inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
                                                         />
-                                                    )}
-                                                </td>
-                                            ))
-                                        ) : (
-                                            <>
-                                                <td className="border p-1 text-center font-medium whitespace-nowrap">
-                                                    {index + 1}
-                                                </td>
-                                                <td className="border p-1">
-                                                    <UserAutocomplete
-                                                        mode="all"
-                                                        excludeAdmins={true}
-                                                        excludeTrainers={true}
-                                                        value={entry.employeeName}
-                                                        onChange={(user) => handleUserSelect(index, user)}
-                                                        onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
-                                                        placeholder="Search Employee..."
-                                                        compact={true}
-                                                        includeTemporary="only"
-                                                        className="min-w-[150px]"
-                                                        inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
-                                                    />
-                                                </td>
-                                                <td className="border p-1 text-center">
-                                                    <Input
-                                                        value={entry.empCode || ""}
-                                                        onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
-                                                        className="h-7 min-w-[40px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                        size={Math.max((entry.empCode || "").length || 1, 8)}
-                                                    />
-                                                </td>
-                                                <td className="border p-1 text-center">
-                                                    <Input
-                                                        value={entry.marks}
-                                                        onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
-                                                        className="h-7 min-w-[30px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                        size={Math.max((entry.marks || "").toString().length || 1, 4)}
-                                                    />
-                                                </td>
-                                                <td className="border p-1 text-center">
-                                                    <Select
-                                                        key={`dept-select-def-${index}-${entry.studentId || 'new'}`}
-                                                        value={entry.departmentId ? String(entry.departmentId) : undefined}
-                                                        onValueChange={(val) => {
-                                                            const deptId = val;
-                                                            const dept = departments.find(d => String(d.id || d._id) === String(deptId));
-                                                            handleEntryChange(index, 'departmentId', deptId);
-                                                            handleEntryChange(index, 'department', dept?.name || "");
-                                                        }}
-                                                    >
-                                                        <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs font-medium text-blue-600 bg-transparent">
-                                                            <SelectValue placeholder="Select Dept" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {departments.map(d => (
-                                                                <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
-                                                                    {d.name || d.deptName}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </td>
-                                                <td className="border p-1 text-center">
-                                                    <Select
-                                                        key={`process-select-def-${index}-${entry.studentId || 'new'}`}
-                                                        value={entry.process || ""}
-                                                        onValueChange={(val) => handleEntryChange(index, 'process', val)}
-                                                    >
-                                                        <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
-                                                            <SelectValue placeholder="Process" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {machines.length > 0 ? (
-                                                                machines.map((m, i) => (
-                                                                    <SelectItem key={m.id || m._id || i} value={m.name || m.machineName}>
-                                                                        {m.name || m.machineName}
-                                                                    </SelectItem>
-                                                                ))
-                                                            ) : (
-                                                                <SelectItem value="none" disabled>No Processes Found</SelectItem>
-                                                            )}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </td>
-                                                <td className="border p-1">
-                                                    <UserAutocomplete
-                                                        mode="all"
-                                                        excludeAdmins={true}
-                                                        value={entry.mentor}
-                                                        onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
-                                                        onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
-                                                        placeholder="Search Mentor..."
-                                                        compact={true}
-                                                        className="min-w-[120px]"
-                                                        inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
-                                                    />
-                                                </td>
-                                                <td className="border p-1 text-center">
-                                                    <Input
-                                                        value={entry.interview1}
-                                                        onChange={(e) => handleEntryChange(index, 'interview1', e.target.value)}
-                                                        className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                        size={Math.max((entry.interview1 || "").length || 1, 10)}
-                                                    />
-                                                </td>
-                                                <td className="border p-1 text-center">
-                                                    <Input
-                                                        value={entry.interview2}
-                                                        onChange={(e) => handleEntryChange(index, 'interview2', e.target.value)}
-                                                        className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                        size={Math.max((entry.interview2 || "").length || 1, 10)}
-                                                    />
-                                                </td>
-                                                <td className="border p-1">
-                                                    {!entry.interviewStatus ? (
-                                                        <div className="flex items-center justify-center gap-2">
-                                                            <Button
-                                                                variant="ghost"
-                                                                className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
-                                                                onClick={() => handleStatusAction(index, 'APPROVE')}
-                                                            >
-                                                                APPROVE
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                className="h-7 px-2 text-[10px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200"
-                                                                onClick={() => handleStatusAction(index, 'REJECT')}
-                                                            >
-                                                                REJECT
-                                                            </Button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex flex-col items-center justify-center py-1">
-                                                            <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
-                                                                {entry.interviewStatus === 'APPROVE' ? 'Approved' : 'Rejected'}
+                                                    </td>
+                                                    <td className="border p-1 text-center">
+                                                        <Input
+                                                            value={entry.interview1}
+                                                            onChange={(e) => handleEntryChange(index, 'interview1', e.target.value)}
+                                                            className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                            size={Math.max((entry.interview1 || "").length || 1, 10)}
+                                                        />
+                                                    </td>
+                                                    <td className="border p-1 text-center">
+                                                        <Input
+                                                            value={entry.interview2}
+                                                            onChange={(e) => handleEntryChange(index, 'interview2', e.target.value)}
+                                                            className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                            size={Math.max((entry.interview2 || "").length || 1, 10)}
+                                                        />
+                                                    </td>
+                                                    <td className="border p-1">
+                                                        {!entry.interviewStatus ? (
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
+                                                                    onClick={() => handleStatusAction(index, 'APPROVE')}
+                                                                >
+                                                                    APPROVE
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    className="h-7 px-2 text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200"
+                                                                    onClick={() => handleStatusAction(index, 'REJECT')}
+                                                                >
+                                                                    REJECT
+                                                                </Button>
                                                             </div>
-                                                            <div className="text-[9px] text-gray-500 leading-tight text-center">
-                                                                by: {entry.statusActionBy}
+                                                        ) : (
+                                                            <div className="flex flex-col items-center justify-center py-1">
+                                                                <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
+                                                                    {entry.interviewStatus === 'APPROVE' ? 'Approved' : 'Rejected'}
+                                                                </div>
+                                                                <div className="text-[9px] text-gray-500 leading-tight text-center">
+                                                                    by: {entry.statusActionBy}
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleStatusAction(index, "")}
+                                                                    className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
+                                                                >
+                                                                    Reset
+                                                                </button>
                                                             </div>
-                                                            <button
-                                                                onClick={() => handleStatusAction(index, "")}
-                                                                className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
-                                                            >
-                                                                Reset
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </>
-                                        )}
-                                    </tr>
-                                ))}
-                                {/* Empty rows to maintain look if needed */}
+                                                        )}
+                                                    </td>
+                                                </>
+                                            )}
+                                        </tr>
+                                    ))}
+                                    {/* Empty rows to maintain look if needed */}
 
-                            </tbody>
-                        </table>
-                        <div className="mt-2 flex justify-start no-print">
+                                </tbody>
+                            </table>
+                            <div className="mt-2 flex justify-start no-print">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={addRow}
+                                    className="flex items-center gap-1 text-xs border-dashed"
+                                >
+                                    <IconPlus size={14} /> Add Row
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Footer Notes */}
+                        <div className="text-xs font-bold border border-black p-2 mt-4">
+                            Note:- Candidate (NEW MANPOWER) handover in W/H Assembly and C&C must be approved by QA Incharge & Prod. Incharge.
+                        </div>
+
+                        {/* Signatures */}
+                        <div className="grid grid-cols-2 gap-8 mt-12 pt-8">
+                            <div className="space-y-2">
+                                <div className="border-b border-black min-h-[32px] flex items-end pb-1 px-1">
+                                    <span className="text-sm font-bold text-blue-700 italic">
+                                        {signatures.educationCell || "____________________"}
+                                    </span>
+                                </div>
+                                <p className="text-sm font-bold">Signature Education Cell</p>
+                                <p className="text-[10px] text-gray-500 italic">Form Filled By</p>
+                            </div>
+                            <div className="space-y-2 text-right">
+                                <div className="border-b border-black min-h-[32px] flex items-end justify-end pb-1 px-1">
+                                    <span className="text-sm font-bold text-blue-700 italic">
+                                        {signatures.hod || "____________________"}
+                                    </span>
+                                </div>
+                                <p className="text-sm font-bold">Signature of HOD/Incharge</p>
+                                <p className="text-[10px] text-gray-500 italic">Form Approved By</p>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end mt-8 no-print gap-4">
                             <Button
                                 variant="outline"
-                                size="sm"
-                                onClick={addRow}
-                                className="flex items-center gap-1 text-xs border-dashed"
+                                onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
+                                className="border-green-600 text-green-600 hover:bg-green-50"
                             >
-                                <IconPlus size={14} /> Add Row
+                                Export to Excel
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => handleSave(false)}
+                                disabled={saving}
+                                className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
+                            >
+                                <IconDeviceFloppy className="h-4 w-4" />
+                                Save Progress
+                            </Button>
+                            <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                Submit & Email Sheet
                             </Button>
                         </div>
-                    </div>
-
-                    {/* Footer Notes */}
-                    <div className="text-xs font-bold border border-black p-2 mt-4">
-                        Note:- Candidate (NEW MANPOWER) handover in W/H Assembly and C&C must be approved by QA Incharge & Prod. Incharge.
-                    </div>
-
-                    {/* Signatures */}
-                    <div className="grid grid-cols-2 gap-8 mt-12 pt-8">
-                        <div className="space-y-2">
-                            <div className="border-b border-black min-h-[32px] flex items-end pb-1 px-1">
-                                <span className="text-sm font-bold text-blue-700 italic">
-                                    {signatures.educationCell || "____________________"}
-                                </span>
-                            </div>
-                            <p className="text-sm font-bold">Signature Education Cell</p>
-                            <p className="text-[10px] text-gray-500 italic">Form Filled By</p>
-                        </div>
-                        <div className="space-y-2 text-right">
-                            <div className="border-b border-black min-h-[32px] flex items-end justify-end pb-1 px-1">
-                                <span className="text-sm font-bold text-blue-700 italic">
-                                    {signatures.hod || "____________________"}
-                                </span>
-                            </div>
-                            <p className="text-sm font-bold">Signature of HOD/Incharge</p>
-                            <p className="text-[10px] text-gray-500 italic">Form Approved By</p>
-                        </div>
-                    </div>
-
-                    <div className="flex justify-end mt-8 no-print gap-4">
-                        <Button
-                            variant="outline"
-                            onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
-                            className="border-green-600 text-green-600 hover:bg-green-50"
-                        >
-                            Export to Excel
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => handleSave(false)}
-                            disabled={saving}
-                            className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
-                        >
-                            <IconDeviceFloppy className="h-4 w-4" />
-                            Save Progress
-                        </Button>
-                        <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
-                            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                            Submit & Email Sheet
-                        </Button>
-                    </div>
-                </CardContent>
+                    </CardContent>
+                </div>
             </Card>
+
+            {/* Print Options Dialog */}
+            <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
+                <DialogContent className="max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <IconPrinter className="h-5 w-5" />
+                            Print & Share Handover Sheet
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    <div className="grid grid-cols-1 gap-6 py-4">
+                        <div className="grid grid-cols-3 gap-3">
+                            <Button
+                                variant="outline"
+                                className="flex flex-col items-center gap-2 h-auto py-4 hover:bg-blue-50 hover:border-blue-200 transition-all"
+                                onClick={handleDownloadPDF}
+                                disabled={isGeneratingPDF}
+                            >
+                                {isGeneratingPDF ? <Loader2 className="h-6 w-6 animate-spin text-blue-500" /> : <IconDownload className="h-6 w-6 text-blue-500" />}
+                                <span className="text-xs">Save as PDF</span>
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className="flex flex-col items-center gap-2 h-auto py-4 hover:bg-purple-50 hover:border-purple-200 transition-all"
+                                onClick={handleDownloadHighResImage}
+                                disabled={isGeneratingPDF}
+                            >
+                                {isGeneratingPDF ? <Loader2 className="h-6 w-6 animate-spin text-purple-500" /> : <IconPhoto className="h-6 w-6 text-purple-500" />}
+                                <span className="text-xs">Save Image</span>
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className="flex flex-col items-center gap-2 h-auto py-4 hover:bg-green-50 hover:border-green-200 transition-all"
+                                onClick={() => {
+                                    setIsPrintDialogOpen(false);
+                                    // Small delay to allow dialog to close before printing
+                                    setTimeout(() => {
+                                        window.print();
+                                    }, 150);
+                                }}
+                            >
+                                <IconPrinter className="h-6 w-6 text-green-500" />
+                                <span className="text-xs">Browser Print</span>
+                            </Button>
+                        </div>
+
+                        <div className="space-y-3 pt-4 border-t">
+                            <Label className="text-sm font-semibold flex items-center gap-2">
+                                <IconMail className="h-4 w-4 text-blue-600" />
+                                Email PDF to Department
+                            </Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="Enter recipient email address..."
+                                    value={emailForPDF}
+                                    onChange={(e) => setEmailForPDF(e.target.value)}
+                                    className="flex-1"
+                                />
+                                <Button
+                                    onClick={handleEmailPDF}
+                                    disabled={isGeneratingPDF || !emailForPDF}
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                >
+                                    {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <IconMail className="h-4 w-4 mr-2" />}
+                                    Send Email
+                                </Button>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">
+                                This will generate a PDF of the current sheet and send it as an attachment.
+                            </p>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {/* Edit Layout Dialog */}
             <Dialog open={isEditingLayout} onOpenChange={setIsEditingLayout}>

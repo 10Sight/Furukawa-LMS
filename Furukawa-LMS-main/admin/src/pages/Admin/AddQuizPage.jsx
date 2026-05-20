@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import useFileUpload from "@/hooks/useFileUpload";
+import { getMediaUrl } from "@/utils/mediaUtils";
 
 const AddQuizPage = () => {
   const { courseId } = useParams();
@@ -906,7 +907,7 @@ const AddQuizPage = () => {
                   <div className="mt-2">
                     {question.image ? (
                       <div className="relative w-full max-w-xs border rounded p-2">
-                        <img src={question.image.url} alt="Question" className="w-full h-auto rounded" />
+                        <img src={getMediaUrl(question.image.url)} alt="Question" className="w-full h-auto rounded" />
                         <Button
                           type="button"
                           variant="destructive"

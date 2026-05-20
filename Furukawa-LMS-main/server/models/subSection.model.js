@@ -7,8 +7,10 @@ class SubSection {
         this.name = data.name;
         this.lineId = data.lineId;
         this.description = data.description;
+        this.minimumRequiredLevel = data.minimumRequiredLevel || null;
         this.isActive = data.isActive !== undefined ? data.isActive : true;
-        this.subSectionCount = data.subSectionCount || 0;
+        this.users = typeof data.users === 'string' ? JSON.parse(data.users) : (data.users || []);
+        this.subSectionCount = data.subSectionCount || this.users.length || 0;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -69,16 +71,64 @@ class SubSection {
                     lineId INT NOT NULL,
                     description NVARCHAR(MAX),
                     isActive BIT DEFAULT 1,
+                    users NVARCHAR(MAX) DEFAULT '[]',
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT FK_SubSections_Lines FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE
                 );
                 CREATE INDEX IX_SubSections_LineId ON [sub_sections](lineId);
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('sub_sections', 'users') IS NULL
+                BEGIN
+                    ALTER TABLE [sub_sections] ADD users NVARCHAR(MAX) DEFAULT '[]';
+                END
+                IF COL_LENGTH('sub_sections', 'minimumRequiredLevel') IS NULL
+                BEGIN
+                    ALTER TABLE [sub_sections] ADD minimumRequiredLevel NVARCHAR(50);
+                END
             END`;
             await executeQuery(query);
             logger.info("SubSection table initialized successfully");
+
+            // Initial sync for all sub-sections
+            const [subSections] = await executeQuery("SELECT id FROM [sub_sections]");
+            for (const ss of subSections) {
+                await SubSection.syncUserList(ss.id);
+            }
         } catch (error) {
             logger.error("Failed to initialize SubSection table", error);
+        }
+    }
+
+    static async syncUserList(subSectionId) {
+        try {
+            // Aggregate users from direct assignment AND machine assignments
+            const query = `
+                SELECT DISTINCT u.id
+                FROM users u
+                LEFT JOIN machine_assignments ma ON u.id = ma.user_id
+                LEFT JOIN machines m ON ma.machine_id = m.id
+                WHERE (u.role IN ('STUDENT', 'CUSTOM') AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
+                AND (u.subSectionId = ? OR m.subSectionId = ?)
+            `;
+            const [rows] = await executeQuery(query, [subSectionId, subSectionId]);
+            const userIds = rows.map(r => r.id);
+            const jsonUsers = JSON.stringify(userIds);
+
+            await executeQuery("UPDATE [sub_sections] SET users = ?, updatedAt = GETDATE() WHERE id = ?", [jsonUsers, subSectionId]);
+            
+            logger.info(`Synced user list for sub-section ${subSectionId}. Total users: ${userIds.length}`);
+
+            // Trigger parent line sync
+            const [ss] = await executeQuery("SELECT lineId FROM [sub_sections] WHERE id = ?", [subSectionId]);
+            if (ss.length > 0 && ss[0].lineId) {
+                const Line = (await import("./line.model.js")).default;
+                await Line.syncUserList(ss[0].lineId);
+            }
+        } catch (error) {
+            logger.error(`Error syncing user list for sub-section ${subSectionId}: ${error.message}`);
         }
     }
 
@@ -86,7 +136,7 @@ class SubSection {
         const subSection = new SubSection(data);
 
         const fields = [
-            "name", "lineId", "description", "isActive", "createdAt"
+            "name", "lineId", "description", "minimumRequiredLevel", "isActive", "createdAt"
         ];
 
         if (!subSection.createdAt) subSection.createdAt = new Date();
@@ -109,19 +159,7 @@ class SubSection {
     static async findById(id) {
         const query = `
             SELECT ss.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.subSectionId = ss.id 
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    WHERE m.subSectionId = ss.id
-                )
-             )
-            ) as subSectionCount
+            (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
             FROM [sub_sections] ss 
             WHERE ss.id = ?`;
         const [rows] = await executeQuery(query, [id]);
@@ -132,19 +170,7 @@ class SubSection {
     static async findByLine(lineId) {
         const query = `
             SELECT ss.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.subSectionId = ss.id 
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    WHERE m.subSectionId = ss.id
-                )
-             )
-            ) as subSectionCount
+            (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
             FROM [sub_sections] ss 
             WHERE ss.lineId = ? 
             ORDER BY ss.createdAt DESC`;
@@ -181,7 +207,7 @@ class SubSection {
 
     async save() {
         const fields = [
-            "name", "lineId", "description", "isActive"
+            "name", "lineId", "description", "minimumRequiredLevel", "isActive"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");
@@ -194,6 +220,6 @@ class SubSection {
 }
 
 // Initialize table
-SubSection.init();
+// SubSection.init();
 
 export default SubSection;

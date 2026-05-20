@@ -1,6 +1,9 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { IconPrinter, IconLoader, IconDeviceFloppy, IconDownload } from "@tabler/icons-react";
+import { useSelector } from 'react-redux';
+import { IconPrinter, IconLoader, IconDeviceFloppy, IconDownload, IconPhoto, IconX, IconMail } from "@tabler/icons-react";
+import { toPng } from 'html-to-image';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
@@ -32,18 +35,26 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { History, Edit2, Save, Loader2 } from "lucide-react";
 import axiosInstance from "@/Helper/axiosInstance";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
 
 // Helper to normalize level string for comparison
 const normalizeLevel = (levelStr) => {
     if (!levelStr) return "";
-    // If format is L-1, L-2, etc. remove hyphen to match config names like L1, L2 if needed
-    // But config might have L1, L2 and user might have L-1, L-2. 
-    // Let's standardise to "L" + number
     return levelStr.replace('-', '');
+};
+
+const getLevelWeight = (levelStr) => {
+    if (!levelStr) return 0;
+    const match = levelStr.match(/\d+/);
+    return match ? parseInt(match[0]) : 0;
 };
 
 const SkillMatrix = () => {
     const componentRef = useRef();
+    const tableRef = useRef(null);
+    const [searchParams] = useSearchParams();
+    const [isGeneratingImage, setIsGeneratingImage] = useState(false);
     const [selectedDepartment, setSelectedDepartment] = useState("");
     const [selectedSection, setSelectedSection] = useState("");
     const [selectedLine, setSelectedLine] = useState("");
@@ -52,6 +63,8 @@ const SkillMatrix = () => {
     const [selectedMonth, setSelectedMonth] = useState("");
     const [selectedLevel, setSelectedLevel] = useState("All");
     const [isMatrixOpen, setIsMatrixOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState("skillMatrix");
+    const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
     const [createOpen, setCreateOpen] = useState(false);
 
     const [createDepartment, setCreateDepartment] = useState("");
@@ -60,7 +73,13 @@ const SkillMatrix = () => {
     const [createSubSection, setCreateSubSection] = useState("");
     const [createStation, setCreateStation] = useState("");
     const [createMonth, setCreateMonth] = useState(new Date().toISOString().slice(0, 7));
-    
+
+    const [evalDepartment, setEvalDepartment] = useState("");
+    const [evalSection, setEvalSection] = useState("");
+    const [evalLine, setEvalLine] = useState("");
+    const [evalSubSection, setEvalSubSection] = useState("");
+    const [evalSearchText, setEvalSearchText] = useState("");
+
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 70;
@@ -91,7 +110,7 @@ const SkillMatrix = () => {
     // --- Data Fetching ---
     // --- Hierarchy Data Hooks ---
     const { data: departmentsData } = useGetAllDepartmentsQuery();
-    
+
     // Combined Loader State
     const [isLoading, setIsLoading] = useState(false);
 
@@ -105,7 +124,7 @@ const SkillMatrix = () => {
     const { data: machinesBySectionData, isLoading: isSectMachinesLoading } = useGetMachinesBySectionQuery(selectedSection, { skip: !selectedSection || !!selectedLine });
     const { data: machinesByLineData, isLoading: isLineMachinesLoading } = useGetMachinesByLineQuery(selectedLine, { skip: !selectedLine || !!selectedSubSection });
     const { data: machinesBySubSectionData, isLoading: isSubSectionMachinesLoading } = useGetMachinesBySubSectionQuery(selectedSubSection, { skip: !selectedSubSection });
-    
+
     // Create Form Data
     const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDepartment, { skip: !createDepartment });
     const { data: createLinesData } = useGetLinesBySectionQuery(createSection, { skip: !createSection });
@@ -114,6 +133,33 @@ const SkillMatrix = () => {
     const { data: createMachinesByLineData } = useGetMachinesByLineQuery(createLine, { skip: !createLine || !!createSubSection });
     const { data: createMachinesBySectData } = useGetMachinesBySectionQuery(createSection, { skip: !createSection || !!createLine });
     const { data: createMachinesByDeptData } = useGetMachinesByDepartmentQuery(createDepartment, { skip: !createDepartment || !!createSection });
+
+    // Evaluation Form Data
+    const { data: evalSectionsData } = useGetSectionsByDepartmentQuery(evalDepartment, { skip: !evalDepartment });
+    const { data: evalLinesData } = useGetLinesBySectionQuery(evalSection, { skip: !evalSection });
+    const { data: evalSubSectionsData } = useGetSubSectionsByLineQuery(evalLine, { skip: !evalLine });
+    
+    // Fetch users for evaluation search based on evaluation hierarchy
+    const { data: evalUsersData } = useGetAllUsersQuery({
+        departmentId: evalDepartment || undefined,
+        sectionId: evalSection || undefined,
+        lineId: evalLine || undefined,
+        subSectionId: evalSubSection || undefined,
+        role: "STUDENT,CUSTOM",
+        includeTemporary: "true",
+        limit: 1000
+    }, { skip: !evalDepartment });
+
+    // Client-side filter for searched users
+    const filteredEvalUsers = React.useMemo(() => {
+        const users = evalUsersData?.data?.users || [];
+        if (!evalSearchText.trim()) return users;
+        const searchLower = evalSearchText.toLowerCase();
+        return users.filter(u => 
+            (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
+            (u.cardNo || "").toLowerCase().includes(searchLower)
+        );
+    }, [evalUsersData, evalSearchText]);
 
     const isMachinesLoading = isDeptMachinesLoading || isSectMachinesLoading || isLineMachinesLoading || isSubSectionMachinesLoading;
 
@@ -124,7 +170,8 @@ const SkillMatrix = () => {
         lineId: selectedLine,
         subSectionId: selectedSubSection,
         // stationId removed to prevent UI clearing when filtering by station (users aren't linked to stations)
-        role: "Student",
+        role: "STUDENT,CUSTOM",
+        includeTemporary: "true",
         limit: 1000
     }, { skip: !selectedDepartment || !isMatrixOpen });
 
@@ -137,9 +184,16 @@ const SkillMatrix = () => {
         revisions: Array(4).fill({ product: "", revision: "", date: "" }),
         signatures: { approved: "", confirmed: "", qa: "", safety: "", process: "" },
         processPersons: { responsible: "", vice: "", expert: "" },
+        plannedHeader: "",
         documentInfo: { docNo: "FRM-WH-PR-009", revNo: "02", revDate: "02.05.2022", page: "1 of 1" },
         // Footer Rows Data (Arrays for 16 columns)
         footerRows: {
+            numPersonPlan: Array(16).fill(""),
+            numPersonActual: Array(16).fill(""),
+            statusRow: Array(16).fill(""),
+            planMonths: Array(12).fill(""),
+            actualMonths: Array(12).fill(""),
+            percentMonths: Array(12).fill(""),
             plan: Array(16).fill(""),
             actual: Array(16).fill(""),
             percent: Array(16).fill("")
@@ -159,10 +213,42 @@ const SkillMatrix = () => {
     }, [usersData]);
 
     useEffect(() => {
+        const dept = searchParams.get('dept');
+        const sect = searchParams.get('section');
+        const line = searchParams.get('line');
+        const sub = searchParams.get('subSection');
+        const stn = searchParams.get('station');
+        const mon = searchParams.get('month');
+
+        if (dept) setSelectedDepartment(dept);
+        if (sect) setSelectedSection(sect);
+        if (line) setSelectedLine(line);
+        if (sub) setSelectedSubSection(sub);
+        if (stn) setSelectedStation(stn);
+        if (mon) setSelectedMonth(mon);
+
+        // If we have minimum required filters, open the matrix automatically
+        if (dept && line && mon) {
+            setIsMatrixOpen(true);
+        }
+    }, [searchParams]);
+
+    useEffect(() => {
         if (selectedDepartment) {
             fetchDashboardConfig();
         }
     }, [selectedDepartment]);
+
+    useEffect(() => {
+        setSelectedOperatorForEval(null);
+    }, [selectedDepartment, selectedSection, selectedLine, selectedSubSection]);
+
+    useEffect(() => {
+        const actualOps = matrixEntries.filter(e => !e.isManual);
+        if (actualOps.length > 0 && !selectedOperatorForEval) {
+            setSelectedOperatorForEval(actualOps[0]._id);
+        }
+    }, [matrixEntries, selectedOperatorForEval]);
 
     const fetchDashboardConfig = async () => {
         try {
@@ -218,7 +304,7 @@ const SkillMatrix = () => {
                 setMatrixEntries([]);
                 return;
             }
-            
+
             const savedEntries = savedMatrixData?.data?.entries || [];
 
             // 1. Map Users
@@ -230,7 +316,7 @@ const SkillMatrix = () => {
                     name: machine.name,
                     critical: "Non-Critical",
                     min: "L-1",
-                    curr: user.level || "L-1", // Use user level default
+                    curr: user.currentSkill?.[String(machine._id || machine.id)] || user.currentLevel || null, // Use user skill if available, else global level
                 }));
 
                 const mergedStations = activeMachines.map(machine => {
@@ -240,7 +326,9 @@ const SkillMatrix = () => {
                         name: machine.name,
                         critical: savedStation?.critical || "Non-Critical",
                         min: savedStation?.min || "L-1",
-                        curr: savedStation?.curr || user.level || "L-1",
+                        curr: (savedStation?.curr && savedStation.curr !== "L-1")
+                            ? savedStation.curr
+                            : (user.currentSkill?.[String(machine._id || machine.id)] || user.currentLevel || null),
                     };
                 });
 
@@ -253,7 +341,7 @@ const SkillMatrix = () => {
                     srNo: index + 1,
                     _id: user._id || user.id,
                     name: user.fullName || "Unknown",
-                    cardNo: savedUserEntry?.cardNo || user.empId || "", 
+                    cardNo: savedUserEntry?.cardNo || user.empId || "",
                     experience: savedUserEntry?.experience || (() => {
                         if (!user.createdAt) return "";
                         const start = new Date(user.createdAt);
@@ -266,11 +354,12 @@ const SkillMatrix = () => {
                     certDate: savedUserEntry?.certDate || "",
                     position: savedUserEntry?.position || "1.1",
                     stations: savedUserEntry ? mergedStations : defaultStations,
-                    plan: savedUserEntry?.plan ?? activeMachines.length, 
-                    actual: savedUserEntry?.actual ?? actualCount,       
+                    plan: savedUserEntry?.plan ?? activeMachines.length,
+                    actual: savedUserEntry?.actual ?? actualCount,
                     status: savedUserEntry?.status || "OK",
                     isManual: false,
-                    level: user.level 
+                    level: user.currentLevel,
+                    assignments: user.assignments || []
                 };
             }).filter(Boolean);
 
@@ -305,7 +394,10 @@ const SkillMatrix = () => {
                 setConfig(prev => ({
                     ...prev,
                     ...savedMatrixData.data.footerInfo.config,
-                    footerRows: savedMatrixData.data.footerInfo.config.footerRows || prev.footerRows,
+                    footerRows: {
+                        ...prev.footerRows,
+                        ...(savedMatrixData.data.footerInfo.config.footerRows || {})
+                    },
                     minSkills: savedMatrixData.data.footerInfo.config.minSkills || prev.minSkills
                 }));
             }
@@ -314,7 +406,7 @@ const SkillMatrix = () => {
         }
     }, [selectedDepartment, selectedSection, selectedLine, selectedSubSection, selectedStation, machinesByLineData, machinesBySubSectionData, machinesBySectionData, machinesByDepartmentData, departmentUsers, savedMatrixData, isMachinesLoading]);
 
-    const handleSave = async () => {
+    const handleSave = async (shouldSendEmail = false) => {
         if (!selectedDepartment || !selectedMonth) {
             toast.error("Please select Department and Month first");
             return;
@@ -350,6 +442,7 @@ const SkillMatrix = () => {
                 station: selectedStation,
                 month: selectedMonth,
                 entries: entriesToSave,
+                sendEmail: shouldSendEmail,
                 footerInfo: {
                     config: config // Save our big config object here
                 }
@@ -398,7 +491,7 @@ const SkillMatrix = () => {
             ...prev,
             footerRows: {
                 ...prev.footerRows,
-                [type]: prev.footerRows[type].map((val, i) => i === index ? value : val)
+                [type]: (prev.footerRows[type] || Array(16).fill("")).map((val, i) => i === index ? value : val)
             }
         }));
     };
@@ -409,15 +502,7 @@ const SkillMatrix = () => {
         setMatrixEntries(updated);
     }
 
-    // Global min skill change or per station? Table shows per column
-    // For now we can store it in config if it's per column, NOT per user
-    const handleMinSkillChange = (colIdx, value) => {
-        setConfig(prev => {
-            const updatedMinSkills = [...(prev.minSkills || Array(16).fill("L2"))];
-            updatedMinSkills[colIdx] = value;
-            return { ...prev, minSkills: updatedMinSkills };
-        });
-    }
+
 
     const handleStationChange = (rowIdx, stationIdx, level) => {
         const updated = [...matrixEntries];
@@ -428,10 +513,56 @@ const SkillMatrix = () => {
         setMatrixEntries(updated);
     };
 
+    const handleSubSectionSkillChange = (rowIdx, groupIdx, level) => {
+        const group = groupedSubSections[groupIdx];
+        if (!group) return;
+
+        const updated = [...matrixEntries];
+        group.indices.forEach(idx => {
+            if (updated[rowIdx].stations[idx]) {
+                updated[rowIdx].stations[idx].curr = level;
+            }
+        });
+
+        // Recalc Actual
+        const s = updated[rowIdx].stations;
+        updated[rowIdx].actual = s.filter(x => x.curr !== 'L-0' && x.curr).length;
+        setMatrixEntries(updated);
+    };
+
+    const { user } = useSelector(state => state.auth);
+
+    const handleSignature = (role, status) => {
+        if (!user) {
+            toast.error("Please log in to sign the document");
+            return;
+        }
+        const name = user.fullName || user.userName || "User";
+        const signatureValue = `${status}: ${name}`;
+        handleConfigChange(`signatures.${role}`, signatureValue);
+        toast.success(`${role.toUpperCase()} ${status} by ${name}`);
+    };
+
     const handlePrint = () => window.print();
 
     const { data: activeConfigData } = useGetActiveConfigQuery();
     const activeConfig = activeConfigData?.data;
+
+    const handleLevelChange = async (userId, nextLevel) => {
+        try {
+            // If the symbol is "-", we save as null in DB
+            const dbLevel = (nextLevel === '-' || nextLevel === 'L-0') ? null : nextLevel;
+            await axiosInstance.patch(`/api/users/${userId}`, { currentLevel: dbLevel });
+            toast.success("User level updated successfully");
+            // Update local state to reflect change immediately
+            setMatrixEntries(prev => prev.map(entry =>
+                String(entry._id) === String(userId) ? { ...entry, level: nextLevel } : entry
+            ));
+        } catch (error) {
+            console.error("Update level error:", error);
+            toast.error("Failed to update user level");
+        }
+    };
 
     const SkillIcon = ({ levelStr, onClick, size = 20, editable = false }) => {
         // Dynamic Levels based on Active Config
@@ -441,13 +572,16 @@ const SkillMatrix = () => {
         // Normalize level string to number (L-1 -> 1, L-2 -> 2)
         // If levelStr is not in L-X format, try to match by name
         let currentLevel = 0;
-        if (levelStr === 'L-0') {
+        const normalizedLevelStr = levelStr || '-';
+        if (normalizedLevelStr === '-' || normalizedLevelStr === 'None') {
+            currentLevel = -1; // Special case for unassigned
+        } else if (normalizedLevelStr === 'L-0') {
             currentLevel = 0;
-        } else if (levelStr && levelStr.startsWith('L-')) {
-            currentLevel = parseInt(levelStr.split('-')[1]) || 0;
+        } else if (normalizedLevelStr && normalizedLevelStr.startsWith('L-')) {
+            currentLevel = parseInt(normalizedLevelStr.split('-')[1]) || 0;
         } else {
             // Try matching by name in config
-            const foundLevel = levels.find(l => l.name === levelStr);
+            const foundLevel = levels.find(l => l.name === normalizedLevelStr);
             if (foundLevel) {
                 currentLevel = foundLevel.order + 1; // 0-indexed order to 1-based count
             }
@@ -458,24 +592,25 @@ const SkillMatrix = () => {
 
         const handleClick = () => {
             if (!editable || !onClick) return;
-            // Cycle logic: L-0 -> L-1 -> ... -> L-Max -> L-0
+            // Cycle logic: - -> L-0 -> L-1 -> ... -> L-Max -> L-0
             let nextLevelStr = 'L-0';
             if (maxLevels > 0) {
-                if (currentLevel < maxLevels) {
+                if (currentLevel === -1) {
+                    nextLevelStr = 'L-0';
+                } else if (currentLevel < maxLevels) {
                     // Next level
                     const nextLevelIndex = currentLevel; // 0-based index for next level
                     const nextLevelObj = levels.find(l => l.order === nextLevelIndex);
-                    // If config exists, use its name? Or stick to L-X format?
-                    // System seems to use L-X internally mostly. Let's try to stick to config names if possible, but fallback to L-X
-                    nextLevelStr = nextLevelObj ? nextLevelObj.name : `L - ${currentLevel + 1} `;
+                    nextLevelStr = nextLevelObj ? nextLevelObj.name : `L-${currentLevel + 1}`;
                 } else {
                     nextLevelStr = 'L-0';
                 }
             } else {
                 // Fallback hardcoded cycle
                 const hardcoded = ['L-0', 'L-1', 'L-2', 'L-3', 'L-4', 'L-5'];
-                const idx = hardcoded.indexOf(levelStr);
-                nextLevelStr = hardcoded[(idx + 1) % hardcoded.length];
+                let idx = hardcoded.indexOf(levelStr);
+                if (idx === -1) nextLevelStr = 'L-0';
+                else nextLevelStr = hardcoded[(idx + 1) % hardcoded.length];
             }
             onClick(nextLevelStr);
         };
@@ -484,12 +619,24 @@ const SkillMatrix = () => {
         const renderSlices = () => {
             if (maxLevels === 0) return null;
 
+            if (currentLevel === -1) {
+                return (
+                    <line
+                        x1={center - size / 4}
+                        y1={center}
+                        x2={center + size / 4}
+                        y2={center}
+                        stroke="black"
+                        strokeWidth="1.5"
+                    />
+                );
+            }
+
             // If L-0, Dashed Circle (Under Training)
             if (currentLevel === 0) {
                 return (
                     <>
                         <circle cx={center} cy={center} r={radius} fill="none" stroke="black" strokeWidth="1" strokeDasharray="2,2" />
-                        {/* Optional cross lines for L-0 style */}
                         <line x1={center} y1={center - radius} x2={center} y2={center + radius} stroke="black" strokeWidth="0.5" strokeDasharray="2,2" />
                         <line x1={center - radius} y1={center} x2={center + radius} y2={center} stroke="black" strokeWidth="0.5" strokeDasharray="2,2" />
                     </>
@@ -558,12 +705,57 @@ const SkillMatrix = () => {
         return base;
     }, [selectedSubSection, selectedLine, selectedSection, selectedDepartment, selectedStation, machinesBySubSectionData, machinesByLineData, machinesBySectionData, machinesByDepartmentData]);
 
+    const groupedSubSections = React.useMemo(() => {
+        const groups = [];
+        activeMachinesRef.forEach((m, index) => {
+            const lastGroup = groups[groups.length - 1];
+            const subId = m.subSectionId || 'default';
+            const subName = m.subSectionName || m.name || 'N/A';
+
+            if (lastGroup && lastGroup.id === subId) {
+                lastGroup.count++;
+                lastGroup.indices.push(index);
+            } else {
+                groups.push({ 
+                    id: subId, 
+                    name: subName, 
+                    count: 1, 
+                    indices: [index],
+                    minimumRequiredLevel: m.minimumRequiredLevel || null
+                });
+            }
+        });
+        return groups;
+    }, [activeMachinesRef]);
+
     const filteredAndSortedEntries = React.useMemo(() => {
         return matrixEntries.filter(entry => {
             if (selectedLevel === "All") return true;
             return normalizeLevel(entry.level) === normalizeLevel(selectedLevel);
         });
     }, [matrixEntries, selectedLevel]);
+
+    const columnStats = React.useMemo(() => {
+        return groupedSubSections.map(group => {
+            const actual = filteredAndSortedEntries.filter(entry => {
+                const subSectionStations = group.indices.map(idx => entry.stations[idx]).filter(Boolean);
+                const maxWeight = subSectionStations.reduce((max, s) => {
+                    const w = getLevelWeight(s.curr);
+                    return w > max ? w : max;
+                }, -1);
+
+                const userAssignments = entry.assignments || [];
+                const isAssigned = userAssignments?.some(ua =>
+                    String(ua.subSectionId) === String(group.id) ||
+                    subSectionStations.some(s => String(s._id) === String(ua.machineId))
+                );
+
+                const displayLevel = (isAssigned || maxWeight > 0) ? (subSectionStations.find(s => getLevelWeight(s.curr) === maxWeight)?.curr || 'L-0') : '-';
+                return displayLevel !== '-';
+            }).length;
+            return { actual };
+        });
+    }, [filteredAndSortedEntries, groupedSubSections]);
 
     const totalPages = Math.ceil(filteredAndSortedEntries.length / itemsPerPage);
     const paginatedEntries = React.useMemo(() => {
@@ -575,9 +767,9 @@ const SkillMatrix = () => {
         if (totalPages <= 1) return null;
         return (
             <div className="flex items-center justify-center gap-4 py-4 no-print bg-white border-t border-b mb-4">
-                <Button 
-                    variant="outline" 
-                    size="sm" 
+                <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
                 >
@@ -586,9 +778,9 @@ const SkillMatrix = () => {
                 <div className="text-sm font-medium">
                     Page {currentPage} of {totalPages} ({filteredAndSortedEntries.length} operators)
                 </div>
-                <Button 
-                    variant="outline" 
-                    size="sm" 
+                <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
                 >
@@ -616,301 +808,274 @@ const SkillMatrix = () => {
         setCreateOpen(false);
     };
 
-    if (!isMatrixOpen) {
-        const matrixList = matrixListData?.data || [];
-        return (
-            <div className="space-y-4">
-                <div className="p-6 border rounded bg-white flex items-center justify-between">
-                    <h1 className="text-xl font-bold">Skill Matrix Forms</h1>
-                    <Button onClick={() => setCreateOpen(true)}>Create Skill Matrix Form</Button>
-                </div>
+    const matrixList = matrixListData?.data || [];
 
-                <div className="p-6 border rounded bg-white space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold">Saved Skill Matrix Sheets</h2>
-                        <Button variant="ghost" size="sm" onClick={() => {
-                            setSelectedDepartment("");
-                            setSelectedSection("");
-                            setSelectedLine("");
-                            setSelectedSubSection("");
-                            setSelectedStation("");
-                            setSelectedMonth("");
-                        }} className="text-blue-600 hover:text-blue-700 h-auto p-0">Clear Filters</Button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                        <div>
-                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Department</label>
-                            <Select value={selectedDepartment} onValueChange={(val) => { 
-                                setSelectedDepartment(val); 
-                                setSelectedSection(""); 
-                                setSelectedLine(""); 
-                                setSelectedSubSection(""); 
-                                setSelectedStation(""); 
-                            }}>
-                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Departments" /></SelectTrigger>
-                                <SelectContent>
-                                    {departmentsData?.data?.departments?.map((d, idx) => (
-                                        <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Section</label>
-                            <Select value={selectedSection} onValueChange={(val) => { 
-                                setSelectedSection(val); 
-                                setSelectedLine(""); 
-                                setSelectedSubSection(""); 
-                                setSelectedStation(""); 
-                            }} disabled={!selectedDepartment}>
-                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Sections" /></SelectTrigger>
-                                <SelectContent>
-                                    {sectionsData?.data?.map((s, idx) => (
-                                        <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Line</label>
-                            <Select value={selectedLine} onValueChange={(val) => { 
-                                setSelectedLine(val); 
-                                setSelectedSubSection(""); 
-                                setSelectedStation(""); 
-                            }} disabled={!selectedSection}>
-                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Lines" /></SelectTrigger>
-                                <SelectContent>
-                                    {linesData?.data?.map((l, idx) => (
-                                        <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Sub-Section</label>
-                            <Select value={selectedSubSection} onValueChange={(val) => { 
-                                setSelectedSubSection(val); 
-                                setSelectedStation(""); 
-                            }} disabled={!selectedLine}>
-                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Sub-Sections" /></SelectTrigger>
-                                <SelectContent>
-                                    {subSectionsData?.data?.map((ss, idx) => (
-                                        <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Station</label>
-                            <Select value={selectedStation} onValueChange={setSelectedStation} disabled={!selectedLine}>
-                                <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Stations" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="All">All Stations</SelectItem>
-                                    {(activeMachinesRef || []).map((m, idx) => (
-                                        <SelectItem key={`${m.id || m._id}-${idx}`} value={String(m.id || m._id)}>{m.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Month</label>
-                            <Input className="h-8 text-xs" type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
-                        </div>
-                    </div>
+    const handleDownloadHighResImage = async () => {
+        if (!tableRef.current) return;
+        const loadingToast = toast.info("Generating high-resolution image...", { duration: 0 });
+        setIsGeneratingImage(true);
 
-                    <div className="border rounded overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
-                                <tr>
-                                    <th className="p-3 border-b">Type</th>
-                                    <th className="p-3 border-b">Department</th>
-                                    <th className="p-3 border-b">Section</th>
-                                    <th className="p-3 border-b">Line</th>
-                                    <th className="p-3 border-b">Sub-Section</th>
-                                    <th className="p-3 border-b">Station</th>
-                                    <th className="p-3 border-b">User Count</th>
-                                    <th className="p-3 border-b">Month</th>
-                                    <th className="p-3 border-b">Last Updated</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {isMatrixListLoading ? (
-                                    <tr><td className="p-4 text-center text-muted-foreground" colSpan={9}>Loading...</td></tr>
-                                ) : matrixList.length === 0 ? (
-                                    <tr>
-                                        <td className="p-4 text-center text-muted-foreground" colSpan={9}>
-                                            No skill matrix forms found for selected filters.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    matrixList.map((row, idx) => (
-                                        <tr
-                                            key={row.id || idx}
-                                            className="hover:bg-muted/30 cursor-pointer text-[11px]"
-                                            onClick={() => {
-                                                setSelectedDepartment(String(row.department || ""));
-                                                setSelectedSection(String(row.section || ""));
-                                                setSelectedLine(String(row.line || ""));
-                                                setSelectedSubSection(String(row.subSection || ""));
-                                                setSelectedStation(String(row.station || ""));
-                                                setSelectedMonth(String(row.month || ""));
-                                                setIsMatrixOpen(true);
-                                            }}
-                                        >
-                                            <td className="p-2 border-b">Skill Matrix</td>
-                                            <td className="p-2 border-b">{row.departmentName || "-"}</td>
-                                            <td className="p-2 border-b">{row.sectionName || "-"}</td>
-                                            <td className="p-2 border-b">{row.lineName || "-"}</td>
-                                            <td className="p-2 border-b">{row.subSectionName || "-"}</td>
-                                            <td className="p-2 border-b">{row.stationName || "All"}</td>
-                                            <td className="p-2 border-b font-bold text-blue-600">{row.userCount || 0}</td>
-                                            <td className="p-2 border-b">{row.month || "-"}</td>
-                                            <td className="p-2 border-b">
-                                                {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-"}
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+        try {
+            const tableWidth = tableRef.current.scrollWidth;
+            const tableHeight = tableRef.current.scrollHeight;
 
-                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Create Skill Matrix Form</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-sm font-medium mb-1 block">Department</label>
-                                <Select value={createDepartment} onValueChange={(val) => { 
-                                    setCreateDepartment(val); 
-                                    setCreateSection(""); 
-                                    setCreateLine(""); 
-                                    setCreateSubSection(""); 
-                                    setCreateStation(""); 
-                                }}>
-                                    <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
-                                    <SelectContent>
-                                        {departmentsData?.data?.departments?.map((d, idx) => (
-                                            <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium mb-1 block">Section</label>
-                                <Select value={createSection} onValueChange={(val) => { 
-                                    setCreateSection(val); 
-                                    setCreateLine(""); 
-                                    setCreateSubSection(""); 
-                                    setCreateStation(""); 
-                                }} disabled={!createDepartment}>
-                                    <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
-                                    <SelectContent>
-                                        {createSectionsData?.data?.map((s, idx) => (
-                                            <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium mb-1 block">Line</label>
-                                <Select value={createLine} onValueChange={(val) => { 
-                                    setCreateLine(val); 
-                                    setCreateSubSection(""); 
-                                    setCreateStation(""); 
-                                }} disabled={!createSection}>
-                                    <SelectTrigger><SelectValue placeholder="Select Line" /></SelectTrigger>
-                                    <SelectContent>
-                                        {createLinesData?.data?.map((l, idx) => (
-                                            <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium mb-1 block">Sub-Section</label>
-                                <Select value={createSubSection} onValueChange={(val) => { 
-                                    setCreateSubSection(val); 
-                                    setCreateStation(""); 
-                                }} disabled={!createLine}>
-                                    <SelectTrigger><SelectValue placeholder="Select Sub-Section" /></SelectTrigger>
-                                    <SelectContent>
-                                        {createSubSectionsData?.data?.map((ss, idx) => (
-                                            <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium mb-1 block">Station</label>
-                                <Select value={createStation} onValueChange={setCreateStation} disabled={!createLine}>
-                                    <SelectTrigger><SelectValue placeholder="All Stations" /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="All">All Stations</SelectItem>
-                                        {((createSubSection ? createMachinesData?.data : createMachinesByLineData?.data) || []).map((m, idx) => (
-                                            <SelectItem key={`${m.id || m._id}-${idx}`} value={String(m.id || m._id)}>{m.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium mb-1 block">Month</label>
-                                <Input type="month" value={createMonth} onChange={(e) => setCreateMonth(e.target.value)} />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                            <Button onClick={handleCreateSkillMatrix}>Create</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            </div>
-        );
-    }
+            const dataUrl = await toPng(tableRef.current, {
+                width: tableWidth,
+                height: tableHeight,
+                style: {
+                    transform: 'none',
+                    margin: '0',
+                },
+                backgroundColor: '#ffffff',
+                pixelRatio: 4,
+                quality: 1,
+            });
+
+            const link = document.createElement('a');
+            const dept = selectedDeptName || 'Department';
+            const dateStr = selectedMonth || 'Date';
+            link.download = `SkillMatrix_${dept.replace(/\\s+/g, '_')}_${dateStr}.png`;
+            link.href = dataUrl;
+            link.click();
+
+            toast.success("High-res image downloaded!");
+        } catch (error) {
+            console.error("Image export error:", error);
+            toast.error("Failed to generate high-res image.");
+        } finally {
+            toast.dismiss(loadingToast);
+            setIsGeneratingImage(false);
+        }
+    };
 
     return (
         <div className="space-y-6 text-black">
-            {/* DEBUG INFO - REMOVE AFTER FIXING */}
-            {/* DEBUG INFO - REMOVE AFTER FIXING */}
-            {/* <div className="bg-red-100 p-2 text-xs border border-red-500 text-red-700 overflow-auto max-h-40">
-                <pre>
-                    Dept ID: {selectedDepartment}
-                    Selected Dept Found: {departmentsData?.data?.departments?.find(d => String(d.id || d._id) === String(selectedDepartment)) ? "Yes" : "No"}
-                    Students Count: {departmentsData?.data?.departments?.find(d => String(d.id || d._id) === String(selectedDepartment))?.students?.length || 0}
-                    Dept Users Count: {departmentUsers.length}
-                    First User: {JSON.stringify(departmentUsers[0])}
-                </pre>
-            </div> */}
             <style>
                 {`
 @media print {
     @page { size: landscape; margin: 5mm; }
     body * { visibility: hidden; }
-    #printable - matrix, #printable - matrix * { visibility: visible; }
-    #printable - matrix { position: absolute; left: 0; top: 0; width: 100 %; }
-                        input { border: none!important; background: transparent!important; }
-                        .no - print { display: none!important; }
+    #printable-matrix, #printable-matrix * { visibility: visible; }
+    #printable-matrix { 
+        position: absolute; 
+        left: 0; 
+        top: 0; 
+        width: 100%; 
+        max-width: 1000px; 
+    }
+    input { border: none !important; background: transparent !important; }
+    .no-print { display: none !important; }
+    table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+    th, td { word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; }
 }
 `}
             </style>
 
-            {/* Controls */}
-            <div className="no-print p-3 bg-white border rounded shadow flex flex-wrap gap-4 items-end">
-                <div className="flex flex-col">
-                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Dept</label>
-                    <span className="text-sm font-bold bg-gray-50 px-2 py-1 rounded border">{selectedDeptName}</span>
-                </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="no-print mb-6 flex gap-2 w-fit bg-gray-100 p-1.5 rounded-lg shadow-sm border border-gray-200">
+                    <TabsTrigger value="skillMatrix" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Skill Matrix</TabsTrigger>
+                    <TabsTrigger value="evaluation" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Skill Matrix Evaluation</TabsTrigger>
+                </TabsList>
 
-                <div className="flex flex-col">
-                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Section</label>
-                    <Select value={selectedSection || "all-sections"} onValueChange={(val) => { 
-                        setSelectedSection(val === "all-sections" ? "" : val); 
-                        setSelectedLine(""); 
-                        setSelectedSubSection(""); 
-                        setSelectedStation(""); 
+                <TabsContent value="skillMatrix" className="space-y-6">
+                    {!isMatrixOpen ? (
+                        <div className="space-y-6">
+                            <div className="p-6 border rounded bg-white flex items-center justify-between shadow-sm">
+                                <h1 className="text-xl font-bold">Skill Matrix Forms</h1>
+                                <Button onClick={() => setCreateOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold">Create Skill Matrix Form</Button>
+                            </div>
+
+                            <div className="p-6 border rounded bg-white space-y-4 shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <h2 className="text-lg font-semibold">Saved Skill Matrix Sheets</h2>
+                                    <Button variant="ghost" size="sm" onClick={() => {
+                                        setSelectedDepartment("");
+                                        setSelectedSection("");
+                                        setSelectedLine("");
+                                        setSelectedSubSection("");
+                                        setSelectedStation("");
+                                        setSelectedMonth("");
+                                    }} className="text-blue-600 hover:text-blue-700 h-auto p-0">Clear Filters</Button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Department</label>
+                                        <Select value={selectedDepartment} onValueChange={(val) => {
+                                            setSelectedDepartment(val);
+                                            setSelectedSection("");
+                                            setSelectedLine("");
+                                            setSelectedSubSection("");
+                                            setSelectedStation("");
+                                        }}>
+                                            <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Departments" /></SelectTrigger>
+                                            <SelectContent>
+                                                {departmentsData?.data?.departments?.map((d, idx) => (
+                                                    <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Section</label>
+                                        <Select value={selectedSection} onValueChange={(val) => {
+                                            setSelectedSection(val);
+                                            setSelectedLine("");
+                                            setSelectedSubSection("");
+                                            setSelectedStation("");
+                                        }} disabled={!selectedDepartment}>
+                                            <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Sections" /></SelectTrigger>
+                                            <SelectContent>
+                                                {sectionsData?.data?.map((s, idx) => (
+                                                    <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name} ({s.category})</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Line</label>
+                                        <Select value={selectedLine} onValueChange={(val) => {
+                                            setSelectedLine(val);
+                                            setSelectedSubSection("");
+                                            setSelectedStation("");
+                                        }} disabled={!selectedSection}>
+                                            <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Lines" /></SelectTrigger>
+                                            <SelectContent>
+                                                {linesData?.data?.map((l, idx) => (
+                                                    <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Sub-Section</label>
+                                        <Select value={selectedSubSection} onValueChange={(val) => {
+                                            setSelectedSubSection(val);
+                                            setSelectedStation("");
+                                        }} disabled={!selectedLine}>
+                                            <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Sub-Sections" /></SelectTrigger>
+                                            <SelectContent>
+                                                {subSectionsData?.data?.map((ss, idx) => (
+                                                    <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Station</label>
+                                        <Select value={selectedStation} onValueChange={setSelectedStation} disabled={!selectedLine}>
+                                            <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Stations" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="All">All Stations</SelectItem>
+                                                {(activeMachinesRef || []).map((m, idx) => (
+                                                    <SelectItem key={`${m.id || m._id}-${idx}`} value={String(m.id || m._id)}>{m.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Month</label>
+                                        <Input className="h-8 text-xs" type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+                                    </div>
+                                </div>
+
+                                <div className="border rounded overflow-hidden shadow-sm">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                            <tr>
+                                                <th className="p-3 border-b text-left">Type</th>
+                                                <th className="p-3 border-b text-left">Department</th>
+                                                <th className="p-3 border-b text-left">Section</th>
+                                                <th className="p-3 border-b text-left">Line</th>
+                                                <th className="p-3 border-b text-left">Sub-Section</th>
+                                                <th className="p-3 border-b text-left">Station</th>
+                                                <th className="p-3 border-b text-left">User Count</th>
+                                                <th className="p-3 border-b text-left">Month</th>
+                                                <th className="p-3 border-b text-center">QA</th>
+                                                <th className="p-3 border-b text-center">Safety</th>
+                                                <th className="p-3 border-b text-center">Process</th>
+                                                <th className="p-3 border-b text-left">Last Updated</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {isMatrixListLoading ? (
+                                                <tr><td className="p-4 text-center text-muted-foreground" colSpan={12}>Loading...</td></tr>
+                                            ) : matrixList.length === 0 ? (
+                                                <tr>
+                                                    <td className="p-4 text-center text-muted-foreground" colSpan={12}>
+                                                        No skill matrix forms found for selected filters.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                matrixList.map((row, idx) => (
+                                                    <tr
+                                                        key={row.id || idx}
+                                                        className="hover:bg-muted/30 cursor-pointer text-[11px] border-b"
+                                                        onClick={() => {
+                                                            setSelectedDepartment(String(row.department || ""));
+                                                            setSelectedSection(String(row.section || ""));
+                                                            setSelectedLine(String(row.line || ""));
+                                                            setSelectedSubSection(String(row.subSection || ""));
+                                                            setSelectedStation(String(row.station || ""));
+                                                            setSelectedMonth(String(row.month || ""));
+                                                            setIsMatrixOpen(true);
+                                                        }}
+                                                    >
+                                                        <td className="p-2 border-b">Skill Matrix</td>
+                                                        <td className="p-2 border-b">{row.departmentName || "-"}</td>
+                                                        <td className="p-2 border-b">{row.sectionName || "-"}</td>
+                                                        <td className="p-2 border-b">{row.lineName || "-"}</td>
+                                                        <td className="p-2 border-b">{row.subSectionName || "-"}</td>
+                                                        <td className="p-2 border-b">{row.stationName || "All"}</td>
+                                                        <td className="p-2 border-b font-bold text-blue-600">{row.userCount || 0}</td>
+                                                        <td className="p-2 border-b">{row.month || "-"}</td>
+                                                        <td className="p-2 border-b text-center">
+                                                            {row.footerInfo?.config?.signatures?.qa ? (
+                                                                <span className={row.footerInfo.config.signatures.qa.includes('Approved') ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
+                                                                    {row.footerInfo.config.signatures.qa.split(':')[0]}
+                                                                </span>
+                                                            ) : "-"}
+                                                        </td>
+                                                        <td className="p-2 border-b text-center">
+                                                            {row.footerInfo?.config?.signatures?.safety ? (
+                                                                <span className={row.footerInfo.config.signatures.safety.includes('Approved') ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
+                                                                    {row.footerInfo.config.signatures.safety.split(':')[0]}
+                                                                </span>
+                                                            ) : "-"}
+                                                        </td>
+                                                        <td className="p-2 border-b text-center">
+                                                            {row.footerInfo?.config?.signatures?.process ? (
+                                                                <span className={row.footerInfo.config.signatures.process.includes('Approved') ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
+                                                                    {row.footerInfo.config.signatures.process.split(':')[0]}
+                                                                </span>
+                                                            ) : "-"}
+                                                        </td>
+                                                        <td className="p-2 border-b">
+                                                            {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-"}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            {/* Controls */}
+                            <div className="no-print p-3 bg-white border rounded shadow flex flex-wrap gap-4 items-end">
+                                <div className="flex flex-col">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Department</label>
+                                    <span className="text-sm font-bold bg-gray-50 px-2 py-1 rounded border">{selectedDeptName}</span>
+                                </div>
+
+                                <div className="flex flex-col">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Section</label>
+                    <Select value={selectedSection || "all-sections"} onValueChange={(val) => {
+                        setSelectedSection(val === "all-sections" ? "" : val);
+                        setSelectedLine("");
+                        setSelectedSubSection("");
+                        setSelectedStation("");
                     }}>
                         <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Sections" /></SelectTrigger>
                         <SelectContent>
@@ -924,10 +1089,10 @@ const SkillMatrix = () => {
 
                 <div className="flex flex-col">
                     <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Line</label>
-                    <Select value={selectedLine || "all-lines"} onValueChange={(val) => { 
-                        setSelectedLine(val === "all-lines" ? "" : val); 
-                        setSelectedSubSection(""); 
-                        setSelectedStation(""); 
+                    <Select value={selectedLine || "all-lines"} onValueChange={(val) => {
+                        setSelectedLine(val === "all-lines" ? "" : val);
+                        setSelectedSubSection("");
+                        setSelectedStation("");
                     }} disabled={!selectedSection}>
                         <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Lines" /></SelectTrigger>
                         <SelectContent>
@@ -941,9 +1106,9 @@ const SkillMatrix = () => {
 
                 <div className="flex flex-col">
                     <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Sub-Section</label>
-                    <Select value={selectedSubSection || "all-subsections"} onValueChange={(val) => { 
-                        setSelectedSubSection(val === "all-subsections" ? "" : val); 
-                        setSelectedStation(""); 
+                    <Select value={selectedSubSection || "all-subsections"} onValueChange={(val) => {
+                        setSelectedSubSection(val === "all-subsections" ? "" : val);
+                        setSelectedStation("");
                     }} disabled={!selectedLine}>
                         <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Sub-Sections" /></SelectTrigger>
                         <SelectContent>
@@ -1008,7 +1173,18 @@ const SkillMatrix = () => {
                         <Edit2 className="h-4 w-4" />
                         Edit Layout
                     </Button>
-                    <Button onClick={handleSave} disabled={isSaving} className="bg-blue-600"><IconDeviceFloppy className="w-4 h-4 mr-2" /> Save Data</Button>
+                    <Button onClick={() => handleSave(false)} disabled={isSaving} className="bg-blue-600">
+                        <IconDeviceFloppy className="w-4 h-4 mr-2" />
+                        Save Matrix
+                    </Button>
+                    <Button onClick={() => handleSave(true)} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
+                        <IconMail className="w-4 h-4 mr-2" />
+                        Save & Send Email
+                    </Button>
+                    <Button onClick={handleDownloadHighResImage} className="bg-purple-600 hover:bg-purple-700 text-white" disabled={!selectedDepartment || !selectedMonth || isMachinesLoading || isGeneratingImage}>
+                        {isGeneratingImage ? <IconLoader className="w-4 h-4 mr-2 animate-spin" /> : <IconPhoto className="w-4 h-4 mr-2" />}
+                        Download Image
+                    </Button>
                     <Button onClick={handlePrint} variant="outline"><IconPrinter className="w-4 h-4 mr-2" /> Print</Button>
                     <Button
                         variant="outline"
@@ -1042,90 +1218,171 @@ const SkillMatrix = () => {
                     <p>No machines/stations found for this selection.</p>
                 </div>
             ) : (
-                <div id="printable-matrix" className="bg-white p-2 min-w-max overflow-x-auto">
+                <div id="printable-matrix" ref={tableRef} className="bg-white p-2 max-w-[1000px] w-full mx-auto overflow-hidden">
                     <PaginationControls />
                     <div className="border border-black text-center mb-1">
                         <h1 className="text-xl font-bold uppercase p-1">Skill Matrix</h1>
                     </div>
 
                     {/* Header Row 1 */}
-                    <div className="flex border border-black mb-1 text-[10px]">
-                        <div className="flex-1 flex border-r border-black">
-                            <div className="min-w-[100px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Dept</div>
-                            <div className="flex-1 p-1 font-bold flex items-center justify-center">{selectedDeptName}</div>
+                    <div className="flex border border-black mb-1 text-[11px]">
+                        <div className="flex border-r border-black">
+                            <div className="font-bold p-1 px-2 bg-gray-50 flex items-center justify-center border-r border-black">Department</div>
+                            <div className="p-1 font-bold flex items-center justify-center text-center">{selectedDeptName}</div>
                         </div>
-                        <div className="flex-1 flex border-r border-black">
-                            <div className="min-w-[100px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Section</div>
-                            <div className="flex-1 p-1 font-bold flex items-center justify-center">
+                        <div className="flex border-r border-black">
+                            <div className="font-bold p-1 px-2 bg-gray-50 flex items-center justify-center border-r border-black">Section</div>
+                            <div className="p-1 font-bold flex items-center justify-center text-center">
                                 {sectionsData?.data?.find(s => String(s.id || s._id) === String(selectedSection))?.name || "All"}
                             </div>
                         </div>
-                        <div className="flex-1 flex border-r border-black">
-                            <div className="min-w-[100px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Line</div>
-                            <div className="flex-1 p-1 font-bold flex items-center justify-center">{selectedLineName || "All"}</div>
+                        <div className="flex border-r border-black">
+                            <div className="font-bold p-1 px-2 bg-gray-50 flex items-center justify-center border-r border-black">Line</div>
+                            <div className="p-1 font-bold flex items-center justify-center text-center">{selectedLineName || "All"}</div>
                         </div>
-                        <div className="flex-1 flex border-r border-black">
-                            <div className="min-w-[110px] font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Sub-Sect</div>
-                            <div className="flex-1 p-1 font-bold flex items-center justify-center">
+                        <div className="flex border-r border-black">
+                            <div className="font-bold p-1 px-2 bg-gray-50 flex items-center justify-center border-r border-black">Sub-Sect</div>
+                            <div className="p-1 font-bold flex items-center justify-center text-center">
                                 {subSectionsData?.data?.find(ss => String(ss.id || ss._id) === String(selectedSubSection))?.name || "All"}
                             </div>
                         </div>
-                        <div className="min-w-[110px] flex border-r border-black">
-                            <div className="w-12 font-bold p-1 bg-gray-50 flex items-center justify-center border-r border-black">Shift</div>
-                            <div className="flex-1 flex items-center justify-center">
-                                <Input className="text-center font-bold text-xs h-6 border-none px-2" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} />
+                        <div className="flex border-r border-black">
+                            <div className="font-bold p-1 px-2 bg-gray-50 flex items-center justify-center border-r border-black">Shift</div>
+                            <div className="flex items-center justify-center">
+                                <Input className="text-center font-bold text-xs h-6 border-none px-2 w-12" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} />
                             </div>
                         </div>
                         {/* Signatures */}
-                        <div className="flex-1 grid grid-cols-3">
-                            <div className="border-r border-black">
-                                <div className="text-[9px] border-b border-black text-center">QA In-charge Sign.</div>
-                                <div className="text-[10px] p-1 h-8 flex items-center justify-center">Approved</div>
+                        <div className="flex">
+                            <div className="border-r border-black flex flex-col">
+                                <div className="text-[10px] border-b border-black text-center px-2">QA In-charge Sign.</div>
+                                <div className="text-[11px] p-1 h-8 flex items-center justify-center min-w-[100px]">
+                                    {config.signatures?.qa ? (
+                                        <div className="flex items-center gap-1 group">
+                                            <span className="font-bold leading-tight break-all">{config.signatures.qa}</span>
+                                            <button onClick={() => handleConfigChange('signatures.qa', '')} className="no-print hidden group-hover:block text-red-500">
+                                                <IconX size={12} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex gap-1">
+                                            <button onClick={() => handleSignature('qa', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
+                                            <button onClick={() => handleSignature('qa', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div className="border-r border-black">
-                                <div className="text-[9px] border-b border-black text-center">Safety In-charge Sign.</div>
-                                <div className="text-[10px] p-1 h-8"></div>
+                            <div className="border-r border-black flex flex-col">
+                                <div className="text-[10px] border-b border-black text-center px-2">Safety In-charge Sign.</div>
+                                <div className="text-[11px] p-1 h-8 flex items-center justify-center min-w-[100px]">
+                                    {config.signatures?.safety ? (
+                                        <div className="flex items-center gap-1 group">
+                                            <span className="font-bold leading-tight break-all">{config.signatures.safety}</span>
+                                            <button onClick={() => handleConfigChange('signatures.safety', '')} className="no-print hidden group-hover:block text-red-500">
+                                                <IconX size={12} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex gap-1">
+                                            <button onClick={() => handleSignature('safety', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
+                                            <button onClick={() => handleSignature('safety', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div>
-                                <div className="text-[9px] border-b border-black text-center">Process In-charge Sign.</div>
-                                <div className="text-[10px] p-1 h-8 flex items-center justify-center">Confirmed</div>
+                            <div className="border-r border-black flex flex-col">
+                                <div className="text-[10px] border-b border-black text-center px-2">Process In-charge Sign.</div>
+                                <div className="text-[11px] p-1 h-8 flex items-center justify-center min-w-[100px]">
+                                    {config.signatures?.process ? (
+                                        <div className="flex items-center gap-1 group">
+                                            <span className="font-bold leading-tight break-all">{config.signatures.process}</span>
+                                            <button onClick={() => handleConfigChange('signatures.process', '')} className="no-print hidden group-hover:block text-red-500">
+                                                <IconX size={12} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex gap-1">
+                                            <button onClick={() => handleSignature('process', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
+                                            <button onClick={() => handleSignature('process', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex flex-col">
+                                <div className="text-[10px] border-b border-black text-center px-2">
+                                    <Input
+                                        className="h-8 w-24 p-0 text-center border-none bg-transparent"
+                                        value={config.plannedHeader || ""}
+                                        onChange={e => handleConfigChange('plannedHeader', e.target.value)}
+                                        placeholder=""
+                                    />
+                                </div>
+                                <div className="text-[11px] p-1 h-4 flex items-center justify-center min-w-[100px] font-bold">
+                                    Planned
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     {/* Product & Revisions Header */}
-                    <div className="flex border border-black mb-1 text-[10px]">
+                    <div className="flex border border-black mb-1 text-[11px] w-fit">
                         {/* Products */}
                         {config.products.map((p, i) => (
-                            <div key={`prod - ${i} `} className="flex-1 border-r border-black p-1">
-                                <div className="flex items-center gap-1">
-                                    <span className="font-bold">Product</span>
-                                    <Input className="h-5 p-0 text-[10px] border-b flex-1" value={p || ""} onChange={e => handleArrayConfigChange('products', i, null, e.target.value)} />
+                            <div key={`prod-${i}`} className="border-r border-black flex flex-col p-0">
+                                <div className="border-b border-black text-center font-bold bg-gray-50 py-1 px-1">Product</div>
+                                <div className="flex-1 flex items-center justify-center p-0">
+                                    <Input
+                                        className="h-full p-0 text-center border-none bg-transparent"
+                                        style={{ width: `${Math.max(48, (p?.length || 0) * 8 + 10)}px` }}
+                                        value={p || ""}
+                                        onChange={e => handleArrayConfigChange('products', i, null, e.target.value)}
+                                    />
                                 </div>
                             </div>
                         ))}
 
                         {/* Revisions Block */}
                         {config.revisions.map((rev, i) => (
-                            <div key={`rev - ${i} `} className="flex-[1.5] border-r border-black flex">
-                                <div className="flex-1 border-r border-black p-1">
-                                    <div className="text-[8px] text-gray-500">Product</div>
-                                    <Input className="h-4 p-0 text-[10px]" value={rev.product || ""} onChange={e => handleArrayConfigChange('revisions', i, 'product', e.target.value)} />
+                            <div key={`rev-${i}`} className="border-r border-black flex">
+                                <div className="border-r border-black flex flex-col p-0">
+                                    <div className="border-b border-black text-[10px] text-center bg-gray-50 py-1 font-semibold px-1">Product</div>
+                                    <div className="flex-1 flex items-center justify-center p-0">
+                                        <Input
+                                            className="h-full p-0 text-center text-[11px] border-none bg-transparent px-1"
+                                            style={{ width: `${Math.max(48, (rev.product?.length || 0) * 7 + 10)}px` }}
+                                            value={rev.product || ""}
+                                            onChange={e => handleArrayConfigChange('revisions', i, 'product', e.target.value)}
+                                        />
+                                    </div>
                                 </div>
-                                <div className="flex-1 border-r border-black p-1">
-                                    <div className="text-[8px] text-gray-500">Revision</div>
-                                    <Input className="h-4 p-0 text-[10px]" value={rev.revision || ""} onChange={e => handleArrayConfigChange('revisions', i, 'revision', e.target.value)} />
+                                <div className="border-r border-black flex flex-col p-0">
+                                    <div className="border-b border-black text-[10px] text-center bg-gray-50 py-1 font-semibold px-1">Revision</div>
+                                    <div className="flex-1 flex items-center justify-center p-0">
+                                        <Input
+                                            className="h-full p-0 text-center text-[11px] border-none bg-transparent px-1"
+                                            style={{ width: `${Math.max(48, (rev.revision?.length || 0) * 7 + 10)}px` }}
+                                            value={rev.revision || ""}
+                                            onChange={e => handleArrayConfigChange('revisions', i, 'revision', e.target.value)}
+                                        />
+                                    </div>
                                 </div>
-                                <div className="flex-1 p-1">
-                                    <div className="text-[8px] text-gray-500">Op. date</div>
-                                    <Input className="h-4 p-0 text-[10px]" value={rev.date || ""} onChange={e => handleArrayConfigChange('revisions', i, 'date', e.target.value)} />
+                                <div className="flex flex-col p-0">
+                                    <div className="border-b border-black text-[10px] text-center bg-gray-50 py-1 font-semibold px-1">Operatoion date</div>
+                                    <div className="flex-1 flex items-center justify-center p-0">
+                                        <Input
+                                            className="h-full p-0 text-center text-[11px] border-none bg-transparent px-1"
+                                            style={{ width: `${Math.max(48, (rev.date?.length || 0) * 7 + 10)}px` }}
+                                            value={rev.date || ""}
+                                            onChange={e => handleArrayConfigChange('revisions', i, 'date', e.target.value)}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         ))}
                     </div>
 
                     {/* Legend Row */}
-                    <div className="border border-black mb-1 p-1 flex flex-wrap items-center gap-4 text-[10px]">
+                    <div className="border border-black mb-1 p-1 flex flex-wrap items-center gap-4 text-[11px]">
                         <div className="font-bold w-32 min-w-[128px] text-right">Skill Symbol</div>
                         {/* Always show L-0/Under Training */}
                         <div className="flex items-center gap-2">
@@ -1140,23 +1397,24 @@ const SkillMatrix = () => {
                     </div>
 
                     {/* Main Table */}
-                    <table className="w-full border-collapse border border-black text-[10px]">
+                    <table className="w-full border-collapse border border-black text-[10px] table-auto">
+                        <colgroup><col style={{ width: '5%' }} /><col /><col /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} />{groupedSubSections.map((_, i) => (<col key={i} style={{ width: `${43 / groupedSubSections.length}%` }} />))}<col style={{ width: '4%' }} /><col style={{ width: '4%' }} /><col style={{ width: '4%' }} /><col style={{ width: '3%' }} /></colgroup>
                         <thead>
                             {/* Process Responsible Person Row */}
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Process responsible person</th>
-                                <th colSpan={10} className="border border-black p-1 text-left">
+                                <th colSpan={groupedSubSections.length} className="border border-black p-1 text-left">
                                     <Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.responsible || ""} onChange={e => handleConfigChange('processPersons.responsible', e.target.value)} />
                                 </th>
-                                <th colSpan={5} className="border border-black"></th>
+                                <th colSpan={4} className="border border-black"></th>
                             </tr>
                             {/* Vice Process Row */}
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Vice process responsible person</th>
-                                <th colSpan={15} className="border border-black p-1 text-center flex justify-center gap-10">
+                                <th colSpan={groupedSubSections.length} className="border border-black p-1 text-center flex justify-center gap-10">
                                     <span><Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.vice || ""} onChange={e => handleConfigChange('processPersons.vice', e.target.value)} /></span>
                                 </th>
-                                <th colSpan={5} className="border border-black">
+                                <th colSpan={4} className="border border-black text-center">
                                     <span><Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.vice2 || ""} onChange={e => handleConfigChange('processPersons.vice2', e.target.value)} /></span>
                                 </th>
                             </tr>
@@ -1164,39 +1422,43 @@ const SkillMatrix = () => {
                             {/* Main Headers for Stations */}
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Responsible expert</th>
-                                {/* Generated Stations Header (Operators) */}
-                                {Array(16).fill(0).map((_, i) => (
-                                    <th key={i} className="border border-black min-w-[45px] bg-yellow-100 text-[8px] font-normal leading-tight p-0.5">
-                                        {i < 16 && "Operator Inspector"}
+                                {/* Generated Sub-Section Header (Operators) */}
+                                {groupedSubSections.map((_, i) => (
+                                    <th key={i} className="border border-black bg-yellow-100 text-[9px] font-normal leading-tight p-0.5">
+                                        Operator Inspector
                                     </th>
                                 ))}
-                                <th rowSpan={4} className="border border-black bg-yellow-300 min-w-[80px]">Number of process of per person</th>
-                                <th rowSpan={4} className="border border-black bg-yellow-300 min-w-[50px]">Status</th>
-                                <th rowSpan={4} className="border border-black bg-yellow-300 min-w-[50px]">%</th>
+                                <th colSpan={2} rowSpan={4} className="border border-black bg-yellow-300">Number of process of per person</th>
+                                <th rowSpan={5} className="border border-black bg-yellow-300">Status</th>
+                                <th rowSpan={5} className="border border-black bg-yellow-300">%</th>
                             </tr>
 
-                            {/* Process Name Row */}
+                            {/* Sub-Section Name Row */}
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Process name</th>
-                                {Array(16).fill(0).map((_, i) => {
-                                    const machineName = activeMachinesRef?.[i]?.name || "";
-                                    return (
-                                        <th key={i} className="border border-black min-w-[45px] h-32 align-bottom p-1">
-                                            <div className="flex items-center justify-center [writing-mode:vertical-rl] rotate-270 w-full h-full text-[10px] leading-tight break-words">{machineName}</div>
-                                        </th>
-                                    )
-                                })}
+
+                                {groupedSubSections.map((group, i) => (
+                                    <th key={i} className="border border-black p-1 bg-gray-50 h-32 text-center font-bold uppercase text-[9px]">
+                                        {group.name}
+                                    </th>
+                                ))}
                             </tr>
 
                             {/* Min Skill Row */}
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Min.Skill Required</th>
-                                {Array(16).fill(0).map((_, i) => {
-                                    // Use config minSkills or default to L2
-                                    const val = config.minSkills?.[i] || "L2";
+
+                                {groupedSubSections.map((group, i) => {
+                                    // Directly use the sub-section's required level
+                                    const rawVal = group.minimumRequiredLevel || config.minSkills?.[i] || "L2";
+                                    // Clean value: remove leading/trailing dots or commas
+                                    const cleanedVal = String(rawVal).replace(/^[.,\s]+|[.,\s]+$/g, '');
+                                    
                                     return (
-                                        <th key={i} className="border border-black min-w-[45px]">
-                                            <Input className="h-4 p-0 text-center text-[10px] bg-transparent border-none" value={val} onChange={e => handleMinSkillChange(i, e.target.value)} />
+                                        <th key={i} className="border border-black p-0 h-4 bg-gray-50/50">
+                                            <div className="text-center text-[11px] font-bold">
+                                                {cleanedVal}
+                                            </div>
                                         </th>
                                     )
                                 })}
@@ -1205,25 +1467,31 @@ const SkillMatrix = () => {
                             {/* Operation Sharing Row */}
                             <tr>
                                 <th colSpan={5} className="border border-black p-1 text-right">Operation sharing ( Station No & equipment name)</th>
-                                {Array(16).fill(0).map((_, i) => (
-                                    <th key={i} className="border border-black min-w-[45px]">{i + 1}</th>
+
+                                {groupedSubSections.map((_, i) => (
+                                    <th key={i} className="border border-black p-0 text-[10px]">{i + 1}</th>
                                 ))}
                             </tr>
 
                             {/* Actual User Columns Header */}
                             <tr>
-                                <th className="border border-black min-w-[50px]">Number</th>
-                                <th className="border border-black min-w-[180px] px-2">Operator name</th>
-                                <th className="border border-black min-w-[80px]">Card No.</th>
-                                <th className="border border-black min-w-[100px] text-[8px] px-1">Year number of experience\nDate of Certificate update</th>
-                                <th className="border border-black min-w-[100px] text-[8px] px-1">Equipment arrangement number\nPosition number</th>
+                                <th className="border border-black px-0">Number</th>
+                                <th className="border border-black px-0">Operator name</th>
+                                <th className="border border-black px-0">Card No.</th>
+                                <th className="border border-black text-[9px] p-0">
+                                    <div className="border-b border-black py-0.5 flex items-center justify-center px-0">Year number of experience</div>
+                                    <div className="py-0.5 flex items-center justify-center px-0">Date of Certificate update</div>
+                                </th>
+                                <th className="border border-black text-[9px] p-0">
+                                    <div className="border-b border-black py-0.5 flex items-center justify-center px-0">Equipment arrangement number</div>
+                                    <div className="py-0.5 flex items-center justify-center px-0">Position number</div>
+                                </th>
 
-                                {Array(16).fill(0).map((_, i) => (
-                                    <th key={i} className="border border-black min-w-[45px]">{i + 1}</th>
+                                {groupedSubSections.map((_, i) => (
+                                    <th key={i} className="border border-black p-0">{i + 1}</th>
                                 ))}
-                                <th className="border border-black min-w-[50px]">Plan</th>
-                                <th className="border border-black min-w-[50px]">Actual</th>
-                                <th className="border border-black" colSpan={2}></th>
+                                <th className="border border-black px-0">Plan</th>
+                                <th className="border border-black px-0">Actual</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1237,50 +1505,115 @@ const SkillMatrix = () => {
                                 paginatedEntries.map((entry, rowIndex) => {
                                     const originalIndex = matrixEntries.indexOf(entry);
                                     return (
-                                        <tr key={originalIndex} className="h-10 text-center border border-black hover:bg-gray-50">
-                                            <td className="border border-black font-bold">{entry.srNo}</td>
-                                            <td className="border border-black font-bold text-left px-2 whitespace-nowrap">{entry.name}</td>
-                                            <td className="border border-black">
-                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent px-1" value={entry.cardNo} onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)} />
+                                        <tr key={originalIndex} className="h-auto min-h-[32px] text-center border border-black hover:bg-gray-50">
+                                            <td className="border border-black font-bold p-0">{entry.srNo}</td>
+                                            <td className="border border-black font-bold text-left px-0.5">
+                                                {entry.isManual ? (
+                                                    entry.name
+                                                ) : (
+                                                    <button
+                                                        onClick={() => {
+                                                            setEvalDepartment(selectedDepartment);
+                                                             setEvalSection(selectedSection);
+                                                             setEvalLine(selectedLine);
+                                                             setEvalSubSection(selectedSubSection);
+                                                             setSelectedOperatorForEval(entry._id);
+                                                            setActiveTab("evaluation");
+                                                        }}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full"
+                                                        title="Click to view/edit Skill Matrix Evaluation Certificate"
+                                                    >
+                                                        {entry.name}
+                                                    </button>
+                                                )}
                                             </td>
                                             <td className="border border-black p-0">
-                                                <div className="border-b border-black h-5 flex items-center justify-center">
-                                                    <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.experience} onChange={e => handleEntryChange(originalIndex, 'experience', e.target.value)} />
-                                                </div>
-                                                <div className="h-5 flex items-center justify-center">
-                                                    <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.certDate} onChange={e => handleEntryChange(originalIndex, 'certDate', e.target.value)} />
+                                                <Input
+                                                    className="h-full p-0 text-center border-none bg-transparent px-0"
+                                                    style={{ width: `${Math.max(60, (entry.cardNo?.length || 0) * 7 + 10)}px` }}
+                                                    value={entry.cardNo}
+                                                    onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)}
+                                                />
+                                            </td>
+                                            <td className="border border-black p-0">
+                                                <div className="flex flex-col h-full">
+                                                    <div className="border-b border-black flex-1 flex items-center justify-center min-h-[16px]">
+                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent text-[10px]" value={entry.experience} onChange={e => handleEntryChange(originalIndex, 'experience', e.target.value)} />
+                                                    </div>
+                                                    <div className="flex-1 flex items-center justify-center min-h-[16px]">
+                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent text-[10px]" value={entry.certDate} onChange={e => handleEntryChange(originalIndex, 'certDate', e.target.value)} />
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="border border-black p-0 bg-yellow-100">
-                                                <div className="border-b border-black h-5 bg-white"></div>
-                                                <div className="h-5 flex items-center justify-center text-[9px]">
-                                                    <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.position} onChange={e => handleEntryChange(originalIndex, 'position', e.target.value)} />
+                                                <div className="flex flex-col h-full">
+                                                    <div className="border-b border-black flex-1 bg-white min-h-[16px]"></div>
+                                                    <div className="flex-1 flex items-center justify-center text-[10px] min-h-[16px]">
+                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold text-[10px]" value={entry.position} onChange={e => handleEntryChange(originalIndex, 'position', e.target.value)} />
+                                                    </div>
                                                 </div>
                                             </td>
 
-                                            {/* Stations */}
-                                            {Array(16).fill(0).map((_, i) => {
-                                                const station = entry.stations[i];
+                                            {/* Sub-Sections Skills (Aggregated) */}
+
+                                            {groupedSubSections.map((group, i) => {
+                                                const subSectionStations = group.indices.map(idx => entry.stations[idx]).filter(Boolean);
+
+                                                let maxStation = null;
+                                                let maxWeight = -1;
+
+                                                subSectionStations.forEach(s => {
+                                                    const w = getLevelWeight(s.curr);
+                                                    if (w > maxWeight) {
+                                                        maxWeight = w;
+                                                        maxStation = s;
+                                                    }
+                                                });
+
+                                                if (!maxStation && subSectionStations.length > 0) {
+                                                    maxStation = subSectionStations[0];
+                                                }
+
+                                                const userAssignments = entry.assignments || [];
+                                                const isAssigned = userAssignments?.some(ua =>
+                                                    String(ua.subSectionId) === String(group.id) ||
+                                                    subSectionStations.some(s => String(s._id) === String(ua.machineId))
+                                                );
+
+                                                const displayLevel = (isAssigned || maxWeight > 0) ? (maxStation?.curr || 'L-0') : '-';
+
                                                 return (
                                                     <td key={i} className="border border-black p-0 align-middle">
-                                                        {station ? (
-                                                            <div className="flex justify-center items-center h-full">
-                                                                <SkillIcon levelStr={station.curr} size={24} editable={true} onClick={(l) => handleStationChange(originalIndex, i, l)} />
-                                                            </div>
-                                                        ) : <div className="bg-gray-100 h-full w-full"></div>}
+                                                        <div className="flex justify-center items-center h-full">
+                                                            <SkillIcon
+                                                                levelStr={displayLevel}
+                                                                size={24}
+                                                                editable={true}
+                                                                onClick={(level) => handleSubSectionSkillChange(originalIndex, i, level)}
+                                                            />
+                                                        </div>
                                                     </td>
                                                 )
                                             })}
 
-                                            <td className="border border-black">
+                                            <td className="border border-black p-0">
                                                 <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.plan} onChange={e => handleEntryChange(originalIndex, 'plan', e.target.value)} />
                                             </td>
-                                            <td className="border border-black font-bold bg-gray-50">{entry.actual}</td>
-                                            <td className="border border-black">
-                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.status} onChange={e => handleEntryChange(originalIndex, 'status', e.target.value)} />
+                                            <td className="border border-black font-bold bg-gray-50 p-0">
+                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.actual} onChange={e => handleEntryChange(originalIndex, 'actual', e.target.value)} />
                                             </td>
-                                            <td className="border border-black font-bold text-blue-600">
-                                                {((entry.actual / (entry.plan || 1)) * 100).toFixed(0)}%
+                                            <td className="border border-black p-0">
+                                                <select
+                                                    className="h-full w-full p-0 text-center border-none bg-transparent font-bold appearance-none cursor-pointer text-[10px]"
+                                                    value={entry.status || "OK"}
+                                                    onChange={e => handleEntryChange(originalIndex, 'status', e.target.value)}
+                                                >
+                                                    <option value="OK">OK</option>
+                                                    <option value="NG">NG</option>
+                                                </select>
+                                            </td>
+                                            <td className="border border-black font-bold text-blue-600 p-0">
+                                                {((parseFloat(entry.actual) / (parseFloat(entry.plan) || 1)) * 100).toFixed(0)}%
                                             </td>
                                         </tr>
                                     );
@@ -1289,41 +1622,125 @@ const SkillMatrix = () => {
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th colSpan={5} className="border border-black text-right p-1">Plan (No. of skilled manpower)</th>
-                                {Array(16).fill(0).map((_, i) => (
+                                <th colSpan={4} rowSpan={2} className="border border-black text-right p-1">Number of person for process</th>
+                                <th className="border border-black text-center p-1">Plan</th>
+                                {groupedSubSections.map((_, i) => (
                                     <td key={i} className="border border-black font-bold p-0">
-                                        <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.plan[i] || ""} onChange={e => handleFooterRowChange("plan", i, e.target.value)} />
+                                        <Input className="h-full w-full p-0 text-center text-[11px] bg-transparent border-none font-bold" value={config.footerRows?.numPersonPlan?.[i] || ""} onChange={e => handleFooterRowChange("numPersonPlan", i, e.target.value)} />
                                     </td>
                                 ))}
-                                <td colSpan={4} className="border border-black"></td>
+                                <td className="border border-black font-bold text-center bg-gray-100">Total Plan</td>
+                                <td className="border border-black font-bold text-center bg-gray-100">Total Actual</td>
+                                <td className="border border-black bg-gray-100"></td>
+                                <td className="border border-black font-bold text-center bg-gray-100 text-blue-600">Total %</td>
+                            </tr>
+                             <tr>
+                                <th className="border border-black text-center p-1">Actual</th>
+                                {groupedSubSections.map((_, i) => (
+                                    <td key={i} className="border border-black font-bold p-0 text-center text-[11px]">
+                                        {columnStats[i]?.actual || 0}
+                                    </td>
+                                ))}
+                                <td className="border border-black font-bold text-center bg-white">
+                                    {filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.plan) || 0), 0)}
+                                </td>
+                                <td className="border border-black font-bold text-center bg-white">
+                                    {filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.actual) || 0), 0)}
+                                </td>
+                                <td className="border border-black bg-white"></td>
+                                <td className="border border-black font-bold text-blue-600 text-center bg-white">
+                                    {(() => {
+                                        const totalPlan = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.plan) || 0), 0);
+                                        const totalActual = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.actual) || 0), 0);
+                                        return totalPlan > 0 ? ((totalActual / totalPlan) * 100).toFixed(0) : 0;
+                                    })()}%
+                                </td>
                             </tr>
                             <tr>
-                                <th colSpan={5} className="border border-black text-right p-1">Actual</th>
-                                {Array(16).fill(0).map((_, i) => (
+                                <th colSpan={5} className="border border-black text-right p-1">Status</th>
+                                {groupedSubSections.map((_, i) => (
                                     <td key={i} className="border border-black font-bold p-0">
-                                        <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.actual[i] || ""} onChange={e => handleFooterRowChange("actual", i, e.target.value)} />
+                                        <select
+                                            className="h-full w-full p-0 text-center border-none bg-transparent font-bold appearance-none cursor-pointer text-[10px]"
+                                            value={config.footerRows?.statusRow?.[i] || "OK"}
+                                            onChange={e => handleFooterRowChange("statusRow", i, e.target.value)}
+                                        >
+                                            <option value="OK">OK</option>
+                                            <option value="NG">NG</option>
+                                        </select>
                                     </td>
                                 ))}
-                                <td colSpan={4} className="border border-black"></td>
+                                <td colSpan={4} className="border border-black bg-gray-50"></td>
                             </tr>
-                            <tr>
-                                <th colSpan={5} className="border border-black text-right p-1">% (Skilled manpower)</th>
-                                {Array(16).fill(0).map((_, i) => (
-                                    <td key={i} className="border border-black font-bold p-0">
-                                        <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.percent[i] || ""} onChange={e => handleFooterRowChange("percent", i, e.target.value)} />
-                                    </td>
-                                ))}
-                                <td colSpan={4} className="border border-black"></td>
-                            </tr>
+
+
                         </tfoot>
                     </table>
+
+                    {/* Evaluation Schedule Table */}
+                    <div className="mt-1 border border-black overflow-hidden no-print-break">
+                        <table className="w-full border-collapse border border-black text-[10px] table-fixed">
+                            <thead>
+                                <tr className="bg-gray-50">
+                                    <th className="border border-black p-1 w-24 text-right">Evaluation</th>
+                                    {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(m => (
+                                        <th key={m} className="border border-black p-1">{m}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+
+                                <tr>
+                                    <td className="border border-black p-1 text-right font-bold bg-gray-50 uppercase text-[9px]">Plan (No. of skilled manpower)</td>
+                                    {Array(12).fill(0).map((_, i) => (
+                                        <td key={i} className="border border-black p-0">
+                                            <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.planMonths?.[i] || ""} onChange={e => handleFooterRowChange("planMonths", i, e.target.value)} />
+                                        </td>
+                                    ))}
+                                </tr>
+                                <tr>
+                                    <td className="border border-black p-1 text-right font-bold bg-gray-50 uppercase text-[9px]">Actual</td>
+                                    {Array(12).fill(0).map((_, i) => (
+                                        <td key={i} className="border border-black p-0">
+                                            <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.actualMonths?.[i] || ""} onChange={e => handleFooterRowChange("actualMonths", i, e.target.value)} />
+                                        </td>
+                                    ))}
+                                </tr>
+                                <tr>
+                                    <td className="border border-black p-1 text-right font-bold bg-gray-50 uppercase text-[9px]">% (Skilled manpower)</td>
+                                    {Array(12).fill(0).map((_, i) => {
+                                        // Auto-calculate for current selected month
+                                        const currentMonthIdx = selectedMonth ? parseInt(selectedMonth.split('-')[1]) - 1 : -1;
+                                        let planVal, actualVal;
+
+                                        if (i === currentMonthIdx) {
+                                            planVal = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.plan) || 0), 0);
+                                            actualVal = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.actual) || 0), 0);
+                                        } else {
+                                            planVal = parseFloat(config.footerRows?.planMonths?.[i]) || 0;
+                                            actualVal = parseFloat(config.footerRows?.actualMonths?.[i]) || 0;
+                                        }
+
+                                        const percentVal = planVal > 0 ? ((actualVal / planVal) * 100).toFixed(0) : 0;
+                                        return (
+                                            <td key={i} className="border border-black p-0 bg-gray-50/30">
+                                                <div className="h-full w-full flex items-center justify-center text-[10px] font-bold text-blue-600 min-h-[24px]">
+                                                    {percentVal}%
+                                                </div>
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
 
                     <div className="no-print mt-6">
                         <PaginationControls />
                     </div>
 
                     {/* Footer Info */}
-                    <div className="flex justify-between text-[10px] mt-2 border-t border-black pt-1">
+                    <div className="flex justify-between text-[11px] mt-2 border-t border-black pt-1">
                         <div>Date of Certificate/update : {config.documentInfo.revDate}</div>
                         <div>Doc No. {config.documentInfo.docNo}</div>
                         <div>Rev.{config.documentInfo.revNo}</div>
@@ -1332,6 +1749,248 @@ const SkillMatrix = () => {
                     </div>
                 </div>
             )}
+        </div>
+    )}
+</TabsContent>
+
+                    <TabsContent value="evaluation" className="space-y-6">
+                        {/* Control Bar for selecting operator */}
+                        <div className="no-print p-6 bg-white border rounded-lg shadow-sm space-y-4 mb-6 text-black">
+                            <div className="flex justify-between items-center border-b pb-2">
+                                <div>
+                                    <h2 className="text-lg font-bold text-gray-800">Operator Evaluation Finder</h2>
+                                    <p className="text-xs text-gray-500">Filter and select an operator to view/edit their skill certificate</p>
+                                </div>
+                                <Button variant="outline" size="sm" onClick={() => setActiveTab("skillMatrix")}>
+                                    Back to Matrix Grid
+                                </Button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Department</label>
+                                    <Select value={evalDepartment} onValueChange={(val) => {
+                                        setEvalDepartment(val);
+                                        setEvalSection("");
+                                        setEvalLine("");
+                                        setEvalSubSection("");
+                                        setSelectedOperatorForEval(null);
+                                    }}>
+                                        <SelectTrigger className="h-9"><SelectValue placeholder="Select Department" /></SelectTrigger>
+                                        <SelectContent>
+                                            {departmentsData?.data?.departments?.map((d, idx) => (
+                                                <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Section</label>
+                                    <Select value={evalSection} onValueChange={(val) => {
+                                        setEvalSection(val);
+                                        setEvalLine("");
+                                        setEvalSubSection("");
+                                        setSelectedOperatorForEval(null);
+                                    }} disabled={!evalDepartment}>
+                                        <SelectTrigger className="h-9"><SelectValue placeholder="All Sections" /></SelectTrigger>
+                                        <SelectContent>
+                                            {evalSectionsData?.data?.map((s, idx) => (
+                                                <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Line</label>
+                                    <Select value={evalLine} onValueChange={(val) => {
+                                        setEvalLine(val);
+                                        setEvalSubSection("");
+                                        setSelectedOperatorForEval(null);
+                                    }} disabled={!evalSection}>
+                                        <SelectTrigger className="h-9"><SelectValue placeholder="All Lines" /></SelectTrigger>
+                                        <SelectContent>
+                                            {evalLinesData?.data?.map((l, idx) => (
+                                                <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Sub-Section</label>
+                                    <Select value={evalSubSection} onValueChange={(val) => {
+                                        setEvalSubSection(val);
+                                        setSelectedOperatorForEval(null);
+                                    }} disabled={!evalLine}>
+                                        <SelectTrigger className="h-9"><SelectValue placeholder="All Sub-Sections" /></SelectTrigger>
+                                        <SelectContent>
+                                            {evalSubSectionsData?.data?.map((ss, idx) => (
+                                                <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Search User</label>
+                                    <Input
+                                        placeholder="Type name or card no..."
+                                        value={evalSearchText}
+                                        onChange={(e) => {
+                                            setEvalSearchText(e.target.value);
+                                            setSelectedOperatorForEval(null);
+                                        }}
+                                        className="h-9"
+                                        disabled={!evalDepartment}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col gap-1 pt-2 border-t">
+                                <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold text-blue-600">Select Operator to Evaluate</label>
+                                <Select 
+                                    value={selectedOperatorForEval || ""} 
+                                    onValueChange={setSelectedOperatorForEval}
+                                    disabled={!evalDepartment || filteredEvalUsers.length === 0}
+                                >
+                                    <SelectTrigger className="h-9">
+                                        <SelectValue placeholder={
+                                            !evalDepartment 
+                                                ? "Please select a department first" 
+                                                : filteredEvalUsers.length === 0 
+                                                    ? "No operators found matching the criteria" 
+                                                    : "Select an operator"
+                                        } />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {filteredEvalUsers.map(u => (
+                                            <SelectItem key={u._id} value={u._id}>
+                                                {u.fullName || u.name} {u.cardNo ? `(${u.cardNo})` : ""}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        {selectedOperatorForEval ? (
+                            <div className="bg-white border rounded p-4 shadow">
+                                <SkillMatrixCertificate
+                                    studentId={selectedOperatorForEval}
+                                    studentName={
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.name || 
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.fullName || 
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.name
+                                    }
+                                    employeeCode={
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.cardNo || 
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo
+                                    }
+                                    departmentId={evalDepartment || selectedDepartment}
+                                />
+                            </div>
+                        ) : (
+                            <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
+                                No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                            </div>
+                        )}
+                    </TabsContent>
+                </Tabs>
+
+            {/* Create Skill Matrix Form Dialog */}
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Create Skill Matrix Form</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Department</label>
+                            <Select value={createDepartment} onValueChange={(val) => {
+                                setCreateDepartment(val);
+                                setCreateSection("");
+                                setCreateLine("");
+                                setCreateSubSection("");
+                                setCreateStation("");
+                            }}>
+                                <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
+                                <SelectContent>
+                                    {departmentsData?.data?.departments?.map((d, idx) => (
+                                        <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Section</label>
+                            <Select value={createSection} onValueChange={(val) => {
+                                setCreateSection(val);
+                                setCreateLine("");
+                                setCreateSubSection("");
+                                setCreateStation("");
+                            }} disabled={!createDepartment}>
+                                <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
+                                <SelectContent>
+                                    {createSectionsData?.data?.map((s, idx) => (
+                                        <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name} ({s.category})</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Line</label>
+                            <Select value={createLine} onValueChange={(val) => {
+                                setCreateLine(val);
+                                setCreateSubSection("");
+                                setCreateStation("");
+                            }} disabled={!createSection}>
+                                <SelectTrigger><SelectValue placeholder="Select Line" /></SelectTrigger>
+                                <SelectContent>
+                                    {createLinesData?.data?.map((l, idx) => (
+                                        <SelectItem key={`${l.id || l._id}-${idx}`} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Sub-Section</label>
+                            <Select value={createSubSection} onValueChange={(val) => {
+                                setCreateSubSection(val);
+                                setCreateStation("");
+                            }} disabled={!createLine}>
+                                <SelectTrigger><SelectValue placeholder="Select Sub-Section" /></SelectTrigger>
+                                <SelectContent>
+                                    {createSubSectionsData?.data?.map((ss, idx) => (
+                                        <SelectItem key={`${ss.id || ss._id}-${idx}`} value={String(ss.id || ss._id)}>{ss.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Station</label>
+                            <Select value={createStation} onValueChange={setCreateStation} disabled={!createLine}>
+                                <SelectTrigger><SelectValue placeholder="All Stations" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="All">All Stations</SelectItem>
+                                    {((createSubSection ? createMachinesData?.data : createMachinesByLineData?.data) || []).map((m, idx) => (
+                                        <SelectItem key={`${m.id || m._id}-${idx}`} value={String(m.id || m._id)}>{m.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Month</label>
+                            <Input type="month" value={createMonth} onChange={(e) => setCreateMonth(e.target.value)} />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+                        <Button onClick={handleCreateSkillMatrix}>Create</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Edit Dashboard Layout Dialog */}
             <Dialog open={isEditingLayout} onOpenChange={setIsEditingLayout}>

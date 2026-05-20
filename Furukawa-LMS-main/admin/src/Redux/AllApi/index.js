@@ -265,6 +265,7 @@ export {
     onJobTrainingApi,
     useGetStudentOJTsQuery,
     useGetOnJobTrainingByIdQuery,
+    useGetAllOnJobTrainingsQuery,
     useCreateOnJobTrainingMutation,
     useUpdateOnJobTrainingMutation,
 } from './OnJobTrainingApi';

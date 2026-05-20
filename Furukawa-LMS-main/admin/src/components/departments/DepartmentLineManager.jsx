@@ -199,7 +199,10 @@ const DepartmentLineManager = ({ departmentId }) => {
                                 <TableRow
                                     key={line.id || line._id}
                                     className="cursor-pointer hover:bg-gray-100"
-                                    onClick={() => navigate(`/admin/departments/${departmentId}/lines/${line.id || line._id}`)}
+                                    onClick={() => {
+                                        const baseLayout = window.location.pathname.split('/')[1] || 'admin';
+                                        navigate(`/${baseLayout}/departments/${departmentId}/lines/${line.id || line._id}`);
+                                    }}
                                 >
                                     <TableCell className="font-medium">
                                         {editingLineId === (line.id || line._id) ? (

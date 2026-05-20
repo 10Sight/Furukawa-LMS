@@ -22,10 +22,10 @@ export const adminHomeApi = createApi({
             keepUnusedDataFor: 0,
         }),
         getAdminHomeTestPaperStats: builder.query({
-            query: ({ startDate = "", endDate = "" } = {}) => ({
+            query: ({ startDate = "", endDate = "", departmentId = "", isDojo = "" } = {}) => ({
                 url: "/api/admin-home/test-paper-stats",
                 method: "GET",
-                params: { startDate, endDate }
+                params: { startDate, endDate, departmentId, isDojo }
             }),
             keepUnusedDataFor: 0,
         }),

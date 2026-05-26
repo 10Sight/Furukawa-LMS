@@ -1,6 +1,8 @@
 import React, { Suspense, lazy } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { useSelector } from "react-redux";
+import Highcharts from 'highcharts';
+Highcharts.setOptions({ accessibility: { enabled: false } });
 import { Navigate } from "react-router-dom";
 
 // Lazy-load layouts and pages to reduce initial bundle size

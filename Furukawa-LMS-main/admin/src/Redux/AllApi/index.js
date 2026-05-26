@@ -299,6 +299,8 @@ export {
     skillMatrixApi,
     useSaveSkillMatrixMutation,
     useGetSkillMatrixQuery,
+    useGetSkillMatrixEfficiencyQuery,
+    useGetSkillMatrixEfficiencySummaryQuery,
 } from './SkillMatrixApi';
 
 // CourseLevelConfig API exports

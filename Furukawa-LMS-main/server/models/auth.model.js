@@ -23,6 +23,8 @@ class User {
         this.role = data.role || "STUDENT";
         this.currentLevel = data.currentLevel || "L1";
         this.currentSkill = typeof data.currentSkill === 'string' ? JSON.parse(data.currentSkill) : (data.currentSkill || {});
+        this.currentEffeciency = data.currentEffeciency || 0;
+        this.skillEffeciency = typeof data.skillEffeciency === 'string' ? JSON.parse(data.skillEffeciency) : (data.skillEffeciency || {});
         this.status = data.status || "PRESENT";
         this.isVerified = !!data.isVerified;
         this.enrolledCourses = typeof data.enrolledCourses === 'string' ? JSON.parse(data.enrolledCourses) : (data.enrolledCourses || []);
@@ -62,6 +64,7 @@ class User {
         this.pin = data.pin || null;
         this.busRoute = data.busRoute || null;
         this.reasonOfLeaving = data.reasonOfLeaving || null;
+        this.contractor = data.contractor || null;
         this.mentor = data.mentor || null;
         this.designation = data.designation || null;
         this.supervisor = data.supervisor || null;
@@ -97,6 +100,8 @@ class User {
                     role NVARCHAR(50) DEFAULT 'STUDENT',
                     currentLevel NVARCHAR(50) DEFAULT 'L1',
                     currentSkill NVARCHAR(MAX) DEFAULT '{}',
+                    currentEffeciency FLOAT DEFAULT 0,
+                    skillEffeciency NVARCHAR(MAX) DEFAULT '{}',
                     status NVARCHAR(50) DEFAULT 'PRESENT',
                     isVerified BIT DEFAULT 0,
                     enrolledCourses NVARCHAR(MAX),
@@ -137,6 +142,7 @@ class User {
                     pin NVARCHAR(50),
                     busRoute NVARCHAR(255),
                     reasonOfLeaving NVARCHAR(MAX),
+                    contractor NVARCHAR(255) NULL,
                     mentor NVARCHAR(255),
                     designation NVARCHAR(255),
                     supervisor NVARCHAR(255),
@@ -170,6 +176,7 @@ class User {
                 { name: 'pin', type: 'NVARCHAR(50)' },
                 { name: 'busRoute', type: 'NVARCHAR(255)' },
                 { name: 'reasonOfLeaving', type: 'NVARCHAR(MAX)' },
+                { name: 'contractor', type: 'NVARCHAR(255)' },
                 { name: 'mentor', type: 'NVARCHAR(255)' },
                 { name: 'designation', type: 'NVARCHAR(255)' },
                 { name: 'supervisor', type: 'NVARCHAR(255)' },
@@ -189,7 +196,9 @@ class User {
                 { name: 'isSupervisor', type: 'BIT DEFAULT 0' },
                 { name: 'isIncharge', type: 'BIT DEFAULT 0' },
                 { name: 'customRoleId', type: 'INT' },
-                { name: 'currentSkill', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' }
+                { name: 'currentSkill', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
+                { name: 'currentEffeciency', type: 'FLOAT DEFAULT 0' },
+                { name: 'skillEffeciency', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' }
             ];
 
             for (const col of columnsToAdd) {
@@ -326,13 +335,13 @@ class User {
 
         const fields = [
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
-            "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "status", "isVerified",
+            "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "currentEffeciency", "skillEffeciency", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
             "isDeleted", "department", "sub_section", "departments", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
-            "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "mentor", "designation",
+            "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
             "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt"
         ];
 
@@ -348,7 +357,7 @@ class User {
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency'].includes(field)) {
                 return JSON.stringify(val || (field === 'avatar' ? {} : []));
             }
             if (val === undefined || val === "") return null;
@@ -632,13 +641,13 @@ class User {
 
         const fields = [
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
-            "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "status", "isVerified",
+            "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "currentEffeciency", "skillEffeciency", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
             "isDeleted", "department", "sub_section", "departments", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
-            "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "mentor", "designation",
+            "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
             "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry"
         ];
 
@@ -647,7 +656,7 @@ class User {
         const setClause = definedFields.map(field => `${field} = ?`).join(", ");
         const values = definedFields.map(field => {
             const val = this[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency'].includes(field)) {
                 return typeof val === 'object' ? JSON.stringify(val) : val;
             }
             if (val instanceof Date) return val;

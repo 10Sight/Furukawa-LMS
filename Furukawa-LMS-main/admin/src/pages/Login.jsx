@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, User, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { login } from '@/Redux/Slice/AuthSlice';
@@ -32,9 +32,7 @@ const Login = () => {
   const {
     register,
     handleSubmit,
-    formState: { errors },
-    setValue,
-    watch
+    formState: { errors }
   } = useForm({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -86,10 +84,15 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FB] flex items-center justify-center p-4">
-      {/* Login Card Container */}
-      <div className="w-full max-w-[430px]">
-        <Card className="bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 rounded-[32px] overflow-hidden">
+    <div
+      className="relative min-h-screen bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url('/Furukawa_Minda.jpg')" }}
+    >
+      <div className="absolute inset-0 bg-black/70" aria-hidden="true" />
+      <div className="relative z-10 flex min-h-screen items-center justify-center p-4">
+        {/* Login Card Container */}
+        <div className="w-full max-w-[430px]">
+          <Card className="bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 rounded-[32px] overflow-hidden">
 
           <CardHeader className="text-center space-y-6 pt-12 pb-2">
             {/* Logo */}
@@ -216,6 +219,7 @@ const Login = () => {
           </CardContent>
         </Card>
       </div>
+    </div>
     </div>
   );
 };

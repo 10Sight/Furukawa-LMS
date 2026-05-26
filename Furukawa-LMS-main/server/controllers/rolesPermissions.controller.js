@@ -123,6 +123,11 @@ const SYSTEM_PERMISSIONS = {
   MULTI_SKILLING_EDIT_LAYOUT: "multi_skilling:edit_layout",
   MULTI_SKILLING_VIEW_HISTORY: "multi_skilling:view_history",
 
+  // Skill Upgradation Management
+  SKILL_UPGRADATION_MANAGE: "skill_upgradation:manage",
+  SKILL_UPGRADATION_EDIT_LAYOUT: "skill_upgradation:edit_layout",
+  SKILL_UPGRADATION_VIEW_HISTORY: "skill_upgradation:view_history",
+
   HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
   HANDOVER_SHEET_READ: "handover_sheet:read",
   HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
@@ -141,6 +146,10 @@ const SYSTEM_PERMISSIONS = {
   TEST_PAPER_ACCESS_ALL: "test_paper:access_all",
   TEST_PAPER_EDIT: "test_paper:edit",
   TEST_PAPER_DELETE: "test_paper:delete",
+  TEST_PAPER_SKILL_UPGRADATION: "test_paper:skill_upgradation",
+  TEST_PAPER_ISSUE_CERTIFICATE: "test_paper:issue_certificate",
+  TEST_PAPER_IS_DOJO: "test_paper:is_dojo",
+  TEST_PAPER_IS_HANDOVER: "test_paper:is_handover",
 
   // Learning Management
   LEARNING_READ: "learning:read",
@@ -236,6 +245,9 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT,
       SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE,
       SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE,
       SYSTEM_PERMISSIONS.LEARNING_READ,
@@ -244,7 +256,11 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.ON_JOB_TRAINING_UPDATE,
       SYSTEM_PERMISSIONS.ON_JOB_TRAINING_DELETE,
       SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CHECKED_BY,
-      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_APPROVED_BY
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_APPROVED_BY,
+      SYSTEM_PERMISSIONS.TEST_PAPER_SKILL_UPGRADATION,
+      SYSTEM_PERMISSIONS.TEST_PAPER_ISSUE_CERTIFICATE,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -389,6 +405,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE, name: "Manage Multi Skilling", description: "Fill out and manage multi skilling training plans" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT, name: "Edit Multi Skilling Layout", description: "Modify the table configuration and structure of multi skilling sheets" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE, name: "Manage Skill Upgradation", description: "Fill out and manage skill upgradation training plans" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT, name: "Edit Skill Upgradation Layout", description: "Modify the table configuration and structure of skill upgradation sheets" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet", description: "Fill out, save, and submit 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
@@ -401,7 +420,11 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_CREATE, name: "Create/Manage Test Papers", description: "Create or modify test paper entries" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_ACCESS_ALL, name: "Access All Test Papers", description: "View all test papers and use all department/section/line/sub-section/level filters freely" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_EDIT, name: "Edit Test Papers", description: "Allows editing of existing test papers" },
-        { id: SYSTEM_PERMISSIONS.TEST_PAPER_DELETE, name: "Delete Test Papers", description: "Allows deleting of existing test papers" }
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_DELETE, name: "Delete Test Papers", description: "Allows deleting of existing test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_SKILL_UPGRADATION, name: "Toggle Skill Upgradation", description: "Allows enabling/disabling skill upgradation for test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_ISSUE_CERTIFICATE, name: "Toggle Issue Certificate", description: "Allows enabling/disabling automatic certificate generation for test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO, name: "Toggle Is Dojo Quiz", description: "Allows marking test papers as Dojo quizzes" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER, name: "Toggle Is Handover Quiz", description: "Allows marking test papers as Handover quizzes" }
       ],
       "Learning Management": [
         { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Learning Dashboard", description: "View the learning management dashboard and statistics" },

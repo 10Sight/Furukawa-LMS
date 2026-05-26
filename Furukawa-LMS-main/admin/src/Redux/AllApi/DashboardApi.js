@@ -16,6 +16,7 @@ export const dashboardApi = createApi({
                 stateFilter,
                 districtFilter,
                 masterAttendanceMode,
+                shift,
             } = {}) => ({
                 url: "/api/dashboard/stats",
                 method: "GET",
@@ -29,6 +30,7 @@ export const dashboardApi = createApi({
                     stateFilter,
                     districtFilter,
                     masterAttendanceMode,
+                    shift,
                 },
             }),
             keepUnusedDataFor: 0,

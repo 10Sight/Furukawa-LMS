@@ -56,6 +56,7 @@ const defaultFilter = {
     section: ["ALL"],
     line: ["ALL"],
     dateRange: undefined,
+    shift: "ALL",
 };
 
 const normalizeMultiValue = (value) => {
@@ -144,8 +145,8 @@ const normalizeApiOptions = (list = [], fallbackPrefix = "item") => {
 
 const TENURE_BUCKETS = [
     { value: 'ALL', label: 'All joining buckets' },
-    { value: '0-15d', label: '0–15 days' },
-    { value: '16-30d', label: '16–30 days' },
+    { value: '0-16d', label: '0–16 days' },
+    { value: '17-30d', label: '17–30 days' },
     { value: '31-60d', label: '31–60 days' },
     { value: '61-90d', label: '61–90 days' },
     { value: '3m-6m', label: '3m–6m' },
@@ -290,6 +291,116 @@ const formatDateLocal = (date) => {
     return `${year}-${month}-${day}`;
 };
 
+const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return "";
+    const [year, month, day] = String(dateStr).split("-");
+    if (!year || !month || !day) return String(dateStr);
+    return `${day}-${month}-${year}`;
+};
+
+const getPreviousAttendanceDateLabel = (stats) => {
+    const filters = stats?.data?.filters || stats?.filters || {};
+    const start = filters.masterStartDate || filters.masterAttendanceDate || filters.startDate;
+    const end = filters.masterEndDate || filters.masterAttendanceDate || filters.endDate;
+
+    if (!start && !end) return "Attendance date: Previous date";
+
+    if (start && end && start !== end) {
+        return `Attendance date: ${formatDisplayDate(start)} to ${formatDisplayDate(end)}`;
+    }
+
+    return `Attendance date: ${formatDisplayDate(start || end)}`;
+};
+
+const withAttendanceDateSubtitle = (text, stats) => {
+    return `${text} · ${getPreviousAttendanceDateLabel(stats)}`;
+};
+
+const renderAttendanceDateSubtitle = (subtitle) => {
+    if (!subtitle) return null;
+
+    const text = String(subtitle);
+    const marker = "Attendance date:";
+    const markerIndex = text.indexOf(marker);
+
+    if (markerIndex === -1) {
+        return <span>{text}</span>;
+    }
+
+    const before = text.slice(0, markerIndex);
+    const dateText = text.slice(markerIndex);
+
+    return (
+        <>
+            {before}
+            <span className="text-blue-900 font-extrabold">
+                {dateText}
+            </span>
+        </>
+    );
+};
+
+const splitContractorLabelIntoTwoLines = (value = "") => {
+    const text = String(value || "").trim();
+
+    if (!text) return [BLANK_CHART_LABEL];
+
+    const words = text
+        .replace(/[\/\\_-]+/g, " ")
+        .split(/\s+/)
+        .map(word => word.trim())
+        .filter(Boolean);
+
+    if (words.length >= 2) {
+        const mid = Math.ceil(words.length / 2);
+        return [
+            words.slice(0, mid).join(" "),
+            words.slice(mid).join(" "),
+        ].filter(Boolean);
+    }
+
+    if (text.length <= 10) return [text];
+
+    const mid = Math.ceil(text.length / 2);
+    let splitAt = text.lastIndexOf(" ", mid);
+    if (splitAt <= 0) splitAt = mid;
+
+    return [
+        text.slice(0, splitAt).trim(),
+        text.slice(splitAt).trim(),
+    ].filter(Boolean);
+};
+
+const renderContractorAxisTick = ({ x, y, payload }) => {
+    const lines = splitContractorLabelIntoTwoLines(payload?.value);
+
+    return (
+        <text
+            x={x}
+            y={y + 12}
+            textAnchor="middle"
+            fill="#475569"
+            fontSize={12}
+            fontWeight={900}
+            stroke="#ffffff"
+            strokeWidth={0.65}
+            paintOrder="stroke"
+            style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
+        >
+            {lines.map((line, index) => (
+                <tspan
+                    key={`${line}-${index}`}
+                    x={x}
+                    dy={index === 0 ? 0 : 16}
+                >
+                    {line.length > 16 ? `${line.slice(0, 15)}…` : line}
+                </tspan>
+            ))}
+        </text>
+    );
+};
+
+
 const getQueryParams = (filter, extra = {}) => ({
     department: serializeMultiValue(filter.department),
     section: serializeMultiValue(filter.section),
@@ -305,6 +416,7 @@ const getQueryParams = (filter, extra = {}) => ({
             ? formatDateLocal(filter.dateRange.from)
             : undefined,
 
+    shift: filter.shift || "ALL",
     ...extra,
 });
 
@@ -320,36 +432,75 @@ const EmptyState = ({ text }) => (
     </div>
 );
 
-const renderBarValueLabel = (color = "#1d4ed8", suffix = "", fontSize = 12) => (props) => {
+const renderBarValueLabel = (
+    color = "#1d4ed8",
+    suffix = "",
+    fontSize = 13,
+    options = {}
+) => (props) => {
     const { x, y, width, value } = props;
     if (value === null || value === undefined || value === "") return null;
 
+    const {
+        offsetX = 0,
+        offsetY = -6,
+        textAnchor = "middle",
+        showPrefix = "",
+    } = options;
+
+    const safeY = Math.max(fontSize + 2, y + offsetY);
+
     return (
         <text
-            x={x + width / 2}
-            y={y - 4}
-            textAnchor="middle"
+            x={x + width / 2 + offsetX}
+            y={safeY}
+            textAnchor={textAnchor}
             fill={color}
             fontSize={fontSize}
-            fontWeight={700}
+            fontWeight={900}
+            stroke="#ffffff"
+            strokeWidth={2.2}
+            paintOrder="stroke"
+            style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
         >
-            {value}{suffix}
+            {showPrefix}{value}{suffix}
         </text>
     );
 };
 
-const renderLineValueLabel = (color = "#1d4ed8", suffix = "", fontSize = 12) => (props) => {
+// Separate label positions for comparison bars.
+// This fixes overlap/conflict in Gender graph when Users Total % and Attendance % are almost same,
+// for example 7.6% and 7.5% showing on top of each other.
+const renderUsersTotalLabel = (suffix = "", fontSize = 12) =>
+    renderBarValueLabel(USER_TOTAL_LABEL_COLOR, suffix, fontSize, {
+        offsetX: 0,
+        offsetY: -10,
+        textAnchor: "middle",
+    });
+
+const renderAttendanceLabel = (color = DEFAULT_ATTENDANCE_BAR_COLOR, suffix = "", fontSize = 12) =>
+    renderBarValueLabel(color, suffix, fontSize, {
+        offsetX: 0,
+        offsetY: -10,
+        textAnchor: "middle",
+    });
+
+const renderLineValueLabel = (color = "#1d4ed8", suffix = "", fontSize = 13) => (props) => {
     const { x, y, value } = props;
     if (value === null || value === undefined || value === "") return null;
 
     return (
         <text
             x={x}
-            y={y - 8}
+            y={y - 10}
             textAnchor="middle"
             fill={color}
             fontSize={fontSize}
-            fontWeight={700}
+            fontWeight={900}
+            stroke={color}
+            strokeWidth={0.55}
+            paintOrder="stroke"
+            style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
         >
             {value}{suffix}
         </text>
@@ -426,8 +577,8 @@ const ValueModeToggle = ({ value, onChange }) => (
             size="sm"
             variant={value === "percentage" ? "default" : "ghost"}
             className={`h-8 px-3 text-sm ${value === "percentage"
-                    ? "bg-blue-600 text-white hover:bg-blue-700"
-                    : "text-slate-600"
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "text-slate-600"
                 }`}
             onClick={() => onChange("percentage")}
         >
@@ -439,8 +590,8 @@ const ValueModeToggle = ({ value, onChange }) => (
             size="sm"
             variant={value === "number" ? "default" : "ghost"}
             className={`h-8 px-3 text-sm ${value === "number"
-                    ? "bg-blue-600 text-white hover:bg-blue-700"
-                    : "text-slate-600"
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "text-slate-600"
                 }`}
             onClick={() => onChange("number")}
         >
@@ -450,19 +601,97 @@ const ValueModeToggle = ({ value, onChange }) => (
 );
 
 const convertToValueMode = (data = [], valueMode = "number", valueKey = "value") => {
-    const total = data.reduce((sum, item) => {
+    const safeList = Array.isArray(data) ? data : [];
+
+    const backendDenominator = safeList.reduce((max, item) => {
+        const itemDenominator = Number(item?.denominatorTotal ?? item?.totalEmployees ?? 0);
+        return itemDenominator > max ? itemDenominator : max;
+    }, 0);
+
+    const fallbackTotal = safeList.reduce((sum, item) => {
         return sum + Number(item[valueKey] || 0);
     }, 0);
 
-    return data.map(item => {
+    // IMPORTANT:
+    // Percentage denominator category total nahi hoga.
+    // Agar backend totalEmployees/denominatorTotal bhej raha hai, wahi denominator use hoga.
+    // Example: skill level me 21 employees available hain aur total 2900 employees hain,
+    // to % = value / 2900 * 100 hoga, not value / 21 * 100.
+    const total = backendDenominator > 0 ? backendDenominator : fallbackTotal;
+
+    return safeList.map(item => {
         const rawValue = Number(item[valueKey] || 0);
-        const percentage = total > 0 ? Number(((rawValue / total) * 100).toFixed(1)) : 0;
+        const backendPercentage = Number(item?.percentage);
+        const percentage = Number.isFinite(backendPercentage)
+            ? backendPercentage
+            : total > 0
+                ? Number(((rawValue / total) * 100).toFixed(1))
+                : 0;
 
         return {
             ...item,
             rawValue,
             percentage,
+            denominatorTotal: total,
+            totalEmployees: Number(item?.totalEmployees ?? total),
             [valueKey]: valueMode === "percentage" ? percentage : rawValue,
+        };
+    });
+};
+
+// For comparison charts where each category has Attendance and Users Total bars.
+// In percentage mode, both bars must be converted separately; otherwise the toggle appears not to work.
+const convertComparisonToValueMode = (data = [], valueMode = "number") => {
+    const safeList = Array.isArray(data) ? data : [];
+
+    const attendanceTotal = safeList.reduce((sum, item) => {
+        return sum + Number(item.attendanceValue ?? item.rawValue ?? item.value ?? 0);
+    }, 0);
+
+    const masterTotal = safeList.reduce((sum, item) => {
+        return sum + Number(item.masterValue ?? item.totalValue ?? 0);
+    }, 0);
+
+    const backendDenominator = safeList.reduce((max, item) => {
+        const itemDenominator = Number(item?.denominatorTotal ?? item?.totalEmployees ?? 0);
+        return itemDenominator > max ? itemDenominator : max;
+    }, 0);
+
+    // IMPORTANT FIX:
+    // Percentage denominator total employees se hoga, category ke count/sum se nahi.
+    // Example: sirf 21 employees ka skill level filled hai aur total employees 2900 hain,
+    // to L1/L2/L3/L4 ka total 100% nahi banega; denominator 2900 rahega.
+    const commonTotal = backendDenominator > 0 ? backendDenominator : (masterTotal > 0 ? masterTotal : attendanceTotal);
+
+    return safeList.map(item => {
+        const attendanceCount = Number(item.attendanceValue ?? item.rawValue ?? item.value ?? 0);
+        const masterCount = Number(item.masterValue ?? item.totalValue ?? 0);
+        const backendAttendancePercentage = Number(item?.attendancePercentage ?? item?.percentage);
+        const backendMasterPercentage = Number(item?.masterPercentage);
+        const attendancePercentage = Number.isFinite(backendAttendancePercentage)
+            ? backendAttendancePercentage
+            : commonTotal > 0
+                ? Number(((attendanceCount / commonTotal) * 100).toFixed(1))
+                : 0;
+        const masterPercentage = Number.isFinite(backendMasterPercentage)
+            ? backendMasterPercentage
+            : commonTotal > 0
+                ? Number(((masterCount / commonTotal) * 100).toFixed(1))
+                : 0;
+
+        return {
+            ...item,
+            attendanceCount,
+            masterCount,
+            attendancePercentage,
+            masterPercentage,
+            denominatorTotal: commonTotal,
+            totalEmployees: Number(item?.totalEmployees ?? commonTotal),
+            rawValue: attendanceCount,
+            percentage: attendancePercentage,
+            value: valueMode === "percentage" ? attendancePercentage : attendanceCount,
+            attendanceValue: valueMode === "percentage" ? attendancePercentage : attendanceCount,
+            masterValue: valueMode === "percentage" ? masterPercentage : masterCount,
         };
     });
 };
@@ -497,6 +726,223 @@ const SimpleLegend = ({ items = [] }) => (
         ))}
     </div>
 );
+
+
+const BLANK_CHART_LABEL = "Blank";
+const USER_TOTAL_BAR_COLOR = "#e7ae12";
+const USER_TOTAL_LABEL_COLOR = "#7c5a00";
+const MALE_ATTENDANCE_BAR_COLOR = "#0ea5e9";
+const FEMALE_ATTENDANCE_BAR_COLOR = "#ec4899";
+const DEFAULT_ATTENDANCE_BAR_COLOR = "#2563eb";
+
+const normalizeGenderLabel = (value) => {
+    const text = String(value ?? "").trim();
+    const upperText = text.toUpperCase();
+    const compactText = upperText.replace(/[\s._-]+/g, "");
+
+    // FEMALE must be checked first because it contains MALE.
+    if (
+        compactText === "FEMALE" ||
+        compactText === "F" ||
+        compactText.includes("FEMALE")
+    ) {
+        return "Female";
+    }
+
+    if (
+        compactText === "MALE" ||
+        compactText === "M" ||
+        compactText.includes("MALE")
+    ) {
+        return "Male";
+    }
+
+    return null;
+};
+
+const isGenderLikeLabel = (value) => Boolean(normalizeGenderLabel(value));
+
+const getGenderSortRank = (value) => {
+    const label = normalizeGenderLabel(value) || cleanDisplayName(value);
+    if (label === "Male") return 1;
+    if (label === "Female") return 2;
+    if (label === BLANK_CHART_LABEL) return 99;
+    return 50;
+};
+
+
+const getGenderAttendanceColor = (name, fallbackColor = DEFAULT_ATTENDANCE_BAR_COLOR) => {
+    const genderLabel = normalizeGenderLabel(name);
+
+    if (genderLabel === "Female") return FEMALE_ATTENDANCE_BAR_COLOR;
+    if (genderLabel === "Male") return MALE_ATTENDANCE_BAR_COLOR;
+
+    return fallbackColor;
+};
+
+const cleanDisplayName = (value) => {
+    const text = String(value ?? "").trim();
+    const upperText = text.toUpperCase();
+
+    if (
+        !text ||
+        upperText === "NOT PROVIDED" ||
+        upperText === "UNKNOWN" ||
+        upperText === "NULL" ||
+        upperText === "UNDEFINED"
+    ) {
+        // Keep the label visually blank, but give the chart a real category.
+        // Empty string labels can make the bar/pie value appear missing.
+        return BLANK_CHART_LABEL;
+    }
+
+    // Gender values can come from DB in different casing/formats.
+    // Recharts treats "Male" and "MALE" as different categories.
+    // Normalize them before grouping.
+    const genderLabel = normalizeGenderLabel(text);
+    if (genderLabel) return genderLabel;
+
+    return text;
+};
+
+const getChartGroupKey = (value) => {
+    return String(cleanDisplayName(value) || BLANK_CHART_LABEL)
+        .trim()
+        .toUpperCase();
+};
+
+const mergeChartRowsByName = (list = []) => {
+    const map = {};
+
+    (Array.isArray(list) ? list : []).forEach((item) => {
+        const displayName = cleanDisplayName(item?.name);
+        const key = getChartGroupKey(displayName);
+
+        if (!map[key]) {
+            map[key] = {
+                ...item,
+                name: displayName,
+                value: 0,
+                rawValue: 0,
+                attendanceValue: 0,
+                masterValue: 0,
+                attendanceCount: 0,
+                masterCount: 0,
+                totalEmployees: Number(item?.totalEmployees || item?.denominatorTotal || 0),
+                denominatorTotal: Number(item?.denominatorTotal || item?.totalEmployees || 0),
+            };
+        } else {
+            map[key].totalEmployees = Math.max(
+                Number(map[key].totalEmployees || 0),
+                Number(item?.totalEmployees || item?.denominatorTotal || 0)
+            );
+            map[key].denominatorTotal = Math.max(
+                Number(map[key].denominatorTotal || 0),
+                Number(item?.denominatorTotal || item?.totalEmployees || 0)
+            );
+        }
+
+        map[key].value += Number(item?.value || 0);
+        map[key].rawValue += Number(item?.rawValue ?? item?.attendanceCount ?? item?.attendanceValue ?? item?.value ?? 0);
+        map[key].attendanceValue += Number(item?.attendanceValue ?? item?.rawValue ?? item?.value ?? 0);
+        map[key].masterValue += Number(item?.masterValue ?? item?.totalValue ?? 0);
+        map[key].attendanceCount += Number(item?.attendanceCount ?? item?.rawValue ?? item?.attendanceValue ?? item?.value ?? 0);
+        map[key].masterCount += Number(item?.masterCount ?? item?.masterValue ?? item?.totalValue ?? 0);
+    });
+
+    return Object.values(map).map((item) => {
+        const denominator = Number(item.denominatorTotal || item.totalEmployees || 0);
+        const attendanceCount = Number(item.attendanceCount || item.attendanceValue || 0);
+        const masterCount = Number(item.masterCount || item.masterValue || 0);
+
+        return {
+            ...item,
+            // Keep these as RAW COUNTS. convertComparisonToValueMode() will convert to %
+            // only when the user clicks the percentage button.
+            value: attendanceCount,
+            rawValue: attendanceCount,
+            attendanceValue: attendanceCount,
+            masterValue: masterCount,
+            totalValue: masterCount,
+            attendanceCount,
+            masterCount,
+            percentage: denominator > 0
+                ? Number(((attendanceCount / denominator) * 100).toFixed(1))
+                : Number(item.percentage || 0),
+            attendancePercentage: denominator > 0
+                ? Number(((attendanceCount / denominator) * 100).toFixed(1))
+                : Number(item.attendancePercentage || item.percentage || 0),
+            masterPercentage: denominator > 0
+                ? Number(((masterCount / denominator) * 100).toFixed(1))
+                : Number(item.masterPercentage || 0),
+        };
+    });
+};
+
+
+const extractSkillLevelLabel = (value) => {
+    const text = String(value ?? "").trim();
+    const upperText = text.toUpperCase();
+
+    if (!text || upperText === "BLANK" || upperText === "NOT PROVIDED" || upperText === "{}" || upperText === "[]" || upperText === "NULL" || upperText === "UNDEFINED") {
+        return null;
+    }
+
+    if (["L1", "L2", "L3", "L4"].includes(upperText)) {
+        return upperText;
+    }
+
+    // Handles JSON-like values from currentSkill such as {"100":"L1"} or {"107":"L3","107locked":false}
+    const match = upperText.match(/"L([1-4])"/) || upperText.match(/:\s*L([1-4])\b/) || upperText.match(/\bL([1-4])\b/);
+
+    if (match) {
+        return `L${match[1]}`;
+    }
+
+    return null;
+};
+
+const normalizeSkillLevelChartData = (list = []) => {
+    const buckets = {
+        L1: { name: "L1", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
+        L2: { name: "L2", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
+        L3: { name: "L3", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
+        L4: { name: "L4", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
+    };
+
+    (Array.isArray(list) ? list : []).forEach(item => {
+        const label = extractSkillLevelLabel(item?.name ?? item?.label ?? item?.value);
+        if (!label || !buckets[label]) return;
+
+        const attendance = Number(item?.attendanceValue ?? item?.rawValue ?? item?.value ?? 0);
+        const master = Number(item?.masterValue ?? item?.totalValue ?? item?.totalEmployees ?? 0);
+
+        buckets[label].attendanceValue += attendance;
+        buckets[label].masterValue += master;
+        buckets[label].value += attendance;
+        buckets[label].rawValue += attendance;
+    });
+
+    const denominatorTotalFromApi = (Array.isArray(list) ? list : []).reduce((max, item) => {
+        const itemDenominator = Number(item?.denominatorTotal ?? item?.totalEmployees ?? 0);
+        return itemDenominator > max ? itemDenominator : max;
+    }, 0);
+
+    const fallbackMasterTotal = Object.values(buckets).reduce((sum, item) => sum + Number(item.masterValue || 0), 0);
+    const denominatorTotal = denominatorTotalFromApi > 0 ? denominatorTotalFromApi : fallbackMasterTotal;
+
+    return Object.values(buckets)
+        .map(item => ({
+            ...item,
+            totalEmployees: denominatorTotal,
+            denominatorTotal,
+            percentage: denominatorTotal > 0 ? Number(((Number(item.attendanceValue || 0) / denominatorTotal) * 100).toFixed(1)) : 0,
+            attendancePercentage: denominatorTotal > 0 ? Number(((Number(item.attendanceValue || 0) / denominatorTotal) * 100).toFixed(1)) : 0,
+            masterPercentage: denominatorTotal > 0 ? Number(((Number(item.masterValue || 0) / denominatorTotal) * 100).toFixed(1)) : 0,
+        }))
+        .filter(item => Number(item.attendanceValue || 0) > 0 || Number(item.masterValue || 0) > 0);
+};
+
 
 const MultiSelectDropdown = ({
     label,
@@ -619,8 +1065,6 @@ const GraphFilterBar = ({
     useEffect(() => {
         const deptIds = normalizeMultiValue(filter.department).filter(item => item !== "ALL");
 
-        console.log("[SECTION DEBUG] selected deptIds:", deptIds);
-
         if (deptIds.length === 0) {
             setSections([]);
             setFilteredLines([]);
@@ -635,12 +1079,8 @@ const GraphFilterBar = ({
                 axiosInstance
                     .get(`/api/dashboard/sections?departmentId=${encodeURIComponent(departmentId)}`)
                     .then(res => {
-                        console.log("[SECTION DEBUG] raw API response:", res);
-
                         // ✅ FIXED: use updated extractApiList that handles all wrapping levels
                         const list = extractApiList(res, "sections");
-                        console.log("[SECTION DEBUG] extracted list:", list);
-
                         return list;
                     })
                     .catch((err) => {
@@ -666,8 +1106,6 @@ const GraphFilterBar = ({
                             finalSections.push(item);
                         }
                     });
-
-                console.log("[SECTION DEBUG] final sections for dropdown:", finalSections);
 
                 setSections(finalSections);
             })
@@ -768,6 +1206,7 @@ const GraphFilterBar = ({
             section: ["ALL"],
             line: ["ALL"],
             dateRange: undefined,
+            shift: "ALL",
         });
 
         if (setTenureBucket) {
@@ -825,6 +1264,21 @@ const GraphFilterBar = ({
                 placeholder={isSectionSelected ? "All Lines" : "Select section first"}
                 widthClass="w-[170px]"
             />
+
+            <div className="h-4 w-px bg-slate-300" />
+
+            <Select value={filter.shift || "ALL"} onValueChange={(val) => handleFilterChange("shift", val)}>
+                <SelectTrigger className="w-[110px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 shadow-none px-2 text-xs font-semibold">
+                    <SelectValue placeholder="All Shifts" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="ALL">All Shifts</SelectItem>
+                    <SelectItem value="A">Shift A</SelectItem>
+                    <SelectItem value="B">Shift B</SelectItem>
+                    <SelectItem value="C">Shift C</SelectItem>
+                    <SelectItem value="G">General Shift</SelectItem>
+                </SelectContent>
+            </Select>
 
             <div className="h-4 w-px bg-slate-300" />
 
@@ -936,8 +1390,76 @@ const GraphFilterBar = ({
     );
 };
 
+
+const splitAxisLabelIntoLines = (value = "", maxCharsPerLine = 11, maxLines = 3) => {
+    const words = String(value || "")
+        .replace(/[\/\\_-]+/g, " ")
+        .split(/\s+/)
+        .map(word => word.trim())
+        .filter(Boolean);
+
+    if (words.length === 0) return [BLANK_CHART_LABEL];
+
+    const lines = [];
+    let currentLine = "";
+
+    words.forEach(word => {
+        if (!currentLine) {
+            currentLine = word;
+            return;
+        }
+
+        if (`${currentLine} ${word}`.length <= maxCharsPerLine) {
+            currentLine = `${currentLine} ${word}`;
+        } else {
+            lines.push(currentLine);
+            currentLine = word;
+        }
+    });
+
+    if (currentLine) lines.push(currentLine);
+
+    if (lines.length > maxLines) {
+        const visibleLines = lines.slice(0, maxLines);
+        visibleLines[maxLines - 1] = `${visibleLines[maxLines - 1].slice(0, maxCharsPerLine - 1)}…`;
+        return visibleLines;
+    }
+
+    return lines;
+};
+
+const renderMultilineAxisTick = ({ x, y, payload }) => {
+    const lines = splitAxisLabelIntoLines(payload?.value, 11, 3);
+
+    return (
+        <text
+            x={x}
+            y={y + 8}
+            textAnchor="middle"
+            fill="#475569"
+            fontSize={13}
+            fontWeight={900}
+            stroke="#ffffff"
+            strokeWidth={0.55}
+            paintOrder="stroke"
+            style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
+        >
+            {lines.map((line, index) => (
+                <tspan
+                    key={`${line}-${index}`}
+                    x={x}
+                    dy={index === 0 ? 0 : 15}
+                >
+                    {line}
+                </tspan>
+            ))}
+        </text>
+    );
+};
+
 const HighchartsPieCard = ({
     title,
+    subtitle,
     data = [],
     colors = [],
     icon: Icon,
@@ -951,44 +1473,105 @@ const HighchartsPieCard = ({
     useCustomPercentage = false,
     chartView = "pie",
     onChartViewChange,
+    straightXAxisLabels = false,
+    showBottomValues = true,
+    bottomValuesToggleable = false,
 }) => {
-    const convertedData = useCustomPercentage
-        ? data.map(item => {
-            const rawValue = Number(item.value || 0);
-            const customPercentage = Number(item.percentage || 0);
+    const [bottomValuesOpen, setBottomValuesOpen] = useState(false);
+    const shouldShowBottomValues = bottomValuesToggleable ? bottomValuesOpen : showBottomValues;
+    const isGenderChart =
+        String(title || "").toLowerCase().includes("gender") ||
+        (Array.isArray(data) && data.some(item => isGenderLikeLabel(item?.name)));
 
-            return {
-                ...item,
-                rawValue,
-                percentage: customPercentage,
-                value: valueMode === "percentage" ? customPercentage : rawValue,
-            };
-        })
-        : convertToValueMode(data, valueMode, "value");
+    // IMPORTANT FIX:
+    // Gender values like "Male" and "MALE" must be merged BEFORE percentage conversion.
+    // If merging is done after clicking %, percentage values are treated like raw counts
+    // and counts like 1600 can appear as 1600%.
+    // This also fixes shift filter issue where Male/Female rows came in a different order.
+    const rawChartInput = isGenderChart
+        ? mergeChartRowsByName(data)
+        : data;
+
+    const hasComparisonInput = (Array.isArray(rawChartInput) ? rawChartInput : []).some(item => (
+        item?.attendanceValue !== undefined ||
+        item?.masterValue !== undefined ||
+        item?.totalValue !== undefined ||
+        item?.totalEmployees !== undefined
+    ));
+
+    const convertedData = hasComparisonInput
+        ? convertComparisonToValueMode(rawChartInput, valueMode)
+        : useCustomPercentage
+            ? rawChartInput.map(item => {
+                const rawValue = Number(item.value || 0);
+                const customPercentage = Number(item.percentage || 0);
+
+                return {
+                    ...item,
+                    rawValue,
+                    percentage: customPercentage,
+                    value: valueMode === "percentage" ? customPercentage : rawValue,
+                };
+            })
+            : convertToValueMode(rawChartInput, valueMode, "value");
 
     const safeData = convertedData
-        .filter(item => Number(item.value) > 0)
+        .filter(item => Number(item.value) > 0 || Number(item.masterValue) > 0 || Number(item.attendanceValue) > 0)
         .map(item => ({
-            name: item.name,
+            name: cleanDisplayName(item.name),
             value: Number(item.value || 0),
-            rawValue: Number(item.rawValue || 0),
+            rawValue: Number(item.rawValue ?? item.attendanceCount ?? item.attendanceValue ?? item.value ?? 0),
             percentage: Number(item.percentage || 0),
             totalEmployees: Number(item.totalEmployees || 0),
-        }));
+            attendanceValue: Number(item.attendanceValue ?? item.rawValue ?? item.value ?? 0),
+            masterValue: Number(item.masterValue ?? item.totalValue ?? item.totalEmployees ?? 0),
+            attendanceCount: Number(item.attendanceCount ?? item.rawValue ?? item.attendanceValue ?? item.value ?? 0),
+            masterCount: Number(item.masterCount ?? item.totalValue ?? item.totalEmployees ?? item.masterValue ?? 0),
+            attendancePercentage: Number(item.attendancePercentage ?? item.percentage ?? 0),
+            masterPercentage: Number(item.masterPercentage ?? 0),
+        }))
+        .sort((a, b) => {
+            if (!isGenderChart) return 0;
+            const rankDiff = getGenderSortRank(a.name) - getGenderSortRank(b.name);
+            if (rankDiff !== 0) return rankDiff;
+            return String(a.name || "").localeCompare(String(b.name || ""));
+        });
 
     const valueSuffix = valueMode === "percentage" ? "%" : "";
 
+    const finalSafeData = isGenderChart
+        ? ["Male", "Female"]
+            .map((genderName) => {
+                const existing = safeData.find(item => cleanDisplayName(item.name) === genderName);
+                return existing || {
+                    name: genderName,
+                    value: 0,
+                    rawValue: 0,
+                    percentage: 0,
+                    totalEmployees: 0,
+                    attendanceValue: 0,
+                    masterValue: 0,
+                    attendanceCount: 0,
+                    masterCount: 0,
+                    attendancePercentage: 0,
+                    masterPercentage: 0,
+                };
+            })
+            // Gender charts me Blank/Other/Not Provided bar show nahi karna.
+            .filter(item => Number(item.value) > 0 || Number(item.masterValue) > 0 || Number(item.attendanceValue) > 0)
+        : safeData;
+
+    const hasMasterComparison = finalSafeData.some(item => Number(item.masterValue || 0) > 0);
+
     const getChartColor = (item, index) => {
-        const itemName = String(item?.name || '').trim().toUpperCase();
-
-        // Male = blue, Female = pink. Check FEMALE first because FEMALE contains MALE.
-        if (itemName.includes('FEMALE')) return '#ec4899';
-        if (itemName.includes('MALE')) return '#0ea5e9';
-
-        return colors[index % colors.length] || '#2563eb';
+        return getGenderAttendanceColor(item?.name, colors[index % colors.length] || DEFAULT_ATTENDANCE_BAR_COLOR);
     };
 
-    const chartData = safeData.map((item, index) => ({
+    const getAttendanceBarColor = (item) => {
+        return getGenderAttendanceColor(item?.name, DEFAULT_ATTENDANCE_BAR_COLOR);
+    };
+
+    const chartData = finalSafeData.map((item, index) => ({
         name: item.name,
         y: item.value,
         rawValue: item.rawValue,
@@ -1007,7 +1590,7 @@ const HighchartsPieCard = ({
                 beta: 0,
             },
             backgroundColor: 'transparent',
-            height: 390,
+            height: 430,
             spacingTop: 10,
             spacingBottom: 10,
             spacingLeft: 5,
@@ -1032,7 +1615,7 @@ const HighchartsPieCard = ({
                     : `${this.percentageValue}% share`;
 
                 return `
-                    <span style="font-size:12px">${this.series.name}</span><br/>
+                    <span style="font-size:13px;font-weight:900;font-family:'Arial Black', Arial, sans-serif;color:#334155">${this.series.name}</span><br/>
                     <b>${displayValue}</b><br/>
                     <b>${shareLabel}</b>
                 `;
@@ -1043,23 +1626,32 @@ const HighchartsPieCard = ({
                 allowPointSelect: true,
                 cursor: 'pointer',
                 depth: 35,
-                size: '78%',
-                center: ['50%', '48%'],
+                size: finalSafeData.length <= 4 ? '70%' : '62%',
+                center: ['50%', '50%'],
                 colors,
                 dataLabels: {
                     enabled: true,
-                    format: valueMode === "percentage"
-                        ? (useCustomPercentage ? '{point.name}: {point.y:.2f}%' : '{point.name}: {point.y:.1f}%')
-                        : '{point.name}: {point.y}',
+                    formatter: function () {
+                        const name = String(this.point.name || "").trim();
+                        const valueText = valueMode === "percentage"
+                            ? `${Number(this.y).toFixed(useCustomPercentage ? 2 : 1)}%`
+                            : `${this.y}`;
+
+                        // If backend value is blank/null/NOT PROVIDED, show only value, not label text.
+                        return name ? `${name}: ${valueText}` : valueText;
+                    },
                     style: {
-                        fontSize: '12px',
-                        fontWeight: '700',
+                        fontSize: '13px',
+                        fontWeight: '900',
+                        fontFamily: "'Arial Black', Arial, sans-serif",
                         color: '#475569',
-                        textOutline: 'none',
+                        textOutline: '0.8px #ffffff',
                     },
                     connectorColor: '#cbd5e1',
                     connectorWidth: 1,
-                    distance: 24,
+                    distance: finalSafeData.length <= 4 ? 16 : 10,
+                    crop: false,
+                    overflow: 'allow',
                 },
                 point: {
                     events: {
@@ -1084,16 +1676,23 @@ const HighchartsPieCard = ({
         legend: {
             enabled: false,
         },
-    }), [chartData, colors, title, valueMode, valueSuffix, useCustomPercentage]);
+    }), [chartData, colors, title, valueMode, valueSuffix, useCustomPercentage, finalSafeData.length]);
 
     return (
         <Card className="border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col h-full min-w-0">
             <CardHeader className="pb-2 pt-4 px-5 space-y-3">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-800">
-                        {Icon && <Icon className="w-4 h-4 text-slate-500" />}
-                        {title}
-                    </CardTitle>
+                    <div>
+                        <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-800">
+                            {Icon && <Icon className="w-4 h-4 text-slate-500" />}
+                            {title}
+                        </CardTitle>
+                        {subtitle && (
+                            <p className="text-xs text-slate-500 mt-1 font-semibold">
+                                {renderAttendanceDateSubtitle(subtitle)}
+                            </p>
+                        )}
+                    </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
                         <GraphFilterBar
@@ -1117,6 +1716,30 @@ const HighchartsPieCard = ({
                                 onChange={onValueModeChange}
                             />
                         )}
+
+                        {bottomValuesToggleable && chartData.length > 0 && (
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant={bottomValuesOpen ? "default" : "outline"}
+                                className={bottomValuesOpen
+                                    ? "h-8 px-3 text-xs bg-blue-600 text-white hover:bg-blue-700"
+                                    : "h-8 px-3 text-xs bg-white text-slate-700 border-slate-300 hover:bg-slate-50"}
+                                onClick={() => setBottomValuesOpen(prev => !prev)}
+                            >
+                                {bottomValuesOpen ? (
+                                    <>
+                                        <EyeOff className="w-3.5 h-3.5 mr-1" />
+                                        Hide Values
+                                    </>
+                                ) : (
+                                    <>
+                                        <Eye className="w-3.5 h-3.5 mr-1" />
+                                        Show Values
+                                    </>
+                                )}
+                            </Button>
+                        )}
                     </div>
                 </div>
             </CardHeader>
@@ -1130,13 +1753,18 @@ const HighchartsPieCard = ({
                             No data found
                         </div>
                     ) : chartView === "bar" ? (
-                        <ScrollableCompactChart dataLength={safeData.length}>
+                        <ScrollableCompactChart dataLength={finalSafeData.length}>
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart
-                                    data={safeData}
-                                    margin={{ top: 40, right: 28, left: 8, bottom: 84 }}
-                                    barCategoryGap="18%"
-                                    barGap={4}
+                                    data={finalSafeData}
+                                    margin={{
+                                        top: 64,
+                                        right: 34,
+                                        left: 8,
+                                        bottom: straightXAxisLabels ? 86 : 84,
+                                    }}
+                                    barCategoryGap={isGenderChart ? "32%" : "18%"}
+                                    barGap={isGenderChart ? 6 : 18}
                                 >
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
 
@@ -1144,66 +1772,106 @@ const HighchartsPieCard = ({
                                         dataKey="name"
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={{ fontSize: 10, fill: '#64748b', fontWeight: 700 }}
+                                        tick={straightXAxisLabels ? renderMultilineAxisTick : { fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                         interval={0}
-                                        angle={-35}
-                                        textAnchor="end"
-                                        height={78}
+                                        angle={straightXAxisLabels ? 0 : -35}
+                                        textAnchor={straightXAxisLabels ? "middle" : "end"}
+                                        height={straightXAxisLabels ? 82 : 78}
                                         tickMargin={12}
                                         tickFormatter={(value) => {
                                             const label = String(value || "");
-                                            return label.length > 18 ? `${label.slice(0, 18)}…` : label;
+                                            if (straightXAxisLabels) return label;
+
+                                            const maxLength = 18;
+                                            return label.length > maxLength ? `${label.slice(0, maxLength)}…` : label;
                                         }}
                                     />
 
                                     <YAxis
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
+                                        tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                         allowDecimals={valueMode === "percentage"}
                                         width={40}
                                     />
 
-                                    <Bar
-                                        dataKey="value"
-                                        radius={[7, 7, 0, 0]}
-                                        maxBarSize={34}
-                                        label={(props) => {
-                                            const item = safeData[props.index] || {};
-                                            return renderBarValueLabel(getChartColor(item, props.index), valueSuffix, 12)(props);
-                                        }}
-                                    >
-                                        {safeData.map((entry, index) => (
-                                            <Cell
-                                                key={`cell-${entry.name}-${index}`}
-                                                fill={getChartColor(entry, index)}
+                                    {hasMasterComparison ? (
+                                        <>
+                                            <Bar
+                                                dataKey="masterValue"
+                                                name="Users Total"
+                                                fill={USER_TOTAL_BAR_COLOR}
+                                                radius={[7, 7, 0, 0]}
+                                                maxBarSize={28}
+                                                label={renderUsersTotalLabel(valueSuffix, 12)}
                                             />
-                                        ))}
-                                    </Bar>
+                                            <Bar
+                                                dataKey="attendanceValue"
+                                                name="Attendance"
+                                                fill={DEFAULT_ATTENDANCE_BAR_COLOR}
+                                                radius={[7, 7, 0, 0]}
+                                                maxBarSize={28}
+                                                label={(props) => {
+                                                    const item = finalSafeData[props.index] || {};
+                                                    return renderAttendanceLabel(getAttendanceBarColor(item), valueSuffix, 12)(props);
+                                                }}
+                                            >
+                                                {finalSafeData.map((entry, index) => (
+                                                    <Cell
+                                                        key={`attendance-cell-${entry.name}-${index}`}
+                                                        fill={getAttendanceBarColor(entry)}
+                                                    />
+                                                ))}
+                                            </Bar>
+                                        </>
+                                    ) : (
+                                        <Bar
+                                            dataKey="value"
+                                            radius={[7, 7, 0, 0]}
+                                            maxBarSize={34}
+                                            label={(props) => {
+                                                const item = finalSafeData[props.index] || {};
+                                                return renderBarValueLabel(getChartColor(item, props.index), valueSuffix, 13)(props);
+                                            }}
+                                        >
+                                            {finalSafeData.map((entry, index) => (
+                                                <Cell
+                                                    key={`cell-${entry.name}-${index}`}
+                                                    fill={getChartColor(entry, index)}
+                                                />
+                                            ))}
+                                        </Bar>
+                                    )}
                                 </BarChart>
                             </ResponsiveContainer>
                         </ScrollableCompactChart>
                     ) : (
                         <HighchartsReact
+                            key={`${title}-${chartView}-${valueMode}-${chartData.length}`}
                             highcharts={Highcharts}
                             options={options}
+                            containerProps={{ style: { width: '100%', height: '100%' } }}
                         />
                     )}
                 </div>
 
-                {chartData.length > 0 && (
+                {shouldShowBottomValues && chartData.length > 0 && (
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3">
-                        {safeData.map((item, index) => (
+                        {finalSafeData.map((item, index) => (
                             <div key={index} className="flex items-center gap-2 text-xs">
                                 <span
                                     className="w-3 h-3 rounded-sm flex-shrink-0 shadow-sm"
                                     style={{ backgroundColor: getChartColor(item, index) }}
                                 />
-                                <span className="text-slate-500 truncate">{item.name}</span>
-                                <span className="font-bold text-slate-800 ml-auto">
-                                    {valueMode === "percentage"
-                                        ? `${useCustomPercentage ? Number(item.value).toFixed(2) : item.value}%`
-                                        : `${item.rawValue} (${useCustomPercentage ? Number(item.percentage).toFixed(2) : item.percentage}%)`}
+                                <span className="text-slate-700 font-bold truncate">{item.name}</span>
+                                <span className="font-extrabold text-slate-900 ml-auto text-sm">
+                                    {hasMasterComparison
+                                        ? valueMode === "percentage"
+                                            ? `Attendance ${item.attendanceValue}% / Users ${item.masterValue}%`
+                                            : `Attendance ${item.attendanceCount} / Users ${item.masterCount}`
+                                        : valueMode === "percentage"
+                                            ? `${useCustomPercentage ? Number(item.value).toFixed(2) : item.value}%`
+                                            : `${item.rawValue} (${useCustomPercentage ? Number(item.percentage).toFixed(2) : item.percentage}%)`}
                                 </span>
                             </div>
                         ))}
@@ -1285,7 +1953,7 @@ const FullWidthToggleChartCard = ({
                         </CardTitle>
 
                         <p className="text-sm text-slate-500 mt-1">
-                            {subtitle}
+                            {renderAttendanceDateSubtitle(subtitle)}
                         </p>
                     </div>
 
@@ -1315,21 +1983,21 @@ const FullWidthToggleChartCard = ({
 
                     <ResponsiveContainer width="100%" height="100%">
                         {chartType === "line" ? (
-                            <LineChart data={data} margin={{ top: 44, right: 42, left: 4, bottom: 8 }}>
+                            <LineChart data={data} margin={{ top: 66, right: 48, left: 4, bottom: 8 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
 
                                 <XAxis
                                     dataKey={xKey}
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 12, fill: '#64748b', fontWeight: 700 }}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                     interval={0}
                                 />
 
                                 <YAxis
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                     allowDecimals={valueMode === "percentage"}
                                     width={40}
                                 />
@@ -1342,9 +2010,9 @@ const FullWidthToggleChartCard = ({
                                         label={{
                                             value: referenceLine.label,
                                             position: 'insideTopRight',
-                                            fontSize: 12,
+                                            fontSize: 13,
                                             fill: referenceLine.color,
-                                            fontWeight: 700,
+                                            fontWeight: 900,
                                             offset: 4,
                                         }}
                                     />
@@ -1354,14 +2022,14 @@ const FullWidthToggleChartCard = ({
                                     type="monotone"
                                     dataKey={dataKey}
                                     stroke={color}
-                                    strokeWidth={2.6}
+                                    strokeWidth={0.55}
                                     dot={{ r: 3, fill: color, strokeWidth: 0 }}
                                     activeDot={false}
-                                    label={renderLineValueLabel(color, valueSuffix, 12)}
+                                    label={renderLineValueLabel(color, valueSuffix, 13)}
                                 />
                             </LineChart>
                         ) : (
-                            <BarChart data={data} margin={{ top: 44, right: 42, left: 4, bottom: 8 }} barCategoryGap="20%">
+                            <BarChart data={data} margin={{ top: 66, right: 48, left: 4, bottom: 8 }} barCategoryGap="20%">
                                 <defs>
                                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="0%" stopColor={color} stopOpacity={1} />
@@ -1375,14 +2043,14 @@ const FullWidthToggleChartCard = ({
                                     dataKey={xKey}
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 12, fill: '#64748b', fontWeight: 700 }}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                     interval={0}
                                 />
 
                                 <YAxis
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                     allowDecimals={valueMode === "percentage"}
                                     width={40}
                                 />
@@ -1395,9 +2063,9 @@ const FullWidthToggleChartCard = ({
                                         label={{
                                             value: referenceLine.label,
                                             position: 'insideTopRight',
-                                            fontSize: 12,
+                                            fontSize: 13,
                                             fill: referenceLine.color,
-                                            fontWeight: 700,
+                                            fontWeight: 900,
                                             offset: 4,
                                         }}
                                     />
@@ -1408,7 +2076,7 @@ const FullWidthToggleChartCard = ({
                                     fill={`url(#${gradientId})`}
                                     radius={[6, 6, 0, 0]}
                                     maxBarSize={20}
-                                    label={renderBarValueLabel(color, valueSuffix, 12)}
+                                    label={renderBarValueLabel(color, valueSuffix, 13)}
                                 />
                             </BarChart>
                         )}
@@ -1431,8 +2099,16 @@ const ContractorPrefixChartCard = ({
     setFilter,
     departments,
 }) => {
-    const chartData = convertToValueMode(data, valueMode, "value");
+    const chartData = convertComparisonToValueMode(data, valueMode).map(item => ({
+        ...item,
+        name: cleanDisplayName(item.name),
+        attendanceValue: Number(item.attendanceValue || 0),
+        masterValue: Number(item.masterValue || 0),
+        attendanceCount: Number(item.attendanceCount || 0),
+        masterCount: Number(item.masterCount || 0),
+    }));
     const valueSuffix = valueMode === "percentage" ? "%" : "";
+    const hasMasterComparison = chartData.some(item => Number(item.masterValue || 0) > 0);
     const isEmpty = !chartData || chartData.length === 0;
 
     return (
@@ -1446,7 +2122,7 @@ const ContractorPrefixChartCard = ({
                         </CardTitle>
 
                         <p className="text-sm text-slate-500 mt-1">
-                            {subtitle}
+                            {renderAttendanceDateSubtitle(subtitle)}
                         </p>
                     </div>
 
@@ -1466,7 +2142,7 @@ const ContractorPrefixChartCard = ({
             </CardHeader>
 
             <CardContent className="px-2 pb-4 pt-2">
-                <ScrollableTopChart dataLength={chartData.length}>
+                <ScrollableTopChart dataLength={Math.max(chartData.length, chartData.length * 1.35)}>
                     {isLoading && <ChartLoader />}
 
                     {!isLoading && isEmpty && (
@@ -1476,8 +2152,9 @@ const ContractorPrefixChartCard = ({
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                             data={chartData}
-                            margin={{ top: 44, right: 42, left: 4, bottom: 8 }}
-                            barCategoryGap="22%"
+                            margin={{ top: 66, right: 48, left: 4, bottom: 58 }}
+                            barCategoryGap="28%"
+                            barGap={22}
                         >
                             <defs>
                                 <linearGradient id="contractorPrefixGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1492,32 +2169,56 @@ const ContractorPrefixChartCard = ({
                                 dataKey="name"
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fontSize: 12, fill: '#64748b', fontWeight: 700 }}
+                                tick={renderContractorAxisTick}
                                 interval={0}
+                                height={72}
+                                tickMargin={14}
                             />
 
                             <YAxis
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
+                                tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                 allowDecimals={valueMode === "percentage"}
                                 width={40}
                             />
 
-                            <Bar
-                                dataKey="value"
-                                fill="url(#contractorPrefixGrad)"
-                                radius={[7, 7, 0, 0]}
-                                maxBarSize={46}
-                                label={renderBarValueLabel("#7c3aed", valueSuffix, 12)}
-                            />
+                            {hasMasterComparison ? (
+                                <>
+                                    <Bar
+                                        dataKey="masterValue"
+                                        name="Users Total"
+                                        fill={USER_TOTAL_BAR_COLOR}
+                                        radius={[7, 7, 0, 0]}
+                                        maxBarSize={34}
+                                        label={renderUsersTotalLabel(valueSuffix, 12)}
+                                    />
+                                    <Bar
+                                        dataKey="attendanceValue"
+                                        name="Attendance"
+                                        fill="#7c3aed"
+                                        radius={[7, 7, 0, 0]}
+                                        maxBarSize={34}
+                                        label={renderAttendanceLabel("#7c3aed", valueSuffix, 12)}
+                                    />
+                                </>
+                            ) : (
+                                <Bar
+                                    dataKey="value"
+                                    fill="url(#contractorPrefixGrad)"
+                                    radius={[7, 7, 0, 0]}
+                                    maxBarSize={46}
+                                    label={renderBarValueLabel("#7c3aed", valueSuffix, 13)}
+                                />
+                            )}
                         </BarChart>
                     </ResponsiveContainer>
                 </ScrollableTopChart>
 
                 <SimpleLegend
                     items={[
-                        { color: '#8b5cf6', label: valueMode === "percentage" ? 'Employee Code Prefix Percentage' : 'Employee Code Prefix Count' },
+                        ...(hasMasterComparison ? [{ color: USER_TOTAL_BAR_COLOR, label: 'Users Total' }] : []),
+                        { color: '#7c3aed', label: 'Attendance' },
                     ]}
                 />
             </CardContent>
@@ -1545,9 +2246,11 @@ const TenureFullWidthChart = ({
     setTenureBucket,
     customTenureRange,
     setCustomTenureRange,
+    showMasterComparison = true,
 }) => {
-    const isEmpty = !data || data.every(d => Number(d.value) === 0);
+    const isEmpty = !data || data.every(d => Number(d.value) === 0 && (!showMasterComparison || Number(d.masterValue || 0) === 0));
     const valueSuffix = valueMode === "percentage" ? "%" : "";
+    const hasMasterComparison = showMasterComparison && data?.some(d => Number(d.masterValue || 0) > 0);
 
     return (
         <Card className="border-slate-200 shadow-sm bg-white w-full">
@@ -1558,7 +2261,7 @@ const TenureFullWidthChart = ({
                             {Icon && <Icon className="w-6 h-6" style={{ color }} />}
                             {title}
                         </CardTitle>
-                        <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+                        <p className="text-sm text-slate-500 mt-1">{renderAttendanceDateSubtitle(subtitle)}</p>
                     </div>
 
                     <div className="flex items-center gap-3 flex-wrap">
@@ -1596,7 +2299,7 @@ const TenureFullWidthChart = ({
                                     dataKey="bucket"
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 800 }}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                     interval={0}
                                     height={40}
                                     tickMargin={8}
@@ -1605,8 +2308,8 @@ const TenureFullWidthChart = ({
                                 <YAxis
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 13, fill: '#64748b', fontWeight: 700 }}
-                                    allowDecimals={false}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
+                                    allowDecimals={valueMode === "percentage"}
                                     width={40}
                                 />
 
@@ -1621,7 +2324,7 @@ const TenureFullWidthChart = ({
                                 />
                             </LineChart>
                         ) : (
-                            <BarChart data={data} margin={{ top: 52, right: 48, left: 8, bottom: 18 }} barCategoryGap="25%">
+                            <BarChart data={data} margin={{ top: 52, right: 48, left: 8, bottom: 18 }} barCategoryGap="25%" barGap={18}>
                                 <defs>
                                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="0%" stopColor={color} stopOpacity={1} />
@@ -1635,7 +2338,7 @@ const TenureFullWidthChart = ({
                                     dataKey="bucket"
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 800 }}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                     interval={0}
                                     height={40}
                                     tickMargin={8}
@@ -1644,18 +2347,39 @@ const TenureFullWidthChart = ({
                                 <YAxis
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 13, fill: '#64748b', fontWeight: 700 }}
-                                    allowDecimals={false}
+                                    tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
+                                    allowDecimals={valueMode === "percentage"}
                                     width={40}
                                 />
 
-                                <Bar
-                                    dataKey="value"
-                                    fill={`url(#${gradientId})`}
-                                    radius={[7, 7, 0, 0]}
-                                    maxBarSize={36}
-                                    label={renderBarValueLabel(color, valueSuffix, 13)}
-                                />
+                                {hasMasterComparison ? (
+                                    <>
+                                        <Bar
+                                            dataKey="masterValue"
+                                            name="Users Total"
+                                            fill={USER_TOTAL_BAR_COLOR}
+                                            radius={[7, 7, 0, 0]}
+                                            maxBarSize={28}
+                                            label={renderUsersTotalLabel(valueSuffix, 12)}
+                                        />
+                                        <Bar
+                                            dataKey="value"
+                                            name="Attendance/Actual"
+                                            fill={`url(#${gradientId})`}
+                                            radius={[7, 7, 0, 0]}
+                                            maxBarSize={28}
+                                            label={renderBarValueLabel(color, valueSuffix, 12)}
+                                        />
+                                    </>
+                                ) : (
+                                    <Bar
+                                        dataKey="value"
+                                        fill={`url(#${gradientId})`}
+                                        radius={[7, 7, 0, 0]}
+                                        maxBarSize={36}
+                                        label={renderBarValueLabel(color, valueSuffix, 13)}
+                                    />
+                                )}
                             </BarChart>
                         )}
                     </ResponsiveContainer>
@@ -1678,10 +2402,12 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         const departmentParam = serializeMultiValue(filter.department);
         const sectionParam = serializeMultiValue(filter.section);
         const lineParam = serializeMultiValue(filter.line);
+        const shift = filter.shift || "ALL";
 
         if (departmentParam !== 'ALL') params.append('department', departmentParam);
         if (sectionParam !== 'ALL') params.append('section', sectionParam);
         if (lineParam !== 'ALL') params.append('line', lineParam);
+        if (shift !== 'ALL') params.append('shift', shift);
 
         if (filter.dateRange?.from) {
             params.append('startDate', formatDateLocal(filter.dateRange.from));
@@ -1717,6 +2443,7 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         shouldUseCustomTenureRange,
         customTenureRange?.from,
         customTenureRange?.to,
+        filter.shift,
     ]);
 
     return { tenureStats, tenureLoading };
@@ -1755,6 +2482,11 @@ const DashboardHome = () => {
     };
 
     const [pieChartViews, setPieChartViews] = useState({
+        // Middle charts now also support Pie/Bar toggle.
+        // Skill and Leader/Expert default to bar because pie becomes hard to read when categories are many.
+        skill: "bar",
+        gender: "bar",
+        leaderExpert: "bar",
         state: "bar",
         district: "bar",
         employeeGender: "bar",
@@ -1784,6 +2516,51 @@ const DashboardHome = () => {
     useEffect(() => {
         setSelectedMasterDistrict(["ALL"]);
     }, [serializeMultiValue(selectedMasterState)]);
+
+    // State Distribution graph filters are the base filters for the lower three graphs.
+    // When State graph filter changes, District/Gender/Role filters automatically show the same selected filters.
+    // After that, user can manually change any lower graph filter as needed.
+    useEffect(() => {
+        const nextStateFilter = {
+            department: normalizeMultiValue(stateFilter.department),
+            section: normalizeMultiValue(stateFilter.section),
+            line: normalizeMultiValue(stateFilter.line),
+            dateRange: stateFilter.dateRange,
+            shift: stateFilter.shift || "ALL",
+        };
+
+        setDistrictFilter(nextStateFilter);
+        setEmployeeGenderFilter(nextStateFilter);
+        setDesignationFilter(nextStateFilter);
+    }, [
+        serializeMultiValue(stateFilter.department),
+        serializeMultiValue(stateFilter.section),
+        serializeMultiValue(stateFilter.line),
+        stateFilter.dateRange?.from,
+        stateFilter.dateRange?.to,
+        stateFilter.shift,
+    ]);
+
+    // State graph filters act as the base filters for the lower three employee master graphs.
+    // If a lower graph has its own specific filter selected, that graph can still use it.
+    // If its filter is ALL/empty, it automatically follows the State graph filter.
+    const getStateLinkedFilter = (childFilter) => ({
+        department: hasRealSelection(childFilter.department)
+            ? childFilter.department
+            : stateFilter.department,
+        section: hasRealSelection(childFilter.section)
+            ? childFilter.section
+            : stateFilter.section,
+        line: hasRealSelection(childFilter.line)
+            ? childFilter.line
+            : stateFilter.line,
+        dateRange: childFilter.dateRange?.from
+            ? childFilter.dateRange
+            : stateFilter.dateRange,
+        shift: childFilter.shift && childFilter.shift !== "ALL"
+            ? childFilter.shift
+            : stateFilter.shift || "ALL",
+    });
 
     const [tenureFilter, setTenureFilter] = useState(defaultFilter);
     const [customTenureRange, setCustomTenureRange] = useState({
@@ -1827,25 +2604,25 @@ const DashboardHome = () => {
         data: manpowerStats,
         isLoading: manpowerLoading,
         isFetching: manpowerFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(manpowerFilter));
+    } = useGetDashboardStatsQuery(getQueryParams(manpowerFilter, {}));
 
     const {
         data: attritionStats,
         isLoading: attritionLoading,
         isFetching: attritionFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(attritionFilter));
+    } = useGetDashboardStatsQuery(getQueryParams(attritionFilter, {}));
 
     const {
         data: absenteeismStats,
         isLoading: absenteeismLoading,
         isFetching: absenteeismFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(absenteeismFilter));
+    } = useGetDashboardStatsQuery(getQueryParams(absenteeismFilter, {}));
 
     const {
         data: contractorPrefixStats,
         isLoading: contractorPrefixLoading,
         isFetching: contractorPrefixFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(contractorPrefixFilter));
+    } = useGetDashboardStatsQuery(getQueryParams(contractorPrefixFilter, {}));
 
     const {
         data: skillStats,
@@ -1888,7 +2665,7 @@ const DashboardHome = () => {
         isLoading: districtLoading,
         isFetching: districtFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(districtFilter, {
+        getQueryParams(getStateLinkedFilter(districtFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -1901,7 +2678,7 @@ const DashboardHome = () => {
         isLoading: employeeGenderLoading,
         isFetching: employeeGenderFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(employeeGenderFilter, {
+        getQueryParams(getStateLinkedFilter(employeeGenderFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -1914,7 +2691,7 @@ const DashboardHome = () => {
         isLoading: designationLoading,
         isFetching: designationFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(designationFilter, {
+        getQueryParams(getStateLinkedFilter(designationFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -1942,7 +2719,7 @@ const DashboardHome = () => {
     const attritionData = normalize30Days(attritionStats?.data?.attritionData || []);
     const absenteeismData = normalize30Days(absenteeismStats?.data?.absenteeismData || []);
 
-    const skillPieData = skillStats?.data?.pieCharts?.skillLevels || [];
+    const skillPieData = normalizeSkillLevelChartData(skillStats?.data?.pieCharts?.skillLevels || []);
     const genderPieData = genderStats?.data?.pieCharts?.gender || [];
     const leaderExpertPieData = leaderExpertStats?.data?.pieCharts?.leaderExpert || [];
     const leaderExpertTotalEmployees =
@@ -1990,19 +2767,38 @@ const DashboardHome = () => {
                     }]
                     : TENURE_BUCKETS.filter(item => item.value === tenureBucket);
 
-        const total = normalBuckets.reduce((sum, item) => {
-            return sum + Number(stats?.[key]?.[item.value] ?? 0);
+        const sourceObj = stats?.[key] || {};
+        const masterObj = stats?.masterTenure || stats?.usersTotalByTenure || {};
+
+        const denominatorBuckets = tenureBucket === "CUSTOM"
+            ? [{ value: "CUSTOM" }]
+            : normalBuckets;
+
+        const total = denominatorBuckets.reduce((sum, item) => {
+            return sum + Number(sourceObj?.[item.value] ?? 0);
+        }, 0);
+
+        const masterTotal = denominatorBuckets.reduce((sum, item) => {
+            return sum + Number(masterObj?.[item.value] ?? 0);
         }, 0);
 
         return selectedBuckets.map(item => {
-            const rawValue = Number(stats?.[key]?.[item.value] ?? 0);
-            const percentage = total > 0 ? Number(((rawValue / total) * 100).toFixed(1)) : 0;
+            const rawValue = Number(sourceObj?.[item.value] ?? 0);
+            const masterValue = Number(masterObj?.[item.value] ?? 0);
+            // Same denominator for attendance and Users Total percentage.
+            // This keeps yellow Users Total bar greater/equal when its count is greater/equal.
+            const commonTotal = masterTotal > 0 ? masterTotal : total;
+            const percentage = commonTotal > 0 ? Number(((rawValue / commonTotal) * 100).toFixed(1)) : 0;
+            const masterPercentage = commonTotal > 0 ? Number(((masterValue / commonTotal) * 100).toFixed(1)) : 0;
 
             return {
                 bucket: item.label,
                 value: valueMode === "percentage" ? percentage : rawValue,
                 rawValue,
                 percentage,
+                masterValue: valueMode === "percentage" ? masterPercentage : masterValue,
+                masterRawValue: masterValue,
+                masterPercentage,
             };
         });
     };
@@ -2017,12 +2813,12 @@ const DashboardHome = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 p-6 space-y-6 w-full max-w-full overflow-x-hidden min-w-0">
-            <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex-wrap gap-4">
                 <div className="flex items-center gap-4">
-                    <Button 
-                        onClick={() => navigate(-1)} 
-                        variant="outline" 
-                        size="sm" 
+                    <Button
+                        onClick={() => navigate(-1)}
+                        variant="outline"
+                        size="sm"
                         className="flex items-center gap-2"
                     >
                         <ArrowLeft className="w-4 h-4" />
@@ -2030,9 +2826,11 @@ const DashboardHome = () => {
                     </Button>
                     <h1 className="text-xl font-bold text-slate-800">Dashboard</h1>
                 </div>
-                <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1 rounded-full font-semibold hidden md:inline-block">
-                    Requirement value shown on every date
-                </span>
+                <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1 rounded-full font-semibold hidden md:inline-block">
+                        Requirement value shown on every date
+                    </span>
+                </div>
             </div>
 
             <Card className="border-slate-200 shadow-sm bg-white w-full">
@@ -2076,7 +2874,7 @@ const DashboardHome = () => {
                         <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart
                                 data={manpowerData}
-                                margin={{ top: 44, right: 42, left: 4, bottom: 8 }}
+                                margin={{ top: 66, right: 48, left: 4, bottom: 8 }}
                                 barCategoryGap="20%"
                                 barGap={1}
                             >
@@ -2098,7 +2896,7 @@ const DashboardHome = () => {
                                     dataKey="month"
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fill: '#64748b', fontSize: 12, fontWeight: 700 }}
+                                    tick={{ fill: '#475569', fontSize: 13, fontWeight: 900 }}
                                     dy={8}
                                     interval={0}
                                 />
@@ -2106,7 +2904,7 @@ const DashboardHome = () => {
                                 <YAxis
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }}
+                                    tick={{ fill: '#475569', fontSize: 13, fontWeight: 900 }}
                                     allowDecimals={false}
                                     width={36}
                                 />
@@ -2119,7 +2917,7 @@ const DashboardHome = () => {
                                             fill="url(#headcountGrad)"
                                             radius={[4, 4, 0, 0]}
                                             maxBarSize={20}
-                                            label={renderBarValueLabel("#7c5a00", "", 12)}
+                                            label={renderBarValueLabel("#7c5a00", "", 13)}
                                         />
 
                                         <Bar
@@ -2128,7 +2926,7 @@ const DashboardHome = () => {
                                             fill="url(#presentGrad)"
                                             radius={[4, 4, 0, 0]}
                                             maxBarSize={20}
-                                            label={renderBarValueLabel("#059669", "", 12)}
+                                            label={renderBarValueLabel("#059669", "", 13)}
                                         />
                                     </>
                                 ) : (
@@ -2151,8 +2949,12 @@ const DashboardHome = () => {
                                                         y={y - 10}
                                                         textAnchor="middle"
                                                         fill="#7c5a00"
-                                                        fontSize={12}
-                                                        fontWeight={700}
+                                                        fontSize={13}
+                                                        fontWeight={900}
+                                                        stroke="#7c5a00"
+                                                        strokeWidth={0.55}
+                                                        paintOrder="stroke"
+                                                        style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
                                                     >
                                                         {value}
                                                     </text>
@@ -2178,8 +2980,12 @@ const DashboardHome = () => {
                                                         y={y + 16}
                                                         textAnchor="middle"
                                                         fill="#059669"
-                                                        fontSize={12}
-                                                        fontWeight={700}
+                                                        fontSize={13}
+                                                        fontWeight={900}
+                                                        stroke="#059669"
+                                                        strokeWidth={0.55}
+                                                        paintOrder="stroke"
+                                                        style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
                                                     >
                                                         {value}
                                                     </text>
@@ -2206,8 +3012,12 @@ const DashboardHome = () => {
                                                 x={x}
                                                 y={y + 20}
                                                 fill="#2563eb"
-                                                fontSize={12}
-                                                fontWeight={800}
+                                                fontSize={13}
+                                                fontWeight={900}
+                                                stroke="#2563eb"
+                                                strokeWidth={0.55}
+                                                paintOrder="stroke"
+                                                style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
                                                 textAnchor="middle"
                                             >
                                                 {value}
@@ -2277,7 +3087,7 @@ const DashboardHome = () => {
 
             <ContractorPrefixChartCard
                 title="Contractor"
-                subtitle={`Employee code prefix ${graphValueModes.contractorPrefix === "percentage" ? "percentage" : "count"} grouped by Emp ID, like AS, OPET, etc.`}
+                subtitle={withAttendanceDateSubtitle(`Contractor ${graphValueModes.contractorPrefix === "percentage" ? "percentage" : "count"} grouped by contractor column`, contractorPrefixStats)}
                 data={contractorPrefixData}
                 isLoading={contractorPrefixLoading || contractorPrefixFetching}
                 valueMode={graphValueModes.contractorPrefix}
@@ -2288,10 +3098,11 @@ const DashboardHome = () => {
             />
 
             <div className="w-full overflow-x-auto pb-2">
-                <div className="grid grid-cols-2 gap-4 items-stretch min-w-[760px]">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch min-w-[960px]">
                     <HighchartsPieCard
                         title="Skill Level Distribution"
-                        data={skillPieData.map(item => ({ name: item.name, value: item.value }))}
+                        subtitle={getPreviousAttendanceDateLabel(skillStats)}
+                        data={skillPieData}
                         colors={SKILL_COLORS}
                         icon={Users}
                         filter={skillFilter}
@@ -2300,11 +3111,15 @@ const DashboardHome = () => {
                         isLoading={skillLoading || skillFetching}
                         valueMode={graphValueModes.skill}
                         onValueModeChange={(value) => setGraphValueMode("skill", value)}
+                        chartView={pieChartViews.skill}
+                        onChartViewChange={(value) => setPieChartView("skill", value)}
+                        straightXAxisLabels={true}
                     />
 
                     <HighchartsPieCard
                         title="Gender Distribution"
-                        data={genderPieData.map(item => ({ name: item.name, value: item.value }))}
+                        subtitle={getPreviousAttendanceDateLabel(genderStats)}
+                        data={genderPieData.map(item => ({ ...item, name: item.name, value: item.value, attendanceValue: item.attendanceValue ?? item.value, masterValue: item.masterValue }))}
                         colors={GENDER_COLORS}
                         icon={Users}
                         filter={genderFilter}
@@ -2313,19 +3128,25 @@ const DashboardHome = () => {
                         isLoading={genderLoading || genderFetching}
                         valueMode={graphValueModes.gender}
                         onValueModeChange={(value) => setGraphValueMode("gender", value)}
+                        chartView={pieChartViews.gender}
+                        onChartViewChange={(value) => setPieChartView("gender", value)}
+                        straightXAxisLabels={true}
                     />
                 </div>
             </div>
 
             <div className="w-full overflow-x-auto pb-2">
-                <div className="grid grid-cols-2 gap-4 items-stretch min-w-[760px]">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch min-w-[760px]">
                     <HighchartsPieCard
                         title="Line Leader / Expert Distribution"
+                        subtitle={getPreviousAttendanceDateLabel(leaderExpertStats)}
                         data={leaderExpertPieData.map(item => ({
                             name: item.name,
                             value: item.value,
                             percentage: item.percentage,
                             totalEmployees: item.totalEmployees || leaderExpertTotalEmployees,
+                            attendanceValue: item.attendanceValue ?? item.value,
+                            masterValue: item.masterValue,
                         }))}
                         colors={LEADER_EXPERT_COLORS}
                         icon={Briefcase}
@@ -2335,6 +3156,9 @@ const DashboardHome = () => {
                         isLoading={leaderExpertLoading || leaderExpertFetching}
                         valueMode={graphValueModes.leaderExpert}
                         onValueModeChange={(value) => setGraphValueMode("leaderExpert", value)}
+                        chartView={pieChartViews.leaderExpert}
+                        onChartViewChange={(value) => setPieChartView("leaderExpert", value)}
+                        straightXAxisLabels={true}
                         useCustomPercentage={true}
                     />
 
@@ -2355,7 +3179,7 @@ const DashboardHome = () => {
 
             <TenureFullWidthChart
                 title="Attendance by Joining Date / Tenure"
-                subtitle={`Present employee ${tenureValueModes.attendance === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attendanceTenureBucket)}`}
+                subtitle={`Present employee ${tenureValueModes.attendance === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attendanceTenureBucket)} · Attendance date: Previous date`}
                 data={buildTenureData(tenureStats, "attendance", attendanceTenureBucket, tenureValueModes.attendance, customTenureRange)}
                 color="#3b82f6"
                 gradientId="attendanceTenureGrad"
@@ -2374,12 +3198,12 @@ const DashboardHome = () => {
                 setCustomTenureRange={setCustomTenureRange}
             />
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
+            <div className="grid grid-cols-1 gap-4 items-stretch">
                 <TenureFullWidthChart
                     title="Attrition by Joining Date / Tenure"
-                    subtitle={`Left employees ${tenureValueModes.attrition === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attritionTenureBucket)}`}
+                    subtitle={`Left employees ${tenureValueModes.attrition === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attritionTenureBucket)} · Attendance date: Previous date`}
                     data={buildTenureData(tenureStats, "attrition", attritionTenureBucket, tenureValueModes.attrition, customTenureRange)}
-                    color="#ef4444"
+                    color="#7c3aed"
                     gradientId="attritionTenureGrad"
                     icon={UserX}
                     isLoading={tenureLoading}
@@ -2394,13 +3218,14 @@ const DashboardHome = () => {
                     setTenureBucket={setAttritionTenureBucket}
                     customTenureRange={customTenureRange}
                     setCustomTenureRange={setCustomTenureRange}
+                    showMasterComparison={false}
                 />
 
                 <TenureFullWidthChart
                     title="Absenteeism by Joining Date / Tenure"
-                    subtitle={`Absent employee ${tenureValueModes.absenteeism === "percentage" ? "percentage" : "count"} · ${getTenureLabel(absenteeismTenureBucket)}`}
+                    subtitle={`Absent employee ${tenureValueModes.absenteeism === "percentage" ? "percentage" : "count"} · ${getTenureLabel(absenteeismTenureBucket)} · Attendance date: Previous date`}
                     data={buildTenureData(tenureStats, "absenteeism", absenteeismTenureBucket, tenureValueModes.absenteeism, customTenureRange)}
-                    color="#f59e0b"
+                    color="#7c3aed"
                     gradientId="absenteeismTenureGrad"
                     icon={TrendingDown}
                     isLoading={tenureLoading}
@@ -2415,6 +3240,7 @@ const DashboardHome = () => {
                     setTenureBucket={setAbsenteeismTenureBucket}
                     customTenureRange={customTenureRange}
                     setCustomTenureRange={setCustomTenureRange}
+                    showMasterComparison={false}
                 />
             </div>
 
@@ -2452,11 +3278,12 @@ const DashboardHome = () => {
             </Card>
 
             {showEmployeeMasterGraphs && (
-                <div className="w-full overflow-x-auto pb-2">
-                    <div className="grid grid-cols-2 gap-4 items-stretch min-w-[760px]">
+                <div className="w-full space-y-4 pb-2">
+                    <div className="grid grid-cols-1 gap-4 items-stretch w-full">
                         <HighchartsPieCard
                             title="State Distribution"
-                            data={statePieData.map(item => ({ name: item.name, value: item.value }))}
+                            subtitle={getPreviousAttendanceDateLabel(stateStats)}
+                            data={statePieData.map(item => ({ ...item, name: item.name, value: item.value, attendanceValue: item.attendanceValue ?? item.value, masterValue: item.masterValue }))}
                             colors={STATE_COLORS}
                             icon={Map}
                             filter={stateFilter}
@@ -2478,11 +3305,14 @@ const DashboardHome = () => {
                             onValueModeChange={(value) => setGraphValueMode("state", value)}
                             chartView={pieChartViews.state}
                             onChartViewChange={(value) => setPieChartView("state", value)}
+                            straightXAxisLabels={true}
+                            bottomValuesToggleable={true}
                         />
 
                         <HighchartsPieCard
                             title="District Distribution"
-                            data={districtPieData.map(item => ({ name: item.name, value: item.value }))}
+                            subtitle={getPreviousAttendanceDateLabel(districtStats)}
+                            data={districtPieData.map(item => ({ ...item, name: item.name, value: item.value, attendanceValue: item.attendanceValue ?? item.value, masterValue: item.masterValue }))}
                             colors={DISTRICT_COLORS}
                             icon={MapPin}
                             filter={districtFilter}
@@ -2501,26 +3331,34 @@ const DashboardHome = () => {
                             onValueModeChange={(value) => setGraphValueMode("district", value)}
                             chartView={pieChartViews.district}
                             onChartViewChange={(value) => setPieChartView("district", value)}
+                            straightXAxisLabels={true}
+                            bottomValuesToggleable={true}
                         />
 
-                        <HighchartsPieCard
-                            title="Male / Female Distribution"
-                            data={employeeGenderPieData.map(item => ({ name: item.name, value: item.value }))}
-                            colors={GENDER_COLORS}
-                            icon={Users}
-                            filter={employeeGenderFilter}
-                            setFilter={setEmployeeGenderFilter}
-                            departments={departments}
-                            isLoading={employeeGenderLoading || employeeGenderFetching}
-                            valueMode={graphValueModes.employeeGender}
-                            onValueModeChange={(value) => setGraphValueMode("employeeGender", value)}
-                            chartView={pieChartViews.employeeGender}
-                            onChartViewChange={(value) => setPieChartView("employeeGender", value)}
-                        />
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch w-full">
+                            <HighchartsPieCard
+                                title="Male / Female Distribution"
+                                subtitle={getPreviousAttendanceDateLabel(employeeGenderStats)}
+                                data={employeeGenderPieData.map(item => ({ ...item, name: item.name, value: item.value, attendanceValue: item.attendanceValue ?? item.value, masterValue: item.masterValue }))}
+                                colors={GENDER_COLORS}
+                                icon={Users}
+                                filter={employeeGenderFilter}
+                                setFilter={setEmployeeGenderFilter}
+                                departments={departments}
+                                isLoading={employeeGenderLoading || employeeGenderFetching}
+                                valueMode={graphValueModes.employeeGender}
+                                onValueModeChange={(value) => setGraphValueMode("employeeGender", value)}
+                                chartView={pieChartViews.employeeGender}
+                                onChartViewChange={(value) => setPieChartView("employeeGender", value)}
+                                straightXAxisLabels={true}
+                                bottomValuesToggleable={true}
+                            />
+                        </div>
 
                         <HighchartsPieCard
                             title="Role Distribution"
-                            data={designationPieData.map(item => ({ name: item.name, value: item.value }))}
+                            subtitle={getPreviousAttendanceDateLabel(designationStats)}
+                            data={designationPieData.map(item => ({ ...item, name: item.name, value: item.value, attendanceValue: item.attendanceValue ?? item.value, masterValue: item.masterValue }))}
                             colors={DESIGNATION_COLORS}
                             icon={Briefcase}
                             filter={designationFilter}
@@ -2531,6 +3369,8 @@ const DashboardHome = () => {
                             onValueModeChange={(value) => setGraphValueMode("designation", value)}
                             chartView={pieChartViews.designation}
                             onChartViewChange={(value) => setPieChartView("designation", value)}
+                            straightXAxisLabels={true}
+                            bottomValuesToggleable={true}
                         />
                     </div>
                 </div>

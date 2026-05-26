@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { useCreateQuizMutation } from "@/Redux/AllApi/QuizApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
@@ -45,6 +46,17 @@ const AddTestPaper = () => {
   const [createQuiz, { isLoading }] = useCreateQuizMutation();
   const { uploadFile, isUploading: isImageUploading } = useFileUpload();
 
+  const { user: currentUser } = useSelector((state) => state.auth);
+
+  const hasButtonPermission = React.useCallback((permissionKey) => {
+    if (!currentUser) return false;
+    if (currentUser.role === "SUPERADMIN" || currentUser.isAdmin) return true;
+    if (currentUser.role === "INSTRUCTOR" || currentUser.isTrainer) return true;
+    
+    const userPermissions = currentUser.customRole?.permissions || [];
+    return userPermissions.includes(permissionKey);
+  }, [currentUser]);
+
   const basePath = React.useMemo(() => {
     const p = location.pathname || '';
     if (p.startsWith('/superadmin')) return '/superadmin';
@@ -59,7 +71,7 @@ const AddTestPaper = () => {
     scope: "standalone", 
     passingScore: 70,
     timeLimit: 30,
-    attemptsAllowed: 1,
+    attemptsAllowed: 0,
     skillUpgradation: false,
     issueCertificate: true,
     departmentId: [],
@@ -70,7 +82,7 @@ const AddTestPaper = () => {
     isDojo: false,
     isHandover: false,
     isTheoretical: false,
-    conductedBy: "Education Cell",
+    conductedBy: "",
     questions: [
       {
         questionText: "",
@@ -124,7 +136,7 @@ const AddTestPaper = () => {
 
   const activeLevels = React.useMemo(() => {
     const levels = activeConfigData?.data?.levels || [];
-    if (formData.level && !levels.some(lvl => lvl.name === formData.level)) {
+    if (formData.level && formData.level !== "L0 (Dojo User)" && !levels.some(lvl => lvl.name === formData.level)) {
       return [...levels, { name: formData.level, description: "" }];
     }
     return levels;
@@ -534,7 +546,7 @@ const AddTestPaper = () => {
         isDojo: formData.isDojo,
         isHandover: formData.isHandover,
         isTheoretical: formData.isTheoretical,
-        conductedBy: formData.conductedBy || "Education Cell",
+        conductedBy: formData.conductedBy || "",
       };
 
       await createQuiz(quizData).unwrap();
@@ -797,7 +809,7 @@ const AddTestPaper = () => {
               <div className="grid gap-2">
                 <Label htmlFor="level">Level</Label>
                 <Select
-                  key={activeLevels.length}
+                  key={`${activeLevels.length}-${formData.level}`}
                   value={formData.level || "none"}
                   onValueChange={(val) => {
                     const nextLevel = val === "none" ? "" : val;
@@ -821,17 +833,6 @@ const AddTestPaper = () => {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="conductedBy">Conducted By</Label>
-                <Input
-                  id="conductedBy"
-                  name="conductedBy"
-                  value={formData.conductedBy}
-                  onChange={handleInputChange}
-                  placeholder="e.g., Education Cell"
-                />
               </div>
 
               <div className="grid gap-2">
@@ -864,7 +865,7 @@ const AddTestPaper = () => {
               <div className="grid gap-2">
                 <Label htmlFor="attemptsAllowed">Attempts Allowed *</Label>
                 <Select
-                  value={(formData.attemptsAllowed ?? 1).toString()}
+                  value={(formData.attemptsAllowed ?? 0).toString()}
                   onValueChange={(value) =>
                     setFormData((prev) => ({
                       ...prev,
@@ -884,92 +885,100 @@ const AddTestPaper = () => {
                 </Select>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="skillUpgradation">Skill Upgradation *</Label>
-                <Select
-                  value={formData.skillUpgradation ? "yes" : "no"}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      skillUpgradation: value === "yes",
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select option" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">No</SelectItem>
-                    <SelectItem value="yes">Yes</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground">
-                  If Yes, student level will be upgraded upon passing this test.
-                </p>
-              </div>
+              {hasButtonPermission("test_paper:skill_upgradation") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="skillUpgradation">Skill Upgradation *</Label>
+                  <Select
+                    value={formData.skillUpgradation ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        skillUpgradation: value === "yes",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    If Yes, student level will be upgraded upon passing this test.
+                  </p>
+                </div>
+              )}
 
-              <div className="grid gap-2">
-                <Label htmlFor="issueCertificate">Issue Certificate *</Label>
-                <Select
-                  value={formData.issueCertificate ? "yes" : "no"}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      issueCertificate: value === "yes",
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select option" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">No</SelectItem>
-                    <SelectItem value="yes">Yes</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {hasButtonPermission("test_paper:issue_certificate") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="issueCertificate">Issue Certificate *</Label>
+                  <Select
+                    value={formData.issueCertificate ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        issueCertificate: value === "yes",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-              <div className="grid gap-2">
-                <Label htmlFor="isDojo">Is DOJO Quiz? *</Label>
-                <Select
-                  value={formData.isDojo ? "yes" : "no"}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      isDojo: value === "yes",
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select option" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">No</SelectItem>
-                    <SelectItem value="yes">Yes</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {hasButtonPermission("test_paper:is_dojo") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="isDojo">Is DOJO Quiz? *</Label>
+                  <Select
+                    value={formData.isDojo ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isDojo: value === "yes",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-              <div className="grid gap-2">
-                <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
-                <Select
-                  value={formData.isHandover ? "yes" : "no"}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      isHandover: value === "yes",
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select option" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">No</SelectItem>
-                    <SelectItem value="yes">Yes</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {hasButtonPermission("test_paper:is_handover") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
+                  <Select
+                    value={formData.isHandover ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isHandover: value === "yes",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="grid gap-2">
                 <Label htmlFor="isTheoretical">Is Theoretical Quiz? *</Label>

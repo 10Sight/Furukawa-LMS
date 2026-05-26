@@ -21,7 +21,8 @@ import {
   IconX,
   IconAlertTriangle,
   IconInfoCircle,
-  IconPlayerPlay
+  IconPlayerPlay,
+  IconGauge
 } from "@tabler/icons-react";
 import {
   useGetAllUsersQuery as useSuperAdminGetAllUsersQuery,
@@ -942,6 +943,28 @@ const AllUsersManagement = () => {
           </CardContent>
         </Card>
 
+        <Card className="bg-violet-50/50 border-violet-100 shadow-sm hover:shadow-md transition-all duration-300">
+          <CardContent className="p-4 flex items-center justify-between text-violet-900">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-1">Overall Efficiency</p>
+              <h3 className="text-2xl font-black leading-none">
+                {isLoading ? "..." : `${usersData?.data?.overallEfficiency || 0}%`}
+              </h3>
+              <div className="flex flex-wrap gap-1 mt-2">
+                <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/50">
+                  Present Avg: {isLoading ? "..." : `${usersData?.data?.presentEfficiency || 0}%`}
+                </span>
+                <span className="text-[9px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100/50">
+                  Base Avg: {isLoading ? "..." : `${usersData?.data?.systemEfficiency || 0}%`}
+                </span>
+              </div>
+            </div>
+            <div className="bg-violet-600 p-2.5 rounded-xl shadow-lg shadow-violet-200/50 text-white shrink-0">
+              <IconGauge className="w-6 h-6" strokeWidth={2.5} />
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="bg-blue-50/50 border-blue-100 shadow-sm hover:shadow-md transition-all duration-300">
           <CardContent className="p-4 flex items-center justify-between text-blue-900">
             <div>
@@ -1346,6 +1369,9 @@ const AllUsersManagement = () => {
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Efficiency
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Department
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1371,7 +1397,7 @@ const AllUsersManagement = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {isLoading ? (
                   <tr>
-                    <td colSpan="13" className="px-6 py-8 text-center">
+                    <td colSpan="14" className="px-6 py-8 text-center">
                       <div className="flex justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                       </div>
@@ -1379,7 +1405,7 @@ const AllUsersManagement = () => {
                   </tr>
                 ) : isError ? (
                   <tr>
-                    <td colSpan="13" className="px-6 py-8 text-center">
+                    <td colSpan="14" className="px-6 py-8 text-center">
                       <div className="text-red-600">
                         Error loading users: {error?.data?.message || error?.message}
                       </div>
@@ -1387,7 +1413,7 @@ const AllUsersManagement = () => {
                   </tr>
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan="13" className="px-6 py-8 text-center">
+                    <td colSpan="14" className="px-6 py-8 text-center">
                       <div className="text-gray-500">No users found</div>
                     </td>
                   </tr>
@@ -1434,6 +1460,19 @@ const AllUsersManagement = () => {
                         <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(user.logStatus || ((filters.date || (filters.dateFrom && filters.dateTo)) ? "Absent" : user.status))}`}>
                           {user.logStatus || ((filters.date || (filters.dateFrom && filters.dateTo)) ? "Absent" : user.status)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-semibold shrink-0 ${Math.min(user.currentEffeciency || 0, 100) >= 85 ? "text-emerald-600" : Math.min(user.currentEffeciency || 0, 100) >= 70 ? "text-blue-600" : "text-amber-600"}`}>
+                            {Math.min(user.currentEffeciency || 0, 100)}%
+                          </span>
+                          <div className="w-12 bg-gray-100 rounded-full h-1.5 overflow-hidden hidden sm:block shrink-0">
+                            <div 
+                              className={`h-1.5 rounded-full ${Math.min(user.currentEffeciency || 0, 100) >= 85 ? "bg-emerald-500" : Math.min(user.currentEffeciency || 0, 100) >= 70 ? "bg-blue-500" : "bg-amber-500"}`}
+                              style={{ width: `${Math.min(user.currentEffeciency || 0, 100)}%` }}
+                            />
+                          </div>
+                        </div>
                       </td>
                        <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
                         {(user.deptName && user.deptName.toLowerCase() !== "none") ? user.deptName : "-"}
@@ -1559,7 +1598,7 @@ const AllUsersManagement = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 text-xs">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 mt-4 text-xs">
                         <div>
                           <p className="text-gray-400 mb-0.5">Shift</p>
                           <p className="font-medium text-gray-700">{user.logShift || user.shift || "-"}</p>
@@ -1571,6 +1610,12 @@ const AllUsersManagement = () => {
                         <div>
                           <p className="text-gray-400 mb-0.5">Section</p>
                           <p className="font-medium text-gray-700 truncate">{user.sectionName || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400 mb-0.5">Efficiency</p>
+                          <p className={`font-semibold ${Math.min(user.currentEffeciency || 0, 100) >= 85 ? "text-emerald-600" : Math.min(user.currentEffeciency || 0, 100) >= 70 ? "text-blue-600" : "text-amber-600"}`}>
+                            {Math.min(user.currentEffeciency || 0, 100)}%
+                          </p>
                         </div>
                         <div>
                           <p className="text-gray-400 mb-0.5">Role</p>

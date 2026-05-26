@@ -88,9 +88,11 @@ const DojoHiringChart = ({ dateRange }) => {
                 allowPointSelect: true,
                 cursor: 'pointer',
                 depth: 35,
+                size: '75%',
                 dataLabels: {
                     enabled: true,
-                    format: '{point.name}: {point.percentage:.1f}%'
+                    format: '{point.name}: {point.percentage:.1f}%',
+                    distance: 30
                 },
                 colors: COLORS,
                 point: {
@@ -116,6 +118,34 @@ const DojoHiringChart = ({ dateRange }) => {
                 selected: false
             }))
         }],
+        responsive: {
+            rules: [{
+                condition: {
+                    maxWidth: 550
+                },
+                chartOptions: {
+                    plotOptions: {
+                        pie: {
+                            dataLabels: {
+                                distance: -25,
+                                format: '{point.percentage:.0f}%',
+                                style: {
+                                    color: '#000000ff',
+                                    textOutline: '1px contrast',
+                                    fontSize: '10px',
+                                    fontWeight: 'bold'
+                                },
+                                filter: {
+                                    property: 'percentage',
+                                    operator: '>',
+                                    value: 5
+                                }
+                            }
+                        }
+                    }
+                }
+            }]
+        },
         credits: {
             enabled: false
         }
@@ -213,8 +243,8 @@ const DojoHiringChart = ({ dateRange }) => {
                     {chartData.map((item, index) => (
                         <div key={item.name} className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
                             <div className="flex items-center gap-2">
-                                <div 
-                                    className="w-3 h-3 rounded-full" 
+                                <div
+                                    className="w-3 h-3 rounded-full"
                                     style={{ backgroundColor: getGenderColor(item.name, index) }}
                                 ></div>
                                 <span className="text-sm font-medium text-gray-600">{item.name}</span>

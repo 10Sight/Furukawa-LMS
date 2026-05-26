@@ -50,6 +50,13 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
             GROUP BY studentId
         ) stats ON u.id = stats.studentId
         WHERE u.departmentId = ?
+        AND EXISTS (
+            SELECT 1 
+            FROM handover_sheets hs
+            CROSS APPLY OPENJSON(hs.entries) as entry
+            WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+              AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+        )
     `;
     const params = [departmentId];
 

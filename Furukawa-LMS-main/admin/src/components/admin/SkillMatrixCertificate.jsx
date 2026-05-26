@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, Edit2, History, Loader2, Save } from "lucide-react";
@@ -70,7 +71,8 @@ const DEFAULT_SKILL_CONFIG = {
     },
     docDefaults: {
         docNo: 'FRM-HR-007',
-        revNo: '02.....06/10/17',
+        revNo: '02',
+        revDate: '06/10/17',
         dateOfIssue: '04-02-2018'
     },
     levels: {
@@ -89,7 +91,7 @@ const formatTodayDate = () => {
     return `${dd} - ${mm} - ${yyyy}`;
 };
 
-const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departmentId = 'GLOBAL' }) => {
+const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departmentId = 'GLOBAL', subSectionId }) => {
     // State
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -103,7 +105,8 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
     });
     const [docData, setDocData] = useState({
         docNo: 'FRM-HR-007',
-        revNo: '02.....06/10/17',
+        revNo: '02',
+        revDate: '06/10/17',
         dateOfIssue: '04-02-2018',
         approved: '',
         confirmed: '',
@@ -117,6 +120,8 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
     const [history, setHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
 
+    const authUser = useSelector(state => state.auth.user);
+
     const { data: activeConfigData } = useGetActiveConfigQuery();
     const activeConfig = activeConfigData?.data;
     const displayLevels = activeConfig?.levels || [];
@@ -128,12 +133,53 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
     }, [studentId, departmentId]);
 
     useEffect(() => {
-        setHeaderData((prev) => ({
-            ...prev,
-            trainee: studentName || prev.trainee,
-            employeeNo: employeeCode || prev.employeeNo,
-        }));
-    }, [studentName, employeeCode]);
+        const fetchStudentEmpId = async () => {
+            if (!studentId) return;
+            try {
+                const userResponse = await axiosInstance.get(`/api/users/${studentId}`);
+                if (userResponse.data.success && userResponse.data.data) {
+                    const user = userResponse.data.data;
+                    setHeaderData(prev => ({
+                        ...prev,
+                        trainee: studentName || prev.trainee,
+                        employeeNo: user.empId || employeeCode || prev.employeeNo
+                    }));
+                } else {
+                    setHeaderData(prev => ({
+                        ...prev,
+                        trainee: studentName || prev.trainee,
+                        employeeNo: employeeCode || prev.employeeNo
+                    }));
+                }
+            } catch (err) {
+                console.error("Failed to fetch student details:", err);
+                setHeaderData(prev => ({
+                    ...prev,
+                    trainee: studentName || prev.trainee,
+                    employeeNo: employeeCode || prev.employeeNo
+                }));
+            }
+        };
+        fetchStudentEmpId();
+    }, [studentId, studentName, employeeCode]);
+
+    useEffect(() => {
+        if (authUser && !headerData.resultPerson) {
+            setHeaderData(prev => ({
+                ...prev,
+                resultPerson: authUser.fullName || authUser.name || ''
+            }));
+        }
+    }, [authUser, headerData.resultPerson]);
+
+    useEffect(() => {
+        if (authUser && !docData.planned) {
+            setDocData(prev => ({
+                ...prev,
+                planned: authUser.fullName || authUser.name || ''
+            }));
+        }
+    }, [authUser, docData.planned]);
 
     const fetchData = async () => {
         if (!studentId) return;
@@ -143,7 +189,23 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
             if (response.data.success && !response.data.data.isNew) {
                 const data = response.data.data;
                 setHeaderData(data.headerData || headerData);
-                setDocData(data.docData || docData);
+
+                let fetchedDocData = data.docData || docData;
+                if (fetchedDocData.revNo && typeof fetchedDocData.revNo === 'string' && fetchedDocData.revNo.includes('.....')) {
+                    const parts = fetchedDocData.revNo.split('.....');
+                    fetchedDocData = {
+                        ...fetchedDocData,
+                        revNo: parts[0] || '02',
+                        revDate: parts[1] || '06/10/17'
+                    };
+                } else if (!fetchedDocData.revDate) {
+                    fetchedDocData = {
+                        ...fetchedDocData,
+                        revDate: '06/10/17'
+                    };
+                }
+                setDocData(fetchedDocData);
+
                 setEvalData(data.evalData || {});
                 setOpinion(data.opinion || '');
             }
@@ -167,7 +229,15 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                         setHeaderData(prev => ({ ...prev, ...config.headerDefaults }));
                     }
                     if (!docData.approved && config.docDefaults) {
-                        setDocData(prev => ({ ...prev, ...config.docDefaults }));
+                        let configDocDefaults = { ...config.docDefaults };
+                        if (configDocDefaults.revNo && typeof configDocDefaults.revNo === 'string' && configDocDefaults.revNo.includes('.....')) {
+                            const parts = configDocDefaults.revNo.split('.....');
+                            configDocDefaults.revNo = parts[0] || '02';
+                            configDocDefaults.revDate = parts[1] || '06/10/17';
+                        } else if (!configDocDefaults.revDate) {
+                            configDocDefaults.revDate = '06/10/17';
+                        }
+                        setDocData(prev => ({ ...prev, ...configDocDefaults }));
                     }
                 } else {
                     setSkillConfig({ ...DEFAULT_SKILL_CONFIG, levels: config });
@@ -178,19 +248,21 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
         }
     };
 
-    const handleSave = async () => {
+    const handleSave = async (triggerEmail = false) => {
         if (!studentId) return;
         try {
             setSaving(true);
             const payload = {
                 departmentId,
+                subSectionId,
                 headerData,
                 docData,
                 evalData,
-                opinion
+                opinion,
+                sendEmail: triggerEmail
             };
             await axiosInstance.post(`/api/skill-matrix/evaluation/save/${studentId}`, payload);
-            toast.success("Evaluation saved successfully");
+            toast.success(triggerEmail ? "Evaluation saved and email sent successfully" : "Evaluation saved successfully");
         } catch (error) {
             console.error("Error saving evaluation:", error);
             toast.error("Failed to save evaluation");
@@ -227,6 +299,7 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                 setShowHistory(true);
             }
         } catch (error) {
+            console.error("History fetch error:", error);
             toast.error("Failed to fetch history");
         }
     };
@@ -284,12 +357,20 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                         Export
                     </Button>
                     <Button
-                        onClick={handleSave}
+                        onClick={() => handleSave(false)}
                         disabled={saving}
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        className="bg-slate-700 hover:bg-slate-800 text-white gap-2 transition-all duration-200"
                     >
                         {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                        Save Data
+                        Save Certificate
+                    </Button>
+                    <Button
+                        onClick={() => handleSave(true)}
+                        disabled={saving}
+                        className="bg-green-600 hover:bg-green-700 text-white gap-2 transition-all duration-200"
+                    >
+                        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                        Submit & Send Email
                     </Button>
                 </div>
             </CardHeader>
@@ -351,8 +432,12 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                 <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none" value={docData.docNo} onChange={e => setDocData({ ...docData, docNo: e.target.value })} /></div>
                             </div >
                             <div className="flex border-b border-black">
-                                <div className="w-[40%] p-1 text-xs border-r border-black">Rev.No/RevDate</div>
-                                <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none text-[10px]" value={docData.revNo} onChange={e => setDocData({ ...docData, revNo: e.target.value })} /></div>
+                                <div className="w-[40%] p-1 text-xs border-r border-black">Rev.No</div>
+                                <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none text-xs" value={docData.revNo || ''} onChange={e => setDocData({ ...docData, revNo: e.target.value })} /></div>
+                            </div>
+                            <div className="flex border-b border-black">
+                                <div className="w-[40%] p-1 text-xs border-r border-black">Rev Date</div>
+                                <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none text-xs" value={docData.revDate || ''} onChange={e => setDocData({ ...docData, revDate: e.target.value })} /></div>
                             </div>
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Date of issue</div>
@@ -365,13 +450,79 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                             </div>
                             <div className="flex h-12 text-center text-xs text-blue-600 font-bold">
                                 <div className="w-1/3 p-1 border-r border-black flex items-center justify-center">
-                                    <input className="w-full text-center outline-none" value={docData.approved} onChange={e => setDocData({ ...docData, approved: e.target.value })} />
+                                    {!docData.approved ? (
+                                        <div className="flex flex-col gap-1 w-full justify-center px-1">
+                                            <button
+                                                onClick={() => {
+                                                    const name = authUser?.fullName || authUser?.name || 'Admin';
+                                                    setDocData(prev => ({ ...prev, approved: `Approved: ${name}` }));
+                                                }}
+                                                className="bg-green-600 hover:bg-green-700 text-white text-[9px] font-bold py-0.5 px-1 rounded shadow-sm transition-colors duration-150"
+                                            >
+                                                Approve
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const name = authUser?.fullName || authUser?.name || 'Admin';
+                                                    setDocData(prev => ({ ...prev, approved: `Rejected: ${name}` }));
+                                                }}
+                                                className="bg-red-600 hover:bg-red-700 text-white text-[9px] font-bold py-0.5 px-1 rounded shadow-sm transition-colors duration-150"
+                                            >
+                                                Reject
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center w-full h-full text-center relative px-1">
+                                            <span className={`text-[9px] font-extrabold leading-tight break-all ${docData.approved.startsWith('Approved') ? 'text-green-700' : 'text-red-700'}`}>
+                                                {docData.approved}
+                                            </span>
+                                            <button
+                                                onClick={() => setDocData(prev => ({ ...prev, approved: '' }))}
+                                                className="text-[9px] text-gray-500 hover:text-gray-800 underline mt-0.5"
+                                            >
+                                                Reset
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="w-1/3 p-1 border-r border-black flex items-center justify-center">
-                                    <input className="w-full text-center outline-none" value={docData.confirmed} onChange={e => setDocData({ ...docData, confirmed: e.target.value })} />
+                                    {!docData.confirmed ? (
+                                        <div className="flex flex-col gap-1 w-full justify-center px-1">
+                                            <button
+                                                onClick={() => {
+                                                    const name = authUser?.fullName || authUser?.name || 'Admin';
+                                                    setDocData(prev => ({ ...prev, confirmed: `Approved: ${name}` }));
+                                                }}
+                                                className="bg-green-600 hover:bg-green-700 text-white text-[9px] font-bold py-0.5 px-1 rounded shadow-sm transition-colors duration-150"
+                                            >
+                                                Approve
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const name = authUser?.fullName || authUser?.name || 'Admin';
+                                                    setDocData(prev => ({ ...prev, confirmed: `Rejected: ${name}` }));
+                                                }}
+                                                className="bg-red-600 hover:bg-red-700 text-white text-[9px] font-bold py-0.5 px-1 rounded shadow-sm transition-colors duration-150"
+                                            >
+                                                Reject
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center w-full h-full text-center relative px-1">
+                                            <span className={`text-[9px] font-extrabold leading-tight break-all ${docData.confirmed.startsWith('Approved') ? 'text-green-700' : 'text-red-700'}`}>
+                                                {docData.confirmed}
+                                            </span>
+                                            <button
+                                                onClick={() => setDocData(prev => ({ ...prev, confirmed: '' }))}
+                                                className="text-[9px] text-gray-500 hover:text-gray-800 underline mt-0.5"
+                                            >
+                                                Reset
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="w-1/3 p-1 flex items-center justify-center">
-                                    <input className="w-full text-center outline-none" value={docData.planned} onChange={e => setDocData({ ...docData, planned: e.target.value })} />
+                                    <input className="w-full text-center outline-none text-xs" value={docData.planned || ''} onChange={e => setDocData({ ...docData, planned: e.target.value })} />
                                 </div>
                             </div>
                         </div >
@@ -416,36 +567,38 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                                     <div className="w-[50px] p-2 border-r border-black text-center flex items-center justify-center">{item.id || iIdx + 1}</div>
                                                     <div className="flex-1 p-2 border-r border-black whitespace-pre-wrap">{item.text}</div>
                                                     <div className="w-[250px] p-2 border-r border-black whitespace-pre-wrap">{item.method}</div>
-                                                    <div className="w-[80px] p-2 border-r border-black flex flex-col items-center justify-center gap-1">
-                                                        <label className="flex items-center gap-1 cursor-pointer">
-                                                            <input
-                                                                type="radio"
-                                                                name={`std-${itemKey}`}
-                                                                className="w-3 h-3"
-                                                                checked={currentData.standard === 'OK'}
-                                                                onChange={() => handleEvalChange(sIdx, iIdx, 'standard', 'OK')}
-                                                            /> OK
-                                                        </label>
-                                                        <label className="flex items-center gap-1 cursor-pointer">
-                                                            <input
-                                                                type="radio"
-                                                                name={`std-${itemKey}`}
-                                                                className="w-3 h-3"
-                                                                checked={currentData.standard === 'NG'}
-                                                                onChange={() => handleEvalChange(sIdx, iIdx, 'standard', 'NG')}
-                                                            /> NG
-                                                        </label>
-                                                    </div>
-                                                    <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-1">
-                                                        <div className="flex items-center gap-2 w-full justify-between">
-                                                            <span className="font-bold">OK</span>
-                                                            <span className="text-blue-600">( <input type="text" className="w-6 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} /> )</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 w-full justify-between">
-                                                            <span className="font-bold">NG</span>
-                                                            <span className="text-blue-600">( <input type="text" className="w-6 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} /> )</span>
-                                                        </div>
-                                                    </div>
+                                                    <div className="w-[80px] p-2 border-r border-black flex items-center justify-center bg-white">
+                                                         <textarea
+                                                             className="w-full h-full min-h-[60px] resize-none outline-none bg-transparent text-xs p-1 text-center border border-transparent hover:border-gray-200 focus:border-gray-300 rounded transition-all duration-150"
+                                                             rows={3}
+                                                             placeholder="..."
+                                                             value={currentData.standardText || ''}
+                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
+                                                         />
+                                                     </div>
+                                                     <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-2 bg-white">
+                                                         <select
+                                                             className="w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400"
+                                                             value={currentData.standard || ''}
+                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
+                                                         >
+                                                             <option value="">Select</option>
+                                                             <option value="OK">OK</option>
+                                                             <option value="NG">NG</option>
+                                                         </select>
+                                                         {currentData.standard === 'OK' && (
+                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
+                                                                 <span className="font-bold text-gray-500">OK</span>
+                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} /> )</span>
+                                                             </div>
+                                                         )}
+                                                         {currentData.standard === 'NG' && (
+                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
+                                                                 <span className="font-bold text-gray-500">NG</span>
+                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} /> )</span>
+                                                             </div>
+                                                         )}
+                                                     </div>
                                                     <div className="w-[150px] p-2 bg-white">
                                                         <textarea
                                                             className="w-full h-full resize-none outline-none bg-transparent"

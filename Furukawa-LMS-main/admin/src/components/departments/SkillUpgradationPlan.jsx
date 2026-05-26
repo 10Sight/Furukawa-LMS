@@ -23,23 +23,25 @@ import { IconSettings, IconHistory } from "@tabler/icons-react";
 import { Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
-const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
+const SkillUpgradationPlan = ({ students = [], departmentId, sectionId }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
 
     const { canManage, canEditLayout, canViewHistory } = useMemo(() => {
         const permissions = authUser?.customRole?.permissions || [];
         return {
-            canManage: permissions.includes('multi_skilling:manage') || isAdmin,
-            canEditLayout: permissions.includes('multi_skilling:edit_layout') || isAdmin,
-            canViewHistory: permissions.includes('multi_skilling:view_history') || isAdmin
+            canManage: permissions.includes('skill_upgradation:manage') || isAdmin,
+            canEditLayout: permissions.includes('skill_upgradation:edit_layout') || isAdmin,
+            canViewHistory: permissions.includes('skill_upgradation:view_history') || isAdmin
         };
     }, [authUser, isAdmin]);
 
     const employees = students;
 
-    // 5 process slots -> select 5 lines.
-    const [selectedLines, setSelectedLines] = useState(["", "", "", "", ""]);
+    // Dynamic slots — sized to match lines available in the selected section/department.
+    const [selectedLines, setSelectedLines] = useState([]);
+    // Saved lines from backend before lines data loads, used to restore selections.
+    const [savedLines, setSavedLines] = useState(null);
 
     const { data: deptLines, isLoading: deptLinesLoading } = useGetLinesByDepartmentQuery(departmentId, {
         skip: !departmentId || !!sectionId,
@@ -51,33 +53,64 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
     const linesLoading = sectionId ? sectLinesLoading : deptLinesLoading;
     const lines = (sectionId ? sectLines?.data : deptLines?.data) || [];
 
-    const { data: machinesData0 } = useGetMachinesByLineQuery(selectedLines[0], { skip: !selectedLines[0] });
-    const { data: machinesData1 } = useGetMachinesByLineQuery(selectedLines[1], { skip: !selectedLines[1] });
-    const { data: machinesData2 } = useGetMachinesByLineQuery(selectedLines[2], { skip: !selectedLines[2] });
-    const { data: machinesData3 } = useGetMachinesByLineQuery(selectedLines[3], { skip: !selectedLines[3] });
-    const { data: machinesData4 } = useGetMachinesByLineQuery(selectedLines[4], { skip: !selectedLines[4] });
+    // Resize selectedLines whenever available lines change, restoring saved selections.
+    useEffect(() => {
+        if (linesLoading || lines.length === 0) return;
+        setSelectedLines(prev => lines.map((_, i) => {
+            const base = savedLines ?? prev;
+            return base[i] || "";
+        }));
+    }, [lines.length, linesLoading, savedLines]);
+
+    // Static hook calls up to a max of 15 slots (React rules of hooks forbid dynamic calls).
+    // Each is skipped when its slot index exceeds the actual line count or has no selection.
+    const { data: machinesData0  } = useGetMachinesByLineQuery(selectedLines[0],  { skip: !selectedLines[0]  });
+    const { data: machinesData1  } = useGetMachinesByLineQuery(selectedLines[1],  { skip: !selectedLines[1]  });
+    const { data: machinesData2  } = useGetMachinesByLineQuery(selectedLines[2],  { skip: !selectedLines[2]  });
+    const { data: machinesData3  } = useGetMachinesByLineQuery(selectedLines[3],  { skip: !selectedLines[3]  });
+    const { data: machinesData4  } = useGetMachinesByLineQuery(selectedLines[4],  { skip: !selectedLines[4]  });
+    const { data: machinesData5  } = useGetMachinesByLineQuery(selectedLines[5],  { skip: !selectedLines[5]  });
+    const { data: machinesData6  } = useGetMachinesByLineQuery(selectedLines[6],  { skip: !selectedLines[6]  });
+    const { data: machinesData7  } = useGetMachinesByLineQuery(selectedLines[7],  { skip: !selectedLines[7]  });
+    const { data: machinesData8  } = useGetMachinesByLineQuery(selectedLines[8],  { skip: !selectedLines[8]  });
+    const { data: machinesData9  } = useGetMachinesByLineQuery(selectedLines[9],  { skip: !selectedLines[9]  });
+    const { data: machinesData10 } = useGetMachinesByLineQuery(selectedLines[10], { skip: !selectedLines[10] });
+    const { data: machinesData11 } = useGetMachinesByLineQuery(selectedLines[11], { skip: !selectedLines[11] });
+    const { data: machinesData12 } = useGetMachinesByLineQuery(selectedLines[12], { skip: !selectedLines[12] });
+    const { data: machinesData13 } = useGetMachinesByLineQuery(selectedLines[13], { skip: !selectedLines[13] });
+    const { data: machinesData14 } = useGetMachinesByLineQuery(selectedLines[14], { skip: !selectedLines[14] });
 
     const machinesBySlot = [
-        machinesData0?.data || [],
-        machinesData1?.data || [],
-        machinesData2?.data || [],
-        machinesData3?.data || [],
-        machinesData4?.data || [],
-    ];
+        machinesData0?.data  || [], machinesData1?.data  || [], machinesData2?.data  || [],
+        machinesData3?.data  || [], machinesData4?.data  || [], machinesData5?.data  || [],
+        machinesData6?.data  || [], machinesData7?.data  || [], machinesData8?.data  || [],
+        machinesData9?.data  || [], machinesData10?.data || [], machinesData11?.data || [],
+        machinesData12?.data || [], machinesData13?.data || [], machinesData14?.data || [],
+    ].slice(0, lines.length);
 
-    const { data: subSectionsData0 } = useGetSubSectionsByLineQuery(selectedLines[0], { skip: !selectedLines[0] });
-    const { data: subSectionsData1 } = useGetSubSectionsByLineQuery(selectedLines[1], { skip: !selectedLines[1] });
-    const { data: subSectionsData2 } = useGetSubSectionsByLineQuery(selectedLines[2], { skip: !selectedLines[2] });
-    const { data: subSectionsData3 } = useGetSubSectionsByLineQuery(selectedLines[3], { skip: !selectedLines[3] });
-    const { data: subSectionsData4 } = useGetSubSectionsByLineQuery(selectedLines[4], { skip: !selectedLines[4] });
+    const { data: subSectionsData0  } = useGetSubSectionsByLineQuery(selectedLines[0],  { skip: !selectedLines[0]  });
+    const { data: subSectionsData1  } = useGetSubSectionsByLineQuery(selectedLines[1],  { skip: !selectedLines[1]  });
+    const { data: subSectionsData2  } = useGetSubSectionsByLineQuery(selectedLines[2],  { skip: !selectedLines[2]  });
+    const { data: subSectionsData3  } = useGetSubSectionsByLineQuery(selectedLines[3],  { skip: !selectedLines[3]  });
+    const { data: subSectionsData4  } = useGetSubSectionsByLineQuery(selectedLines[4],  { skip: !selectedLines[4]  });
+    const { data: subSectionsData5  } = useGetSubSectionsByLineQuery(selectedLines[5],  { skip: !selectedLines[5]  });
+    const { data: subSectionsData6  } = useGetSubSectionsByLineQuery(selectedLines[6],  { skip: !selectedLines[6]  });
+    const { data: subSectionsData7  } = useGetSubSectionsByLineQuery(selectedLines[7],  { skip: !selectedLines[7]  });
+    const { data: subSectionsData8  } = useGetSubSectionsByLineQuery(selectedLines[8],  { skip: !selectedLines[8]  });
+    const { data: subSectionsData9  } = useGetSubSectionsByLineQuery(selectedLines[9],  { skip: !selectedLines[9]  });
+    const { data: subSectionsData10 } = useGetSubSectionsByLineQuery(selectedLines[10], { skip: !selectedLines[10] });
+    const { data: subSectionsData11 } = useGetSubSectionsByLineQuery(selectedLines[11], { skip: !selectedLines[11] });
+    const { data: subSectionsData12 } = useGetSubSectionsByLineQuery(selectedLines[12], { skip: !selectedLines[12] });
+    const { data: subSectionsData13 } = useGetSubSectionsByLineQuery(selectedLines[13], { skip: !selectedLines[13] });
+    const { data: subSectionsData14 } = useGetSubSectionsByLineQuery(selectedLines[14], { skip: !selectedLines[14] });
 
     const subSectionsBySlot = [
-        subSectionsData0?.data || [],
-        subSectionsData1?.data || [],
-        subSectionsData2?.data || [],
-        subSectionsData3?.data || [],
-        subSectionsData4?.data || [],
-    ];
+        subSectionsData0?.data  || [], subSectionsData1?.data  || [], subSectionsData2?.data  || [],
+        subSectionsData3?.data  || [], subSectionsData4?.data  || [], subSectionsData5?.data  || [],
+        subSectionsData6?.data  || [], subSectionsData7?.data  || [], subSectionsData8?.data  || [],
+        subSectionsData9?.data  || [], subSectionsData10?.data || [], subSectionsData11?.data || [],
+        subSectionsData12?.data || [], subSectionsData13?.data || [], subSectionsData14?.data || [],
+    ].slice(0, lines.length);
 
     const lineNameById = useMemo(() => {
         const map = {};
@@ -185,7 +218,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
     const fetchConfig = async () => {
         try {
             setLoadingConfig(true);
-            const response = await axiosInstance.get(`/api/multi-skilling-plan/config/${departmentId}`);
+            const response = await axiosInstance.get(`/api/skill-upgradation-plan/config/${departmentId}`);
             if (response.data.success && response.data.data.config) {
                 setTableConfig(response.data.data.config);
                 setJsonConfigStr(JSON.stringify(response.data.data.config, null, 2));
@@ -212,7 +245,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                 return;
             }
 
-            await axiosInstance.post(`/api/multi-skilling-plan/config/save`, {
+            await axiosInstance.post(`/api/skill-upgradation-plan/config/save`, {
                 departmentId,
                 config: parsedConfig,
                 remark: layoutRemark
@@ -231,7 +264,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
     const fetchHistory = async () => {
         try {
             setLoadingHistory(true);
-            const response = await axiosInstance.get(`/api/multi-skilling-plan/history/${departmentId}`);
+            const response = await axiosInstance.get(`/api/skill-upgradation-plan/history/${departmentId}`);
             if (response.data.success) {
                 setConfigHistory(response.data.data);
                 setIsHistoryOpen(true);
@@ -263,16 +296,16 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
 
         const loadSavedPlan = async () => {
             try {
+                setSavedLines(null);
                 setIsLoadingPlan(true);
-                const response = await axiosInstance.get(`/api/multi-skilling-plan/department/${departmentId}`, {
+                const response = await axiosInstance.get(`/api/skill-upgradation-plan/department/${departmentId}`, {
                     params: { sectionId }
                 });
                 const data = response?.data?.data;
                 if (!cancelled && data) {
                     if (Array.isArray(data.selectedLines)) {
-                        const normalized = [...data.selectedLines];
-                        while (normalized.length < 5) normalized.push("");
-                        setSelectedLines(normalized.slice(0, 5));
+                        // Store raw saved lines; the lines-length effect will resize and apply them.
+                        setSavedLines(data.selectedLines);
                     }
                     if (data.tableData && typeof data.tableData === "object") {
                         setTableData((prev) => ({ ...prev, ...data.tableData }));
@@ -280,7 +313,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                 }
             } catch (error) {
                 if (!cancelled) {
-                    toast.error("Failed to load multi skilling plan");
+                    toast.error("Failed to load skill upgradation plan");
                 }
             } finally {
                 if (!cancelled) setIsLoadingPlan(false);
@@ -377,14 +410,14 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
         if (!departmentId) return;
         try {
             setIsSaving(true);
-            await axiosInstance.post(`/api/multi-skilling-plan/department/${departmentId}`, {
+            await axiosInstance.post(`/api/skill-upgradation-plan/department/${departmentId}`, {
                 sectionId,
                 selectedLines,
                 tableData,
             });
-            toast.success("Multi skilling plan saved successfully");
+            toast.success("Skill upgradation plan saved successfully");
         } catch (error) {
-            toast.error(error?.response?.data?.message || "Failed to save multi skilling plan");
+            toast.error(error?.response?.data?.message || "Failed to save skill upgradation plan");
         } finally {
             setIsSaving(false);
         }
@@ -400,7 +433,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                 <div className="flex items-center justify-between gap-2 print:hidden">
                     <div />
                     <h2 className="text-xl font-bold uppercase tracking-wide border-b-2 border-transparent inline-block pb-1">
-                        Training plan for multi skilling
+                        Plan for Skill Upgradation
                     </h2>
                     <div className="flex items-center gap-2">
                         {canViewHistory && (
@@ -609,4 +642,4 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
     );
 };
 
-export default MultiSkillingPlan;
+export default SkillUpgradationPlan;

@@ -44,16 +44,31 @@ const getDerivedLevel1CompletionDate = async (studentId) => {
     return null;
 };
 
+// Helper to resolve studentId (from ID, userName, empId or slug)
+const resolveStudentId = async (studentId) => {
+    if (!studentId) return null;
+    let users;
+    if (!isNaN(studentId) && !isNaN(parseFloat(studentId))) {
+        [users] = await executeQuery("SELECT id FROM users WHERE id = ?", [studentId]);
+        if (users.length > 0) return users[0].id;
+    }
+    [users] = await executeQuery("SELECT id FROM users WHERE userName = ? OR slug = ? OR empId = ?", [studentId, studentId, studentId]);
+    return users.length > 0 ? users[0].id : null;
+};
+
 export const getObservanceByStudent = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
     if (!studentId) throw new ApiError("Student ID is required", 400);
 
-    const observance = await OperatorObservance.findByStudentId(studentId);
-    const derivedLevel1Date = await getDerivedLevel1CompletionDate(studentId);
+    const resolvedId = await resolveStudentId(studentId);
+    if (!resolvedId) throw new ApiError("Student not found", 404);
+
+    const observance = await OperatorObservance.findByStudentId(resolvedId);
+    const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
 
     // If no record exists, return an empty structure so frontend can initialize
     if (!observance) {
-        return res.json(new ApiResponse(200, { isNew: true, studentId, level1Date: derivedLevel1Date }, "No existing observance record"));
+        return res.json(new ApiResponse(200, { isNew: true, studentId: resolvedId, level1Date: derivedLevel1Date }, "No existing observance record"));
     }
 
     const responseData = {
@@ -70,10 +85,13 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
 
     if (!studentId) throw new ApiError("Student ID is required", 400);
 
-    const derivedLevel1Date = await getDerivedLevel1CompletionDate(studentId);
+    const resolvedId = await resolveStudentId(studentId);
+    if (!resolvedId) throw new ApiError("Student not found", 404);
+
+    const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
     const finalLevel1Date = data.level1Date || derivedLevel1Date || null;
 
-    let observance = await OperatorObservance.findByStudentId(studentId);
+    let observance = await OperatorObservance.findByStudentId(resolvedId);
 
     if (observance) {
         // Update existing
@@ -90,20 +108,20 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
         await observance.save();
 
         // Trigger Email Notification
-        NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, studentId)
+        NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, resolvedId)
             .catch(err => console.error("[Observance] Notification failed:", err));
 
         res.json(new ApiResponse(200, observance, "Observance record updated"));
     } else {
         // Create new
         const newRecord = await OperatorObservance.create({
-            studentId,
+            studentId: resolvedId,
             ...data,
             level1Date: finalLevel1Date,
         });
 
         // Trigger Email Notification
-        NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, studentId)
+        NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, resolvedId)
             .catch(err => console.error("[Observance] Notification failed:", err));
 
         res.status(201).json(new ApiResponse(201, newRecord, "Observance record created"));

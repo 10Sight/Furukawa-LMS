@@ -98,16 +98,44 @@ const HandoverComparisonChart = ({ dateRange }) => {
             name: 'Distribution',
             data: pieData.map(item => ({ name: item.name, y: item.value }))
         }],
+        responsive: {
+            rules: [{
+                condition: {
+                    maxWidth: 550
+                },
+                chartOptions: {
+                    plotOptions: {
+                        pie: {
+                            dataLabels: {
+                                distance: -25,
+                                format: '{point.percentage:.0f}%',
+                                style: {
+                                    color: '#000000ff',
+                                    textOutline: '1px contrast',
+                                    fontSize: '10px',
+                                    fontWeight: 'bold'
+                                },
+                                filter: {
+                                    property: 'percentage',
+                                    operator: '>',
+                                    value: 5
+                                }
+                            }
+                        }
+                    }
+                }
+            }]
+        },
         credits: { enabled: false }
     });
 
     const getBarOptions = () => {
         const minPlotWidth = Math.max(rawData.length * 100, 500);
-        
+
         return {
-            chart: { 
-                type: 'column', 
-                backgroundColor: 'transparent', 
+            chart: {
+                type: 'column',
+                backgroundColor: 'transparent',
                 height: 500,
                 scrollablePlotArea: {
                     minWidth: minPlotWidth,
@@ -121,8 +149,8 @@ const HandoverComparisonChart = ({ dateRange }) => {
                 { name: 'Target Plan', data: rawData.map(d => d.plan), color: '#94a3b8' },
                 { name: 'Actual Handover', data: rawData.map(d => d.actual), color: '#3b82f6' }
             ],
-            plotOptions: { 
-                column: { 
+            plotOptions: {
+                column: {
                     borderRadius: 4,
                     pointPadding: 0.05,
                     groupPadding: 0.1,
@@ -130,7 +158,7 @@ const HandoverComparisonChart = ({ dateRange }) => {
                         enabled: true,
                         style: { fontSize: '10px' }
                     }
-                } 
+                }
             },
             credits: { enabled: false }
         };

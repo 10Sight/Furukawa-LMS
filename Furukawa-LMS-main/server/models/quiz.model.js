@@ -23,7 +23,7 @@ class Quiz {
         this.isDojo = !!data.isDojo;
         this.isHandover = !!data.isHandover;
         this.isTheoretical = !!data.isTheoretical;
-        this.conductedBy = data.conductedBy || "Education Cell";
+        this.conductedBy = data.conductedBy !== undefined && data.conductedBy !== null ? data.conductedBy : "";
 
         // Resource linking & Legacy fields
         this.courseId = data.courseId || data.course;
@@ -116,7 +116,7 @@ class Quiz {
                             isDojo BIT DEFAULT 0,
                             isHandover BIT DEFAULT 0,
                             isTheoretical BIT DEFAULT 0,
-                            conductedBy NVARCHAR(255) DEFAULT 'Education Cell',
+                            conductedBy NVARCHAR(255) DEFAULT '',
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
                         );
@@ -136,7 +136,7 @@ class Quiz {
                     { name: 'isDojo', type: 'BIT DEFAULT 0' },
                     { name: 'isHandover', type: 'BIT DEFAULT 0' },
                     { name: 'isTheoretical', type: 'BIT DEFAULT 0' },
-                    { name: 'conductedBy', type: "NVARCHAR(255) DEFAULT 'Education Cell'" }
+                    { name: 'conductedBy', type: "NVARCHAR(255) DEFAULT ''" }
                 ];
 
                 for (const col of columns) {

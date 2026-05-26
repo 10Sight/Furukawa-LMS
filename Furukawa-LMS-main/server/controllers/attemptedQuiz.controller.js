@@ -94,10 +94,6 @@ const populateAttempt = async (attempt) => {
             });
         }
     }
-    if (attempt && (!attempt.conductedBy || attempt.conductedBy === "Education Cell")) {
-        // Fallback to quiz's conductedBy if the attempt's conductedBy is default or empty
-        attempt.conductedBy = attempt.conductedBy || (attempt.quiz && attempt.quiz.conductedBy) || "Education Cell";
-    }
     return attempt;
 };
 
@@ -190,7 +186,7 @@ export const attemptQuiz = asyncHandler(async (req, res) => {
         completedAt: new Date(),
         attemptNumber: 1,
         timeTaken: 0,
-        conductedBy: conductedBy || quiz.conductedBy || "Education Cell"
+        conductedBy: conductedBy !== undefined && conductedBy !== null ? conductedBy : ""
     });
 
     res.status(201)
@@ -755,7 +751,7 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         completedAt: new Date(),
         attemptNumber: previousAttempts + 1,
         timeTaken: timeTaken || 0,
-        conductedBy: conductedBy || quiz.conductedBy || "Education Cell"
+        conductedBy: conductedBy !== undefined && conductedBy !== null ? conductedBy : ""
     };
 
     const attempt = await AttemptedQuiz.create(attemptData);

@@ -33,6 +33,9 @@ const authorizeRoles = (...roles) => {
         if (target === 'instructor' && layout === 'trainer') return true;
         if (target === 'student' && layout === 'employee') return true;
         if (target === 'employee' && layout === 'student') return true;
+
+        // Custom Dashboard roles get admin/superadmin equivalence for Dashboard API endpoints
+        if (layout === 'dashboard' && (target === 'admin' || target === 'superadmin')) return true;
       }
 
       // 4. Fallback: strict role string match

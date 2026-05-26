@@ -32,6 +32,16 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             }
             break;
 
+        case "Skill Upgradation Sheet":
+            const [suRows] = await executeQuery(`SELECT * FROM skill_upgradation_plans WHERE departmentId = ?`, [departmentId]);
+            if (suRows.length > 0) {
+                formData = {
+                    selectedLines: JSON.parse(suRows[0].selectedLines || "[]"),
+                    tableData: JSON.parse(suRows[0].tableData || "{}")
+                };
+            }
+            break;
+
         case "Handover Sheet":
             const [hoRows] = await executeQuery(`SELECT * FROM handover_sheets WHERE departmentId = ?`, [departmentId]);
             if (hoRows.length > 0) {

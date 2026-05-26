@@ -37,6 +37,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     });
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [submittedAt, setSubmittedAt] = useState(null);
+    const [isNewSheet, setIsNewSheet] = useState(false);
 
     // Layout Config State
     const [tableConfig, setTableConfig] = useState(null);
@@ -53,10 +54,6 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const [emailForPDF, setEmailForPDF] = useState("");
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const tableRef = useRef(null);
-    const hasInitialized = useRef(false);
-    const lastSessionKey = useRef("");
-
-    const currentSessionKey = `${departmentId}-${sectionId || 'all'}-${date}`;
 
     const fetchConfig = async () => {
         if (!departmentId) return;
@@ -125,35 +122,21 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
         }
     };
 
-    // Initialize or Reset
+    // Fetch handover sheet data whenever department, section, or date changes
     useEffect(() => {
         if (!departmentId) return;
 
         const fetchData = async () => {
             setLoading(true);
-
-            // Check if we need to reset initialization because of selection change
-            if (lastSessionKey.current !== currentSessionKey) {
-                hasInitialized.current = false;
-                lastSessionKey.current = currentSessionKey;
-            }
-
-            // Only initialize once per (department + section)
-            if (hasInitialized.current) {
-                setLoading(false);
-                return;
-            }
-
             try {
-                // Also fetch config
+                // Fetch layout config
                 await fetchConfig();
 
                 const response = await axiosInstance.get(`/api/departments/${departmentId}/handover-sheet?sectionId=${sectionId || ""}&date=${date}`);
                 const data = response.data?.data;
 
-                if (!data?.isNew) {
-                    // Use the date from the data if available, but keep our selected date
-                    // setDate(data.date ? data.date.split('T')[0] : date); 
+                if (data && !data.isNew) {
+                    setIsNewSheet(false);
                     const fetchedEntries = data.entries || [];
                     if (fetchedEntries.length === 0) {
                         fetchedEntries.push({
@@ -176,8 +159,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                     if (data.metadata) setMetadata(data.metadata);
                     setIsSubmitted(!!data.isSubmitted);
                     setSubmittedAt(data.submittedAt);
-                    hasInitialized.current = true;
                 } else {
+                    setIsNewSheet(true);
                     // Reset to a clean slate for the new date
                     setIsSubmitted(false);
                     setSubmittedAt(null);
@@ -208,7 +191,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                             isAutoSuggested: true
                         }));
                     } 
-                    // 2. Fallback to all eligible temporary students if no quiz-based suggestions
+                    // 2. Fallback to all eligible temporary students if no quiz-based suggestions and they are already loaded
                     else if (students && students.length > 0) {
                         const eligibleStudents = students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
                         initialEntries = eligibleStudents.map((student, index) => ({
@@ -251,7 +234,6 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                     }
 
                     setEntries(initialEntries);
-                    hasInitialized.current = true;
                 }
             } catch (error) {
                 console.error("Error fetching handover sheet:", error);
@@ -262,7 +244,41 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
         };
 
         fetchData();
-    }, [departmentId, sectionId, date, students.length, departmentName, instructorName]);
+    }, [departmentId, sectionId, date, departmentName, sectionName]);
+
+    // Auto-populate eligible temporary students in a new sheet once the student list loads
+    useEffect(() => {
+        if (!loading && isNewSheet && students && students.length > 0) {
+            // Check if we are currently showing just the single fallback empty row
+            const isCurrentlyEmpty = entries.length === 1 && entries[0].studentId === "" && !entries[0].employeeName;
+            
+            if (isCurrentlyEmpty) {
+                const eligibleStudents = students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
+                if (eligibleStudents.length > 0) {
+                    const populatedEntries = eligibleStudents.map((student, index) => ({
+                        sn: index + 1,
+                        studentId: student._id || student.id,
+                        employeeName: student.fullName,
+                        empCode: student.empId || "",
+                        marks: "0%",
+                        department: student.deptName || sectionName || departmentName || "",
+                        departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
+                        sectionId: student.sectionId || student.targetSectionId || null,
+                        lineId: student.lineId || student.targetLineId || null,
+                        subSectionId: student.subSectionId || student.targetSubSectionId || null,
+                        stationId: student.stationId || student.targetStationId || null,
+                        process: student.stationName || "",
+                        mentor: "",
+                        interview1: "",
+                        interview2: "",
+                        interviewStatus: "",
+                        statusActionBy: ""
+                    }));
+                    setEntries(populatedEntries);
+                }
+            }
+        }
+    }, [loading, isNewSheet, students, entries, departmentName, sectionName, departmentId, sectionId]);
 
     const handleEntryChange = (index, field, value) => {
         const newEntries = [...entries];

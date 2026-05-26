@@ -125,6 +125,22 @@ const StudentDetail = () => {
   const submissions = submissionsData?.data || [];
   const attempts = attemptsData?.data || [];
 
+  // Calculate Operator Efficiency values
+  const currentEff = useMemo(() => {
+    if (!student || student.currentEffeciency === undefined || student.currentEffeciency === null) return "0%";
+    return `${Math.round(student.currentEffeciency * 100) / 100}%`;
+  }, [student]);
+
+  const subSecEff = useMemo(() => {
+    if (!student || !student.subSectionId) return "—";
+    let skillEff = student.skillEffeciency;
+    if (typeof skillEff === 'string') {
+      try { skillEff = JSON.parse(skillEff); } catch (e) { skillEff = {}; }
+    }
+    const eff = skillEff?.[String(student.subSectionId)];
+    return eff !== undefined ? `${Math.round(eff * 100) / 100}%` : "0%";
+  }, [student]);
+
   // Loading state
   const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading;
 
@@ -342,11 +358,19 @@ const StudentDetail = () => {
               </AvatarFallback>
             </Avatar>
             <div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-bold tracking-tight">{student.fullName}</h1>
                 <Badge className="bg-indigo-600 text-white border-indigo-700 text-sm py-0.5 px-3">
                   {student.primaryLevel || "L1"} • {student.primaryStationName || "No Station"}
                 </Badge>
+                <Badge className="bg-emerald-600 text-white border-emerald-700 text-sm py-0.5 px-3">
+                  Overall Eff: {currentEff}
+                </Badge>
+                {student.subSectionName && (
+                  <Badge className="bg-blue-600 text-white border-blue-700 text-sm py-0.5 px-3">
+                    {student.subSectionName} Eff: {subSecEff}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-muted-foreground">@{student.userName}</p>
@@ -435,6 +459,20 @@ const StudentDetail = () => {
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Designation</label>
               <div className="text-sm font-semibold text-indigo-700">{student.designation || "Operator"}</div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Current Overall Efficiency</label>
+              <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
+                <IconTrophy className="h-4 w-4 text-amber-500" />
+                <span>{currentEff}</span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Sub-section Efficiency ({student.subSectionName || "No Sub-section"})</label>
+              <div className="flex items-center gap-2 text-sm font-bold text-blue-700">
+                <IconChartBar className="h-4 w-4 text-blue-500" />
+                <span>{subSecEff}</span>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -542,6 +580,23 @@ const StudentDetail = () => {
                             <div className="flex flex-col">
                               <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Level</span>
                               <span className="text-[10px] font-bold whitespace-nowrap">{student.currentSkill?.[assignment.machineId] || "L1"}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 shadow-sm">
+                            <IconChartBar size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Efficiency</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">
+                                {(() => {
+                                  let skillEff = student.skillEffeciency;
+                                  if (typeof skillEff === 'string') {
+                                    try { skillEff = JSON.parse(skillEff); } catch (e) { skillEff = {}; }
+                                  }
+                                  const eff = skillEff?.[String(assignment.subSectionId)];
+                                  return eff !== undefined ? `${Math.round(eff * 100) / 100}%` : "0%";
+                                })()}
+                              </span>
                             </div>
                           </div>
 

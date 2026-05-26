@@ -56,7 +56,8 @@ export const usePrivileges = () => {
 
         // If checking by Name, find the ID first
         if (typeof requiredPrivilege === 'string') {
-            const privObj = privilegeMap.find(p => p.name.toLowerCase() === requiredPrivilege.toLowerCase());
+            if (!Array.isArray(privilegeMap)) return false;
+            const privObj = privilegeMap.find(p => p && p.name && p.name.toLowerCase() === requiredPrivilege.toLowerCase());
             if (!privObj) return false; // Privilege name not found in DB
             return userPrivs.includes(privObj.id);
         }

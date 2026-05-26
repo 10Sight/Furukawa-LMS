@@ -46,6 +46,9 @@ const TakeQuiz = () => {
 
   const { user: currentUser } = useSelector((state) => state.auth);
   const isAdminOrTrainer = currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPERADMIN' || currentUser.role === 'INSTRUCTOR' || currentUser.role === 'TRAINER');
+  const isCustomRole = currentUser?.role === 'CUSTOM';
+  const isCustomAdminOrTrainer = isCustomRole && ['admin', 'superadmin', 'trainer', 'instructor'].includes(String(currentUser?.customRole?.targetLayout).toLowerCase());
+  const canAdminister = isAdminOrTrainer || isCustomAdminOrTrainer;
 
   // Stateful inputs for Candidate details & autocomplete search
   const [candidateName, setCandidateName] = useState("");
@@ -54,29 +57,22 @@ const TakeQuiz = () => {
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [conductedBy, setConductedBy] = useState("Education Cell");
+  const [conductedBy, setConductedBy] = useState("");
 
   // Populate candidate info automatically if candidate is taking quiz directly
   useEffect(() => {
-    if (!isAdminOrTrainer && currentUser) {
+    if (!canAdminister && currentUser) {
       setCandidateName(currentUser.fullName || "");
       setECode(currentUser.empId || "");
       setSelectedStudent(currentUser);
     }
-  }, [currentUser, isAdminOrTrainer]);
-
-  // Set initial Test Conducted By value from quiz metadata
-  useEffect(() => {
-    if (quiz && quiz.conductedBy) {
-      setConductedBy(quiz.conductedBy);
-    }
-  }, [quiz]);
+  }, [currentUser, canAdminister]);
 
   const handleCandidateNameChange = async (value) => {
     setCandidateName(value);
     setSelectedStudent(null); // Reset selected student as typing indicates custom/new candidate
 
-    if (!isAdminOrTrainer) {
+    if (!canAdminister) {
       return;
     }
 
@@ -105,7 +101,7 @@ const TakeQuiz = () => {
     setECode(value);
     setSelectedStudent(null); // Reset as typing indicates custom/new E.code
 
-    if (!isAdminOrTrainer) {
+    if (!canAdminister) {
       return;
     }
 
@@ -242,7 +238,7 @@ const TakeQuiz = () => {
       let submitCandidateName = null;
       let submitECode = null;
 
-      if (isAdminOrTrainer) {
+      if (canAdminister) {
         if (selectedStudent) {
           studentIdToSubmit = selectedStudent.id || selectedStudent._id;
         } else {
@@ -448,6 +444,15 @@ const TakeQuiz = () => {
             )}
 
             <Button
+              onClick={handleBackToCourse}
+              className="px-4 py-2 h-10 shadow-xl border-2 border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2 font-bold text-sm rounded-xl no-print"
+              title="Cancel and Exit Test"
+            >
+              <IconArrowLeft size={18} />
+              <span className="hidden sm:inline">Cancel & Exit</span>
+            </Button>
+
+            <Button
               onClick={() => window.print()}
               className="px-4 py-2 h-10 shadow-xl border-2 border-black bg-white text-black hover:bg-gray-100 flex items-center gap-2 font-bold text-sm rounded-xl no-print"
               title="Print Test Paper"
@@ -530,7 +535,7 @@ const TakeQuiz = () => {
               <div className="flex gap-2 items-center relative">
                 <span className="min-w-[120px] text-black">Candidate Name :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold relative">
-                  {true ? (
+                  {canAdminister ? (
                     <div className="relative w-full">
                       <input
                         type="text"
@@ -572,7 +577,7 @@ const TakeQuiz = () => {
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">E.Code :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-mono">
-                  {true ? (
+                  {canAdminister ? (
                     <input
                       type="text"
                       value={eCode}

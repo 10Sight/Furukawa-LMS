@@ -326,7 +326,10 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const [countsData] = await executeQuery(`
     SELECT 
       SUM(CASE WHEN al.logStatus = 'Present' THEN 1 ELSE 0 END) as presentCount,
-      SUM(CASE WHEN al.logStatus != 'Present' OR al.userId IS NULL THEN 1 ELSE 0 END) as absentCount
+      SUM(CASE WHEN al.logStatus != 'Present' OR al.userId IS NULL THEN 1 ELSE 0 END) as absentCount,
+      AVG(CASE WHEN al.logStatus = 'Present' THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) ELSE NULL END) as presentEfficiency,
+      AVG(CASE WHEN al.logStatus = 'Present' THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) WHEN u.currentEffeciency IS NOT NULL THEN 0 ELSE NULL END) as overallEfficiency,
+      AVG(CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) as systemEfficiency
     FROM users u 
     ${getHierarchyJoinSQL} 
     ${attendanceJoinSQL}
@@ -335,6 +338,9 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   const presentCount = countsData[0]?.presentCount || 0;
   const absentCount = countsData[0]?.absentCount || 0;
+  const presentEfficiency = countsData[0]?.presentEfficiency || 0;
+  const overallEfficiency = countsData[0]?.overallEfficiency || 0;
+  const systemEfficiency = countsData[0]?.systemEfficiency || 0;
   // ----------------------------------------------------------
 
   const [cnt] = await executeQuery(`
@@ -367,6 +373,9 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     totalUsers,
     presentCount,
     absentCount,
+    presentEfficiency: Math.round(presentEfficiency * 100) / 100,
+    overallEfficiency: Math.round(overallEfficiency * 100) / 100,
+    systemEfficiency: Math.round(systemEfficiency * 100) / 100,
     totalPages: Math.ceil(totalUsers / limit),
     currentPage: page,
     limit
@@ -882,6 +891,20 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   }
   if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
   if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
+  if (req.query.sixteenDayApprovedOnly === "true") {
+    whereClauses.push(`EXISTS (
+      SELECT 1 FROM (
+        SELECT studentId, approvedBy, verifiedBy,
+               ROW_NUMBER() OVER (PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
+        FROM sixteen_day_monitorings
+      ) latest_sdm
+      WHERE latest_sdm.studentId = u.id 
+        AND latest_sdm.rn = 1 
+        AND latest_sdm.approvedBy LIKE '%Approved%' 
+        AND latest_sdm.approvedBy NOT LIKE '%Rejected%' 
+        AND latest_sdm.verifiedBy NOT LIKE '%Rejected%'
+    )`);
+  }
 
   const { dateFrom, dateTo, status, shift, date } = req.query;
 

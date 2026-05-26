@@ -18,7 +18,7 @@ class QuizAttempt {
         this.completedAt = data.completedAt ? new Date(data.completedAt) : null;
         this.attemptNumber = data.attemptNumber !== undefined ? data.attemptNumber : 1;
         this.timeTaken = data.timeTaken !== undefined ? data.timeTaken : 0;
-        this.conductedBy = data.conductedBy || "Education Cell";
+        this.conductedBy = data.conductedBy !== undefined && data.conductedBy !== null ? data.conductedBy : "";
 
         // Admin adjustment metadata
         this.manuallyAdjusted = !!data.manuallyAdjusted;
@@ -49,7 +49,7 @@ class QuizAttempt {
                 adjustedBy NVARCHAR(255),
                 adjustedAt DATETIME,
                 adjustmentNotes NVARCHAR(MAX),
-                conductedBy NVARCHAR(255) DEFAULT 'Education Cell',
+                conductedBy NVARCHAR(255) DEFAULT '',
                 createdAt DATETIME DEFAULT GETDATE(),
                 updatedAt DATETIME DEFAULT GETDATE()
             );
@@ -65,7 +65,7 @@ class QuizAttempt {
                     WHERE TABLE_NAME = 'attempted_quizzes' AND COLUMN_NAME = 'conductedBy'
                 )
                 BEGIN
-                    ALTER TABLE [attempted_quizzes] ADD [conductedBy] NVARCHAR(255) DEFAULT 'Education Cell'
+                    ALTER TABLE [attempted_quizzes] ADD [conductedBy] NVARCHAR(255) DEFAULT ''
                 END
             `;
             await executeQuery(checkColQuery);

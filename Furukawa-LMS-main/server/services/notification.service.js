@@ -5,6 +5,7 @@ import Department from "../models/department.model.js";
 import User from "../models/auth.model.js";
 import Machine from "../models/machine.model.js";
 import Line from "../models/line.model.js";
+import SubSection from "../models/subSection.model.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
@@ -82,7 +83,7 @@ class NotificationService {
 
             if (formName === "Daily 5M Recording Sheet") {
                 const date = formData?.date || new Date().toLocaleDateString();
-                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
                 const reviewUrl = `${adminUrl}/cms/daily-5m-recording?recordId=${formData.recordId}`;
 
                 htmlMessage = `
@@ -104,7 +105,7 @@ class NotificationService {
                     </div>
                 `;
             } else if (formName === "On Job Training Evaluation Sheet" || formName === "On Job Training Record Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
                 const ojtId = formData.ojtId || "";
                 const reviewUrl = `${adminUrl}/admin/on-job-training?ojtId=${ojtId}`;
 
@@ -128,7 +129,7 @@ class NotificationService {
                     </div>
                 `;
             } else if (formName === "16-Day Monitoring Sheet" || formName === "3-Day Monitoring Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
                 const is16Day = formName === "16-Day Monitoring Sheet";
                 const resolvedStudentId = formData.studentId || studentId; // Fallback to arg
                 const reviewUrl = is16Day 
@@ -155,7 +156,7 @@ class NotificationService {
                     </div>
                 `;
             } else if (formName === "Handover Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
                 const reviewUrl = `${adminUrl}/admin/handover-sheet?dept=${departmentId}&section=${sectionId || formData.sectionId || ''}`;
                 
                 // Get Section Name if possible
@@ -173,7 +174,7 @@ class NotificationService {
                     portalUrl: reviewUrl
                 });
             } else if (formName === "Skill Matrix Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
                 const month = formData.month || new Date().toISOString().slice(0, 7);
                 const sectionId = formData.section || "";
                 const lineId = formData.line || "";
@@ -245,6 +246,9 @@ class NotificationService {
             case "Multi Skill Sheet":
                 await this._fillMultiSkillSheet(worksheet, departmentId, formData);
                 break;
+            case "Skill Upgradation Sheet":
+                await this._fillMultiSkillSheet(worksheet, departmentId, formData);
+                break;
             case "Handover Sheet":
                 await this._fillHandoverSheet(worksheet, departmentId, formData);
                 break;
@@ -312,7 +316,7 @@ class NotificationService {
             logger.error(`[NotificationService] Error fetching students: ${error.message}`);
         }
 
-        // 2. Fetch Machines and Lines for selected lines to build columns
+        // 2. Fetch Sub-sections and Lines for selected lines to build columns
         const machineColumns = [];
         const linesMap = {};
         for (let i = 0; i < selectedLines.length; i++) {
@@ -320,7 +324,7 @@ class NotificationService {
             if (!lineId) {
                 machineColumns.push({
                     key: `slot-${i}-empty`,
-                    machineName: "-",
+                    subSectionName: "-",
                     lineName: "-",
                     slotIdx: i
                 });
@@ -332,19 +336,19 @@ class NotificationService {
                 linesMap[lineId] = line ? line.name : "Unknown Line";
             }
 
-            const machines = await Machine.find({ line: lineId, isActive: 1 });
-            if (machines.length === 0) {
+            const subSections = await SubSection.findByLine(lineId);
+            if (subSections.length === 0) {
                 machineColumns.push({
-                    key: `slot-${i}-no-machine`,
-                    machineName: "-",
+                    key: `slot-${i}-no-sub`,
+                    subSectionName: "-",
                     lineName: linesMap[lineId],
                     slotIdx: i
                 });
             } else {
-                machines.forEach(m => {
+                subSections.forEach(ss => {
                     machineColumns.push({
-                        key: `slot-${i}-machine-${m.id}`,
-                        machineName: m.name,
+                        key: `slot-${i}-sub-${ss.id}`,
+                        subSectionName: ss.name,
                         lineName: linesMap[lineId],
                         slotIdx: i
                     });
@@ -379,9 +383,9 @@ class NotificationService {
         machineColumns.forEach(col => row4Values.push(col.lineName));
         const row4 = worksheet.addRow(row4Values);
 
-        // Row 5: Static Headers + Machine names
+        // Row 5: Static Headers + Sub-section names
         const row5Values = ['', '', '', ''];
-        machineColumns.forEach(col => row5Values.push(col.machineName));
+        machineColumns.forEach(col => row5Values.push(col.subSectionName));
         const row5 = worksheet.addRow(row5Values);
 
         // Merging static headers across Row 4 & 5

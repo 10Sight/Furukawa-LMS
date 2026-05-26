@@ -36,7 +36,7 @@ router.get("/:id", (req, res, next) => {
 router.post(
     "/",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     checkPrivilege("setrequirement"),
     createRequirement
 );
@@ -45,7 +45,7 @@ router.post(
 router.post(
     "/upload",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     checkPrivilege("setrequirement"),
     upload.single("file"),
     addRequirements
@@ -55,7 +55,7 @@ router.post(
 router.get(
     "/filters",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirementFilters
 );
 
@@ -63,14 +63,14 @@ router.get(
 router.get(
     "/logs",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirementLogs
 );
 
 router.get(
     "/logs/:id",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirementLogs
 );
 
@@ -78,7 +78,7 @@ router.get(
 router.put(
     "/batch-update",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     checkPrivilege("setrequirement"),
     batchUpdateRequirements
 );
@@ -87,7 +87,7 @@ router.put(
 router.get(
     "/",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirements
 );
 
@@ -95,7 +95,7 @@ router.get(
 router.get(
     "/:id",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirementById
 );
 
@@ -103,7 +103,7 @@ router.get(
 router.patch(
     "/:id",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     checkPrivilege("setrequirement"),
     updateRequirement
 );
@@ -112,7 +112,7 @@ router.patch(
 router.delete(
     "/:id",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN"),
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     checkPrivilege("setrequirement"),
     deleteRequirement
 );

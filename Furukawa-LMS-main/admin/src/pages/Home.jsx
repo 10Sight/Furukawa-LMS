@@ -35,6 +35,7 @@ import DojoHiringChart from "@/components/charts/DojoHiringChart";
 import HandoverComparisonChart from "@/components/charts/HandoverComparisonChart";
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
 import UserStatusDistributionChart from "@/components/charts/UserStatusDistributionChart";
+import EfficiencyChart from "@/components/charts/EfficiencyChart";
 import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
 import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { IconUserPlus } from "@tabler/icons-react";
@@ -222,6 +223,7 @@ const Home = () => {
         <TestPaperPassChart dateRange={dateRange} />
         <UserStatusDistributionChart dateRange={dateRange} />
         <DepartmentQuizChart dateRange={dateRange} />
+        <EfficiencyChart />
       </div>
 
       {/* Main Content Area (Moved below charts) */}

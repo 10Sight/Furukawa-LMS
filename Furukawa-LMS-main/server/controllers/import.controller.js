@@ -117,6 +117,17 @@ const generateNextTempId = async (prefix) => {
 };
 
 /**
+ * Normalize status values from Excel to canonical DB values (PRESENT / LEFT / ON-LEAVE)
+ */
+const normalizeStatus = (val) => {
+    if (!val) return "PRESENT";
+    const v = val.toString().trim().toUpperCase().replace(/[\s\-_]+/g, '');
+    if (v === "LEFT" || v === "LEAVING" || v === "RESIGNED" || v === "TERMINATED") return "LEFT";
+    if (v === "ONLEAVE" || v === "LEAVE") return "ON-LEAVE";
+    return "PRESENT";
+};
+
+/**
  * Import employees from Excel file
  * Expected columns: EmployeeID, CardNo, Name, Father/HusbandName, Gender, Department, Section, Line, Sub Section, Station No., Mentor, Designation, D.O.B., D.O.J., Education, District, State, PIN, Bus Route, E-Mail ID, Mobile No., L, Date of Leaving, Reason of Leaving, Status
  */
@@ -257,7 +268,8 @@ export const importEmployees = async (req, res) => {
                     currentLevel: (row["L"] || row["Lavel"] || row["Level"])?.toString().trim(),
                     leavingDate: normalizeDate(row["Date of Leaving"]),
                     reasonOfLeaving: (row["Reason of Leaving"])?.toString().trim(),
-                    status: (row["Status"])?.toString().trim() || "PRESENT",
+                    contractor: (row["Contractor"])?.toString().trim() || null,
+                    status: normalizeStatus(row["Status"]),
                 };
 
                 // Resolve hierarchy IDs
@@ -373,6 +385,7 @@ export const importEmployees = async (req, res) => {
                         { key: 'joiningDate', label: 'Joining Date' },
                         { key: 'leavingDate', label: 'Date of Leaving' },
                         { key: 'reasonOfLeaving', label: 'Reason of Leaving' },
+                        { key: 'contractor', label: 'Contractor' },
                         { key: 'education', label: 'Education' },
                         { key: 'district', label: 'District' },
                         { key: 'state', label: 'State' },
@@ -658,6 +671,7 @@ export const downloadImportTemplate = async (req, res) => {
                 "Lavel": "L1",
                 "Date of Leaving": "",
                 "Reason of Leaving": "",
+                "Contractor": "",
                 "Status": "PRESENT",
             },
         ];

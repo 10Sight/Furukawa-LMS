@@ -6,6 +6,7 @@ import NotificationService from "../services/notification.service.js";
 import { SkillMatrixConfig } from "../models/skillMatrixConfig.model.js";
 import { SkillMatrixEvaluation } from "../models/skillMatrixEvaluation.model.js";
 import SkillMatrixDashboardConfig from "../models/skillMatrixDashboardConfig.model.js";
+import User from "../models/auth.model.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -370,6 +371,183 @@ const getSkillMatrixCertHistory = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, history, "History fetched successfully"));
 });
 
+// Helper to calculate operator efficiency from evalData
+const calculateUserEfficiency = (evalData) => {
+    if (!evalData) return 0;
+    let parsed = evalData;
+    if (typeof evalData === 'string') {
+        try {
+            parsed = JSON.parse(evalData);
+        } catch (e) {
+            return 0;
+        }
+    }
+    
+    // Rule L4: Able to teach other operators (sIdx = 3)
+    // All 5 questions ('3-0', '3-1', '3-2', '3-3', '3-4') must be OK
+    const l4Keys = ['3-0', '3-1', '3-2', '3-3', '3-4'];
+    const isL4Ok = l4Keys.every(k => parsed[k]?.standard === 'OK');
+    if (isL4Ok) {
+        return 100;
+    }
+
+    // Rule L3: Whether he can operate in the standard time? (sIdx = 2, iIdx = 0 -> '2-0')
+    const l3Data = parsed['2-0'];
+    if (l3Data?.standard === 'OK') {
+        const val = parseFloat(l3Data.okVal);
+        if (!isNaN(val)) return val;
+    }
+
+    // Rule L2: Whether his operation in charge is at least 75%? (sIdx = 1, iIdx = 1 -> '1-1')
+    const l2Data = parsed['1-1'];
+    if (l2Data?.standard === 'OK') {
+        const val = parseFloat(l2Data.okVal);
+        if (!isNaN(val)) return val;
+    }
+
+    // Rule L1: The operation method is correct with the standard or not (sIdx = 0, iIdx = 2 -> '0-2')
+    const l1Data = parsed['0-2'];
+    if (l1Data?.standard === 'OK') {
+        const val = parseFloat(l1Data.okVal);
+        if (!isNaN(val)) return val;
+    }
+
+    return 0;
+};
+
+// @desc    Get Skill Matrix Efficiency Stats for operators in a hierarchy
+// @route   GET /api/v1/skill-matrix/evaluations/efficiency
+// @access  Private
+const getSkillMatrixEfficiencyStats = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId, lineId, subSectionId } = req.query;
+
+    let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)", "u.role IN ('STUDENT', 'CUSTOM')"];
+    let params = [];
+
+    if (departmentId) {
+        whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = ?)");
+        params.push(departmentId);
+    }
+    if (sectionId) {
+        whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id = ?)");
+        params.push(sectionId);
+    }
+    if (lineId) {
+        whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id = ?)");
+        params.push(lineId);
+    }
+    if (subSectionId) {
+        whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id = ?)");
+        params.push(subSectionId);
+    }
+
+    const sql = `
+        SELECT 
+            u.id, 
+            u.fullName, 
+            u.empId, 
+            u.currentEffeciency,
+            u.skillEffeciency
+        FROM users u
+        WHERE ${whereClauses.join(' AND ')}
+    `;
+
+    const [rows] = await executeQuery(sql, params);
+
+    const results = rows.map(row => {
+        let skillEffMap = row.skillEffeciency || {};
+        if (typeof skillEffMap === 'string') {
+            try {
+                skillEffMap = JSON.parse(skillEffMap);
+            } catch (e) {
+                skillEffMap = {};
+            }
+        }
+
+        let efficiency = 0;
+        if (subSectionId) {
+            efficiency = skillEffMap[String(subSectionId)] !== undefined ? skillEffMap[String(subSectionId)] : 0;
+        } else {
+            efficiency = row.currentEffeciency || 0;
+        }
+
+        return {
+            id: row.id,
+            fullName: row.fullName,
+            empId: row.empId,
+            efficiency: Math.round(efficiency * 100) / 100
+        };
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, results, "Skill matrix efficiency stats fetched successfully")
+    );
+});
+
+// @desc    Get Skill Matrix Efficiency Summary for all departments and sections
+// @route   GET /api/v1/skill-matrix/evaluations/summary
+// @access  Private
+const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
+    const sql = `
+        SELECT 
+            u.id as userId,
+            u.fullName,
+            u.empId,
+            d.id as departmentId,
+            d.name as departmentName,
+            s_res.sectionId,
+            s_res.sectionName,
+            l_res.lineId,
+            l_res.lineName,
+            ss_res.subSectionId,
+            ss_res.subSectionName,
+            sme.evalData,
+            COALESCE(al.logStatus, 'Absent') as logStatus,
+            al_shift.shift,
+            u.currentEffeciency
+        FROM users u
+        OUTER APPLY (
+            SELECT TOP 1 ss.id as subSectionId, ss.name as subSectionName, ss.lineId as ssLineId 
+            FROM sub_sections ss WHERE ss.id = u.subSectionId
+        ) ss_res
+        OUTER APPLY (
+            SELECT TOP 1 l.id as lineId, l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
+            FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
+        ) l_res
+        OUTER APPLY (
+            SELECT TOP 1 s.id as sectionId, s.name as sectionName, s.departmentId as sDeptId
+            FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
+        ) s_res
+        OUTER APPLY (
+            SELECT TOP 1 d.id, d.name
+            FROM departments d 
+            WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
+               OR (u.departmentId IS NULL AND (u.department = d.name OR TRY_CAST(u.department AS INT) = d.id))
+        ) d
+        OUTER APPLY (
+            SELECT TOP 1 [status] as logStatus
+            FROM attendance_logs
+            WHERE userId = u.id
+            ORDER BY [date] DESC
+        ) al
+        OUTER APPLY (
+            SELECT TOP 1 [shift]
+            FROM attendance_logs
+            WHERE userId = u.id AND [shift] IS NOT NULL
+            ORDER BY [date] DESC
+        ) al_shift
+        LEFT JOIN skill_matrix_evaluations sme ON u.id = sme.studentId
+        WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND u.role IN ('STUDENT', 'CUSTOM')
+    `;
+
+    const [rows] = await executeQuery(sql);
+
+    res.status(200).json(
+        new ApiResponse(200, rows, "Skill matrix efficiency summary fetched successfully")
+    );
+});
+
 /**
  * Get Skill Matrix Certificate Evaluation for a student
  */
@@ -425,7 +603,7 @@ const getSkillMatrixDashboardHistory = asyncHandler(async (req, res) => {
  */
 const saveSkillMatrixEvaluation = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
-    const { departmentId, headerData, docData, evalData, opinion } = req.body;
+    const { departmentId, subSectionId, headerData, docData, evalData, opinion, sendEmail } = req.body;
 
     const updatedBy = req.user.id;
     const evaluation = await SkillMatrixEvaluation.upsert({
@@ -437,6 +615,72 @@ const saveSkillMatrixEvaluation = asyncHandler(async (req, res) => {
         opinion,
         updatedBy
     });
+
+    // Sync student efficiency fields
+    try {
+        const student = await User.findById(studentId);
+        if (student) {
+            const calculatedEfficiency = calculateUserEfficiency(evalData);
+            const targetSubSectionId = subSectionId || student.subSectionId || student.targetSubSectionId;
+
+            if (targetSubSectionId) {
+                const subSecKey = String(targetSubSectionId);
+                let skillEffMap = student.skillEffeciency || {};
+                if (typeof skillEffMap === 'string') {
+                    try { skillEffMap = JSON.parse(skillEffMap); } catch (e) { skillEffMap = {}; }
+                }
+
+                // Update mapping
+                skillEffMap[subSecKey] = calculatedEfficiency;
+
+                // Update fields
+                student.currentEffeciency = calculatedEfficiency;
+                student.skillEffeciency = skillEffMap;
+
+                await student.save();
+                console.log(`[SkillMatrixEvaluation] Synced operator ${studentId} efficiency for subSectionId ${subSecKey}: ${calculatedEfficiency}%`);
+            }
+        }
+    } catch (err) {
+        console.error("[SkillMatrixEvaluation] Failed to sync operator efficiency:", err);
+    }
+
+    if (sendEmail) {
+        try {
+            const [uRows] = await executeQuery(
+                "SELECT fullName, empId, currentLevel FROM users WHERE id = ?",
+                [studentId]
+            );
+            const user = uRows[0] || {};
+
+            let departmentName = '';
+            if (departmentId) {
+                const [deptRows] = await executeQuery(
+                    "SELECT name FROM departments WHERE id = ?",
+                    [departmentId]
+                );
+                if (deptRows.length > 0) {
+                    departmentName = deptRows[0].name;
+                }
+            }
+
+            const emailFormData = {
+                studentName: headerData?.trainee || user.fullName || "N/A",
+                studentCode: headerData?.employeeNo || user.empId || "N/A",
+                departmentName: departmentName || "N/A",
+                lineName: headerData?.processInCharge || "N/A",
+                processName: headerData?.processInCharge || "N/A",
+                level: user.currentLevel || "N/A",
+                skillDescription: opinion || "The associate has successfully completed the training and evaluation for the specified process.",
+                ...req.body
+            };
+
+            NotificationService.sendFormReport("Skill Matrix Certificate Sheet", departmentId, emailFormData, studentId)
+                .catch(err => console.error("[SkillMatrixCert] Notification failed:", err));
+        } catch (err) {
+            console.error("[SkillMatrixCert] Notification preparation failed:", err);
+        }
+    }
 
     res.json(new ApiResponse(200, evaluation, "Evaluation saved successfully"));
 });
@@ -450,6 +694,8 @@ export {
     getSkillMatrixCertHistory,
     getSkillMatrixEvaluation,
     saveSkillMatrixEvaluation,
+    getSkillMatrixEfficiencyStats,
+    getSkillMatrixEfficiencySummary,
     getSkillMatrixDashboardConfig,
     saveSkillMatrixDashboardConfig,
     getSkillMatrixDashboardHistory

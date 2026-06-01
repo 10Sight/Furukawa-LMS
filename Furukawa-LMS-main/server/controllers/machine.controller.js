@@ -37,7 +37,7 @@ export const createMachine = asyncHandler(async (req, res) => {
 
     const [newMachine] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m WHERE m.id = ?`, [result[0].id]);
 
     res.status(201).json(
@@ -57,7 +57,7 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
 
     const [machines] = await executeQuery(`
         SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m 
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
         WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [subSectionId]);
@@ -79,7 +79,7 @@ export const getMachinesByLine = asyncHandler(async (req, res) => {
 
     const [machines] = await executeQuery(`
         SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
         WHERE m.line = ? 
@@ -103,7 +103,7 @@ export const getMachinesBySection = asyncHandler(async (req, res) => {
 
     const [machines] = await executeQuery(`
         SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
@@ -128,7 +128,7 @@ export const getMachinesByDepartment = asyncHandler(async (req, res) => {
 
     const [machines] = await executeQuery(`
         SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
@@ -174,7 +174,7 @@ export const updateMachine = asyncHandler(async (req, res) => {
 
     const [updatedMachine] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m WHERE m.id = ?`, [id]);
 
     res.status(200).json(
@@ -215,7 +215,7 @@ export const getMachineById = asyncHandler(async (req, res) => {
 
     const [machines] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m WHERE m.id = ?`, [id]);
 
     if (machines.length === 0) {
@@ -462,6 +462,8 @@ export const getMachineEmployees = asyncHandler(async (req, res) => {
         FROM machine_assignments ma
         JOIN users u ON ma.user_id = u.id
         WHERE ma.machine_id = ?
+        AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+        AND (u.status IS NULL OR u.status != 'LEFT')
     `;
 
     const [employees] = await executeQuery(query, [machineId]);

@@ -325,3 +325,14 @@ export {
     useSaveMultiSkillingConfigMutation,
     useGetMultiSkillingHistoryQuery,
 } from './MultiSkillingApi';
+
+// AbnormalCondition API exports
+export {
+    AbnormalConditionApi,
+    useGetAbnormalConditionSheetQuery,
+    useLazyGetAbnormalConditionSheetQuery,
+    useCreateAbnormalConditionSheetMutation,
+    useUpdateAbnormalConditionSheetMutation,
+    useApproveAbnormalConditionEntryMutation,
+    useDeleteAbnormalConditionSheetMutation,
+} from './AbnormalConditionApi';

@@ -39,6 +39,8 @@ import { SubSectionApi } from "./AllApi/SubSectionApi";
 import { reportClubApi } from "./AllApi/ReportClubApi";
 import { multiSkillingApi } from "./AllApi/MultiSkillingApi";
 import { adminHomeApi } from "./AllApi/AdminHomeApi";
+import { AbnormalConditionApi } from "./AllApi/AbnormalConditionApi";
+import { EvaluationTestApi } from "./AllApi/EvaluationTestApi";
 
 
 const store = configureStore({
@@ -82,6 +84,8 @@ const store = configureStore({
         [reportClubApi.reducerPath]: reportClubApi.reducer,
         [multiSkillingApi.reducerPath]: multiSkillingApi.reducer,
         [adminHomeApi.reducerPath]: adminHomeApi.reducer,
+        [AbnormalConditionApi.reducerPath]: AbnormalConditionApi.reducer,
+        [EvaluationTestApi.reducerPath]: EvaluationTestApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(
@@ -116,6 +120,8 @@ const store = configureStore({
             reportClubApi.middleware,
             multiSkillingApi.middleware,
             adminHomeApi.middleware,
+            AbnormalConditionApi.middleware,
+            EvaluationTestApi.middleware,
         ),
 });
 

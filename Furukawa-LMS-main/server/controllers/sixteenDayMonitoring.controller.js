@@ -3,11 +3,13 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import NotificationService from "../services/notification.service.js";
 import SixteenDayMonitoring from "../models/sixteenDayMonitoring.model.js";
+import MenteeFeedback from "../models/menteeFeedback.model.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import EmailConfiguration from "../models/emailConfiguration.model.js";
 import sendMail from "../utils/mail.util.js";
 import emailTemplates from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
+import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 
 import { executeQuery } from "../db/mssqlHelper.js";
 
@@ -50,6 +52,8 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
             GROUP BY studentId
         ) stats ON u.id = stats.studentId
         WHERE u.departmentId = ?
+        AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+        AND (u.status IS NULL OR u.status != 'LEFT')
         AND EXISTS (
             SELECT 1 
             FROM handover_sheets hs
@@ -64,7 +68,7 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
         query += " AND u.sectionId = ?";
         params.push(sectionId);
     }
-    if (lineId) {
+    if (lineId && lineId !== "0" && lineId !== "all" && lineId !== "All" && lineId !== "undefined" && lineId !== "null") {
         query += " AND u.lineId = ?";
         params.push(lineId);
     }
@@ -223,9 +227,60 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         });
     }
 
+    // Auto-enroll trainee in Skill Upgradation Plan if verifiedBy is approved
+    const isVerified = verifiedBy && 
+                       verifiedBy.includes("Approved") && 
+                       !verifiedBy.includes("Rejected");
+
+    if (isVerified) {
+        try {
+            // 1. Fetch trainee's hierarchy details
+            const [users] = await executeQuery(
+                "SELECT departmentId, sectionId FROM users WHERE id = ?",
+                [sid]
+            );
+            const trainee = users[0];
+
+            if (trainee && trainee.departmentId) {
+                const departmentId = trainee.departmentId;
+                const sectionId = trainee.sectionId || null;
+
+                // 2. Load existing Skill Upgradation Plan
+                const plan = await SkillUpgradationPlan.findByHierarchy(departmentId, sectionId);
+                let tableData = {};
+                let selectedLines = [];
+
+                if (plan) {
+                    tableData = plan.tableData || {};
+                    selectedLines = plan.selectedLines || [];
+                }
+
+                // 3. Add student entry to tableData if not already initialized
+                const traineeKey = String(sid);
+                if (!tableData[traineeKey]) {
+                    tableData[traineeKey] = { plan: {}, actual: {} };
+
+                    // 4. Save/Upsert the upgradation plan
+                    await SkillUpgradationPlan.upsert({
+                        departmentId,
+                        sectionId,
+                        selectedLines,
+                        tableData,
+                        userName: "System (Auto-Enroll)"
+                    });
+                    console.log(`[Auto-Enroll] Operator ${sid} auto-added to Skill Upgradation Plan`);
+                }
+            }
+        } catch (err) {
+            console.error("[Auto-Enroll] Failed to auto-add trainee to Skill Upgradation Plan:", err);
+        }
+    }
+
     // Trigger Email Notification
-    NotificationService.sendFormReport("16-Day Monitoring Sheet", null, req.body, studentId)
-        .catch(err => console.error("[16Day] Notification failed:", err));
+    if (req.body.triggerEmail === true) {
+        NotificationService.sendFormReport("16-Day Monitoring Sheet", null, req.body, studentId)
+            .catch(err => console.error("[16Day] Notification failed:", err));
+    }
 
     return res.status(200).json(
         new ApiResponse(200, sheet, "16 Day Monitoring saved successfully")
@@ -336,5 +391,86 @@ export const getSixteenDayMonitoringHistory = asyncHandler(async (req, res) => {
     const history = await MonitoringConfig.getHistory('16DAY', departmentId, sectionId);
     return res.status(200).json(
         new ApiResponse(200, history, "16 Day Monitoring history fetched")
+    );
+});
+
+export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    const sid = await resolveStudentId(studentId);
+    if (!sid) throw new ApiError("Invalid student ID", 400);
+
+    const [sheet, feedback] = await Promise.all([
+        SixteenDayMonitoring.findByStudentId(sid),
+        MenteeFeedback.findByStudentId(sid),
+    ]);
+
+    if (!sheet) throw new ApiError("16-Day monitoring record not found", 404);
+
+    const [users] = await executeQuery(`
+        SELECT u.id, u.fullName, u.empId, u.departmentId, u.sectionId, d.name as departmentName
+        FROM users u
+        LEFT JOIN departments d ON u.departmentId = d.id
+        WHERE u.id = ?
+    `, [sid]);
+    const student = users[0];
+
+    // Resolve recipients — merge both email configs, deduplicate
+    const [config16, configFeedback] = await Promise.all([
+        EmailConfiguration.findByFormDeptAndSection("16-Day Monitoring Sheet", student?.departmentId, student?.sectionId),
+        EmailConfiguration.findByFormDeptAndSection("Mentee Feedback Monitoring Sheet", student?.departmentId, student?.sectionId),
+    ]);
+
+    if (!config16 && !configFeedback) {
+        throw new ApiError("No email configuration found. Please set up recipients in Settings.", 400);
+    }
+
+    const toSet = new Set();
+    const ccSet = new Set();
+
+    const addEmails = (str, target) => {
+        (str || "").split(',').map(e => e.trim()).filter(Boolean).forEach(e => target.add(e));
+    };
+
+    if (config16) { addEmails(config16.toEmails, toSet); addEmails(config16.ccEmails, ccSet); }
+    if (configFeedback) { addEmails(configFeedback.toEmails, toSet); addEmails(configFeedback.ccEmails, ccSet); }
+
+    // Add trainers if either config requests it
+    if ((config16?.includeTrainer || configFeedback?.includeTrainer) && student?.departmentId) {
+        const [trainers] = await executeQuery(
+            "SELECT email FROM users WHERE departmentId = ? AND (isTrainer = 1 OR role = 'INSTRUCTOR' OR role = 'ADMIN')",
+            [student.departmentId]
+        );
+        trainers.forEach(t => { if (t.email) toSet.add(t.email); });
+    }
+
+    const to = [...toSet].join(", ");
+    if (!to) throw new ApiError("No recipient emails found in configuration.", 400);
+    const cc = [...ccSet].join(", ");
+
+    const monitoringConfig = await MonitoringConfig.findByTypeAndDepartment('16DAY', student?.departmentId, student?.sectionId);
+    const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/16-day-monitoring/${studentId}`;
+
+    const html = emailTemplates.generateCombinedMonitoringEmail({
+        operatorName: student?.fullName || sheet.employeeName,
+        employeeCode: student?.empId || sheet.employeeCode,
+        departmentName: student?.departmentName || sheet.dept || "N/A",
+        processName: sheet.processName || "N/A",
+        headerInfo: {
+            handoverDate: sheet.handoverDate,
+            checkedBy: sheet.checkedBy,
+            verifiedBy: sheet.verifiedBy,
+            approvedBy: sheet.approvedBy,
+        },
+        gridData: sheet.gridData || {},
+        sheetConfig: monitoringConfig?.config || [],
+        topTableData: feedback?.topTableData || {},
+        dailyLogs: feedback?.dailyLogs || Array(16).fill({ associatesFeedback: '', mentorAction: '', status1: '', areaEngineer: '', status2: '' }),
+        portalUrl,
+    });
+
+    await sendMail(to, `16-Day Monitoring & Mentee Feedback Report: ${student?.fullName || sheet.employeeName}`, html, [], cc);
+
+    return res.status(200).json(
+        new ApiResponse(200, null, "Combined monitoring report emailed successfully")
     );
 });

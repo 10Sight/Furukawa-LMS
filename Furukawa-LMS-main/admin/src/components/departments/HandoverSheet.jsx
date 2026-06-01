@@ -17,6 +17,31 @@ import { IconSettings, IconHistory, IconPlus, IconTrash } from "@tabler/icons-re
 import { format } from "date-fns";
 import UserAutocomplete from '../common/UserAutocomplete';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
+
+const ProcessSelect = ({ departmentId, value, onValueChange, className = "" }) => {
+    const { data } = useGetSubSectionsQuery({ departmentId }, { skip: !departmentId });
+    const subSections = Array.isArray(data?.data) ? data.data : (data?.data?.subSections || []);
+
+    return (
+        <Select value={value || ""} onValueChange={onValueChange}>
+            <SelectTrigger className={`h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent ${className}`}>
+                <SelectValue placeholder="Process" />
+            </SelectTrigger>
+            <SelectContent>
+                {subSections.length > 0 ? (
+                    subSections.map((ss, i) => (
+                        <SelectItem key={ss.id || ss._id || i} value={ss.name || ""}>
+                            {ss.name}{ss.sectionName ? ` (${ss.sectionName})` : ""}
+                        </SelectItem>
+                    ))
+                ) : (
+                    <SelectItem value="none" disabled>No Processes Found</SelectItem>
+                )}
+            </SelectContent>
+        </Select>
+    );
+};
 
 const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [] }) => {
     const authUser = useSelector(state => state.auth.user);
@@ -282,7 +307,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
     const handleEntryChange = (index, field, value) => {
         const newEntries = [...entries];
-        newEntries[index] = { ...newEntries[index], [field]: value };
+        const updated = { ...newEntries[index], [field]: value };
+        if (field === 'departmentId') updated.process = "";
+        newEntries[index] = updated;
         setEntries(newEntries);
     };
 
@@ -296,7 +323,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
             department: user.deptName || sectionName || departmentName || "",
             departmentId: user.actualDeptId || user.departmentId || user.targetDeptId || null,
             sectionId: user.sectionId || user.targetSectionId || null,
-            process: user.machineName || ""
+            lineId: user.lineId || user.targetLineId || null,
+            subSectionId: user.subSectionId || user.targetSubSectionId || null,
+            stationId: user.stationId || user.targetStationId || null,
+            process: user.machineName || user.stationName || ""
         };
         setEntries(newEntries);
     };
@@ -308,7 +338,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
             employeeName: "",
             empCode: "",
             marks: "0%",
-            department: sectionName || departmentName || "",
+            department: departmentName || "",
+            departmentId: departmentId || null,
             process: "",
             mentor: "",
             interview1: "",
@@ -710,49 +741,17 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 className="w-full"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
                                                             />
-                                                        ) : (col.field === 'department' || col.field === 'departmentId') && !col.readOnly ? (
-                                                            <Select
-                                                                key={`dept-select-${index}-${entry.studentId || 'new'}`}
-                                                                value={entry.departmentId ? String(entry.departmentId) : undefined}
-                                                                onValueChange={(val) => {
-                                                                    const deptId = val;
-                                                                    const dept = departments.find(d => String(d.id || d._id) === String(deptId));
-                                                                    handleEntryChange(index, 'departmentId', deptId);
-                                                                    handleEntryChange(index, 'department', dept?.name || "");
-                                                                }}
-                                                            >
-                                                                <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs font-medium text-blue-600 bg-transparent">
-                                                                    <SelectValue placeholder="Dept" />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    {departments.map(d => (
-                                                                        <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
-                                                                            {d.name || d.deptName}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
+                                                        ) : (col.field === 'department' || col.field === 'departmentId') ? (
+                                                            <div className="text-center text-xs font-medium text-blue-600 px-1">
+                                                                {departmentName}
+                                                            </div>
                                                         ) : col.field === 'process' ? (
-                                                            <Select
-                                                                key={`process-select-${index}-${entry.studentId || 'new'}`}
+                                                            <ProcessSelect
+                                                                key={`process-select-${index}`}
+                                                                departmentId={departmentId}
                                                                 value={entry.process || ""}
                                                                 onValueChange={(val) => handleEntryChange(index, 'process', val)}
-                                                            >
-                                                                <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
-                                                                    <SelectValue placeholder="Process" />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    {machines.length > 0 ? (
-                                                                        machines.map((m, i) => (
-                                                                            <SelectItem key={m.id || m._id || i} value={m.name || m.machineName}>
-                                                                                {m.name || m.machineName}
-                                                                            </SelectItem>
-                                                                        ))
-                                                                    ) : (
-                                                                        <SelectItem value="none" disabled>No Processes Found</SelectItem>
-                                                                    )}
-                                                                </SelectContent>
-                                                            </Select>
+                                                            />
                                                         ) : col.readOnly ? (
                                                             <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
                                                                 {entry[col.field]}
@@ -804,49 +803,17 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         />
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <Select
-                                                            key={`dept-select-def-${index}-${entry.studentId || 'new'}`}
-                                                            value={entry.departmentId ? String(entry.departmentId) : undefined}
-                                                            onValueChange={(val) => {
-                                                                const deptId = val;
-                                                                const dept = departments.find(d => String(d.id || d._id) === String(deptId));
-                                                                handleEntryChange(index, 'departmentId', deptId);
-                                                                handleEntryChange(index, 'department', dept?.name || "");
-                                                            }}
-                                                        >
-                                                            <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs font-medium text-blue-600 bg-transparent">
-                                                                <SelectValue placeholder="Select Dept" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {departments.map(d => (
-                                                                    <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
-                                                                        {d.name || d.deptName}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
+                                                        <div className="text-xs font-medium text-blue-600 px-1">
+                                                            {departmentName}
+                                                        </div>
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <Select
-                                                            key={`process-select-def-${index}-${entry.studentId || 'new'}`}
+                                                        <ProcessSelect
+                                                            key={`process-select-def-${index}`}
+                                                            departmentId={departmentId}
                                                             value={entry.process || ""}
                                                             onValueChange={(val) => handleEntryChange(index, 'process', val)}
-                                                        >
-                                                            <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
-                                                                <SelectValue placeholder="Process" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {machines.length > 0 ? (
-                                                                    machines.map((m, i) => (
-                                                                        <SelectItem key={m.id || m._id || i} value={m.name || m.machineName}>
-                                                                            {m.name || m.machineName}
-                                                                        </SelectItem>
-                                                                    ))
-                                                                ) : (
-                                                                    <SelectItem value="none" disabled>No Processes Found</SelectItem>
-                                                                )}
-                                                            </SelectContent>
-                                                        </Select>
+                                                        />
                                                     </td>
                                                     <td className="border p-1">
                                                         <UserAutocomplete

@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { useSelector } from 'react-redux';
-import { Loader2, Save, Send } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-const MenteeFeedbackMonitoringSheet = ({ studentId, readOnly = false }) => {
+const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false }, ref) => {
     const authUser = useSelector(state => state.auth.user);
     const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [sendingEmail, setSendingEmail] = useState(false);
 
     // 16 Days
     const days = useMemo(() => Array.from({ length: 16 }, (_, i) => `Day-${i + 1}`), []);
@@ -112,44 +109,23 @@ const MenteeFeedbackMonitoringSheet = ({ studentId, readOnly = false }) => {
         });
     };
 
-    const handleSubmit = async (triggerEmail = false) => {
-        if (!studentId) {
-            toast.error("Please select an operator first");
-            return;
-        }
-        setSaving(true);
-        if (triggerEmail) setSendingEmail(true);
-
+    // Exposed to parent via ref — saves feedback data without sending email
+    const saveFeedback = async () => {
+        if (!studentId) return false;
         try {
             const res = await axiosInstance.post(`/api/mentee-feedback/${studentId}`, {
                 topTableData,
                 dailyLogs,
                 status: "Submitted"
             });
-
-            if (res.data.success) {
-                if (triggerEmail) {
-                    try {
-                        const emailRes = await axiosInstance.post(`/api/mentee-feedback/${studentId}/email`);
-                        if (emailRes.data.success) {
-                            toast.success("Feedback saved and email sent successfully!");
-                        }
-                    } catch (err) {
-                        console.error("Failed to send email:", err);
-                        toast.error(err?.response?.data?.message || "Saved successfully, but failed to send email");
-                    }
-                } else {
-                    toast.success("Mentee feedback saved successfully!");
-                }
-            }
+            return res.data.success === true;
         } catch (err) {
             console.error("Failed to save mentee feedback:", err);
-            toast.error("Failed to save mentee feedback");
-        } finally {
-            setSaving(false);
-            setSendingEmail(false);
+            return false;
         }
     };
+
+    useImperativeHandle(ref, () => ({ saveFeedback }));
 
     const renderDropdownCell = (qId, dayIndex) => {
         const value = topTableData[qId]?.[dayIndex] || "";
@@ -334,29 +310,10 @@ const MenteeFeedbackMonitoringSheet = ({ studentId, readOnly = false }) => {
                 </div>
 
             </CardContent>
-            {!readOnly && (
-                <div className="p-4 border-t flex justify-end gap-3 bg-slate-50">
-                    <Button 
-                        onClick={() => handleSubmit(false)} 
-                        disabled={saving || !studentId}
-                        variant="outline"
-                        className="min-w-[150px] h-10 gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
-                    >
-                        {saving && !sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Save Feedback Sheet
-                    </Button>
-                    <Button 
-                        onClick={() => handleSubmit(true)} 
-                        disabled={saving || !studentId}
-                        className="bg-blue-600 hover:bg-blue-700 text-white min-w-[180px] shadow-lg shadow-blue-100 h-10 gap-2"
-                    >
-                        {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                        Save & Send Email
-                    </Button>
-                </div>
-            )}
         </Card>
     );
-};
+});
+
+MenteeFeedbackMonitoringSheet.displayName = 'MenteeFeedbackMonitoringSheet';
 
 export default MenteeFeedbackMonitoringSheet;

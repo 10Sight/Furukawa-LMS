@@ -30,9 +30,15 @@ const TEN_CYCLE_FORM_TYPES = [
     { id: 'form3', label: 'Numerical (Form 3)' }
 ];
 
-const SectionLineManager = ({ sectionId, departmentId }) => {
+const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) => {
     const navigate = useNavigate();
     const { data: linesData, isLoading, error } = useGetLinesBySectionQuery(sectionId);
+
+    const totalInLines = React.useMemo(() => {
+        if (!linesData?.data) return 0;
+        return linesData.data.reduce((sum, line) => sum + (line.lineCount || 0), 0);
+    }, [linesData]);
+    const unassignedCount = sectionUserCount - totalInLines;
     const [createLine, { isLoading: isCreating }] = useCreateLineMutation();
     const [updateLine, { isLoading: isUpdating }] = useUpdateLineMutation();
     const [deleteLine, { isLoading: isDeleting }] = useDeleteLineMutation();
@@ -486,6 +492,20 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                             ))}
                         </TableBody>
                     </Table>
+                </div>
+            )}
+
+            {linesData?.data && linesData.data.length > 0 && (
+                <div className="flex items-center justify-between px-3 py-2 mt-2 rounded-md bg-slate-50 border text-xs text-slate-600">
+                    <span>Lines total: <span className="font-semibold">{totalInLines}</span> operators</span>
+                    {unassignedCount > 0 && (
+                        <span className="text-amber-600 font-medium">
+                            ⚠ {unassignedCount} assigned to section but not to any line
+                        </span>
+                    )}
+                    {unassignedCount === 0 && sectionUserCount > 0 && (
+                        <span className="text-green-600 font-medium">All section users assigned to a line</span>
+                    )}
                 </div>
             )}
         </div>

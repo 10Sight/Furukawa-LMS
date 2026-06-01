@@ -12,6 +12,7 @@ class EmailConfiguration {
         this.ccEmails = data.ccEmails;
         this.includeTrainer = data.includeTrainer !== undefined ? !!data.includeTrainer : false;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
+        this.scheduledTime = data.scheduledTime || null;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -41,23 +42,24 @@ class EmailConfiguration {
             // Auto-migration for missing columns
             await migrationHelper.ensureColumnExists('email_configurations', 'includeTrainer', 'BIT DEFAULT 0');
             await migrationHelper.ensureColumnExists('email_configurations', 'sectionId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('email_configurations', 'scheduledTime', 'VARCHAR(5) NULL');
         } catch (error) {
             logger.error("Failed to initialize email_configurations table", error);
         }
     }
 
     static async create(data) {
-        const { formName, departmentId, sectionId, toEmails, ccEmails, includeTrainer, isActive } = data;
+        const { formName, departmentId, sectionId, toEmails, ccEmails, includeTrainer, isActive, scheduledTime } = data;
         const active = isActive !== undefined ? (isActive ? 1 : 0) : 1;
         const trainer = includeTrainer !== undefined ? (includeTrainer ? 1 : 0) : 0;
 
         const query = `
-      INSERT INTO email_configurations (formName, departmentId, sectionId, toEmails, ccEmails, includeTrainer, isActive, updatedAt)
+      INSERT INTO email_configurations (formName, departmentId, sectionId, toEmails, ccEmails, includeTrainer, isActive, scheduledTime, updatedAt)
       OUTPUT INSERTED.*
-      VALUES (?, ?, ?, ?, ?, ?, ?, GETDATE())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
     `;
 
-        const [rows] = await executeQuery(query, [formName, departmentId || null, sectionId || null, toEmails, ccEmails, trainer, active]);
+        const [rows] = await executeQuery(query, [formName, departmentId || null, sectionId || null, toEmails, ccEmails, trainer, active, scheduledTime || null]);
         return new EmailConfiguration(rows[0]);
     }
 
@@ -112,6 +114,7 @@ class EmailConfiguration {
         if (data.ccEmails !== undefined) { fields.push("ccEmails = ?"); values.push(data.ccEmails); }
         if (data.includeTrainer !== undefined) { fields.push("includeTrainer = ?"); values.push(data.includeTrainer ? 1 : 0); }
         if (data.isActive !== undefined) { fields.push("isActive = ?"); values.push(data.isActive ? 1 : 0); }
+        if (data.scheduledTime !== undefined) { fields.push("scheduledTime = ?"); values.push(data.scheduledTime || null); }
 
         if (fields.length === 0) return null;
 

@@ -490,7 +490,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                     <TableRow className="bg-slate-50/30 border-b">
                                                         <TableCell colSpan={5} className="p-0">
                                                             <div className="px-12 py-6 border-l-2 border-l-blue-500 bg-white">
-                                                                <SectionLineManager sectionId={sectionId} departmentId={departmentId} />
+                                                                <SectionLineManager sectionId={sectionId} departmentId={departmentId} sectionUserCount={section.sectionCount || 0} />
                                                             </div>
                                                         </TableCell>
                                                     </TableRow>

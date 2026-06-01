@@ -89,6 +89,7 @@ const DPRManage = lazy(() => import("./pages/Admin/DPRManage"));
 const SixteenDayMonitoring = lazy(() => import("./pages/Admin/SixteenDayMonitoring"));
 const ThreeDayMonitoring = lazy(() => import("./pages/Admin/ThreeDayMonitoring"));
 const HandoverSheetPage = lazy(() => import("./pages/Admin/HandoverSheetPage"));
+const AbnormalCondition = lazy(() => import("./pages/Admin/AbnormalCondition"));
 const MultiSkilling = lazy(() => import("./pages/Admin/MultiSkilling"));
 const DojoHiring = lazy(() => import("./pages/Admin/DojoHiring"));
 const DojoCandidateDetail = lazy(() => import("./pages/Admin/DojoCandidateDetail"));
@@ -100,6 +101,10 @@ const Learning = lazy(() => import("./pages/Admin/Learning"));
 const CreateLearningComparison = lazy(() => import("./pages/Admin/CreateLearningComparison"));
 const LearningComparisonDetail = lazy(() => import("./pages/Admin/LearningComparisonDetail"));
 const EditLearningComparison = lazy(() => import("./pages/Admin/EditLearningComparison"));
+const EvaluationTestList = lazy(() => import("./pages/Admin/EvaluationTest/EvaluationTestList"));
+const EvaluationTestBuilder = lazy(() => import("./pages/Admin/EvaluationTest/EvaluationTestBuilder"));
+const EvaluationTestAttemptPage = lazy(() => import("./pages/Admin/EvaluationTest/EvaluationTestAttemptPage"));
+const EvaluationTestOperatorsPage = lazy(() => import("./pages/Admin/EvaluationTest/EvaluationTestOperatorsPage"));
 
 // Instructor Pages
 const InstructorDashboard = lazy(() => import("./pages/Instructor/Dashboard.jsx"));
@@ -287,6 +292,36 @@ const App = () => {
             <Route path="learning/create" element={<CreateLearningComparison />} />
             <Route path="learning/edit/:id" element={<EditLearningComparison />} />
             <Route path="learning/:id" element={<LearningComparisonDetail />} />
+            <Route path="evaluation-test" element={
+              <RequireAccess allow="dojo_evaluation_test:view">
+                <EvaluationTestList />
+              </RequireAccess>
+            } />
+            <Route path="evaluation-test/:testId/operators" element={
+              <RequireAccess allow="dojo_evaluation_test:view">
+                <EvaluationTestOperatorsPage />
+              </RequireAccess>
+            } />
+            <Route path="add-evaluation-test" element={
+              <RequireAccess allow="dojo_evaluation_test:create">
+                <EvaluationTestBuilder />
+              </RequireAccess>
+            } />
+            <Route path="edit-evaluation-test/:id" element={
+              <RequireAccess allow="dojo_evaluation_test:create">
+                <EvaluationTestBuilder />
+              </RequireAccess>
+            } />
+            <Route path="attempt-evaluation-test/:id" element={
+              <RequireAccess allow="dojo_evaluation_test:take">
+                <EvaluationTestAttemptPage />
+              </RequireAccess>
+            } />
+            <Route path="view-evaluation-attempt/:attemptId" element={
+              <RequireAccess allow="dojo_evaluation_test:view">
+                <EvaluationTestAttemptPage isViewMode={true} />
+              </RequireAccess>
+            } />
             <Route path="settings" element={<AdminSettings />} />
           </Route>
 
@@ -303,6 +338,7 @@ const App = () => {
                 <Daily5MRecording />
               </RequireAccess>
             } />
+            <Route path="abnormal-condition" element={<AbnormalCondition />} />
           </Route>
 
           {/* Instructor routes */}
@@ -466,6 +502,7 @@ const App = () => {
             <Route path="16-day-monitoring" element={<SixteenDayMonitoring />} />
             <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
+            <Route path="abnormal-condition" element={<AbnormalCondition />} />
             <Route path="learning" element={<Learning />} />
             <Route path="learning/create" element={<CreateLearningComparison />} />
             <Route path="learning/edit/:id" element={<EditLearningComparison />} />

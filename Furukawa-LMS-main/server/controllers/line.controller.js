@@ -70,7 +70,7 @@ export const createLine = asyncHandler(async (req, res) => {
 
     const [newLine] = await executeQuery(`
         SELECT l.*, 
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l WHERE l.id = ?`, [result[0].id]);
 
     res.status(201).json(
@@ -88,7 +88,7 @@ export const getLinesBySection = asyncHandler(async (req, res) => {
 
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId = ? OR l.department = ?) ORDER BY l.createdAt DESC`,
         [sid, sid]
     );
@@ -108,7 +108,7 @@ export const getLinesByDepartment = asyncHandler(async (req, res) => {
 
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department = ? ORDER BY l.createdAt DESC`,
         [did]
     );
@@ -203,7 +203,7 @@ export const updateLine = asyncHandler(async (req, res) => {
 
     const [updatedLine] = await executeQuery(`
         SELECT l.*,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l WHERE l.id = ?`, [id]);
 
     res.status(200).json(
@@ -260,7 +260,7 @@ export const getAllLines = asyncHandler(async (req, res) => {
 
     let querySQL = `
         SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id`;
     let params = [];
     let conditions = [];

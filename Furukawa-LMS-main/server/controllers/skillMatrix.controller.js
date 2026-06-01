@@ -16,6 +16,11 @@ const parseJSON = (data, fallback = null) => {
     return data || fallback;
 };
 
+const normalizeParam = (val) => {
+    if (!val || val === 'undefined' || val === 'null' || val === '') return null;
+    return val;
+};
+
 // Runtime migration guard for existing DBs that don't yet have month-based skill matrix schema.
 const ensureSkillMatrixMonthSchema = async () => {
     // Add missing hierarchy columns if they don't exist
@@ -41,6 +46,22 @@ const ensureSkillMatrixMonthSchema = async () => {
         IF EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_dept_line_month')
         BEGIN
             ALTER TABLE skill_matrices DROP CONSTRAINT uq_skill_matrix_dept_line_month;
+        END
+    `);
+
+    // Ensure line is NULLable in DB (we drop the uq_skill_matrix_full_hierarchy constraint if exists, alter line to nullable, then let the unique constraint block recreate it)
+    await executeQuery(`
+        IF EXISTS (
+            SELECT 1 FROM sys.columns c
+            INNER JOIN sys.objects o ON c.object_id = o.object_id
+            WHERE o.name = 'skill_matrices' AND c.name = 'line' AND c.is_nullable = 0
+        )
+        BEGIN
+            IF EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_full_hierarchy')
+            BEGIN
+                ALTER TABLE skill_matrices DROP CONSTRAINT uq_skill_matrix_full_hierarchy;
+            END
+            ALTER TABLE skill_matrices ALTER COLUMN line VARCHAR(255) NULL;
         END
     `);
 
@@ -75,8 +96,14 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
 
     const { department, section, line, subSection, station, month, entries, headerInfo, footerInfo } = req.body;
 
-    if (!department || !line) {
-        throw new ApiError(400, "Department and Line are required");
+    const normDept = normalizeParam(department);
+    const normLine = normalizeParam(line);
+    const normSection = normalizeParam(section);
+    const normSubSection = normalizeParam(subSection);
+    const normStation = normalizeParam(station);
+
+    if (!normDept) {
+        throw new ApiError(400, "Department is required");
     }
     const targetMonth = month || new Date().toISOString().slice(0, 7);
 
@@ -86,12 +113,13 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
     const footerJson = JSON.stringify(footerInfo || {});
 
     // Build Where Clause for existence check
-    const whereClauses = ["department = ?", "line = ?", "month = ?"];
-    const whereParams = [department, line, targetMonth];
+    const whereClauses = ["department = ?", "month = ?"];
+    const whereParams = [normDept, targetMonth];
 
-    if (section) { whereClauses.push("section = ?"); whereParams.push(section); } else { whereClauses.push("section IS NULL"); }
-    if (subSection) { whereClauses.push("subSection = ?"); whereParams.push(subSection); } else { whereClauses.push("subSection IS NULL"); }
-    if (station) { whereClauses.push("station = ?"); whereParams.push(station); } else { whereClauses.push("station IS NULL"); }
+    if (normLine) { whereClauses.push("line = ?"); whereParams.push(normLine); } else { whereClauses.push("line IS NULL"); }
+    if (normSection) { whereClauses.push("section = ?"); whereParams.push(normSection); } else { whereClauses.push("section IS NULL"); }
+    if (normSubSection) { whereClauses.push("subSection = ?"); whereParams.push(normSubSection); } else { whereClauses.push("subSection IS NULL"); }
+    if (normStation) { whereClauses.push("station = ?"); whereParams.push(normStation); } else { whereClauses.push("station IS NULL"); }
 
     const [existing] = await executeQuery(
         `SELECT id FROM skill_matrices WHERE ${whereClauses.join(' AND ')}`,
@@ -114,7 +142,7 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
             `INSERT INTO skill_matrices (department, section, line, subSection, station, month, entries, headerInfo, footerInfo, createdAt, updatedAt)
              OUTPUT INSERTED.id
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
-            [department, section || null, line, subSection || null, station || null, targetMonth, entriesJson, headerJson, footerJson]
+            [normDept, normSection, normLine, normSubSection, normStation, targetMonth, entriesJson, headerJson, footerJson]
         );
         matrixId = insertRows[0].id;
     }
@@ -133,6 +161,13 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
         try {
             const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("../utils/handover.util.js");
 
+            // Fetch machineId -> subSectionId mapping
+            const [mRows] = await executeQuery("SELECT id, subSectionId FROM [machines]");
+            const machineSubSectionMap = {};
+            mRows.forEach(m => {
+                machineSubSectionMap[String(m.id)] = String(m.subSectionId);
+            });
+
             for (const entry of entries) {
                 if (entry.userId) { // Skip manual
                     // 1. Fetch User Data and Current Assignments
@@ -144,15 +179,6 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
                     if (uRows.length > 0) {
                         const userData = uRows[0];
                         let currentSkillMap = parseJSON(userData.currentSkill, {});
-                        const primaryStationId = String(userData.stationId || "");
-
-                        // Fetch secondary assignments from junction table
-                        const [aRows] = await executeQuery(
-                            "SELECT machine_id FROM machine_assignments WHERE user_id = ?",
-                            [entry.userId]
-                        );
-                        const assignedMachineIds = aRows.map(r => String(r.machine_id));
-                        if (primaryStationId) assignedMachineIds.push(primaryStationId);
                         
                         let maxWeight = 1;
                         let skillMapChanged = false;
@@ -161,6 +187,7 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
                             entry.stations.forEach(s => {
                                 const levelStr = s.curr || "L-1";
                                 const stationIdStr = String(s.machineId || "");
+                                const subSectionIdStr = machineSubSectionMap[stationIdStr];
 
                                 // A. Track Max Weight from THIS matrix for potential upgrade
                                 const match = levelStr.match(/\d+/);
@@ -169,11 +196,10 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
                                     if (w > maxWeight) maxWeight = w;
                                 }
 
-                                // B. Sync Station-Specific Proficiency
-                                // Only update operator profile if they are assigned to this specific station
-                                if (assignedMachineIds.includes(stationIdStr)) {
-                                    if (currentSkillMap[stationIdStr] !== levelStr) {
-                                        currentSkillMap[stationIdStr] = levelStr;
+                                // B. Sync SubSection-Specific Proficiency
+                                if (subSectionIdStr) {
+                                    if (currentSkillMap[subSectionIdStr] !== levelStr) {
+                                        currentSkillMap[subSectionIdStr] = levelStr;
                                         skillMapChanged = true;
                                     }
                                 }
@@ -234,19 +260,23 @@ const getSkillMatrix = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId, stationId, month } = req.query;
 
     // Backward compatibility with params if still used, but prefer query
-    const dept = departmentId || req.params.departmentId;
-    const line = lineId || req.params.lineId;
+    const dept = normalizeParam(departmentId || req.params.departmentId);
+    const line = normalizeParam(lineId || req.params.lineId);
+    const section = normalizeParam(sectionId);
+    const subSection = normalizeParam(subSectionId);
+    const station = normalizeParam(stationId);
 
-    if (!dept || !line) {
-        throw new ApiError(400, "Department ID and Line ID are required");
+    if (!dept) {
+        throw new ApiError(400, "Department ID is required");
     }
 
-    let whereClauses = ["department = ?", "line = ?"];
-    let params = [dept, line];
+    let whereClauses = ["department = ?"];
+    let params = [dept];
 
-    if (sectionId) { whereClauses.push("section = ?"); params.push(sectionId); }
-    if (subSectionId) { whereClauses.push("subSection = ?"); params.push(subSectionId); }
-    if (stationId) { whereClauses.push("station = ?"); params.push(stationId); }
+    if (line) { whereClauses.push("line = ?"); params.push(line); } else { whereClauses.push("line IS NULL"); }
+    if (section) { whereClauses.push("section = ?"); params.push(section); } else { whereClauses.push("section IS NULL"); }
+    if (subSection) { whereClauses.push("subSection = ?"); params.push(subSection); } else { whereClauses.push("subSection IS NULL"); }
+    if (station) { whereClauses.push("station = ?"); params.push(station); } else { whereClauses.push("station IS NULL"); }
     if (month) { whereClauses.push("month = ?"); params.push(month); }
 
     let sql = `SELECT * FROM skill_matrices WHERE ${whereClauses.join(' AND ')}`;
@@ -293,11 +323,11 @@ const listSkillMatrices = asyncHandler(async (req, res) => {
             -- Calculate User Count based on most granular hierarchy level
             COALESCE(
               CASE 
-                WHEN sm.station IS NOT NULL AND TRY_CAST(sm.station AS INT) IS NOT NULL THEN (SELECT COUNT(DISTINCT u.id) FROM users u WHERE (u.stationId = CAST(sm.station AS INT) OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = CAST(sm.station AS INT))) AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND u.role IN ('STUDENT', 'CUSTOM'))
-                WHEN sm.subSection IS NOT NULL AND TRY_CAST(sm.subSection AS INT) IS NOT NULL THEN (SELECT COUNT(*) FROM OPENJSON((SELECT users FROM sub_sections WHERE id = CAST(sm.subSection AS INT))))
-                WHEN sm.line IS NOT NULL AND TRY_CAST(sm.line AS INT) IS NOT NULL THEN (SELECT COUNT(*) FROM OPENJSON((SELECT users FROM [lines] WHERE id = CAST(sm.line AS INT))))
-                WHEN sm.section IS NOT NULL AND TRY_CAST(sm.section AS INT) IS NOT NULL THEN (SELECT COUNT(*) FROM OPENJSON((SELECT users FROM [sections] WHERE id = CAST(sm.section AS INT))))
-                ELSE (SELECT COUNT(DISTINCT u_inner.[value]) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = TRY_CAST(sm.department AS INT) OR s2.departmentId IN (SELECT id FROM departments WHERE name = sm.department))
+                WHEN sm.station IS NOT NULL AND TRY_CAST(sm.station AS INT) IS NOT NULL THEN (SELECT COUNT(DISTINCT u.id) FROM users u WHERE (u.stationId = CAST(sm.station AS INT) OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = CAST(sm.station AS INT))) AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND u.role IN ('STUDENT', 'CUSTOM') AND (u.status IS NULL OR u.status != 'LEFT'))
+                WHEN sm.subSection IS NOT NULL AND TRY_CAST(sm.subSection AS INT) IS NOT NULL THEN (SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.subSectionId = CAST(sm.subSection AS INT) AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND u.role IN ('STUDENT', 'CUSTOM') AND (u.status IS NULL OR u.status != 'LEFT'))
+                WHEN sm.line IS NOT NULL AND TRY_CAST(sm.line AS INT) IS NOT NULL THEN (SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.lineId = CAST(sm.line AS INT) AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND u.role IN ('STUDENT', 'CUSTOM') AND (u.status IS NULL OR u.status != 'LEFT'))
+                WHEN sm.section IS NOT NULL AND TRY_CAST(sm.section AS INT) IS NOT NULL THEN (SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.sectionId = CAST(sm.section AS INT) AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND u.role IN ('STUDENT', 'CUSTOM') AND (u.status IS NULL OR u.status != 'LEFT'))
+                ELSE (SELECT COUNT(DISTINCT u.id) FROM users u WHERE (u.departmentId = TRY_CAST(sm.department AS INT) OR u.department = sm.department) AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND u.role IN ('STUDENT', 'CUSTOM') AND (u.status IS NULL OR u.status != 'LEFT'))
               END, 0) as userCount
         FROM skill_matrices sm
         LEFT JOIN departments d ON (sm.department = CAST(d.id AS VARCHAR(255)) OR sm.department = d.name)
@@ -421,7 +451,7 @@ const calculateUserEfficiency = (evalData) => {
 const getSkillMatrixEfficiencyStats = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId } = req.query;
 
-    let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)", "u.role IN ('STUDENT', 'CUSTOM')"];
+    let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)", "u.role IN ('STUDENT', 'CUSTOM')", "(u.status IS NULL OR u.status != 'LEFT')"];
     let params = [];
 
     if (departmentId) {
@@ -502,10 +532,14 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
             ss_res.subSectionId,
             ss_res.subSectionName,
             sme.evalData,
-            COALESCE(al.logStatus, 'Absent') as logStatus,
+            al.logStatus as logStatus,
+            CONVERT(VARCHAR(10), dates.attendanceDate, 120) as attendanceDate,
             al_shift.shift,
             u.currentEffeciency
         FROM users u
+        CROSS JOIN (
+            SELECT DISTINCT [date] as attendanceDate FROM attendance_logs
+        ) dates
         OUTER APPLY (
             SELECT TOP 1 ss.id as subSectionId, ss.name as subSectionName, ss.lineId as ssLineId 
             FROM sub_sections ss WHERE ss.id = u.subSectionId
@@ -527,18 +561,17 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
         OUTER APPLY (
             SELECT TOP 1 [status] as logStatus
             FROM attendance_logs
-            WHERE userId = u.id
-            ORDER BY [date] DESC
+            WHERE userId = u.id AND [date] = dates.attendanceDate
         ) al
         OUTER APPLY (
             SELECT TOP 1 [shift]
             FROM attendance_logs
-            WHERE userId = u.id AND [shift] IS NOT NULL
-            ORDER BY [date] DESC
+            WHERE userId = u.id AND [shift] IS NOT NULL AND [date] = dates.attendanceDate
         ) al_shift
         LEFT JOIN skill_matrix_evaluations sme ON u.id = sme.studentId
         WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND u.role IN ('STUDENT', 'CUSTOM')
+          AND (u.status IS NULL OR u.status != 'LEFT')
     `;
 
     const [rows] = await executeQuery(sql);

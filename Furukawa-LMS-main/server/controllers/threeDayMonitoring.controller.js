@@ -63,6 +63,8 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
             GROUP BY studentId
         ) stats ON u.id = stats.studentId
         WHERE u.departmentId = ?
+        AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+        AND (u.status IS NULL OR u.status != 'LEFT')
     `;
     const params = [departmentId];
 
@@ -70,7 +72,7 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
         query += " AND u.sectionId = ?";
         params.push(sectionId);
     }
-    if (lineId) {
+    if (lineId && lineId !== "0" && lineId !== "all" && lineId !== "All" && lineId !== "undefined" && lineId !== "null") {
         query += " AND u.lineId = ?";
         params.push(lineId);
     }

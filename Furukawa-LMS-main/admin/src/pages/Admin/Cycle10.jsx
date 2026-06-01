@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,6 +40,7 @@ const ALL_FORM_TYPES = [
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
     const { user } = useSelector(state => state.auth);
+    const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -76,12 +77,48 @@ const Cycle10 = () => {
     const { data: machineData } = useGetMachinesByLineQuery(selectedLineFilter, { skip: !selectedLineFilter });
     const stations = machineData?.data || [];
 
-    const { data: usersData } = useGetAllUsersQuery({ 
-        departmentId: selectedDepartmentFilter, 
-        limit: 1000, 
-        isEmployee: true 
+    const { data: usersData } = useGetAllUsersQuery({
+        departmentId: selectedDepartmentFilter,
+        limit: 1000,
+        isEmployee: true,
+        passedQuizOnly: "true"
     }, { skip: !selectedDepartmentFilter });
     const operators = usersData?.data?.users || [];
+
+    const assignableDepartments = useMemo(() => {
+        const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
+        if (user?.departmentId) rawAssigned.push(user.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!user || isAdmin || assignedIds.length === 0) return departments;
+        return departments.filter(d => assignedIds.includes(String(d._id || d.id)));
+    }, [departments, user, isAdmin]);
+
+    const assignableSections = useMemo(() => {
+        const rawAssigned = Array.isArray(user?.sections) ? [...user.sections] : [];
+        if (user?.sectionId) rawAssigned.push(user.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!user || isAdmin || assignedIds.length === 0) return sections;
+        return sections.filter(s => assignedIds.includes(String(s._id || s.id)));
+    }, [sections, user, isAdmin]);
+
+    const isRestricted = !isAdmin && user && (
+        (user.departments?.length > 0) || user.departmentId ||
+        (user.sections?.length > 0) || user.sectionId
+    );
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !selectedDepartmentFilter) {
+            const id = String(assignableDepartments[0]._id || assignableDepartments[0].id);
+            setSelectedDepartmentFilter(id);
+            setCreateDepartmentId(id);
+        }
+        if (selectedDepartmentFilter && assignableSections.length === 1 && !selectedSectionFilter) {
+            const id = String(assignableSections[0]._id || assignableSections[0].id);
+            setSelectedSectionFilter(id);
+            setCreateSectionId(id);
+        }
+    }, [isRestricted, assignableDepartments, assignableSections, selectedDepartmentFilter, selectedSectionFilter]);
 
     // Header Data
     const [headerData, setHeaderData] = useState({
@@ -408,12 +445,12 @@ const Cycle10 = () => {
                                 setSelectedSectionFilter("");
                                 setSelectedLineFilter("");
                                 setSelectedSubSectionFilter("");
-                            }}>
+                            }} disabled={isRestricted && assignableDepartments.length <= 1}>
                                 <SelectTrigger className="h-9 text-xs">
                                     <SelectValue placeholder="Select department" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {departments.map((dept) => (
+                                    {assignableDepartments.map((dept) => (
                                         <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
                                             {dept.name}
                                         </SelectItem>
@@ -427,12 +464,12 @@ const Cycle10 = () => {
                                 setSelectedSectionFilter(v);
                                 setSelectedLineFilter("");
                                 setSelectedSubSectionFilter("");
-                            }} disabled={!selectedDepartmentFilter}>
+                            }} disabled={!selectedDepartmentFilter || (isRestricted && assignableSections.length <= 1)}>
                                 <SelectTrigger className="h-9 text-xs">
                                     <SelectValue placeholder="Select section" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {sections.map((sec) => (
+                                    {assignableSections.map((sec) => (
                                         <SelectItem key={sec._id || sec.id} value={String(sec._id || sec.id)}>
                                             {sec.name}
                                         </SelectItem>
@@ -539,12 +576,12 @@ const Cycle10 = () => {
                                         setCreateSectionId("");
                                         setCreateLineId("");
                                         setCreateSubSectionId("");
-                                    }}>
+                                    }} disabled={isRestricted && assignableDepartments.length <= 1}>
                                         <SelectTrigger className="h-9 text-xs">
                                             <SelectValue placeholder="Select department" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {departments.map((dept) => (
+                                            {assignableDepartments.map((dept) => (
                                                 <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
                                                     {dept.name}
                                                 </SelectItem>
@@ -558,19 +595,17 @@ const Cycle10 = () => {
                                         setCreateSectionId(v);
                                         setCreateLineId("");
                                         setCreateSubSectionId("");
-                                        const selectedSec = sections.find(s => String(s.id || s._id) === v);
+                                        const selectedSec = assignableSections.find(s => String(s.id || s._id) === v);
                                         if (selectedSec && selectedSec.tenCycleFormType) {
                                             const available = selectedSec.tenCycleFormType.split(",");
-                                            if (available.length > 0) {
-                                                setCreateFormType(available[0]);
-                                            }
+                                            if (available.length > 0) setCreateFormType(available[0]);
                                         }
-                                    }} disabled={!createDepartmentId}>
+                                    }} disabled={!createDepartmentId || (isRestricted && assignableSections.length <= 1)}>
                                         <SelectTrigger className="h-9 text-xs">
                                             <SelectValue placeholder="Select section" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {sections.map((sec) => (
+                                            {assignableSections.map((sec) => (
                                                 <SelectItem key={sec._id || sec.id} value={String(sec._id || sec.id)}>
                                                     {sec.name}
                                                 </SelectItem>

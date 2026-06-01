@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -53,6 +53,35 @@ const SkillUpgradationWrapper = () => {
     const sections = sectionsData?.data || [];
     const students = studentsData?.data?.users || [];
 
+    const assignableDepartments = useMemo(() => {
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return departments;
+        return departments.filter(d => assignedIds.includes(String(d.id || d._id)));
+    }, [departments, authUser, isAdmin]);
+
+    const assignableSections = useMemo(() => {
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return sections;
+        return sections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [sections, authUser, isAdmin]);
+
+    const isRestricted = !isAdmin && authUser && (
+        (authUser.departments?.length > 0) || authUser.departmentId ||
+        (authUser.sections?.length > 0) || authUser.sectionId
+    );
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !dept)
+            setDept(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+        if (dept && assignableSections.length === 1 && !section)
+            setSection(String(assignableSections[0].id || assignableSections[0]._id));
+    }, [isRestricted, assignableDepartments, assignableSections, dept, section]);
+
     return (
         <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
             {/* Header */}
@@ -80,15 +109,16 @@ const SkillUpgradationWrapper = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                             <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department</Label>
-                            <Select 
-                                value={dept} 
+                            <Select
+                                value={dept}
                                 onValueChange={(val) => { setDept(val); setSection(""); }}
+                                disabled={isRestricted && assignableDepartments.length <= 1}
                             >
                                 <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm">
                                     <SelectValue placeholder="Select Department" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {departments.map((d) => (
+                                    {assignableDepartments.map((d) => (
                                         <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -97,16 +127,16 @@ const SkillUpgradationWrapper = () => {
 
                         <div className="space-y-2">
                             <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Section</Label>
-                            <Select 
-                                value={section} 
-                                onValueChange={setSection} 
-                                disabled={!dept}
+                            <Select
+                                value={section}
+                                onValueChange={setSection}
+                                disabled={!dept || (isRestricted && assignableSections.length <= 1)}
                             >
                                 <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm disabled:bg-slate-50">
                                     <SelectValue placeholder="Select Section" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {sections.map((s) => (
+                                    {assignableSections.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>{s.name} {s.category ? `(${s.category})` : ""}</SelectItem>
                                     ))}
                                 </SelectContent>

@@ -13,6 +13,11 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import sendMail from "../utils/mail.util.js";
 
+const normalizeParam = (val) => {
+    if (!val || val === 'undefined' || val === 'null' || val === '' || val === '0' || val === 'all' || val === 'All') return null;
+    return val;
+};
+
 // Helper to resolve department by ID or Slug
 async function resolveDepartmentId(idOrSlug) {
     if (!idOrSlug) return null;
@@ -64,6 +69,7 @@ const populateDepartment = async (dept, fields = []) => {
             AND (isEmployee = 1)
             AND (isTrainer = 0 OR isTrainer IS NULL)
             AND (customRoleId IS NULL)
+            AND (status IS NULL OR status != 'LEFT')
         `, [dept.id, String(dept.id), dept.name]);
         dept.studentCount = countRows[0].count;
     }
@@ -78,10 +84,11 @@ const populateDepartment = async (dept, fields = []) => {
             AND (isEmployee = 1)
             AND (isTrainer = 0 OR isTrainer IS NULL)
             AND (customRoleId IS NULL)
+            AND (status IS NULL OR status != 'LEFT')
             ORDER BY fullName ASC
         `, [dept.id, String(dept.id), dept.name]);
         dept.students = students.map(s => ({ ...s, _id: s.id }));
-        
+
         // Always ensure we have an accurate studentCount if we're showing the students list
         if (!dept.studentCount) {
             const [countRows] = await executeQuery(`
@@ -92,6 +99,7 @@ const populateDepartment = async (dept, fields = []) => {
                 AND (isEmployee = 1)
                 AND (isTrainer = 0 OR isTrainer IS NULL)
                 AND (customRoleId IS NULL)
+                AND (status IS NULL OR status != 'LEFT')
             `, [dept.id, String(dept.id), dept.name]);
             dept.studentCount = countRows[0].count;
         }
@@ -181,6 +189,7 @@ export const assignInstructor = asyncHandler(async (req, res) => {
     if (!department) throw new ApiError("Department not found", 404);
     const instructor = await User.findById(instructorId);
     if (!instructor || instructor.role !== "INSTRUCTOR") throw new ApiError("Invalid instructor", 400);
+    if (['LEFT', 'SUSPENDED', 'BANNED'].includes(instructor.status)) throw new ApiError("Cannot assign a deactivated user", 400);
     if (department.instructor && String(department.instructor) === String(instructorId)) throw new ApiError("Instructor is already assigned", 400);
     department.instructor = instructorId;
     await department.save();
@@ -361,6 +370,7 @@ export const getDepartmentTrainees = asyncHandler(async (req, res) => {
         AND (u.isEmployee = 1)
         AND (u.isTrainer = 0 OR u.isTrainer IS NULL)
         AND (u.customRoleId IS NULL)
+        AND (u.status IS NULL OR u.status != 'LEFT')
     `;
     let params = [department.id, String(department.id), department.name, department.id, req.query.includeTemporary || 'false'];
 
@@ -505,20 +515,25 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
     // If no courses, we still want to see students (with 0 progress)
     // if (courses.length === 0) return res.json(new ApiResponse(200, { departmentProgress: [], overallStats: {}, total: 0 }, "No courses"));
 
-    const { sectionId, lineId, subSectionId, stationId } = req.query;
+    const sectionId = normalizeParam(req.query.sectionId);
+    const lineId = normalizeParam(req.query.lineId);
+    const subSectionId = normalizeParam(req.query.subSectionId);
+    const stationId = normalizeParam(req.query.stationId);
+
     let whereSql = `
         WHERE (departmentId = ? OR department = ? OR department = ?)
         AND (isDeleted = 0 OR isDeleted IS NULL)
         AND (isEmployee = 1)
         AND (isTrainer = 0 OR isTrainer IS NULL)
         AND (customRoleId IS NULL)
+        AND (status IS NULL OR status != 'LEFT')
     `;
     let params = [department.id, String(department.id), department.name];
 
-    if (sectionId && sectionId !== "undefined") { whereSql += " AND sectionId = ?"; params.push(sectionId); }
-    if (lineId && lineId !== "undefined") { whereSql += " AND lineId = ?"; params.push(lineId); }
-    if (subSectionId && subSectionId !== "undefined") { whereSql += " AND subSectionId = ?"; params.push(subSectionId); }
-    if (stationId && stationId !== "undefined") { whereSql += " AND stationId = ?"; params.push(stationId); }
+    if (sectionId) { whereSql += " AND sectionId = ?"; params.push(sectionId); }
+    if (lineId) { whereSql += " AND lineId = ?"; params.push(lineId); }
+    if (subSectionId) { whereSql += " AND subSectionId = ?"; params.push(subSectionId); }
+    if (stationId) { whereSql += " AND stationId = ?"; params.push(stationId); }
 
     if (search) {
         whereSql += " AND (fullName LIKE ? OR email LIKE ? OR userName LIKE ? OR empId LIKE ?)";
@@ -543,7 +558,14 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
     let departmentProgress = [];
     const courseIds = courses.map(c => c.id);
 
-    const [progressRows] = (courseIds.length > 0 && studentIds.length > 0) 
+    // Fetch machineId -> subSectionId mapping
+    const [machineRows] = await executeQuery("SELECT id, subSectionId FROM [machines]");
+    const machineSubSectionMap = {};
+    machineRows.forEach(m => {
+        machineSubSectionMap[String(m.id)] = String(m.subSectionId);
+    });
+
+    const [progressRows] = (courseIds.length > 0 && studentIds.length > 0)
         ? await executeQuery("SELECT * FROM progress WHERE student IN (?) AND course IN (?)", [studentIds, courseIds])
         : [[], {}];
 
@@ -557,20 +579,21 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
                 let levelLockEnabled = prog?.levelLockEnabled || false;
                 let lockedLevel = prog?.lockedLevel || null;
 
-                // Override with station specific data if station filter is active
+                // Override with sub-section specific data if station filter is active
                 if (stationId && stationId !== "undefined") {
+                    const subSecId = machineSubSectionMap[String(stationId)];
                     let currentSkill = student.currentSkill || "{}";
                     if (typeof currentSkill === 'string') {
                         try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
                     }
-                    if (currentSkill[stationId]) {
-                        currentLevel = currentSkill[stationId];
-                        levelLockEnabled = !!currentSkill[`${stationId}_locked`];
-                        lockedLevel = currentSkill[`${stationId}_lockedLevel`];
+                    if (subSecId && currentSkill[subSecId]) {
+                        currentLevel = currentSkill[subSecId];
+                        levelLockEnabled = !!currentSkill[`${subSecId}_locked`];
+                        lockedLevel = currentSkill[`${subSecId}_lockedLevel`];
                     }
                 }
 
-                // Resolve TRUE primary level: Strict check against primary stationId
+                // Resolve TRUE primary level: Strict check against primary station's subSectionId
                 let resolvedPrimaryLevel = "L1";
                 let studentSkill = student.currentSkill || "{}";
                 if (typeof studentSkill === 'string') {
@@ -578,8 +601,8 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
                 }
 
                 if (student.stationId) {
-                    // If they have a primary station assigned, their level MUST come from that station's skill in the map
-                    resolvedPrimaryLevel = studentSkill[student.stationId] || "L1";
+                    const subSecId = machineSubSectionMap[String(student.stationId)];
+                    resolvedPrimaryLevel = (subSecId && studentSkill[subSecId]) || "L1";
                 } else {
                     // Fallback to global level only if no primary station is assigned
                     resolvedPrimaryLevel = student.currentLevel || "L1";
@@ -614,20 +637,21 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
             let levelLockEnabled = false;
             let lockedLevel = null;
 
-            // Override with station specific data if station filter is active
+            // Override with sub-section specific data if station filter is active
             if (stationId && stationId !== "undefined") {
+                const subSecId = machineSubSectionMap[String(stationId)];
                 let currentSkill = student.currentSkill || "{}";
                 if (typeof currentSkill === 'string') {
                     try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
                 }
-                if (currentSkill[stationId]) {
-                    currentLevel = currentSkill[stationId];
-                    levelLockEnabled = !!currentSkill[`${stationId}_locked`];
-                    lockedLevel = currentSkill[`${stationId}_lockedLevel`];
+                if (subSecId && currentSkill[subSecId]) {
+                    currentLevel = currentSkill[subSecId];
+                    levelLockEnabled = !!currentSkill[`${subSecId}_locked`];
+                    lockedLevel = currentSkill[`${subSecId}_lockedLevel`];
                 }
             }
 
-            // Resolve TRUE primary level: Strict check against primary stationId
+            // Resolve TRUE primary level: Strict check against primary station's subSectionId
             let resolvedPrimaryLevel = "L1";
             let studentSkill = student.currentSkill || "{}";
             if (typeof studentSkill === 'string') {
@@ -635,7 +659,8 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
             }
 
             if (student.stationId) {
-                resolvedPrimaryLevel = studentSkill[student.stationId] || "L1";
+                const subSecId = machineSubSectionMap[String(student.stationId)];
+                resolvedPrimaryLevel = (subSecId && studentSkill[subSecId]) || "L1";
             } else {
                 resolvedPrimaryLevel = student.currentLevel || "L1";
             }
@@ -672,8 +697,8 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
         totalModules: courses.reduce((acc, curr) => acc + curr.totalModules, 0)
     };
 
-    res.json(new ApiResponse(200, { 
-        departmentProgress, 
+    res.json(new ApiResponse(200, {
+        departmentProgress,
         overallStats,
         total,
         page,
@@ -700,6 +725,7 @@ export const getDepartmentSubmissions = asyncHandler(async (req, res) => {
         AND (isEmployee = 1)
         AND (isTrainer = 0 OR isTrainer IS NULL)
         AND (customRoleId IS NULL)
+        AND (status IS NULL OR status != 'LEFT')
     `, [department.id, String(department.id), department.name]);
 
     const studentIds = students.map(s => s.id);
@@ -734,21 +760,21 @@ export const getDepartmentSubmissions = asyncHandler(async (req, res) => {
         OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `, [...params, offset, limit]);
 
-    const submissions = rows.map(r => ({ 
-        _id: r.id, 
-        grade: r.grade, 
-        isLate: r.isLate, 
-        submittedAt: r.submittedAt, 
-        student: { fullName: r.fullName, email: r.email, avatar: r.avatar }, 
-        assignment: { title: r.aTitle, dueDate: r.dueDate, maxScore: r.maxScore, course: { title: r.cTitle } } 
+    const submissions = rows.map(r => ({
+        _id: r.id,
+        grade: r.grade,
+        isLate: r.isLate,
+        submittedAt: r.submittedAt,
+        student: { fullName: r.fullName, email: r.email, avatar: r.avatar },
+        assignment: { title: r.aTitle, dueDate: r.dueDate, maxScore: r.maxScore, course: { title: r.cTitle } }
     }));
 
     const graded = submissions.filter(s => s.grade != null).length;
     const late = submissions.filter(s => s.isLate).length;
     const avg = graded > 0 ? Math.round(submissions.reduce((sum, s) => sum + (s.grade || 0), 0) / graded) : 0;
 
-    res.json(new ApiResponse(200, { 
-        submissions, 
+    res.json(new ApiResponse(200, {
+        submissions,
         stats: { totalSubmissions: totalCount, gradedSubmissions: graded, averageGrade: avg, lateSubmissions: late },
         total: totalCount,
         page,
@@ -774,6 +800,7 @@ export const getDepartmentAttempts = asyncHandler(async (req, res) => {
         AND (isEmployee = 1)
         AND (isTrainer = 0 OR isTrainer IS NULL)
         AND (customRoleId IS NULL)
+        AND (status IS NULL OR status != 'LEFT')
     `, [department.id, String(department.id), department.name]);
 
     const studentIds = students.map(s => s.id);
@@ -807,22 +834,22 @@ export const getDepartmentAttempts = asyncHandler(async (req, res) => {
         OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `, [...params, offset, limit]);
 
-    const attempts = rows.map(r => ({ 
-        _id: r.id, 
-        score: r.score, 
-        scorePercent: r.scorePercent, 
-        passed: r.passed, 
-        attemptedAt: r.createdAt, 
-        student: { fullName: r.fullName, email: r.email, avatar: r.avatar }, 
-        quiz: { title: r.qTitle } 
+    const attempts = rows.map(r => ({
+        _id: r.id,
+        score: r.score,
+        scorePercent: r.scorePercent,
+        passed: r.passed,
+        attemptedAt: r.createdAt,
+        student: { fullName: r.fullName, email: r.email, avatar: r.avatar },
+        quiz: { title: r.qTitle }
     }));
 
     const totalPassed = attempts.filter(a => a.passed).length;
     const avgScore = attempts.length > 0 ? Math.round(attempts.reduce((sum, a) => sum + (a.scorePercent || 0), 0) / attempts.length) : 0;
     const passRate = attempts.length > 0 ? Math.round((totalPassed / attempts.length) * 100) : 0;
 
-    res.json(new ApiResponse(200, { 
-        attempts, 
+    res.json(new ApiResponse(200, {
+        attempts,
         stats: { totalAttempts: totalCount, passedAttempts: totalPassed, averageScore: avgScore, passRate },
         total: totalCount,
         page,
@@ -1016,6 +1043,8 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                   AND q.isHandover = 1
                   AND (aq.status = 'PASSED' OR aq.status = 'PASS')
                   AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
+                  AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                  AND (u.status IS NULL OR u.status != 'LEFT')
             `, [departmentId, date]);
 
             suggestedEntries = passedUsers.map(user => {
@@ -1039,10 +1068,10 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
         }
 
         return res.status(200).json(
-            new ApiResponse(200, { 
-                isNew: true, 
+            new ApiResponse(200, {
+                isNew: true,
                 entries: suggestedEntries,
-                date: date 
+                date: date
             }, suggestedEntries.length > 0 ? "Found suggested entries from quizzes" : "No record found")
         );
     }
@@ -1098,20 +1127,38 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
                 const [uRows] = await executeQuery("SELECT isTemporary, departmentId, targetDeptId FROM users WHERE id = ?", [entry.studentId]);
                 if (uRows.length) {
                     const user = uRows[0];
-                    
+
                     // 1. Update Target Dept if changed (for temporary users)
                     if (user.isTemporary && entry.departmentId && String(entry.departmentId) !== String(user.targetDeptId)) {
                         await executeQuery("UPDATE users SET targetDeptId = ? WHERE id = ?", [entry.departmentId, entry.studentId]);
                     }
-                    
+
                     // 2. Auto-Assign Department on Approval (Transition to regular employee)
-                    if (entry.interviewStatus === 'APPROVE' && entry.departmentId) {
-                        // We always update to ensure they are assigned to the chosen dept and isTemporary is 0
+                    const targetDept = entry.departmentId || user.targetDeptId || departmentId;
+                    const targetSect = entry.sectionId || user.targetSectionId || sectionId || null;
+                    const targetLine = entry.lineId || user.targetLineId || null;
+                    const targetSubSect = entry.subSectionId || user.targetSubSectionId || null;
+                    const targetStn = entry.stationId || user.targetStationId || null;
+
+                    if (entry.interviewStatus === 'APPROVE' && targetDept) {
+                        // We always update to ensure they are assigned to the chosen dept/section/line/sub-section/station, clear target columns, and set isTemporary to 0
                         await executeQuery(
-                            "UPDATE users SET departmentId = ?, targetDeptId = ?, isTemporary = 0 WHERE id = ?", 
-                            [entry.departmentId, entry.departmentId, entry.studentId]
+                            `UPDATE users 
+                             SET departmentId = ?, 
+                                 targetDeptId = NULL, 
+                                 sectionId = ?, 
+                                 lineId = ?, 
+                                 subSectionId = ?, 
+                                 stationId = ?,
+                                 targetSectionId = NULL,
+                                 targetLineId = NULL,
+                                 targetSubSectionId = NULL,
+                                 targetStationId = NULL,
+                                 isTemporary = 0 
+                             WHERE id = ?`,
+                            [targetDept, targetSect, targetLine, targetSubSect, targetStn, entry.studentId]
                         );
-                        console.log(`[Handover] User ${entry.studentId} assigned to department ${entry.departmentId} and cleared temporary status upon approval.`);
+                        console.log(`[Handover] User ${entry.studentId} assigned to dept ${targetDept}, sect ${targetSect}, line ${targetLine} and cleared temporary status upon approval.`);
                     }
                 }
             }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,6 +73,8 @@ const SixteenDayMonitoring = () => {
         };
     }, [authUser, isAdmin]);
 
+    const feedbackRef = useRef(null);
+
     // Mode selection: 'stack' or 'layout'
     const [activeTab, setActiveTab] = useState('stack');
 
@@ -110,17 +112,33 @@ const SixteenDayMonitoring = () => {
 
     // Filter departments based on user assignment
     const assignableDepartments = useMemo(() => {
-        if (!authUser) return [];
         const allDepts = departments || [];
-        const assignedIds = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
-        if (authUser?.departmentId) assignedIds.push(authUser.departmentId);
-
-        if (isAdmin && assignedIds.length === 0) return allDepts;
-
-        return allDepts.filter(d =>
-            assignedIds.includes(d.id) || assignedIds.includes(d._id)
-        );
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return allDepts;
+        return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
     }, [departments, authUser, isAdmin]);
+
+    const assignableSections = useMemo(() => {
+        const allSections = sections || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [sections, authUser, isAdmin]);
+
+    const handleAfterMonitoringSave = async (status) => {
+        await feedbackRef.current?.saveFeedback();
+        if (status === 'Submitted') {
+            try {
+                await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}/combined-email`);
+            } catch (err) {
+                console.error("Combined email failed:", err);
+            }
+        }
+    };
 
     // Fetch Monitoring Status List
     const fetchMonitoringList = async () => {
@@ -264,7 +282,7 @@ const SixteenDayMonitoring = () => {
                                 <Select
                                     value={String(dept)}
                                     onValueChange={(val) => { setDept(val); setSection(""); setLine(""); setStudentId(""); }}
-                                    disabled={isSelectionLocked && !!authUser?.departmentId}
+                                    disabled={(isSelectionLocked && !!authUser?.departmentId) || (!isAdmin && assignableDepartments.length <= 1 && !!dept)}
                                 >
                                     <SelectTrigger className="h-10 bg-white border-slate-200"><SelectValue placeholder="Select Dept" /></SelectTrigger>
                                     <SelectContent>
@@ -280,12 +298,12 @@ const SixteenDayMonitoring = () => {
                                 <Select
                                     value={String(section)}
                                     onValueChange={(val) => { setSection(val); setLine(""); setStudentId(""); }}
-                                    disabled={(!dept && !isSelectionLocked)}
+                                    disabled={(!dept && !isSelectionLocked) || (!isAdmin && assignableSections.length <= 1 && !!section)}
                                 >
                                     <SelectTrigger className="h-10 bg-white border-slate-200"><SelectValue placeholder="Select Section" /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="0">All Sections</SelectItem>
-                                        {sections.map((s) => (
+                                        {assignableSections.map((s) => (
                                             <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -373,11 +391,13 @@ const SixteenDayMonitoring = () => {
                                 sectionId={section || 0}
                                 readOnly={isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId))}
                                 initialForceNewAttempt={forceNewAttempt}
+                                onAfterSave={handleAfterMonitoringSave}
                             />
 
                             {(hasManagePermission || canViewFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId))) && (
                                 <div className="mt-12">
                                     <MenteeFeedbackMonitoringSheet
+                                        ref={feedbackRef}
                                         studentId={studentId}
                                         readOnly={!(canManageFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId)))}
                                     />

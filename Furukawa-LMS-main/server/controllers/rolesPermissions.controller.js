@@ -169,6 +169,20 @@ const SYSTEM_PERMISSIONS = {
   ON_JOB_TRAINING_DELETE: "on_job_training:delete",
   ON_JOB_TRAINING_CHECKED_BY: "on_job_training:checked_by",
   ON_JOB_TRAINING_APPROVED_BY: "on_job_training:approved_by",
+
+  // Abnormal Condition Management
+  ABNORMAL_CONDITION_READ: "abnormal_condition:read",
+  ABNORMAL_CONDITION_CREATE: "abnormal_condition:create",
+  ABNORMAL_CONDITION_UPDATE: "abnormal_condition:update",
+  ABNORMAL_CONDITION_DELETE: "abnormal_condition:delete",
+  ABNORMAL_CONDITION_APPROVE: "abnormal_condition:approve",
+
+  // DOJO Evaluation Test Management
+  DOJO_EVALUATION_TEST_CREATE: "dojo_evaluation_test:create",
+  DOJO_EVALUATION_TEST_TAKE: "dojo_evaluation_test:take",
+  DOJO_EVALUATION_TEST_APPROVE: "dojo_evaluation_test:approve",
+  DOJO_EVALUATION_TEST_CONFIRM: "dojo_evaluation_test:confirm",
+  DOJO_EVALUATION_TEST_VIEW: "dojo_evaluation_test:view",
 };
 
 // Define default role permissions
@@ -260,7 +274,12 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.TEST_PAPER_SKILL_UPGRADATION,
       SYSTEM_PERMISSIONS.TEST_PAPER_ISSUE_CERTIFICATE,
       SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO,
-      SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CREATE,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CONFIRM,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -444,6 +463,20 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_DELETE, name: "Delete OJT", description: "Delete On the Job Training sheets" },
         { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CHECKED_BY, name: "Checked By sign-off", description: "Sign off On the Job Training sheets as Checked By" },
         { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_APPROVED_BY, name: "Approved By sign-off", description: "Sign off On the Job Training sheets as Approved By" }
+      ],
+      "Abnormal Condition Management": [
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_READ, name: "View Abnormal Conditions", description: "View Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_CREATE, name: "Create Abnormal Conditions", description: "Create new Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_UPDATE, name: "Update Abnormal Conditions", description: "Edit Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_DELETE, name: "Delete Abnormal Conditions", description: "Delete Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_APPROVE, name: "Approve Abnormal Conditions", description: "Approve or Reject Abnormal Condition sheets as Head, QA" }
+      ],
+      "DOJO Evaluation Test": [
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CREATE, name: "Create DOJO Evaluation Test", description: "Create and manage DOJO evaluation test papers" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE, name: "Take DOJO Evaluation Test", description: "Attempt and submit DOJO evaluation tests" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE, name: "Approve DOJO Evaluation Test", description: "Approve submitted DOJO evaluation tests" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CONFIRM, name: "Confirm DOJO Evaluation Test", description: "Confirm/verify submitted DOJO evaluation tests" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW, name: "View DOJO Evaluation Test", description: "View list and details of DOJO evaluation tests and attempts" }
       ]
     };
 

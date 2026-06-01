@@ -53,6 +53,8 @@ import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
 import timelineScheduler from "./services/timelineScheduler.js";
 import departmentStatusScheduler from "./services/departmentStatusScheduler.js";
 import reportScheduler from "./services/reportScheduler.js";
+import handoverNotificationScheduler from "./services/handoverNotificationScheduler.js";
+import sixteenDayMonitoringScheduler from "./services/sixteenDayMonitoringScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
@@ -62,7 +64,9 @@ import tenCycleSheetRoutes from "./routes/tenCycleSheet.routes.js";
 import reportClubRoutes from "./routes/reportClub.routes.js";
 import menteeFeedbackRoutes from "./routes/menteeFeedback.routes.js";
 import learningComparisonRoutes from "./routes/learningComparison.routes.js";
+import evaluationTestRoutes from "./routes/evaluationTest.routes.js";
 import adminHomeRoutes from "./routes/adminHome.routes.js";
+import abnormalConditionRoutes from "./routes/abnormalCondition.routes.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
 
 import machineRoutes from "./routes/machine.routes.js";
@@ -99,6 +103,8 @@ import UserHierarchySnapshot from "./models/userHierarchySnapshot.model.js";
 import MenteeFeedback from "./models/menteeFeedback.model.js";
 import Course from "./models/course.model.js";
 import Quiz from "./models/quiz.model.js";
+import EvaluationTest from "./models/evaluationTest.model.js";
+import EvaluationTestAttempt from "./models/evaluationTestAttempt.model.js";
 
 const app = express();
 const allowedOrigins = [
@@ -280,7 +286,9 @@ app.use("/api/sub-sections", subSectionRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
 app.use("/api/mentee-feedback", menteeFeedbackRoutes);
 app.use("/api/learning-comparisons", learningComparisonRoutes);
+app.use("/api/evaluation-tests", evaluationTestRoutes);
 app.use("/api/admin-home", adminHomeRoutes);
+app.use("/api/abnormal-conditions", abnormalConditionRoutes);
 
 
 // Initialize Socket.IO service
@@ -440,6 +448,8 @@ const startServer = async () => {
         timelineScheduler.init();
         departmentStatusScheduler.init();
         reportScheduler.init();
+        handoverNotificationScheduler.init();
+        sixteenDayMonitoringScheduler.init();
 
         // Initialize Core Tables
         await HandoverSheet.init();
@@ -456,6 +466,8 @@ const startServer = async () => {
         await SkillMatrixDashboardConfig.init();
         await Course.init();
         await Quiz.init();
+        await EvaluationTest.init();
+        await EvaluationTestAttempt.init();
 
         // Initialize Hierarchy in Order: Section -> Line -> SubSection
         const Section = (await import("./models/section.model.js")).default;
@@ -468,6 +480,7 @@ const startServer = async () => {
         await ReportClub.init();
         await UserHierarchySnapshot.init();
         await MenteeFeedback.init();
+        await import("./models/abnormalCondition.model.js").then(m => m.default.init());
 
         server.listen(PORT, () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);
@@ -477,12 +490,16 @@ const startServer = async () => {
         process.on('SIGINT', () => {
             timelineScheduler.stop();
             departmentStatusScheduler.stop();
+            handoverNotificationScheduler.stop();
+            sixteenDayMonitoringScheduler.stop();
             process.exit(0);
         });
 
         process.on('SIGTERM', () => {
             timelineScheduler.stop();
             departmentStatusScheduler.stop();
+            handoverNotificationScheduler.stop();
+            sixteenDayMonitoringScheduler.stop();
             process.exit(0);
         });
 

@@ -85,7 +85,13 @@ const TakeQuiz = () => {
     try {
       setIsSearching(true);
       const response = await axiosInstance.get(`/api/users/students`, {
-        params: { search: value, page: 1, limit: 10, includeTemporary: "true" }
+        params: { 
+          search: value, 
+          page: 1, 
+          limit: 10, 
+          includeTemporary: "true",
+          ojtApprovedOnly: !quiz?.isDojo ? "true" : undefined
+        }
       });
       const studentsList = response.data?.data?.users || [];
       setSearchSuggestions(studentsList);
@@ -111,7 +117,13 @@ const TakeQuiz = () => {
 
     try {
       const response = await axiosInstance.get(`/api/users/students`, {
-        params: { search: value, page: 1, limit: 5, includeTemporary: "true" }
+        params: { 
+          search: value, 
+          page: 1, 
+          limit: 5, 
+          includeTemporary: "true",
+          ojtApprovedOnly: !quiz?.isDojo ? "true" : undefined
+        }
       });
       const studentsList = response.data?.data?.users || [];
       const exactMatch = studentsList.find(s => s.empId && s.empId.toLowerCase().trim() === value.toLowerCase().trim());

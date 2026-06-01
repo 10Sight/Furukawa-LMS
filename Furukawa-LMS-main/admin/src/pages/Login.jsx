@@ -45,29 +45,34 @@ const Login = () => {
     if (!isLoggedIn || !user) return;
 
     // Redirect based on role
-    let targetPath = '/';
+    const from = location.state?.from;
+    let targetPath = (from && from.pathname && from.pathname !== '/login') 
+      ? (from.pathname + (from.search || "")) 
+      : null;
 
-    if (user.role === 'SUPERADMIN' || (user.isAdmin && user.role !== 'CUSTOM')) {
-      targetPath = '/';
-    } else if (user.isTrainer && user.role !== 'CUSTOM') {
-      targetPath = '/trainer';
-    } else if (user.role === 'CUSTOM') {
-      const allowed = user.customRole?.allowedPages || [];
-      const allowedPages = typeof allowed === 'string' ? JSON.parse(allowed) : allowed;
-      const hasLandingAccess = allowedPages.includes('landing-page');
-      
-      const layout = user.customRole?.targetLayout?.toLowerCase() || 'custom';
-      
-      if (hasLandingAccess) {
+    if (!targetPath) {
+      if (user.role === 'SUPERADMIN' || (user.isAdmin && user.role !== 'CUSTOM')) {
         targetPath = '/';
+      } else if (user.isTrainer && user.role !== 'CUSTOM') {
+        targetPath = '/trainer';
+      } else if (user.role === 'CUSTOM') {
+        const allowed = user.customRole?.allowedPages || [];
+        const allowedPages = typeof allowed === 'string' ? JSON.parse(allowed) : allowed;
+        const hasLandingAccess = allowedPages.includes('landing-page');
+        
+        const layout = user.customRole?.targetLayout?.toLowerCase() || 'custom';
+        
+        if (hasLandingAccess) {
+          targetPath = '/';
+        } else {
+          // Find the first actually allowed page for this layout to prevent flash
+          const firstPage = getFirstAllowedPage(layout, user, (key, def) => def);
+          targetPath = firstPage || (layout === 'custom' ? '/portal' : `/${layout}`);
+        }
       } else {
-        // Find the first actually allowed page for this layout to prevent flash
-        const firstPage = getFirstAllowedPage(layout, user, (key, def) => def);
-        targetPath = firstPage || (layout === 'custom' ? '/portal' : `/${layout}`);
+        // Students/Employees go to Student Dashboard
+        targetPath = '/student';
       }
-    } else {
-      // Students/Employees go to Student Dashboard
-      targetPath = '/student';
     }
 
     if (location.pathname !== targetPath) {
@@ -110,9 +115,6 @@ const Login = () => {
               <CardTitle className="text-2xl font-bold text-slate-900 tracking-tight">
                 DIGITAL GATEWAY
               </CardTitle>
-              {/* <CardDescription className="text-slate-500 font-medium text-sm uppercase tracking-wide">
-                FURUKAWA Dashboard
-              </CardDescription> */}
             </div>
           </CardHeader>
 

@@ -7,7 +7,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 // @route   POST /api/sub-sections
 // @access  Private
 export const createSubSection = asyncHandler(async (req, res) => {
-    const { name, lineId, description, minimumRequiredLevel } = req.body;
+    const { name, lineId, description, minimumRequiredLevel, minEfficiency, maxEfficiency } = req.body;
 
     if (!name || !lineId) {
         throw new ApiError(400, "Name and Line ID are required");
@@ -25,13 +25,13 @@ export const createSubSection = asyncHandler(async (req, res) => {
 
     // Insert
     const [result] = await executeQuery(
-        "INSERT INTO [sub_sections] (name, lineId, description, minimumRequiredLevel, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, GETDATE(), GETDATE())",
-        [name, lineId, description, minimumRequiredLevel || null, true]
+        "INSERT INTO [sub_sections] (name, lineId, description, minimumRequiredLevel, minEfficiency, maxEfficiency, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())",
+        [name, lineId, description, minimumRequiredLevel || null, minEfficiency ?? null, maxEfficiency ?? null, true]
     );
 
     const [newSubSection] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as subSectionCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -54,7 +54,7 @@ export const getSubSectionsByLine = asyncHandler(async (req, res) => {
 
     const [subSections] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as subSectionCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -78,7 +78,7 @@ export const getSubSectionById = asyncHandler(async (req, res) => {
 
     const [subSections] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as subSectionCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -98,7 +98,7 @@ export const getSubSectionById = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateSubSection = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, description, isActive, minimumRequiredLevel } = req.body;
+    const { name, description, isActive, minimumRequiredLevel, minEfficiency, maxEfficiency } = req.body;
 
     if (isNaN(id)) {
         throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
@@ -116,6 +116,8 @@ export const updateSubSection = asyncHandler(async (req, res) => {
     if (typeof name !== 'undefined') { updateFields.push("name = ?"); updateValues.push(name); }
     if (typeof description !== 'undefined') { updateFields.push("description = ?"); updateValues.push(description); }
     if (typeof minimumRequiredLevel !== 'undefined') { updateFields.push("minimumRequiredLevel = ?"); updateValues.push(minimumRequiredLevel); }
+    if (typeof minEfficiency !== 'undefined') { updateFields.push("minEfficiency = ?"); updateValues.push(minEfficiency ?? null); }
+    if (typeof maxEfficiency !== 'undefined') { updateFields.push("maxEfficiency = ?"); updateValues.push(maxEfficiency ?? null); }
     if (typeof isActive !== 'undefined') { updateFields.push("isActive = ?"); updateValues.push(isActive); }
 
     if (updateFields.length > 0) {
@@ -125,7 +127,7 @@ export const updateSubSection = asyncHandler(async (req, res) => {
 
     const [updatedSubSection] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as subSectionCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -161,7 +163,7 @@ export const getAllSubSections = asyncHandler(async (req, res) => {
 
     let querySQL = `
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)) as subSectionCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
         FROM [sub_sections] ss
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id`;

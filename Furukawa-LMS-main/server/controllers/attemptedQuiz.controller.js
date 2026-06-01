@@ -412,6 +412,54 @@ export const startQuiz = asyncHandler(async (req, res) => {
         }
     }
 
+    // OJT Gating for non-Dojo Quizzes (isDojo === false or not set)
+    if (!quiz.isDojo && !isAdminOrTrainer && isTemporaryCandidate) {
+        let isOjtApproved = false;
+        try {
+            const [userRows] = await executeQuery("SELECT ojt FROM users WHERE id = ?", [userId]);
+            if (userRows.length > 0) {
+                try {
+                    const ojtList = JSON.parse(userRows[0].ojt || "[]");
+                    isOjtApproved = Array.isArray(ojtList) && ojtList.some(o => o.result === "Pass" || o.result === "Approved");
+                } catch (e) {
+                    isOjtApproved = false;
+                }
+            }
+        } catch (dbErr) {
+            console.error("[ERROR] Failed to query user ojt list:", dbErr.message);
+        }
+
+        // Hybrid fallback check on database just in case user ojt column is not synced
+        if (!isOjtApproved) {
+            try {
+                const [fallbackRows] = await executeQuery(`
+                    SELECT 1 FROM on_job_trainings
+                    WHERE student = CAST(? AS NVARCHAR(50))
+                      AND (result = 'Pass' OR result = 'Approved')
+                `, [userId]);
+                if (fallbackRows.length > 0) {
+                    isOjtApproved = true;
+                }
+            } catch (fallbackErr) {
+                console.error("[ERROR] Fallback OJT query failed:", fallbackErr.message);
+            }
+        }
+
+        if (!isOjtApproved) {
+            return res.json(new ApiResponse(200, {
+                canAttempt: false,
+                reason: "Access Denied: You must be approved in On-Job-Training (OJT) before you can attempt this assessment.",
+                quiz: {
+                    _id: quiz.id,
+                    title: quiz.title,
+                    course: quiz.course,
+                    module: quiz.module,
+                    level: quiz.level
+                }
+            }, "OJT approval required"));
+        }
+    }
+
     const previousAttempts = await AttemptedQuiz.countDocuments({
         quiz: resolvedQuizId,
         student: userId
@@ -803,12 +851,12 @@ export const submitQuiz = asyncHandler(async (req, res) => {
             console.log(`[DEBUG] Level Config Found: ${!!levelConfig}, Current Level (Progress): ${progress.currentLevel}`);
 
             if (levelConfig) {
-                // Fetch User to get station-specific skill levels
+                // Fetch User to get sub-section-specific skill levels
                 const userData = await User.findById(userId);
-                const stationId = userData.stationId;
+                const subSectionId = userData.subSectionId;
                 
-                if (!stationId) {
-                    console.log(`[DEBUG] Level Upgrade Skipped: User has no assigned station`);
+                if (!subSectionId) {
+                    console.log(`[DEBUG] Level Upgrade Skipped: User has no assigned sub-section`);
                 } else {
                     // Get current skill mapping or initialize
                     let currentSkill = userData.currentSkill || {};
@@ -816,21 +864,21 @@ export const submitQuiz = asyncHandler(async (req, res) => {
                         try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
                     }
 
-                    // Get current level for THIS station
-                    const stationLevel = currentSkill[stationId] || "L1";
-                    console.log(`[DEBUG] Station Level: ${stationLevel} for Station: ${stationId}`);
+                    // Get current level for THIS sub-section
+                    const subSectionLevel = currentSkill[subSectionId] || "L1";
+                    console.log(`[DEBUG] Sub-section Level: ${subSectionLevel} for Sub-section: ${subSectionId}`);
 
-                    const nextLevel = levelConfig.getNextLevel(stationLevel);
+                    const nextLevel = levelConfig.getNextLevel(subSectionLevel);
                     console.log(`[DEBUG] Next Level: ${nextLevel ? nextLevel.name : 'None'}`);
 
-                    if (nextLevel && nextLevel.name !== stationLevel) {
+                    if (nextLevel && nextLevel.name !== subSectionLevel) {
                         // Time Restriction Check
-                        const currentLevelConfig = levelConfig.levels.find(l => l.name === stationLevel);
+                        const currentLevelConfig = levelConfig.levels.find(l => l.name === subSectionLevel);
                         const maxDays = currentLevelConfig?.completionTimeframe?.maxDays || 0;
 
                         let levelStart = progress.levelStartDate;
                         if (!levelStart) {
-                            if (stationLevel === 'L1') {
+                            if (subSectionLevel === 'L1') {
                                 levelStart = userData.joiningDate ? new Date(userData.joiningDate) : userData.createdAt;
                             } else {
                                 levelStart = progress.updatedAt || progress.createdAt;
@@ -845,8 +893,8 @@ export const submitQuiz = asyncHandler(async (req, res) => {
                         console.log(`[DEBUG] Time Check: Start=${levelStart.toISOString()}, Now=${now.toISOString()}, Days=${diffDays}, MaxDays=${maxDays}`);
 
                         if (diffDays >= maxDays) {
-                            // Update Station Specific Level
-                            currentSkill[stationId] = nextLevel.name;
+                            // Update Sub-section Specific Level
+                            currentSkill[subSectionId] = nextLevel.name;
                             
                             progress.currentLevel = nextLevel.name;
                             progress.levelStartDate = new Date();

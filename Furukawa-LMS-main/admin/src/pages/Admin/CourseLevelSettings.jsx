@@ -67,6 +67,8 @@ const CourseLevelSettings = () => {
       name: "L1",
       order: 0,
       completionTimeframe: { minDays: 1, maxDays: 4 },
+      minEfficiency: "",
+      maxEfficiency: "",
       description: "Beginner Level",
       color: "#3B82F6",
     },
@@ -93,6 +95,8 @@ const CourseLevelSettings = () => {
         name: "L1",
         order: 0,
         completionTimeframe: { minDays: 1, maxDays: 4 },
+        minEfficiency: "",
+        maxEfficiency: "",
         description: "Beginner Level",
         color: "#3B82F6",
       },
@@ -107,7 +111,7 @@ const CourseLevelSettings = () => {
     setSelectedConfig(config);
     setConfigName(config.name);
     setConfigDescription(config.description || "");
-    setLevels(config.levels || []);
+    setLevels(JSON.parse(JSON.stringify(config.levels || [])));
     setIsEditing(true);
   };
 
@@ -120,6 +124,8 @@ const CourseLevelSettings = () => {
         name: `L${newOrder}`,
         order: newOrder,
         completionTimeframe: { minDays: 1, maxDays: 4 },
+        minEfficiency: "",
+        maxEfficiency: "",
         description: "",
         color: "#3B82F6",
       },
@@ -160,16 +166,24 @@ const CourseLevelSettings = () => {
 
   // Update level field
   const handleLevelChange = (index, field, value) => {
-    const newLevels = [...levels];
-    if (field.includes(".")) {
-      const [parent, child] = field.split(".");
-      newLevels[index][parent] = {
-        ...newLevels[index][parent],
-        [child]: parseInt(value) || 0,
-      };
-    } else {
-      newLevels[index][field] = value;
-    }
+    const newLevels = levels.map((lvl, idx) => {
+      if (idx !== index) return lvl;
+      if (field.includes(".")) {
+        const [parent, child] = field.split(".");
+        return {
+          ...lvl,
+          [parent]: {
+            ...lvl[parent],
+            [child]: value !== "" ? parseInt(value) || 0 : "",
+          }
+        };
+      } else {
+        return {
+          ...lvl,
+          [field]: value
+        };
+      }
+    });
     setLevels(newLevels);
   };
 
@@ -193,7 +207,7 @@ const CourseLevelSettings = () => {
       return false;
     }
 
-    // Validate timeframes
+    // Validate timeframes & efficiencies
     for (let i = 0; i < levels.length; i++) {
       const level = levels[i];
       if (!level.name.trim()) {
@@ -207,6 +221,29 @@ const CourseLevelSettings = () => {
       if (level.completionTimeframe.minDays > level.completionTimeframe.maxDays) {
         toast.error(`Level ${i + 1}: min days cannot be greater than max days`);
         return false;
+      }
+      if (level.minEfficiency !== undefined && level.minEfficiency !== null && level.minEfficiency !== "") {
+        const minEff = parseFloat(level.minEfficiency);
+        if (isNaN(minEff) || minEff < 0 || minEff > 100) {
+          toast.error(`Level ${i + 1}: Min Efficiency must be between 0 and 100`);
+          return false;
+        }
+      }
+      if (level.maxEfficiency !== undefined && level.maxEfficiency !== null && level.maxEfficiency !== "") {
+        const maxEff = parseFloat(level.maxEfficiency);
+        if (isNaN(maxEff) || maxEff < 0 || maxEff > 100) {
+          toast.error(`Level ${i + 1}: Max Efficiency must be between 0 and 100`);
+          return false;
+        }
+      }
+      if (level.minEfficiency !== undefined && level.minEfficiency !== null && level.minEfficiency !== "" &&
+          level.maxEfficiency !== undefined && level.maxEfficiency !== null && level.maxEfficiency !== "") {
+        const minEff = parseFloat(level.minEfficiency);
+        const maxEff = parseFloat(level.maxEfficiency);
+        if (minEff > maxEff) {
+          toast.error(`Level ${i + 1}: Min Efficiency cannot be greater than Max Efficiency`);
+          return false;
+        }
       }
     }
 
@@ -427,23 +464,32 @@ const CourseLevelSettings = () => {
                           </div>
 
                           <div className="space-y-2">
-                            <Label>Max Days*</Label>
+                            <Label>Min Efficiency (%)</Label>
                             <Input
                               type="number"
                               min="0"
-                              value={level.completionTimeframe.maxDays}
+                              max="100"
+                              step="0.01"
+                              value={level.minEfficiency ?? ""}
                               onChange={(e) =>
-                                handleLevelChange(index, "completionTimeframe.maxDays", e.target.value)
+                                handleLevelChange(index, "minEfficiency", e.target.value)
                               }
+                              placeholder="e.g. 60"
                             />
                           </div>
 
-                          <div className="space-y-2 md:col-span-2">
-                            <Label>Description</Label>
+                          <div className="space-y-2">
+                            <Label>Max Efficiency (%)</Label>
                             <Input
-                              value={level.description}
-                              onChange={(e) => handleLevelChange(index, "description", e.target.value)}
-                              placeholder="Describe this level..."
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.01"
+                              value={level.maxEfficiency ?? ""}
+                              onChange={(e) =>
+                                handleLevelChange(index, "maxEfficiency", e.target.value)
+                              }
+                              placeholder="e.g. 100"
                             />
                           </div>
 
@@ -463,6 +509,15 @@ const CourseLevelSettings = () => {
                                 className="flex-1"
                               />
                             </div>
+                          </div>
+
+                          <div className="space-y-2 md:col-span-2 lg:col-span-3">
+                            <Label>Description</Label>
+                            <Input
+                              value={level.description}
+                              onChange={(e) => handleLevelChange(index, "description", e.target.value)}
+                              placeholder="Describe this level..."
+                            />
                           </div>
                         </div>
 
@@ -484,6 +539,9 @@ const CourseLevelSettings = () => {
                         <span>
                           Completion timeframe: {level.completionTimeframe.minDays} -{" "}
                           {level.completionTimeframe.maxDays} days
+                          {level.minEfficiency !== undefined && level.minEfficiency !== null && level.minEfficiency !== "" && (
+                            <> | Target Efficiency: {level.minEfficiency}% - {level.maxEfficiency || "100"}%</>
+                          )}
                         </span>
                       </div>
                     </CardContent>

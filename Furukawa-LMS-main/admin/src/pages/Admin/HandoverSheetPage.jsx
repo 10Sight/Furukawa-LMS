@@ -51,24 +51,38 @@ const HandoverSheetPage = () => {
 
     // Filter departments based on user assignment
     const assignableDepartments = useMemo(() => {
-        if (!authUser) return [];
         const allDepts = departments || [];
-        const assignedIds = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
-        if (authUser?.departmentId) assignedIds.push(authUser.departmentId);
-        
-        if (isAdmin && assignedIds.length === 0) return allDepts;
-        
-        return allDepts.filter(d =>
-            assignedIds.includes(d.id) || assignedIds.includes(d._id)
-        );
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return allDepts;
+        return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
     }, [departments, authUser, isAdmin]);
 
-    // Auto-select if only one department
+    const assignableSections = useMemo(() => {
+        const allSections = sections || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [sections, authUser, isAdmin]);
+
+    const isRestricted = !isAdmin && authUser && (
+        (authUser.departments?.length > 0) || authUser.departmentId ||
+        (authUser.sections?.length > 0) || authUser.sectionId
+    );
+
+    // Auto-select when only one option is available for restricted users
     useEffect(() => {
+        if (!isRestricted) return;
         if (assignableDepartments.length === 1 && !dept) {
-            setDept(assignableDepartments[0].id || assignableDepartments[0]._id);
+            setDept(String(assignableDepartments[0].id || assignableDepartments[0]._id));
         }
-    }, [assignableDepartments, dept]);
+        if (dept && assignableSections.length === 1 && !section) {
+            setSection(String(assignableSections[0].id || assignableSections[0]._id));
+        }
+    }, [isRestricted, assignableDepartments, assignableSections, dept, section]);
 
     const selectedDeptName = useMemo(() => {
         const d = departments.find(d => String(d.id || d._id) === String(dept));
@@ -108,9 +122,10 @@ const HandoverSheetPage = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-1.5">
                             <Label className="text-xs font-semibold text-slate-500 uppercase">Department</Label>
-                            <Select 
-                                value={String(dept)} 
+                            <Select
+                                value={String(dept)}
                                 onValueChange={(val) => { setDept(val); setSection(""); }}
+                                disabled={isRestricted && assignableDepartments.length <= 1}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200">
                                     <SelectValue placeholder="Select Department" />
@@ -125,17 +140,17 @@ const HandoverSheetPage = () => {
 
                         <div className="space-y-1.5">
                             <Label className="text-xs font-semibold text-slate-500 uppercase">Section (Optional)</Label>
-                            <Select 
-                                value={String(section)} 
-                                onValueChange={(val) => setSection(val)} 
-                                disabled={!dept}
+                            <Select
+                                value={String(section)}
+                                onValueChange={(val) => setSection(val)}
+                                disabled={!dept || (isRestricted && assignableSections.length <= 1)}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200 disabled:opacity-80 disabled:bg-slate-50">
                                     <SelectValue placeholder="Select Section (All)" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="0">All Sections</SelectItem>
-                                    {sections.map((s) => (
+                                    {assignableSections.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                                     ))}
                                 </SelectContent>

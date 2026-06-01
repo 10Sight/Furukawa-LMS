@@ -256,6 +256,7 @@ const Students = () => {
       search: debouncedSearchTerm || "",
       status: statusFilter !== "ALL" ? statusFilter : "",
       unit: unitFilter !== "ALL" ? unitFilter : "",
+      includeLeft: "true",
     },
     {
       // Prevent unnecessary refetches
@@ -1473,7 +1474,7 @@ const Students = () => {
                         </p>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Select
                         value={normalizeStatus(student.status) || ""}
                         onValueChange={(newStatus) =>
@@ -1483,7 +1484,6 @@ const Students = () => {
                             student.status
                           )
                         }
-                        onClick={(e) => e.stopPropagation()} // Stop event propagation
                       >
                         <SelectTrigger className="w-[140px]">
                           {getStatusBadge(student.status)}

@@ -298,10 +298,33 @@ const formatDisplayDate = (dateStr) => {
     return `${day}-${month}-${year}`;
 };
 
+const ATTENDANCE_DATE_TEXT_COLOR = "#1e3a8a";
+
 const getPreviousAttendanceDateLabel = (stats) => {
-    const filters = stats?.data?.filters || stats?.filters || {};
-    const start = filters.masterStartDate || filters.masterAttendanceDate || filters.startDate;
-    const end = filters.masterEndDate || filters.masterAttendanceDate || filters.endDate;
+    const source = stats?.data || stats || {};
+    const filters = source?.filters || {};
+
+    const start =
+        filters.masterStartDate ||
+        filters.masterAttendanceDate ||
+        filters.attendanceDate ||
+        filters.startDate ||
+        source.masterStartDate ||
+        source.masterAttendanceDate ||
+        source.attendanceDate ||
+        source.previousAttendanceDate ||
+        source.startDate;
+
+    const end =
+        filters.masterEndDate ||
+        filters.masterAttendanceDate ||
+        filters.attendanceDate ||
+        filters.endDate ||
+        source.masterEndDate ||
+        source.masterAttendanceDate ||
+        source.attendanceDate ||
+        source.previousAttendanceDate ||
+        source.endDate;
 
     if (!start && !end) return "Attendance date: Previous date";
 
@@ -316,90 +339,27 @@ const withAttendanceDateSubtitle = (text, stats) => {
     return `${text} · ${getPreviousAttendanceDateLabel(stats)}`;
 };
 
-const renderAttendanceDateSubtitle = (subtitle) => {
-    if (!subtitle) return null;
-
-    const text = String(subtitle);
+const renderSubtitleText = (subtitle, className = "text-sm text-slate-500 mt-1") => {
+    const text = String(subtitle ?? "");
     const marker = "Attendance date:";
-    const markerIndex = text.indexOf(marker);
+    const index = text.indexOf(marker);
 
-    if (markerIndex === -1) {
-        return <span>{text}</span>;
+    if (index === -1) {
+        return <p className={className}>{subtitle}</p>;
     }
 
-    const before = text.slice(0, markerIndex);
-    const dateText = text.slice(markerIndex);
-
     return (
-        <>
-            {before}
-            <span className="text-blue-900 font-extrabold">
-                {dateText}
+        <p className={className}>
+            {text.slice(0, index)}
+            <span
+                className="font-bold"
+                style={{ color: ATTENDANCE_DATE_TEXT_COLOR }}
+            >
+                {text.slice(index)}
             </span>
-        </>
+        </p>
     );
 };
-
-const splitContractorLabelIntoTwoLines = (value = "") => {
-    const text = String(value || "").trim();
-
-    if (!text) return [BLANK_CHART_LABEL];
-
-    const words = text
-        .replace(/[\/\\_-]+/g, " ")
-        .split(/\s+/)
-        .map(word => word.trim())
-        .filter(Boolean);
-
-    if (words.length >= 2) {
-        const mid = Math.ceil(words.length / 2);
-        return [
-            words.slice(0, mid).join(" "),
-            words.slice(mid).join(" "),
-        ].filter(Boolean);
-    }
-
-    if (text.length <= 10) return [text];
-
-    const mid = Math.ceil(text.length / 2);
-    let splitAt = text.lastIndexOf(" ", mid);
-    if (splitAt <= 0) splitAt = mid;
-
-    return [
-        text.slice(0, splitAt).trim(),
-        text.slice(splitAt).trim(),
-    ].filter(Boolean);
-};
-
-const renderContractorAxisTick = ({ x, y, payload }) => {
-    const lines = splitContractorLabelIntoTwoLines(payload?.value);
-
-    return (
-        <text
-            x={x}
-            y={y + 12}
-            textAnchor="middle"
-            fill="#475569"
-            fontSize={12}
-            fontWeight={900}
-            stroke="#ffffff"
-            strokeWidth={0.65}
-            paintOrder="stroke"
-            style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
-        >
-            {lines.map((line, index) => (
-                <tspan
-                    key={`${line}-${index}`}
-                    x={x}
-                    dy={index === 0 ? 0 : 16}
-                >
-                    {line.length > 16 ? `${line.slice(0, 15)}…` : line}
-                </tspan>
-            ))}
-        </text>
-    );
-};
-
 
 const getQueryParams = (filter, extra = {}) => ({
     department: serializeMultiValue(filter.department),
@@ -1683,15 +1643,11 @@ const HighchartsPieCard = ({
             <CardHeader className="pb-2 pt-4 px-5 space-y-3">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div>
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-800">
-                            {Icon && <Icon className="w-4 h-4 text-slate-500" />}
+                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                            {Icon && <Icon className="w-6 h-6 text-slate-500" />}
                             {title}
                         </CardTitle>
-                        {subtitle && (
-                            <p className="text-xs text-slate-500 mt-1 font-semibold">
-                                {renderAttendanceDateSubtitle(subtitle)}
-                            </p>
-                        )}
+                        {subtitle && renderSubtitleText(subtitle, "text-sm text-slate-500 mt-1 font-semibold")}
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1952,9 +1908,7 @@ const FullWidthToggleChartCard = ({
                             {title}
                         </CardTitle>
 
-                        <p className="text-sm text-slate-500 mt-1">
-                            {renderAttendanceDateSubtitle(subtitle)}
-                        </p>
+                        {renderSubtitleText(subtitle, "text-sm text-slate-500 mt-1")}
                     </div>
 
                     <div className="flex items-center gap-3 flex-wrap">
@@ -2121,9 +2075,7 @@ const ContractorPrefixChartCard = ({
                             {title}
                         </CardTitle>
 
-                        <p className="text-sm text-slate-500 mt-1">
-                            {renderAttendanceDateSubtitle(subtitle)}
-                        </p>
+                        {renderSubtitleText(subtitle, "text-sm text-slate-500 mt-1")}
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
@@ -2142,7 +2094,7 @@ const ContractorPrefixChartCard = ({
             </CardHeader>
 
             <CardContent className="px-2 pb-4 pt-2">
-                <ScrollableTopChart dataLength={Math.max(chartData.length, chartData.length * 1.35)}>
+                <ScrollableTopChart dataLength={chartData.length}>
                     {isLoading && <ChartLoader />}
 
                     {!isLoading && isEmpty && (
@@ -2152,14 +2104,14 @@ const ContractorPrefixChartCard = ({
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                             data={chartData}
-                            margin={{ top: 66, right: 48, left: 4, bottom: 58 }}
-                            barCategoryGap="28%"
-                            barGap={22}
+                            margin={{ top: 66, right: 48, left: 4, bottom: 8 }}
+                            barCategoryGap="22%"
+                            barGap={18}
                         >
                             <defs>
                                 <linearGradient id="contractorPrefixGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity={1} />
-                                    <stop offset="100%" stopColor="#7c3aed" stopOpacity={0.82} />
+                                    <stop offset="0%" stopColor="#2563eb" stopOpacity={1} />
+                                    <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.82} />
                                 </linearGradient>
                             </defs>
 
@@ -2169,10 +2121,8 @@ const ContractorPrefixChartCard = ({
                                 dataKey="name"
                                 axisLine={false}
                                 tickLine={false}
-                                tick={renderContractorAxisTick}
+                                tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
                                 interval={0}
-                                height={72}
-                                tickMargin={14}
                             />
 
                             <YAxis
@@ -2196,10 +2146,10 @@ const ContractorPrefixChartCard = ({
                                     <Bar
                                         dataKey="attendanceValue"
                                         name="Attendance"
-                                        fill="#7c3aed"
+                                        fill="#2563eb"
                                         radius={[7, 7, 0, 0]}
                                         maxBarSize={34}
-                                        label={renderAttendanceLabel("#7c3aed", valueSuffix, 12)}
+                                        label={renderAttendanceLabel("#2563eb", valueSuffix, 12)}
                                     />
                                 </>
                             ) : (
@@ -2208,7 +2158,7 @@ const ContractorPrefixChartCard = ({
                                     fill="url(#contractorPrefixGrad)"
                                     radius={[7, 7, 0, 0]}
                                     maxBarSize={46}
-                                    label={renderBarValueLabel("#7c3aed", valueSuffix, 13)}
+                                    label={renderBarValueLabel("#2563eb", valueSuffix, 13)}
                                 />
                             )}
                         </BarChart>
@@ -2218,7 +2168,7 @@ const ContractorPrefixChartCard = ({
                 <SimpleLegend
                     items={[
                         ...(hasMasterComparison ? [{ color: USER_TOTAL_BAR_COLOR, label: 'Users Total' }] : []),
-                        { color: '#7c3aed', label: 'Attendance' },
+                        { color: '#2563eb', label: 'Attendance' },
                     ]}
                 />
             </CardContent>
@@ -2261,7 +2211,7 @@ const TenureFullWidthChart = ({
                             {Icon && <Icon className="w-6 h-6" style={{ color }} />}
                             {title}
                         </CardTitle>
-                        <p className="text-sm text-slate-500 mt-1">{renderAttendanceDateSubtitle(subtitle)}</p>
+                        {renderSubtitleText(subtitle, "text-sm text-slate-500 mt-1")}
                     </div>
 
                     <div className="flex items-center gap-3 flex-wrap">
@@ -2845,7 +2795,7 @@ const DashboardHome = () => {
                                 )}
                             </CardTitle>
                             <p className="text-sm text-slate-500 mt-1">
-                                Requirement line is blue and value is visible on every date
+                                Requirement line is purple and value is visible on every date
                             </p>
                         </div>
 
@@ -2885,8 +2835,8 @@ const DashboardHome = () => {
                                     </linearGradient>
 
                                     <linearGradient id="presentGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#10b981" stopOpacity={1} />
-                                        <stop offset="100%" stopColor="#059669" stopOpacity={0.85} />
+                                        <stop offset="0%" stopColor="#2563eb" stopOpacity={1} />
+                                        <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.85} />
                                     </linearGradient>
                                 </defs>
 
@@ -2926,7 +2876,7 @@ const DashboardHome = () => {
                                             fill="url(#presentGrad)"
                                             radius={[4, 4, 0, 0]}
                                             maxBarSize={20}
-                                            label={renderBarValueLabel("#059669", "", 13)}
+                                            label={renderBarValueLabel("#2563eb", "", 13)}
                                         />
                                     </>
                                 ) : (
@@ -2966,9 +2916,9 @@ const DashboardHome = () => {
                                             type="monotone"
                                             dataKey="present"
                                             name="Actual Present"
-                                            stroke="#10b981"
+                                            stroke="#2563eb"
                                             strokeWidth={2.2}
-                                            dot={{ r: 2.5, fill: "#10b981", strokeWidth: 0 }}
+                                            dot={{ r: 2.5, fill: "#2563eb", strokeWidth: 0 }}
                                             activeDot={false}
                                             label={(props) => {
                                                 const { x, y, value } = props;
@@ -2979,10 +2929,10 @@ const DashboardHome = () => {
                                                         x={x}
                                                         y={y + 16}
                                                         textAnchor="middle"
-                                                        fill="#059669"
+                                                        fill="#2563eb"
                                                         fontSize={13}
                                                         fontWeight={900}
-                                                        stroke="#059669"
+                                                        stroke="#2563eb"
                                                         strokeWidth={0.55}
                                                         paintOrder="stroke"
                                                         style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
@@ -2999,9 +2949,9 @@ const DashboardHome = () => {
                                     type="monotone"
                                     dataKey="required"
                                     name="Required"
-                                    stroke="#2563eb"
+                                    stroke="#7c3aed"
                                     strokeWidth={2.8}
-                                    dot={{ r: 3, fill: "#2563eb", strokeWidth: 0 }}
+                                    dot={{ r: 3, fill: "#7c3aed", strokeWidth: 0 }}
                                     activeDot={false}
                                     label={(props) => {
                                         const { x, y, value } = props;
@@ -3011,10 +2961,10 @@ const DashboardHome = () => {
                                             <text
                                                 x={x}
                                                 y={y + 20}
-                                                fill="#2563eb"
+                                                fill="#7c3aed"
                                                 fontSize={13}
                                                 fontWeight={900}
-                                                stroke="#2563eb"
+                                                stroke="#7c3aed"
                                                 strokeWidth={0.55}
                                                 paintOrder="stroke"
                                                 style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
@@ -3032,8 +2982,8 @@ const DashboardHome = () => {
                     <SimpleLegend
                         items={[
                             { color: '#e7ae12', label: 'Current Headcount' },
-                            { color: '#10b981', label: 'Actual Present' },
-                            { color: '#2563eb', label: 'Required', type: 'line', dashed: false },
+                            { color: '#2563eb', label: 'Actual Present' },
+                            { color: '#7c3aed', label: 'Required', type: 'line', dashed: false },
                         ]}
                     />
                 </CardContent>
@@ -3071,7 +3021,7 @@ const DashboardHome = () => {
                 }))}
                 dataKey="actual"
                 xKey="day"
-                color="#f59e0b"
+                color="#2563eb"
                 gradientId="absenteeismGrad"
                 suffix={graphValueModes.absenteeism === "percentage" ? "%" : ""}
                 chartType={chartTypes.absenteeism}
@@ -3179,7 +3129,7 @@ const DashboardHome = () => {
 
             <TenureFullWidthChart
                 title="Attendance by Joining Date / Tenure"
-                subtitle={`Present employee ${tenureValueModes.attendance === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attendanceTenureBucket)} · Attendance date: Previous date`}
+                subtitle={`Present employee ${tenureValueModes.attendance === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attendanceTenureBucket)} · ${getPreviousAttendanceDateLabel(tenureStats)}`}
                 data={buildTenureData(tenureStats, "attendance", attendanceTenureBucket, tenureValueModes.attendance, customTenureRange)}
                 color="#3b82f6"
                 gradientId="attendanceTenureGrad"
@@ -3201,9 +3151,9 @@ const DashboardHome = () => {
             <div className="grid grid-cols-1 gap-4 items-stretch">
                 <TenureFullWidthChart
                     title="Attrition by Joining Date / Tenure"
-                    subtitle={`Left employees ${tenureValueModes.attrition === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attritionTenureBucket)} · Attendance date: Previous date`}
+                    subtitle={`Left employees ${tenureValueModes.attrition === "percentage" ? "percentage" : "count"} · ${getTenureLabel(attritionTenureBucket)} · ${getPreviousAttendanceDateLabel(tenureStats)}`}
                     data={buildTenureData(tenureStats, "attrition", attritionTenureBucket, tenureValueModes.attrition, customTenureRange)}
-                    color="#7c3aed"
+                    color="#2563eb"
                     gradientId="attritionTenureGrad"
                     icon={UserX}
                     isLoading={tenureLoading}
@@ -3223,9 +3173,9 @@ const DashboardHome = () => {
 
                 <TenureFullWidthChart
                     title="Absenteeism by Joining Date / Tenure"
-                    subtitle={`Absent employee ${tenureValueModes.absenteeism === "percentage" ? "percentage" : "count"} · ${getTenureLabel(absenteeismTenureBucket)} · Attendance date: Previous date`}
+                    subtitle={`Absent employee ${tenureValueModes.absenteeism === "percentage" ? "percentage" : "count"} · ${getTenureLabel(absenteeismTenureBucket)} · ${getPreviousAttendanceDateLabel(tenureStats)}`}
                     data={buildTenureData(tenureStats, "absenteeism", absenteeismTenureBucket, tenureValueModes.absenteeism, customTenureRange)}
-                    color="#7c3aed"
+                    color="#2563eb"
                     gradientId="absenteeismTenureGrad"
                     icon={TrendingDown}
                     isLoading={tenureLoading}

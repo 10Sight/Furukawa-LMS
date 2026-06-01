@@ -15,8 +15,7 @@ import { Button } from "@/components/ui/button";
 import AttemptReviewModal from "@/components/common/AttemptReviewModal";
 import OnJobTrainingTable from "@/components/admin/OnJobTrainingTable"; // Keep this for detail view
 import OJTTrainingRecordSheet from "@/components/admin/OJTTrainingRecordSheet"; // New format
-import OJTList from "@/components/admin/OJTList";
-import CreateOJTDialog from "@/components/admin/CreateOJTDialog";
+import { useGetStudentOJTsQuery } from "@/Redux/AllApi/OnJobTrainingApi";
 // SkillMatrixCertificate import removed (moved to Skill Matrix page)
 import OperatorObservanceSheet from "@/components/admin/OperatorObservanceSheet";
 import SixteenDayMonitoringSheet from "@/components/admin/SixteenDayMonitoringSheet";
@@ -120,6 +119,16 @@ const StudentDetail = () => {
     skip: !studentId || studentId === "undefined",
   });
 
+  const {
+    data: ojtData,
+    isLoading: ojtLoading,
+    error: ojtError,
+    refetch: refetchOjt,
+  } = useGetStudentOJTsQuery(studentId, {
+    skip: !studentId || studentId === "undefined",
+    refetchOnMountOrArgChange: true,
+  });
+
   const student = studentData?.data;
   const progressList = progressData?.data || [];
   const submissions = submissionsData?.data || [];
@@ -142,7 +151,12 @@ const StudentDetail = () => {
   }, [student]);
 
   // Loading state
-  const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading;
+  const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading || ojtLoading;
+
+  const passedOjts = useMemo(() => {
+    const ojts = ojtData?.data || [];
+    return ojts.filter(o => o.result === "Pass" || o.result === "Approved");
+  }, [ojtData]);
 
   // Calculate overall statistics
   const stats = useMemo(() => {
@@ -193,6 +207,7 @@ const StudentDetail = () => {
     refetchProgress();
     refetchSubmissions();
     refetchAttempts();
+    refetchOjt();
     toast.success("Operator data refreshed successfully!");
   };
 
@@ -579,7 +594,7 @@ const StudentDetail = () => {
                             <IconTrophy size={14} className="shrink-0" />
                             <div className="flex flex-col">
                               <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Level</span>
-                              <span className="text-[10px] font-bold whitespace-nowrap">{student.currentSkill?.[assignment.machineId] || "L1"}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{student.currentSkill?.[assignment.subSectionId] || "L1"}</span>
                             </div>
                           </div>
 
@@ -1168,19 +1183,19 @@ const StudentDetail = () => {
               </TabsList>
 
               <TabsContent value="record">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xl font-bold">OJT Training Record Sheet</CardTitle>
+                <Card className="border border-slate-200 shadow-sm">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
+                    <CardTitle className="text-xl font-bold text-slate-800">OJT Training Record Sheet</CardTitle>
                     <Button variant="outline" size="sm" onClick={() => setSelectedOjtId(null)}>
                       <IconArrowLeft className="h-4 w-4 mr-2" />
                       Back to List
                     </Button>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     <OJTTrainingRecordSheet
                       ojtId={selectedOjtId}
                       studentName={student.fullName}
-                      readOnly={false}
+                      readOnly={true}
                       onBack={() => setSelectedOjtId(null)}
                     />
                   </CardContent>
@@ -1188,20 +1203,20 @@ const StudentDetail = () => {
               </TabsContent>
 
               <TabsContent value="evaluation">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xl font-bold">On Job Training Evaluation Form</CardTitle>
+                <Card className="border border-slate-200 shadow-sm">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
+                    <CardTitle className="text-xl font-bold text-slate-800">On Job Training Evaluation Form</CardTitle>
                     <Button variant="outline" size="sm" onClick={() => setSelectedOjtId(null)}>
                       <IconArrowLeft className="h-4 w-4 mr-2" />
                       Back to List
                     </Button>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     <OnJobTrainingTable
                       ojtId={selectedOjtId}
                       studentName={student.fullName}
                       model="-"
-                      readOnly={false}
+                      readOnly={true}
                       onBack={() => setSelectedOjtId(null)}
                     />
                   </CardContent>
@@ -1209,27 +1224,90 @@ const StudentDetail = () => {
               </TabsContent>
             </Tabs>
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>On Job Training</CardTitle>
-                <CardDescription>Manage Level-1 Practical Evaluations</CardDescription>
+            <Card className="border-slate-200 shadow-md">
+              <CardHeader className="pb-3 border-b bg-slate-50/50">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                      <IconTrophy className="h-5 w-5 text-amber-500" />
+                      On Job Training Portfolio
+                    </CardTitle>
+                    <CardDescription>
+                      Approved and passed Level-1 Practical Evaluations for this operator
+                    </CardDescription>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent>
-                <OJTList
-                  studentId={studentId}
-                  onViewDetails={(ojt) => setSelectedOjtId(ojt.id || ojt._id)}
-                  onAddTraining={() => setCreateOjtOpen(true)}
-                />
+              <CardContent className="pt-6">
+                {passedOjts.length === 0 ? (
+                  <div className="text-center py-16 border border-dashed border-slate-200 rounded-xl bg-slate-50/30 text-slate-500">
+                    <IconTrophy className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                    <h3 className="text-base font-semibold text-slate-700">No Passed OJT Records</h3>
+                    <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
+                      This operator has not passed any On Job Training assessments yet.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow>
+                          <TableHead className="font-bold text-slate-700">Training Topic</TableHead>
+                          <TableHead className="font-bold text-slate-700">Department</TableHead>
+                          <TableHead className="font-bold text-slate-700">Section & Line</TableHead>
+                          <TableHead className="font-bold text-slate-700">Sub-Section & Machine</TableHead>
+                          <TableHead className="font-bold text-slate-700">Approved Date</TableHead>
+                          <TableHead className="font-bold text-slate-700">Status</TableHead>
+                          <TableHead className="font-bold text-slate-700 text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {passedOjts.map((ojtItem) => (
+                          <TableRow key={ojtItem.id || ojtItem._id} className="hover:bg-slate-50/40 transition-colors">
+                            <TableCell className="font-semibold text-slate-900">
+                              {ojtItem.trainingTopic || ojtItem.name || "Practical Evaluation"}
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              {ojtItem.department?.name || ojtItem.department || "-"}
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              <span className="font-medium">{ojtItem.section?.name || ojtItem.section || "-"}</span>
+                              <span className="text-slate-400 mx-1">/</span>
+                              <span className="text-xs">{ojtItem.line?.name || ojtItem.line || "-"}</span>
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              <span className="font-medium">{ojtItem.subSection?.name || ojtItem.subSection || "-"}</span>
+                              <span className="text-slate-400 mx-1">/</span>
+                              <span className="text-xs font-mono bg-slate-100 px-1 rounded">{ojtItem.machine?.name || ojtItem.machine || "-"}</span>
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              {new Date(ojtItem.updatedAt || ojtItem.createdAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 font-bold hover:bg-emerald-100">
+                                Approved
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-indigo-100 text-indigo-700 hover:bg-indigo-50/50 hover:text-indigo-800 gap-1.5"
+                                onClick={() => setSelectedOjtId(ojtItem.id || ojtItem._id)}
+                              >
+                                <IconEye className="h-4 w-4" />
+                                View Portfolio
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
-
-          <CreateOJTDialog
-            open={createOjtOpen}
-            onOpenChange={setCreateOjtOpen}
-            studentId={studentId}
-            onSuccess={handleRefreshAll}
-          />
         </TabsContent>
 
 

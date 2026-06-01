@@ -8,6 +8,8 @@ class SubSection {
         this.lineId = data.lineId;
         this.description = data.description;
         this.minimumRequiredLevel = data.minimumRequiredLevel || null;
+        this.minEfficiency = data.minEfficiency !== undefined ? data.minEfficiency : null;
+        this.maxEfficiency = data.maxEfficiency !== undefined ? data.maxEfficiency : null;
         this.isActive = data.isActive !== undefined ? data.isActive : true;
         this.users = typeof data.users === 'string' ? JSON.parse(data.users) : (data.users || []);
         this.subSectionCount = data.subSectionCount || this.users.length || 0;
@@ -72,6 +74,8 @@ class SubSection {
                     description NVARCHAR(MAX),
                     isActive BIT DEFAULT 1,
                     users NVARCHAR(MAX) DEFAULT '[]',
+                    minEfficiency DECIMAL(5,2) NULL,
+                    maxEfficiency DECIMAL(5,2) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT FK_SubSections_Lines FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE
@@ -87,6 +91,14 @@ class SubSection {
                 IF COL_LENGTH('sub_sections', 'minimumRequiredLevel') IS NULL
                 BEGIN
                     ALTER TABLE [sub_sections] ADD minimumRequiredLevel NVARCHAR(50);
+                END
+                IF COL_LENGTH('sub_sections', 'minEfficiency') IS NULL
+                BEGIN
+                    ALTER TABLE [sub_sections] ADD minEfficiency DECIMAL(5,2) NULL;
+                END
+                IF COL_LENGTH('sub_sections', 'maxEfficiency') IS NULL
+                BEGIN
+                    ALTER TABLE [sub_sections] ADD maxEfficiency DECIMAL(5,2) NULL;
                 END
             END`;
             await executeQuery(query);
@@ -136,7 +148,7 @@ class SubSection {
         const subSection = new SubSection(data);
 
         const fields = [
-            "name", "lineId", "description", "minimumRequiredLevel", "isActive", "createdAt"
+            "name", "lineId", "description", "minimumRequiredLevel", "minEfficiency", "maxEfficiency", "isActive", "createdAt"
         ];
 
         if (!subSection.createdAt) subSection.createdAt = new Date();
@@ -207,7 +219,7 @@ class SubSection {
 
     async save() {
         const fields = [
-            "name", "lineId", "description", "minimumRequiredLevel", "isActive"
+            "name", "lineId", "description", "minimumRequiredLevel", "minEfficiency", "maxEfficiency", "isActive"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

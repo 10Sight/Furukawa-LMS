@@ -76,10 +76,10 @@ const DEFAULT_SKILL_CONFIG = {
         dateOfIssue: '04-02-2018'
     },
     levels: {
-        0: { title: "OK in education training of operation contents but speed is no more than 74%", items: [{ id: 1, text: "Learnt the basic knowledge of process or not", method: "Confirm the education record" }, { id: 2, text: "The understanding test result is satisfying the standard or not", method: "Look in the understand test result of education record" }, { id: 3, text: "The operation method is correct with the standard or not", method: "Observe his operation by each product (type)" }, { id: 4, text: "Whether the operation is as operation-steps. Whether he knows the inspection method, name of part, equipment, system", method: "Observe his operation by each product.\nCheck the method of inspection at begin of operation" }, { id: 5, text: "Whether he knows the evaluation standard in operation (OK or NG product)", method: "Make question and hear his answer" }] },
+        0: { title: "OK in education training of operation contents but speed is no more than 74%", items: [{ id: 1, text: "Learnt the basic knowledge of process or not", method: "Confirm the education record" }, { id: 2, text: "The understanding test result is satisfying the standard or not", method: "Look in the understand test result of education record" }, { id: 3, text: "The operation method is correct with the standard time or not", method: "Observe his operation by each product (type)" }, { id: 4, text: "Whether the operation is as operation-steps.", method: "Observe his operation by each product." }, { id: 5, text: "Whether he knows the inspection method, name of part, equipment, system", method: "Check the method of inspection at begin of operation" }, { id: 6, text: "Whether he knows the evaluation standard in operation (OK or NG product)", method: "Make question and hear his answer" }] },
         1: { title: "OK in education training of operation contents but speed is just 75-99%", items: [{ id: 1, text: "Whether he confirms the quality correctly?", method: "Observe the operation" }, { id: 2, text: "Whether his operation in charge is at least 75%?", method: "Measure the operation time" }, { id: 3, text: "Whether he can report the abnormality (Andon) correctly?", method: "Judge by operation observance and question" }, { id: 4, text: "Whether he changes the steps of operation or operation method by himself?", method: "Observe the operation" }] },
-        2: { title: "Able to operation by himself (Speed & operation as the standard is OK)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?", method: "Make question and fill the answer" }, { id: 3, text: "Whether he understand the operation standard and obey as it. Can he give the an idea of improvement?", method: "Observe the operation in over 2 cycles and make question to him about the improvement (Standard operation table)" }] },
-        3: { title: "Able to teach other operators", items: [{ id: 1, text: "Whether the result in understanding test was over the standard", method: "Look in the understanding test result of education record" }, { id: 2, text: "Whether he understands the method of teaching", method: "Make questions about the teaching method and confirmation when teaching" }, { id: 3, text: "Whether he is good at confirmation about the understanding after teaching or in teaching", method: "Confirm the teaching method" }, { id: 4, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?", method: "Confirm the teaching method" }, { id: 5, text: "Whether he understand the operation standard and obey as it.", method: "Confirm the teaching method and operation content (basing on the standard-operation-table)" }] }
+        2: { title: "Able to operation by himself (Speed more than 99% & operation as the standard is OK)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?", method: "Make question and fill the answer" }, { id: 3, text: "Whether he understand the operation standard and obey as it. Can he give the an idea of improvement?", method: "Observe the operation in over 2 cycles and make question to him about the improvement (Standard operation table)" }] },
+        3: { title: "Speed more than 99% & operation as the standard is OK and (Able to teach other operators)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether the result in understanding test was over the standard", method: "Look in the understanding test result of education record" }, { id: 3, text: "Whether he understands the method of teaching", method: "Make questions about the teaching method and confirmation when teaching" }, { id: 4, text: "Whether he is good at confirmation about the understanding after teaching or in teaching", method: "Confirm the teaching method" }, { id: 5, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?", method: "Confirm the teaching method" }, { id: 6, text: "Whether he understand the operation standard and obey as it.", method: "Confirm the teaching method and operation content (basing on the standard-operation-table)" }] }
     }
 };
 
@@ -185,12 +185,35 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
         if (!studentId) return;
         try {
             setLoading(true);
+
+            // Reset all user-specific state before fetching new user's data
+            const defaultHeader = {
+                dateOfEvaluation: formatTodayDate(),
+                trainee: studentName || '',
+                employeeNo: employeeCode || '',
+                processInCharge: '',
+                resultPerson: authUser?.fullName || authUser?.name || ''
+            };
+            const defaultDoc = {
+                docNo: 'FRM-HR-007',
+                revNo: '02',
+                revDate: '06/10/17',
+                dateOfIssue: '04-02-2018',
+                approved: '',
+                confirmed: '',
+                planned: authUser?.fullName || authUser?.name || ''
+            };
+            setHeaderData(defaultHeader);
+            setDocData(defaultDoc);
+            setEvalData({});
+            setOpinion('');
+
             const response = await axiosInstance.get(`/api/skill-matrix/evaluation/${studentId}`);
             if (response.data.success && !response.data.data.isNew) {
                 const data = response.data.data;
-                setHeaderData(data.headerData || headerData);
+                setHeaderData(data.headerData || defaultHeader);
 
-                let fetchedDocData = data.docData || docData;
+                let fetchedDocData = data.docData || defaultDoc;
                 if (fetchedDocData.revNo && typeof fetchedDocData.revNo === 'string' && fetchedDocData.revNo.includes('.....')) {
                     const parts = fetchedDocData.revNo.split('.....');
                     fetchedDocData = {
@@ -522,7 +545,12 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                     )}
                                 </div>
                                 <div className="w-1/3 p-1 flex items-center justify-center">
-                                    <input className="w-full text-center outline-none text-xs" value={docData.planned || ''} onChange={e => setDocData({ ...docData, planned: e.target.value })} />
+                                    <textarea
+                                        className="w-full text-center outline-none text-xs resize-none bg-transparent leading-tight"
+                                        rows={2}
+                                        value={docData.planned || ''}
+                                        onChange={e => setDocData({ ...docData, planned: e.target.value })}
+                                    />
                                 </div>
                             </div>
                         </div >
@@ -568,37 +596,37 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                                     <div className="flex-1 p-2 border-r border-black whitespace-pre-wrap">{item.text}</div>
                                                     <div className="w-[250px] p-2 border-r border-black whitespace-pre-wrap">{item.method}</div>
                                                     <div className="w-[80px] p-2 border-r border-black flex items-center justify-center bg-white">
-                                                         <textarea
-                                                             className="w-full h-full min-h-[60px] resize-none outline-none bg-transparent text-xs p-1 text-center border border-transparent hover:border-gray-200 focus:border-gray-300 rounded transition-all duration-150"
-                                                             rows={3}
-                                                             placeholder="..."
-                                                             value={currentData.standardText || ''}
-                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
-                                                         />
-                                                     </div>
-                                                     <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-2 bg-white">
-                                                         <select
-                                                             className="w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400"
-                                                             value={currentData.standard || ''}
-                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
-                                                         >
-                                                             <option value="">Select</option>
-                                                             <option value="OK">OK</option>
-                                                             <option value="NG">NG</option>
-                                                         </select>
-                                                         {currentData.standard === 'OK' && (
-                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                 <span className="font-bold text-gray-500">OK</span>
-                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} /> )</span>
-                                                             </div>
-                                                         )}
-                                                         {currentData.standard === 'NG' && (
-                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                 <span className="font-bold text-gray-500">NG</span>
-                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} /> )</span>
-                                                             </div>
-                                                         )}
-                                                     </div>
+                                                        <textarea
+                                                            className="w-full h-full min-h-[60px] resize-none outline-none bg-transparent text-xs p-1 text-center border border-transparent hover:border-gray-200 focus:border-gray-300 rounded transition-all duration-150"
+                                                            rows={3}
+                                                            placeholder="..."
+                                                            value={currentData.standardText || ''}
+                                                            onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-2 bg-white">
+                                                        <select
+                                                            className="w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400"
+                                                            value={currentData.standard || ''}
+                                                            onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
+                                                        >
+                                                            <option value="">Select</option>
+                                                            <option value="OK">OK</option>
+                                                            <option value="NG">NG</option>
+                                                        </select>
+                                                        {currentData.standard === 'OK' && (
+                                                            <div className="flex items-center justify-center gap-1.5 w-full text-xs">
+                                                                <span className="font-bold text-gray-500">OK</span>
+                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} /> )</span>
+                                                            </div>
+                                                        )}
+                                                        {currentData.standard === 'NG' && (
+                                                            <div className="flex items-center justify-center gap-1.5 w-full text-xs">
+                                                                <span className="font-bold text-gray-500">NG</span>
+                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} /> )</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <div className="w-[150px] p-2 bg-white">
                                                         <textarea
                                                             className="w-full h-full resize-none outline-none bg-transparent"

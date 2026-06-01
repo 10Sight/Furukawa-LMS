@@ -252,6 +252,7 @@ export const PAGE_REGISTRY = [
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
     { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
     { key: "learning", label: "Learning", labelKey: "nav.learning", layout: "admin", link: "/admin/learning", icon: "IconBook" },
+    { key: "dojo-evaluation-test", label: "DOJO Evaluation Test", labelKey: "nav.evaluationTest", layout: "admin", link: "/admin/evaluation-test", icon: "IconClipboard" },
 
     // Dashboard-specific pages (often considered core Admin functions)
     { key: "dashboard-home", label: "Dashboard", labelKey: "nav.dashboard", layout: "dashboard", link: "/dashboard", icon: "IconLayoutDashboardFilled" },
@@ -287,6 +288,12 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/edit-test-paper/", key: "test-paper" },
     { layout: "admin", prefix: "/admin/take-test/", key: "test-paper" },
     { layout: "admin", prefix: "/admin/on-job-training", key: "on-job-training" },
+    { layout: "admin", Prefix: "/admin/evaluation-test", key: "dojo-evaluation-test" },
+    { layout: "admin", prefix: "/admin/add-evaluation-test", key: "dojo-evaluation-test" },
+    { layout: "admin", prefix: "/admin/edit-evaluation-test/", key: "dojo-evaluation-test" },
+    { layout: "admin", prefix: "/admin/attempt-evaluation-test/", key: "dojo-evaluation-test" },
+    { layout: "admin", prefix: "/admin/view-evaluation-attempt/", key: "dojo-evaluation-test" },
+    { layout: "cms", prefix: "/cms/abnormal-condition", key: "abnormal-condition" },
 
     // Trainer layout
     { key: "trainer-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "trainer", link: "/trainer", icon: "IconLayoutDashboardFilled" },
@@ -327,6 +334,7 @@ export const PAGE_REGISTRY = [
     // CMS layout
     { key: "cms-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "cms", link: "/cms", icon: "IconLayoutDashboardFilled" },
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
+    { key: "abnormal-condition", label: "Abnormal Condition", labelKey: "nav.abnormalCondition", layout: "cms", link: "/cms/abnormal-condition", icon: "IconAlertTriangle" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
     { key: "landing-page", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];

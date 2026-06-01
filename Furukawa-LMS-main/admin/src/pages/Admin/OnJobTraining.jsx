@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -50,6 +50,7 @@ import OJTTrainingRecordSheet from "@/components/admin/OJTTrainingRecordSheet";
 
 const OnJobTraining = () => {
     const { user: authUser } = useSelector((state) => state.auth);
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
 
     const hasPermission = (permission) => {
         if (!authUser) return false;
@@ -119,6 +120,35 @@ const OnJobTraining = () => {
     const lines = lineData?.data || [];
     const subSections = subSectionData?.data || [];
     const ojtList = ojtData?.data || [];
+
+    const assignableDepartments = useMemo(() => {
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return departments;
+        return departments.filter(d => assignedIds.includes(String(d._id || d.id)));
+    }, [departments, authUser, isAdmin]);
+
+    const assignableSections = useMemo(() => {
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || isAdmin || assignedIds.length === 0) return sections;
+        return sections.filter(s => assignedIds.includes(String(s._id || s.id)));
+    }, [sections, authUser, isAdmin]);
+
+    const isRestricted = !isAdmin && authUser && (
+        (authUser.departments?.length > 0) || authUser.departmentId ||
+        (authUser.sections?.length > 0) || authUser.sectionId
+    );
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !selectedDepartment)
+            setSelectedDepartment(String(assignableDepartments[0]._id || assignableDepartments[0].id));
+        if (selectedDepartment && assignableSections.length === 1 && !selectedSection)
+            setSelectedSection(String(assignableSections[0]._id || assignableSections[0].id));
+    }, [isRestricted, assignableDepartments, assignableSections, selectedDepartment, selectedSection]);
 
     // Result Badge Helper
     const getResultBadge = (result) => {
@@ -203,7 +233,7 @@ const OnJobTraining = () => {
                                     setSelectedSection("");
                                     setSelectedLine("");
                                     setSelectedSubSection("");
-                                }}>
+                                }} disabled={isRestricted && assignableDepartments.length <= 1}>
                                     <SelectTrigger className="h-8 text-xs font-semibold">
                                         <SelectValue placeholder="All Departments" />
                                     </SelectTrigger>
@@ -212,7 +242,7 @@ const OnJobTraining = () => {
                                         {deptLoading ? (
                                             <SelectItem value="loading" disabled>Loading...</SelectItem>
                                         ) : (
-                                            departments.map(d => (
+                                            assignableDepartments.map(d => (
                                                 <SelectItem key={d._id || d.id} value={String(d._id || d.id)}>{d.name}</SelectItem>
                                             ))
                                         )}
@@ -227,7 +257,7 @@ const OnJobTraining = () => {
                                     setSelectedSection(val);
                                     setSelectedLine("");
                                     setSelectedSubSection("");
-                                }} disabled={!selectedDepartment || selectedDepartment === "all"}>
+                                }} disabled={(!selectedDepartment || selectedDepartment === "all") || (isRestricted && assignableSections.length <= 1)}>
                                     <SelectTrigger className="h-8 text-xs font-semibold">
                                         <SelectValue placeholder="All Sections" />
                                     </SelectTrigger>
@@ -236,8 +266,8 @@ const OnJobTraining = () => {
                                         {sectionLoading ? (
                                             <SelectItem value="loading" disabled>Loading...</SelectItem>
                                         ) : (
-                                            sections.map(s => (
-                                                <SelectItem key={s._id || s.id} value={String(s._id || s.id)}>{s.name} ({s.category})</SelectItem>
+                                            assignableSections.map(s => (
+                                                <SelectItem key={s._id || s.id} value={String(s._id || s.id)}>{s.name}</SelectItem>
                                             ))
                                         )}
                                     </SelectContent>
@@ -426,14 +456,12 @@ const OnJobTraining = () => {
             )}
 
             {/* Create OJT session dialog */}
-            <CreateOJTDialog 
-                open={createDialogOpen} 
-                onOpenChange={setCreateDialogOpen} 
-                onSuccess={() => {
-                    refetch();
-                }}
-                initialDepartmentId={queryDepartmentId}
-                initialSectionId={querySectionId}
+            <CreateOJTDialog
+                open={createDialogOpen}
+                onOpenChange={setCreateDialogOpen}
+                onSuccess={() => { refetch(); }}
+                initialDepartmentId={queryDepartmentId || (isRestricted ? selectedDepartment : "")}
+                initialSectionId={querySectionId || (isRestricted ? selectedSection : "")}
                 initialLineId={queryLineId}
                 initialSubSectionId={querySubSectionId}
             />

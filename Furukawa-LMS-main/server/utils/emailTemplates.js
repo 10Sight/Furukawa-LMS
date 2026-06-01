@@ -710,10 +710,191 @@ export const generateMenteeFeedbackEmail = ({
     `;
 };
 
-export const generateMaxLevelNotificationEmail = ({ 
-    instructorName, 
-    studentName, 
-    studentId, 
+export const generateCombinedMonitoringEmail = ({
+    operatorName,
+    employeeCode,
+    departmentName,
+    processName,
+    headerInfo,
+    gridData,
+    sheetConfig,
+    topTableData,
+    dailyLogs,
+    portalUrl
+}) => {
+    const questions = [
+        { id: 1, topic: "Have you got On Job training from Mentor?" },
+        { id: 2, topic: "Has today training content helped you in your work?" },
+        { id: 3, topic: "Have you face any misbehaviour on work station by any person?" },
+        { id: 4, topic: "Has mentor given solution of your query/problem?" },
+        { id: 5, topic: "Are required resources available on work station?" },
+        { id: 6, topic: "Other Issue/problem" },
+        { id: 7, topic: "Suggestion if any" },
+    ];
+
+    // --- Monitoring Sheet table ---
+    const monitoringDayHeaders = Array.from({ length: 16 }, (_, i) =>
+        `<th style="padding:4px;border:1px solid #000;background:#f0f9ff;font-size:8px;">D${i + 1}</th>`
+    ).join('');
+
+    let monitoringBody = '';
+    (sheetConfig || []).forEach(cat => {
+        monitoringBody += `<tr><td colspan="19" style="padding:5px;border:1px solid #000;background:#e2e8f0;font-weight:bold;font-size:10px;">${cat.category.replace(/\n/g, '<br/>')}</td></tr>`;
+        cat.rows.forEach(row => {
+            let dayCells = '';
+            for (let d = 1; d <= 16; d++) {
+                const val = gridData[`${row.id}_d${d}`] || '';
+                const bg = val === 'P' ? '#dcfce7' : val === 'X' ? '#fee2e2' : '#fff';
+                dayCells += `<td style="padding:4px;border:1px solid #000;text-align:center;font-size:9px;background:${bg};">${val}</td>`;
+            }
+            monitoringBody += `<tr>
+                <td style="padding:4px;border:1px solid #000;font-size:9px;width:28%;">${row.label.replace(/\n/g, '<br/>')}</td>
+                <td style="padding:4px;border:1px solid #000;text-align:center;font-size:9px;">${row.weight}</td>
+                ${dayCells}
+                <td style="padding:4px;border:1px solid #000;text-align:center;font-size:9px;background:#f8fafc;">${cat.target || ''}</td>
+            </tr>`;
+        });
+    });
+
+    // --- Feedback Sheet tables ---
+    const feedbackDayHeaders = Array.from({ length: 16 }, (_, i) =>
+        `<th style="padding:4px;border:1px solid #000;background:#fef08a;font-size:8px;">D${i + 1}</th>`
+    ).join('');
+
+    const feedbackTopRows = questions.map(q => {
+        const cells = Array.from({ length: 16 }).map((_, i) => {
+            const val = topTableData?.[q.id]?.[i] || '-';
+            return `<td style="padding:4px;border:1px solid #000;text-align:center;font-size:9px;">${val}</td>`;
+        }).join('');
+        return `<tr><td style="padding:4px;border:1px solid #000;font-size:9px;">${q.topic}</td>${cells}</tr>`;
+    }).join('');
+
+    const feedbackLogRows = (dailyLogs || []).map((log, i) => `
+        <tr>
+            <td style="padding:4px;border:1px solid #000;text-align:center;font-weight:bold;">Day ${i + 1}</td>
+            <td style="padding:4px;border:1px solid #000;">${log.associatesFeedback || '-'}</td>
+            <td style="padding:4px;border:1px solid #000;">${log.mentorAction || '-'}</td>
+            <td style="padding:4px;border:1px solid #000;">${log.status1 || '-'}</td>
+            <td style="padding:4px;border:1px solid #000;">${log.areaEngineer || '-'}</td>
+            <td style="padding:4px;border:1px solid #000;">${log.status2 || '-'}</td>
+        </tr>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body { font-family: Arial, sans-serif; line-height: 1.4; color: #333; }
+    .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+    .section-title { font-size: 16px; font-weight: bold; color: #fff; padding: 10px 14px; margin: 30px 0 0 0; border-radius: 4px 4px 0 0; }
+    .info-grid { display: table; width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    .info-row { display: table-row; }
+    .info-cell { display: table-cell; padding: 5px; border-bottom: 1px solid #eee; }
+    .label { font-weight: bold; color: #666; width: 150px; }
+    .sheet-table { width: 100%; border-collapse: collapse; border: 2px solid #000; }
+    .footer { font-size: 11px; color: #999; text-align: center; margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <div style="text-align:center;border-bottom:3px solid #2563eb;margin-bottom:20px;padding-bottom:10px;">
+        <h1 style="color:#2563eb;margin:0;">16-Day Monitoring + Mentee Feedback Report</h1>
+        <p style="margin:4px 0;color:#555;">Furukawa Learning Management System</p>
+    </div>
+
+    <div class="info-grid">
+        <div class="info-row">
+            <div class="info-cell label">Operator Name:</div>
+            <div class="info-cell">${operatorName}</div>
+            <div class="info-cell label">Employee Code:</div>
+            <div class="info-cell">${employeeCode}</div>
+        </div>
+        <div class="info-row">
+            <div class="info-cell label">Department:</div>
+            <div class="info-cell">${departmentName}</div>
+            <div class="info-cell label">Process Name:</div>
+            <div class="info-cell">${processName || 'N/A'}</div>
+        </div>
+        <div class="info-row">
+            <div class="info-cell label">Handover Date:</div>
+            <div class="info-cell">${headerInfo?.handoverDate || 'N/A'}</div>
+            <div class="info-cell label">Checked By:</div>
+            <div class="info-cell">${headerInfo?.checkedBy || 'N/A'}</div>
+        </div>
+        <div class="info-row">
+            <div class="info-cell label">Verified By:</div>
+            <div class="info-cell">${headerInfo?.verifiedBy || 'Pending'}</div>
+            <div class="info-cell label">Approved By:</div>
+            <div class="info-cell">${headerInfo?.approvedBy || 'Pending'}</div>
+        </div>
+    </div>
+
+    <!-- SECTION 1: 16-Day Monitoring Sheet -->
+    <div class="section-title" style="background:#2563eb;">Associate Performance Monitoring Check Sheet</div>
+    <table class="sheet-table">
+        <thead>
+            <tr>
+                <th style="padding:6px;border:1px solid #000;background:#e2e8f0;font-size:9px;">Check Point / Criteria</th>
+                <th style="padding:6px;border:1px solid #000;background:#e2e8f0;font-size:9px;">Wt</th>
+                ${monitoringDayHeaders}
+                <th style="padding:6px;border:1px solid #000;background:#e2e8f0;font-size:9px;">Target</th>
+            </tr>
+        </thead>
+        <tbody>${monitoringBody}</tbody>
+    </table>
+
+    <!-- SECTION 2: Mentee Feedback Sheet -->
+    <div class="section-title" style="background:#854d0e;margin-top:40px;">Mentees Feedback Monitoring Sheet</div>
+    <table class="sheet-table">
+        <thead>
+            <tr>
+                <th style="padding:6px;border:1px solid #000;background:#fef9c3;font-size:9px;text-align:left;">Topic</th>
+                ${feedbackDayHeaders}
+            </tr>
+        </thead>
+        <tbody>${feedbackTopRows}</tbody>
+    </table>
+
+    <div style="margin-top:20px;">
+        <p style="font-weight:bold;font-size:12px;margin-bottom:4px;">Detailed Logs</p>
+        <table class="sheet-table" style="font-size:10px;">
+            <thead>
+                <tr>
+                    <th style="padding:5px;border:1px solid #000;background:#e2e8f0;">Day</th>
+                    <th style="padding:5px;border:1px solid #000;background:#e2e8f0;">Associates Feedback</th>
+                    <th style="padding:5px;border:1px solid #000;background:#e2e8f0;">Mentor Action Plan</th>
+                    <th style="padding:5px;border:1px solid #000;background:#e2e8f0;">Status</th>
+                    <th style="padding:5px;border:1px solid #000;background:#e2e8f0;">Area Engineer Verification</th>
+                    <th style="padding:5px;border:1px solid #000;background:#e2e8f0;">Status</th>
+                </tr>
+            </thead>
+            <tbody>${feedbackLogRows}</tbody>
+        </table>
+    </div>
+
+    <div style="margin-top:30px;text-align:center;">
+        <a href="${portalUrl}"
+           style="background-color:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">
+            Review in LMS Portal
+        </a>
+    </div>
+
+    <div class="footer">
+        <p>This is an automated combined report generated by the Furukawa LMS.</p>
+        <p>&copy; ${new Date().getFullYear()} Furukawa. All rights reserved.</p>
+    </div>
+</div>
+</body>
+</html>
+    `;
+};
+
+export const generateMaxLevelNotificationEmail = ({
+    instructorName,
+    studentName,
+    studentId,
     level, 
     departmentName 
 }) => {
@@ -1225,6 +1406,93 @@ export const generateSkillMatrixEmail = ({
 };
 
 
+export const generateHandoverApprovalRequestEmail = ({ userName, empCode, departmentName, marks, process, date, portalUrl }) => {
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Handover Approval Required</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+    <div style="max-width:600px;margin:30px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);">
+
+        <!-- Header -->
+        <div style="background:#1d4ed8;padding:24px 32px;">
+            <div style="font-size:13px;color:#bfdbfe;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
+            <div style="font-size:20px;color:#ffffff;font-weight:700;margin-top:6px;">Action Required: Handover Approval</div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:28px 32px;">
+            <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear HOD / Incharge,</p>
+            <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
+                The following employee has been added to the <strong>Handover Sheet</strong> for
+                <strong>${departmentName}</strong> and is awaiting your review and approval.
+            </p>
+
+            <!-- Details Card -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;width:160px;">Employee Name</td>
+                        <td style="padding:7px 0;color:#111827;font-weight:700;font-size:15px;">${userName}</td>
+                    </tr>
+                    ${empCode ? `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Emp. Code</td>
+                        <td style="padding:7px 0;color:#111827;">${empCode}</td>
+                    </tr>` : ''}
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Department</td>
+                        <td style="padding:7px 0;color:#111827;">${departmentName}</td>
+                    </tr>
+                    ${marks ? `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Marks Secured</td>
+                        <td style="padding:7px 0;color:#111827;">${marks}</td>
+                    </tr>` : ''}
+                    ${process ? `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Process / Sub-Section</td>
+                        <td style="padding:7px 0;color:#111827;">${process}</td>
+                    </tr>` : ''}
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Date</td>
+                        <td style="padding:7px 0;color:#111827;">${date}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Action Steps -->
+            <div style="background:#eff6ff;border-left:4px solid #3b82f6;border-radius:4px;padding:14px 18px;margin-bottom:24px;">
+                <p style="margin:0 0 8px;color:#1e40af;font-weight:700;font-size:13px;">Action Required</p>
+                <ol style="margin:0;padding-left:18px;color:#374151;font-size:13px;line-height:1.8;">
+                    <li>Open the Handover Sheet using the button below</li>
+                    <li>Review the employee entry for <strong>${userName}</strong></li>
+                    <li>Click <strong>Approve</strong> or <strong>Reject</strong> on that row</li>
+                    <li>Once approved, please initiate the <strong>16-Day Monitoring</strong> for this employee</li>
+                </ol>
+            </div>
+
+            <!-- CTA Button -->
+            <div style="text-align:center;margin:28px 0;">
+                <a href="${portalUrl}"
+                   style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+                    Open Handover Sheet
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
+            <p style="margin:0;color:#94a3b8;font-size:11px;">
+                This is an automated notification from the FME Digital Portal. &nbsp;|&nbsp; ${new Date().toLocaleString()}
+            </p>
+        </div>
+    </div>
+</body>
+</html>`;
+};
+
 export default {
     generateWelcomeEmail,
     generateInstructorWelcomeEmail,
@@ -1233,8 +1501,10 @@ export default {
     generateSixteenDayMonitoringEmail,
     generateThreeDayMonitoringEmail,
     generateMenteeFeedbackEmail,
+    generateCombinedMonitoringEmail,
     generateMaxLevelNotificationEmail,
     generateHandoverSheetEmail,
     generateTenCycleSheetEmail,
-    generateSkillMatrixEmail
+    generateSkillMatrixEmail,
+    generateHandoverApprovalRequestEmail
 };

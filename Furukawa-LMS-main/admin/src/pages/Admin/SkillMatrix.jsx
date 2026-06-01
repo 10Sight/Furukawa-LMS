@@ -139,7 +139,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         stationId: selectedStation,
         month: selectedMonth,
     }, {
-        skip: !selectedDepartment || !selectedLine || !selectedMonth || !isMatrixOpen
+        skip: !selectedDepartment || !selectedMonth || !isMatrixOpen
     });
 
     const { data: matrixListData, isLoading: isMatrixListLoading } = useGetSkillMatrixListQuery({
@@ -203,7 +203,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         const searchLower = evalSearchText.toLowerCase();
         return users.filter(u =>
             (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-            (u.cardNo || "").toLowerCase().includes(searchLower)
+            (u.cardNo || u.empId || "").toLowerCase().includes(searchLower)
         );
     }, [evalUsersData, evalSearchText]);
 
@@ -253,8 +253,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 
         // Filter by selected station if selected
         if (observanceStation && observanceStation !== "All" && observanceStation !== "undefined") {
+            const observanceMachine = activeObservanceMachines.find(m => String(m._id || m.id) === String(observanceStation));
+            const subSecId = observanceMachine?.subSectionId;
             users = users.filter(u => {
-                const hasSkill = u.currentSkill && u.currentSkill[observanceStation] !== undefined;
+                const hasSkill = u.currentSkill && subSecId && u.currentSkill[String(subSecId)] !== undefined;
                 const hasAssignment = u.assignments && u.assignments.some(a => String(a.machineId || a.machine || a) === String(observanceStation));
                 return hasSkill || hasAssignment;
             });
@@ -422,7 +424,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     name: machine.name,
                     critical: "Non-Critical",
                     min: "L-1",
-                    curr: user.currentSkill?.[String(machine._id || machine.id)] || user.currentLevel || null, // Use user skill if available, else global level
+                    curr: user.currentSkill?.[String(machine.subSectionId)] || user.currentLevel || null, // Use user skill if available, else global level
                 }));
 
                 const mergedStations = activeMachines.map(machine => {
@@ -434,13 +436,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                         min: savedStation?.min || "L-1",
                         curr: (savedStation?.curr && savedStation.curr !== "L-1")
                             ? savedStation.curr
-                            : (user.currentSkill?.[String(machine._id || machine.id)] || user.currentLevel || null),
+                            : (user.currentSkill?.[String(machine.subSectionId)] || user.currentLevel || null),
                     };
                 });
 
                 // Calculate Actual
                 const actualCount = mergedStations.reduce((acc, s) => {
-                    return acc + (s.curr !== 'L-0' && s.curr ? 1 : 0);
+                    return acc + (s.curr !== 'L-0' && s.curr !== '-' && s.curr ? 1 : 0);
                 }, 0);
 
                 return {
@@ -449,19 +451,24 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     name: user.fullName || "Unknown",
                     cardNo: savedUserEntry?.cardNo || user.empId || "",
                     experience: savedUserEntry?.experience || (() => {
-                        if (!user.createdAt) return "";
-                        const start = new Date(user.createdAt);
+                        const start = user.joiningDate ? new Date(user.joiningDate) : (user.createdAt ? new Date(user.createdAt) : null);
+                        if (!start || isNaN(start.getTime())) return "";
                         const now = new Date();
                         const diffInMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+                        if (diffInMonths <= 0) return "0.0";
                         const years = Math.floor(diffInMonths / 12);
                         const months = diffInMonths % 12;
                         return `${years}.${months}`;
                     })(),
-                    certDate: savedUserEntry?.certDate || "",
-                    position: savedUserEntry?.position || "1.1",
+                    certDate: savedUserEntry?.certDate || (() => {
+                        if (!user.updatedAt) return "";
+                        const dateObj = new Date(user.updatedAt);
+                        return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
+                    })(),
+                    position: savedUserEntry?.position || "",
                     stations: savedUserEntry ? mergedStations : defaultStations,
-                    plan: savedUserEntry?.plan ?? activeMachines.length,
-                    actual: savedUserEntry?.actual ?? actualCount,
+                    plan: savedUserEntry?.plan ?? "",
+                    actual: savedUserEntry?.actual ?? "",
                     status: savedUserEntry?.status || "OK",
                     isManual: false,
                     level: user.currentLevel,
@@ -487,8 +494,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     certDate: entry.certDate || "",
                     position: entry.position || "",
                     stations: mergedStations,
-                    plan: entry.plan ?? activeMachines.length,
-                    actual: entry.actual ?? 0,
+                    plan: entry.plan ?? "",
+                    actual: entry.actual ?? "",
                     status: entry.status || "OK"
                 };
             });
@@ -613,9 +620,11 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const handleStationChange = (rowIdx, stationIdx, level) => {
         const updated = [...matrixEntries];
         updated[rowIdx].stations[stationIdx].curr = level;
-        // Recalc Actual - Update actual field
-        const s = updated[rowIdx].stations;
-        updated[rowIdx].actual = s.filter(x => x.curr !== 'L-0' && x.curr).length;
+
+        // Update certificate date to today
+        const currentDateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
+        updated[rowIdx].certDate = currentDateStr;
+
         setMatrixEntries(updated);
     };
 
@@ -630,13 +639,58 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
             }
         });
 
-        // Recalc Actual
-        const s = updated[rowIdx].stations;
-        updated[rowIdx].actual = s.filter(x => x.curr !== 'L-0' && x.curr).length;
+        // Update certificate date to today
+        const currentDateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
+        updated[rowIdx].certDate = currentDateStr;
+
         setMatrixEntries(updated);
     };
 
     const { user } = useSelector(state => state.auth);
+    const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+
+    const assignableDepartments = React.useMemo(() => {
+        const allDepts = departmentsData?.data?.departments || [];
+        const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
+        if (user?.departmentId) rawAssigned.push(user.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!user || isAdmin || assignedIds.length === 0) return allDepts;
+        return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
+    }, [departmentsData, user, isAdmin]);
+
+    const filterSections = React.useCallback((sections) => {
+        const rawAssigned = Array.isArray(user?.sections) ? [...user.sections] : [];
+        if (user?.sectionId) rawAssigned.push(user.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!user || isAdmin || assignedIds.length === 0) return sections || [];
+        return (sections || []).filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [user, isAdmin]);
+
+    const isRestricted = !isAdmin && user && (
+        (user.departments?.length > 0) || user.departmentId ||
+        (user.sections?.length > 0) || user.sectionId
+    );
+
+    // Auto-select main filter for restricted users
+    React.useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !selectedDepartment)
+            setSelectedDepartment(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+    }, [isRestricted, assignableDepartments, selectedDepartment]);
+
+    React.useEffect(() => {
+        if (!isRestricted || !selectedDepartment) return;
+        const secs = filterSections(sectionsData?.data);
+        if (secs.length === 1 && !selectedSection)
+            setSelectedSection(String(secs[0].id || secs[0]._id));
+    }, [isRestricted, selectedDepartment, sectionsData, selectedSection]);
+
+    // Pre-fill create dialog for restricted users when opened
+    React.useEffect(() => {
+        if (!isRestricted || !createOpen) return;
+        if (assignableDepartments.length === 1 && !createDepartment)
+            setCreateDepartment(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+    }, [isRestricted, createOpen, assignableDepartments, createDepartment]);
 
     const handleSignature = (role, status) => {
         if (!user) {
@@ -698,7 +752,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 
         const handleClick = () => {
             if (!editable || !onClick) return;
-            // Cycle logic: - -> L-0 -> L-1 -> ... -> L-Max -> L-0
+            // Cycle logic: - -> L-0 -> L-1 -> ... -> L-Max -> -
             let nextLevelStr = 'L-0';
             if (maxLevels > 0) {
                 if (currentLevel === -1) {
@@ -709,11 +763,12 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     const nextLevelObj = levels.find(l => l.order === nextLevelIndex);
                     nextLevelStr = nextLevelObj ? nextLevelObj.name : `L-${currentLevel + 1}`;
                 } else {
-                    nextLevelStr = 'L-0';
+                    // After max levels, cycle back to blank '-'
+                    nextLevelStr = '-';
                 }
             } else {
-                // Fallback hardcoded cycle
-                const hardcoded = ['L-0', 'L-1', 'L-2', 'L-3', 'L-4', 'L-5'];
+                // Fallback hardcoded cycle including '-'
+                const hardcoded = ['-', 'L-0', 'L-1', 'L-2', 'L-3', 'L-4', 'L-5'];
                 let idx = hardcoded.indexOf(levelStr);
                 if (idx === -1) nextLevelStr = 'L-0';
                 else nextLevelStr = hardcoded[(idx + 1) % hardcoded.length];
@@ -727,13 +782,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 
             if (currentLevel === -1) {
                 return (
-                    <line
-                        x1={center - size / 4}
-                        y1={center}
-                        x2={center + size / 4}
-                        y2={center}
-                        stroke="black"
-                        strokeWidth="1.5"
+                    <rect
+                        width={size}
+                        height={size}
+                        fill="transparent"
                     />
                 );
             }
@@ -838,6 +890,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         return matrixEntries.filter(entry => {
             if (selectedLevel === "All") return true;
             return normalizeLevel(entry.level) === normalizeLevel(selectedLevel);
+        }).sort((a, b) => {
+            const expA = parseFloat(a.experience) || 0;
+            const expB = parseFloat(b.experience) || 0;
+            return expB - expA;
         });
     }, [matrixEntries, selectedLevel]);
 
@@ -856,7 +912,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     subSectionStations.some(s => String(s._id) === String(ua.machineId))
                 );
 
-                const displayLevel = (isAssigned || maxWeight > 0) ? (subSectionStations.find(s => getLevelWeight(s.curr) === maxWeight)?.curr || 'L-0') : '-';
+                const hasSkill = subSectionStations.some(s => s.curr && s.curr !== '-');
+                const displayLevel = (isAssigned || hasSkill) ? (subSectionStations.find(s => getLevelWeight(s.curr) === maxWeight)?.curr || 'L-0') : '-';
                 return displayLevel !== '-';
             }).length;
             return { actual };
@@ -1029,10 +1086,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                             setSelectedLine("");
                                             setSelectedSubSection("");
                                             setSelectedStation("");
-                                        }}>
+                                        }} disabled={isRestricted && assignableDepartments.length <= 1}>
                                             <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Departments" /></SelectTrigger>
                                             <SelectContent>
-                                                {departmentsData?.data?.departments?.map((d, idx) => (
+                                                {assignableDepartments.map((d, idx) => (
                                                     <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -1045,10 +1102,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                             setSelectedLine("");
                                             setSelectedSubSection("");
                                             setSelectedStation("");
-                                        }} disabled={!selectedDepartment}>
+                                        }} disabled={!selectedDepartment || (isRestricted && filterSections(sectionsData?.data).length <= 1)}>
                                             <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue placeholder="All Sections" /></SelectTrigger>
                                             <SelectContent>
-                                                {sectionsData?.data?.map((s, idx) => (
+                                                {filterSections(sectionsData?.data).map((s, idx) => (
                                                     <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name} ({s.category})</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -1111,7 +1168,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                 <th className="p-3 border-b text-left">Line</th>
                                                 <th className="p-3 border-b text-left">Sub-Section</th>
                                                 <th className="p-3 border-b text-left">Station</th>
-                                                <th className="p-3 border-b text-left">User Count</th>
+                                                <th className="p-3 border-b text-left">Users (last save)</th>
                                                 <th className="p-3 border-b text-left">Month</th>
                                                 <th className="p-3 border-b text-center">QA</th>
                                                 <th className="p-3 border-b text-center">Safety</th>
@@ -1199,11 +1256,11 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         setSelectedLine("");
                                         setSelectedSubSection("");
                                         setSelectedStation("");
-                                    }}>
+                                    }} disabled={isRestricted && filterSections(sectionsData?.data).length <= 1}>
                                         <SelectTrigger className="h-8 text-xs min-w-[120px] font-semibold"><SelectValue placeholder="All Sections" /></SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="all-sections">All Sections</SelectItem>
-                                            {sectionsData?.data?.map((s, idx) => (
+                                            {filterSections(sectionsData?.data).map((s, idx) => (
                                                 <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -1272,6 +1329,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 <div className="flex flex-col">
                                     <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Month</label>
                                     <Input className="h-8 text-xs font-bold w-32" type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+                                </div>
+                                <div className="flex flex-col">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1">Operators</label>
+                                    <span className="text-sm font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200 h-8 flex items-center">
+                                        {matrixEntries.filter(e => !e.isManual).length} live
+                                        {matrixEntries.filter(e => e.isManual).length > 0 && ` + ${matrixEntries.filter(e => e.isManual).length} manual`}
+                                    </span>
                                 </div>
                                 <div className="ml-auto flex gap-2">
                                     <Button variant="outline" onClick={() => setIsMatrixOpen(false)}>Back</Button>
@@ -1600,7 +1664,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                             <tr>
                                                 <th className="border border-black px-0">Number</th>
                                                 <th className="border border-black px-0">Operator name</th>
-                                                <th className="border border-black px-0">Card No.</th>
+                                                <th className="border border-black px-0 min-w-[60px]">Card No.</th>
                                                 <th className="border border-black text-[9px] p-0">
                                                     <div className="border-b border-black py-0.5 flex items-center justify-center px-0">Year number of experience</div>
                                                     <div className="py-0.5 flex items-center justify-center px-0">Date of Certificate update</div>
@@ -1629,8 +1693,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     const originalIndex = matrixEntries.indexOf(entry);
                                                     return (
                                                         <tr key={originalIndex} className="h-auto min-h-[32px] text-center border border-black hover:bg-gray-50">
-                                                            <td className="border border-black font-bold p-0">{entry.srNo}</td>
-                                                            <td className="border border-black font-bold text-left px-0.5">
+                                                            <td className="border border-black font-bold p-0">{(currentPage - 1) * itemsPerPage + rowIndex + 1}</td>
+                                                            <td className="border border-black font-bold text-left px-0.5 whitespace-normal break-words text-xs">
                                                                 {entry.isManual ? (
                                                                     entry.name
                                                                 ) : (
@@ -1653,17 +1717,17 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                                 setActiveTab("evaluation");
                                                                             }
                                                                         }}
-                                                                        className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full"
+                                                                        className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full whitespace-normal break-words"
                                                                         title="Click to view/edit Skill Matrix Evaluation Certificate"
                                                                     >
                                                                         {entry.name}
                                                                     </button>
                                                                 )}
                                                             </td>
-                                                            <td className="border border-black p-0">
+                                                            <td className="border border-black p-0 whitespace-nowrap">
                                                                 <Input
                                                                     className="h-full p-0 text-center border-none bg-transparent px-0"
-                                                                    style={{ width: `${Math.max(60, (entry.cardNo?.length || 0) * 7 + 10)}px` }}
+                                                                    style={{ minWidth: `${Math.max(60, (entry.cardNo?.length || 0) * 7 + 10)}px`, width: '100%' }}
                                                                     value={entry.cardNo}
                                                                     onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)}
                                                                 />
@@ -1713,7 +1777,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                     subSectionStations.some(s => String(s._id) === String(ua.machineId))
                                                                 );
 
-                                                                const displayLevel = (isAssigned || maxWeight > 0) ? (maxStation?.curr || 'L-0') : '-';
+                                                                const hasSkill = subSectionStations.some(s => s.curr && s.curr !== '-');
+                                                                const displayLevel = (isAssigned || hasSkill) ? (maxStation?.curr || 'L-0') : '-';
 
                                                                 return (
                                                                     <td key={i} className="border border-black p-0 align-middle">
@@ -1908,10 +1973,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     setEvalLine("");
                                     setEvalSubSection("");
                                     setSelectedOperatorForEval(null);
-                                }}>
+                                }} disabled={isRestricted && assignableDepartments.length <= 1}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="Select Department" /></SelectTrigger>
                                     <SelectContent>
-                                        {departmentsData?.data?.departments?.map((d, idx) => (
+                                        {assignableDepartments.map((d, idx) => (
                                             <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -1925,10 +1990,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     setEvalLine("");
                                     setEvalSubSection("");
                                     setSelectedOperatorForEval(null);
-                                }} disabled={!evalDepartment}>
+                                }} disabled={!evalDepartment || (isRestricted && filterSections(evalSectionsData?.data).length <= 1)}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="All Sections" /></SelectTrigger>
                                     <SelectContent>
-                                        {evalSectionsData?.data?.map((s, idx) => (
+                                        {filterSections(evalSectionsData?.data).map((s, idx) => (
                                             <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -2000,7 +2065,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 <SelectContent>
                                     {filteredEvalUsers.map(u => (
                                         <SelectItem key={u._id} value={u._id}>
-                                            {u.fullName || u.name} {u.cardNo ? `(${u.cardNo})` : ""}
+                                            {u.fullName || u.name} {(u.cardNo || u.empId) ? `(${u.cardNo || u.empId})` : ""}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -2059,10 +2124,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     setObservanceSubSection("");
                                     setObservanceStation("");
                                     setSelectedOperatorForObservance(null);
-                                }}>
+                                }} disabled={isRestricted && assignableDepartments.length <= 1}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="Select Department" /></SelectTrigger>
                                     <SelectContent>
-                                        {departmentsData?.data?.departments?.map((d, idx) => (
+                                        {assignableDepartments.map((d, idx) => (
                                             <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -2077,10 +2142,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     setObservanceSubSection("");
                                     setObservanceStation("");
                                     setSelectedOperatorForObservance(null);
-                                }} disabled={!observanceDepartment}>
+                                }} disabled={!observanceDepartment || (isRestricted && filterSections(observanceSectionsData?.data).length <= 1)}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="All Sections" /></SelectTrigger>
                                     <SelectContent>
-                                        {observanceSectionsData?.data?.map((s, idx) => (
+                                        {filterSections(observanceSectionsData?.data).map((s, idx) => (
                                             <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -2229,10 +2294,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 setCreateLine("");
                                 setCreateSubSection("");
                                 setCreateStation("");
-                            }}>
+                            }} disabled={isRestricted && assignableDepartments.length <= 1}>
                                 <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
                                 <SelectContent>
-                                    {departmentsData?.data?.departments?.map((d, idx) => (
+                                    {assignableDepartments.map((d, idx) => (
                                         <SelectItem key={`${d.id || d._id}-${idx}`} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -2245,10 +2310,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 setCreateLine("");
                                 setCreateSubSection("");
                                 setCreateStation("");
-                            }} disabled={!createDepartment}>
+                            }} disabled={!createDepartment || (isRestricted && filterSections(createSectionsData?.data).length <= 1)}>
                                 <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
                                 <SelectContent>
-                                    {createSectionsData?.data?.map((s, idx) => (
+                                    {filterSections(createSectionsData?.data).map((s, idx) => (
                                         <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name} ({s.category})</SelectItem>
                                     ))}
                                 </SelectContent>

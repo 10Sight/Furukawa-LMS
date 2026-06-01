@@ -174,6 +174,11 @@ export const formatUser = (u) => {
 
 // --- Controllers ---
 
+const normalizeParam = (val) => {
+  if (!val || val === 'undefined' || val === 'null' || val === '' || val === '0' || val === 'all' || val === 'All') return null;
+  return val;
+};
+
 /**
  * Get All Users (Paginated & Filtered)
  */
@@ -199,25 +204,32 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   }
 
   if (req.query.unit) { whereClauses.push("u.unit = ?"); params.push(req.query.unit); }
-  if (req.query.departmentId) {
+  
+  const deptId = normalizeParam(req.query.departmentId);
+  const sectId = normalizeParam(req.query.sectionId);
+  const lnId = normalizeParam(req.query.lineId);
+  const subSectId = normalizeParam(req.query.subSectionId);
+  const stnId = normalizeParam(req.query.stationId);
+
+  if (deptId) {
     whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = ?)");
-    params.push(req.query.departmentId);
+    params.push(deptId);
   }
-  if (req.query.sectionId) {
+  if (sectId) {
     whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id = ?)");
-    params.push(req.query.sectionId);
+    params.push(sectId);
   }
-  if (req.query.lineId) {
+  if (lnId) {
     whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id = ?)");
-    params.push(req.query.lineId);
+    params.push(lnId);
   }
-  if (req.query.subSectionId) {
+  if (subSectId) {
     whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id = ?)");
-    params.push(req.query.subSectionId);
+    params.push(subSectId);
   }
-  if (req.query.stationId) {
+  if (stnId) {
     whereClauses.push("(u.stationId = ? OR (u.isTemporary = 1 AND u.targetStationId = ?) OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = ?))");
-    params.push(req.query.stationId, req.query.stationId, req.query.stationId);
+    params.push(stnId, stnId, stnId);
   }
   if (req.query.role) {
     const roles = req.query.role.split(",");
@@ -227,6 +239,9 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   if (req.query.customRoleId) { whereClauses.push("u.customRoleId = ?"); params.push(req.query.customRoleId); }
   if (req.query.isEmployee === "true") { whereClauses.push("u.isEmployee = 1"); }
   if (req.query.isTrainer === "true") { whereClauses.push("u.isTrainer = 1"); }
+  if (req.query.passedQuizOnly === "true") {
+    whereClauses.push("EXISTS (SELECT 1 FROM attempted_quizzes aq WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName) AND aq.status = 'PASSED')");
+  }
 
   if (req.query.excludeRoles) {
     const roles = req.query.excludeRoles.split(",");
@@ -301,6 +316,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
+  } else if (req.query.includeLeft !== "true") {
+    whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
   }
 
   if (shift) {
@@ -868,11 +885,23 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
   if (req.query.includeTemporary === "true") {
-    whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
+    if (req.query.ojtApprovedOnly === "true") {
+      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
+    } else {
+      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
+    }
   } else if (req.query.includeTemporary === "only") {
-    whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
+    if (req.query.ojtApprovedOnly === "true") {
+      whereClauses.push("(u.isTemporary = 1)");
+    } else {
+      whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
+    }
   } else {
-    whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+    if (req.query.ojtApprovedOnly === "true") {
+      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
+    } else {
+      whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+    }
   }
   let params = [];
   if (req.query.search) {
@@ -880,17 +909,23 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
     params.push(t, t, t);
   }
-  if (req.query.departmentId) { whereClauses.push("d.id = ?"); params.push(req.query.departmentId); }
-  if (req.query.sectionId) {
+  const deptId = normalizeParam(req.query.departmentId);
+  const sectId = normalizeParam(req.query.sectionId);
+  const lnId = normalizeParam(req.query.lineId);
+  const subSectId = normalizeParam(req.query.subSectionId);
+  const stnId = normalizeParam(req.query.stationId);
+
+  if (deptId) { whereClauses.push("d.id = ?"); params.push(deptId); }
+  if (sectId) {
     whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))");
-    params.push(req.query.sectionId, req.query.sectionId, req.query.sectionId);
+    params.push(sectId, sectId, sectId);
   }
-  if (req.query.lineId) {
+  if (lnId) {
     whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))");
-    params.push(req.query.lineId, req.query.lineId);
+    params.push(lnId, lnId);
   }
-  if (req.query.subSectionId) { whereClauses.push("u.subSectionId = ?"); params.push(req.query.subSectionId); }
-  if (req.query.stationId) { whereClauses.push("u.stationId = ?"); params.push(req.query.stationId); }
+  if (subSectId) { whereClauses.push("u.subSectionId = ?"); params.push(subSectId); }
+  if (stnId) { whereClauses.push("u.stationId = ?"); params.push(stnId); }
   if (req.query.sixteenDayApprovedOnly === "true") {
     whereClauses.push(`EXISTS (
       SELECT 1 FROM (
@@ -903,6 +938,20 @@ export const getAllStudents = asyncHandler(async (req, res) => {
         AND latest_sdm.approvedBy LIKE '%Approved%' 
         AND latest_sdm.approvedBy NOT LIKE '%Rejected%' 
         AND latest_sdm.verifiedBy NOT LIKE '%Rejected%'
+    )`);
+  }
+  if (req.query.ojtApprovedOnly === "true") {
+    whereClauses.push(`(
+      (u.ojt LIKE '%Pass%' OR u.ojt LIKE '%Approved%')
+      OR EXISTS (
+        SELECT 1 FROM on_job_trainings ojt
+        WHERE (
+          ojt.student = CAST(u.id AS NVARCHAR(50))
+          OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
+          OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
+        )
+        AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
+      )
     )`);
   }
 
@@ -950,6 +999,8 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
+  } else if (req.query.includeLeft !== "true") {
+    whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
   }
 
   if (shift) {

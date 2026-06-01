@@ -256,7 +256,7 @@ const DepartmentStudentsTable = ({ departmentId, departmentName, onRefetch }) =>
     );
   };
 
-  if (!students || students.length === 0) {
+  if (!progressLoading && (!students || students.length === 0) && !searchTerm && statusFilter === "all" && progressFilter === "all") {
     return (
       <Card>
         <CardHeader>

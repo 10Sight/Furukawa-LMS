@@ -118,6 +118,7 @@ const AllUsersManagement = () => {
     search: searchTerm,
     role: filters.role,
     status: filters.status,
+    includeLeft: "true",
     dateFrom: filters.dateFrom,
     dateTo: filters.dateTo,
     departmentId: filters.departmentId,

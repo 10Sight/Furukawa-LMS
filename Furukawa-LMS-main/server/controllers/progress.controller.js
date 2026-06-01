@@ -296,12 +296,12 @@ export const upgradeLevel = asyncHandler(async (req, res) => {
         // Sync to user profile with station awareness
         const { default: UserModel } = await import("../models/auth.model.js");
         const userData = await UserModel.findById(userId);
-        if (userData && userData.stationId) {
+        if (userData && userData.subSectionId) {
             let currentSkill = userData.currentSkill || {};
             if (typeof currentSkill === 'string') {
                 try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
             }
-            currentSkill[userData.stationId] = nextLevel.name;
+            currentSkill[userData.subSectionId] = nextLevel.name;
             await executeQuery(
                 "UPDATE users SET currentLevel = ?, currentSkill = ? WHERE id = ?",
                 [nextLevel.name, JSON.stringify(currentSkill), userId]
@@ -613,11 +613,19 @@ export const setStudentLevel = asyncHandler(async (req, res) => {
             try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
         }
 
+        let subSectionId = userData.subSectionId;
         if (stationId) {
-            if (level) currentSkill[stationId] = level;
+            const [mRows] = await executeQuery("SELECT subSectionId FROM [machines] WHERE id = ?", [stationId]);
+            if (mRows.length > 0) {
+                subSectionId = mRows[0].subSectionId;
+            }
+        }
+
+        if (subSectionId) {
+            if (level) currentSkill[subSectionId] = level;
             if (typeof lock === 'boolean') {
-                currentSkill[`${stationId}_locked`] = lock;
-                if (lock) currentSkill[`${stationId}_lockedLevel`] = level || currentSkill[stationId] || "L1";
+                currentSkill[`${subSectionId}_locked`] = lock;
+                if (lock) currentSkill[`${subSectionId}_lockedLevel`] = level || currentSkill[subSectionId] || "L1";
             }
         }
 

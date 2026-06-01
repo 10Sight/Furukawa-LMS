@@ -69,6 +69,7 @@ const UserAutocomplete = ({
     setOpen(false);
     if (onChange) {
       onChange({
+        ...user,
         fullName: user.fullName,
         empId: user.empId,
         userName: user.userName,

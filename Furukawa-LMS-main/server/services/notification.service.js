@@ -83,7 +83,7 @@ class NotificationService {
 
             if (formName === "Daily 5M Recording Sheet") {
                 const date = formData?.date || new Date().toLocaleDateString();
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const reviewUrl = `${adminUrl}/cms/daily-5m-recording?recordId=${formData.recordId}`;
 
                 htmlMessage = `
@@ -105,7 +105,7 @@ class NotificationService {
                     </div>
                 `;
             } else if (formName === "On Job Training Evaluation Sheet" || formName === "On Job Training Record Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const ojtId = formData.ojtId || "";
                 const reviewUrl = `${adminUrl}/admin/on-job-training?ojtId=${ojtId}`;
 
@@ -129,7 +129,7 @@ class NotificationService {
                     </div>
                 `;
             } else if (formName === "16-Day Monitoring Sheet" || formName === "3-Day Monitoring Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const is16Day = formName === "16-Day Monitoring Sheet";
                 const resolvedStudentId = formData.studentId || studentId; // Fallback to arg
                 const reviewUrl = is16Day 
@@ -156,7 +156,7 @@ class NotificationService {
                     </div>
                 `;
             } else if (formName === "Handover Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const reviewUrl = `${adminUrl}/admin/handover-sheet?dept=${departmentId}&section=${sectionId || formData.sectionId || ''}`;
                 
                 // Get Section Name if possible
@@ -173,8 +173,46 @@ class NotificationService {
                     entries: formData.entries || [],
                     portalUrl: reviewUrl
                 });
+            } else if (formName === "Abnormal Condition Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const deptId = departmentId || "";
+                const sectionIdVal = sectionId || formData.sectionId || "";
+                const lineIdVal = formData.lineId || "";
+                const subSectionIdVal = formData.subSectionId || "";
+                const dateVal = formData.date ? formData.date.split("T")[0] : "";
+
+                const reviewUrl = `${adminUrl}/cms/abnormal-condition?deptId=${deptId}&sectionId=${sectionIdVal}&lineId=${lineIdVal}&subSectionId=${subSectionIdVal}&date=${dateVal}&isSheetOpen=true`;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px;">
+                        <h2 style="color: #ef4444; border-bottom: 2px solid #ef4444; padding-bottom: 8px; margin-top: 0;">Abnormal Condition Countermeasure Sheet</h2>
+                        <p>Dear Reviewer,</p>
+                        <p>An Abnormal Condition countermeasure sheet has been submitted for review.</p>
+                        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+                            <tr>
+                                <td style="padding: 8px 0; font-weight: bold; color: #64748b; width: 120px;">Department:</td>
+                                <td style="padding: 8px 0; color: #1e293b;">${deptName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Date:</td>
+                                <td style="padding: 8px 0; color: #1e293b;">${dateVal}</td>
+                            </tr>
+                        </table>
+                        <p>Please review and sign off on the process countermeasure entries using the link below:</p>
+                        
+                        <div style="margin: 30px 0; text-align: center;">
+                            <a href="${reviewUrl}" 
+                               style="background-color: #ef4444; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.2); display: inline-block;">
+                                Review and approve
+                            </a>
+                        </div>
+                        
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+                        <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">This is an automated notification from the FME Digital Portal.</p>
+                    </div>
+                `;
             } else if (formName === "Skill Matrix Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const month = formData.month || new Date().toISOString().slice(0, 7);
                 const sectionId = formData.section || "";
                 const lineId = formData.line || "";

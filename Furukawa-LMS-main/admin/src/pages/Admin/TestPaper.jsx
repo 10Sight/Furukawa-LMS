@@ -11,6 +11,7 @@ import { useGetAllQuizzesQuery, useDeleteQuizMutation } from "@/Redux/AllApi/Qui
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetLinesQuery } from "@/Redux/AllApi/LineApi";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
+import { useGetStudentOJTsQuery } from "@/Redux/AllApi/OnJobTrainingApi";
 import {
   IconFileText,
   IconSearch,
@@ -145,6 +146,22 @@ const TestPaper = () => {
     isDojo: currentUser?.isTemporary ? true : undefined,
   });
 
+  const { data: ojtData } = useGetStudentOJTsQuery(currentUser?.id, {
+    skip: !currentUser?.isTemporary || !currentUser?.id
+  });
+
+  const isOjtApproved = useMemo(() => {
+    if (!currentUser?.isTemporary) return true;
+    
+    // Check real-time hook results
+    const ojts = ojtData?.data || [];
+    if (ojts.some(o => o.result === "Pass" || o.result === "Approved")) return true;
+    
+    // Fallback to profile user ojt array
+    const userOjts = currentUser?.ojt || [];
+    return Array.isArray(userOjts) && userOjts.some(o => o.result === "Pass" || o.result === "Approved");
+  }, [ojtData, currentUser]);
+
   const [deleteQuiz] = useDeleteQuizMutation();
 
   const handleDelete = async (id) => {
@@ -194,10 +211,15 @@ const TestPaper = () => {
         if (selectedTestType === "theoretical" && !quiz.isTheoretical) return false;
         if (selectedTestType === "practical" && (quiz.isDojo || quiz.isHandover || quiz.isTheoretical)) return false;
       }
+      
+      // 5. OJT Gating Filter for Non-Dojo quizzes
+      if (!quiz.isDojo && currentUser?.isTemporary && !isOjtApproved) {
+        return false;
+      }
 
       return true;
     });
-  }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType]);
+  }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType, isOjtApproved, currentUser]);
 
   const handleReset = () => {
     setSelectedDepartment(!isAuthorizedToAccessAll && currentUser?.departmentId ? String(currentUser.departmentId) : "ALL");

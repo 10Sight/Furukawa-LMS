@@ -25,6 +25,10 @@ const verifyJWT = asyncHandler(async (req, res, next) => {
             throw new ApiError("Invalid Access Token!", 401);
         }
 
+        if (['LEFT', 'SUSPENDED', 'BANNED'].includes(user.status)) {
+            throw new ApiError("Your account has been deactivated. Please contact HR.", 403);
+        }
+
         // Attach customRole details to req.user for fine-grained permissions check in middlewares
         if (user.customRoleId) {
             try {

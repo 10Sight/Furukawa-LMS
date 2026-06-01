@@ -111,7 +111,8 @@ const SixteenDayMonitoringSheet = ({
     sectionId = 0,
     sectionName = "",
     canEditConfig = false,
-    initialForceNewAttempt = false
+    initialForceNewAttempt = false,
+    onAfterSave = null,
 }) => {
     const [headerInfo, setHeaderInfo] = useState({
         employeeName: studentName || "",
@@ -385,21 +386,66 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
-    const handleSave = async (finalStatus = null) => {
+    const isDay16Filled = () => {
+        if (!studentId) return false;
+
+        // Scan all categories and check if Day-16 inputs are filled
+        for (const cat of config) {
+            for (const row of cat.rows) {
+                if (row.type === 'cycle_detailed') {
+                    const targetKey = `${row.id}_day_16_target`;
+                    const actualKey = `${row.id}_day_16_actual`;
+                    const scoreKey = `${row.id}_day_16_score`;
+
+                    const targetVal = gridData[targetKey];
+                    const actualVal = gridData[actualKey];
+                    const scoreVal = gridData[scoreKey];
+
+                    if (targetVal === undefined || targetVal === null || targetVal.toString().trim() === "") return false;
+                    if (actualVal === undefined || actualVal === null || actualVal.toString().trim() === "") return false;
+                    if (scoreVal === undefined || scoreVal === null || scoreVal.toString().trim() === "") return false;
+                } else {
+                    const isWeightNumeric = row.weight !== undefined && row.weight !== null && !isNaN(row.weight) && row.weight !== "-";
+                    if (!isWeightNumeric) {
+                        continue; // Skip optional/descriptive rows (like defects captured)
+                    }
+                    const key = `${row.id}_day_16`;
+                    const val = gridData[key];
+                    if (val === undefined || val === null || val.toString().trim() === "") return false;
+                }
+            }
+        }
+
+        // Scan Attendance for Day 16
+        const attDateVal = gridData['attendance_date_16'];
+        const attActualVal = gridData['attendance_actual_16'];
+        if (attDateVal === undefined || attDateVal === null || attDateVal.toString().trim() === "") return false;
+        if (attActualVal === undefined || attActualVal === null || attActualVal.toString().trim() === "") return false;
+
+        return true;
+    };
+
+    const handleSave = async (finalStatus = null, isSubmit = false) => {
         if (!studentId) {
             toast.error("Student selection is required to save data");
             return;
         }
 
+        const targetStatus = finalStatus || headerInfo.status || "Draft";
+        if (isSubmit && !isDay16Filled()) {
+            toast.error("Day-16 performance column must be completely filled before submitting.");
+            return;
+        }
+
         try {
             setSaving(true);
-            const targetStatus = finalStatus || headerInfo.status || "Draft";
             const payload = {
                 ...headerInfo,
                 gridData,
                 status: targetStatus,
                 isNewAttempt: isForceNewAttempt,
-                recordId: selectedAttemptId
+                recordId: selectedAttemptId,
+                triggerEmail: isSubmit
             };
 
             const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId || 0}`, payload);
@@ -409,8 +455,8 @@ const SixteenDayMonitoringSheet = ({
                 fetchHistoryAttempts();
                 toast.success(`Monitoring ${targetStatus === 'Submitted' ? 'Submitted' : 'Saved'} successfully`);
 
-                if (targetStatus === 'Submitted') {
-                    handleEmail(true);
+                if (onAfterSave) {
+                    await onAfterSave(targetStatus);
                 }
             }
         } catch (error) {
@@ -421,20 +467,23 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
-    const handleEmail = async (isAuto = false) => {
+    const handleEmail = async () => {
+        if (!isDay16Filled()) {
+            toast.error("Day-16 performance column must be completely filled before sending the email report.");
+            return;
+        }
+
         try {
-            if (!isAuto) setSendingEmail(true);
-            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}/email`);
+            setSendingEmail(true);
+            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}/combined-email`);
             if (response.data.success) {
-                toast.success("Monitoring report emailed successfully");
+                toast.success("Combined monitoring report emailed successfully");
             }
         } catch (error) {
             console.error("Error sending email:", error);
-            if (!isAuto) {
-                toast.error(error.response?.data?.message || "Failed to send email report");
-            }
+            toast.error(error.response?.data?.message || "Failed to send email report");
         } finally {
-            if (!isAuto) setSendingEmail(false);
+            setSendingEmail(false);
         }
     };
 
@@ -729,6 +778,7 @@ const SixteenDayMonitoringSheet = ({
             setGridData(newGridData);
         }
     }, [gridData, config, readOnly]);
+
     const handleSignature = (field, type) => {
         const name = authUser?.fullName || authUser?.name;
         const prefix = type === 'approve' ? "Approved By: " : "Rejected By: ";
@@ -741,6 +791,8 @@ const SixteenDayMonitoringSheet = ({
 
     const daysDetailed = ['d1', 'd2', 'd3'];
     const daysSummary = Array.from({ length: 13 }, (_, i) => `day_${i + 4}`);
+
+    const isDay16ColFilled = isDay16Filled();
 
     return (
         <div className="space-y-4">
@@ -814,11 +866,25 @@ const SixteenDayMonitoringSheet = ({
                             Export
                         </Button>
 
+                        {studentId && (
+                            <div className="flex items-center mr-2">
+                                {isDay16ColFilled ? (
+                                    <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 flex items-center py-1.5 px-3">
+                                        <CheckCircle2 className="h-3 w-3" /> Day 16 Complete
+                                    </Badge>
+                                ) : (
+                                    <Badge variant="outline" className="border-amber-500 text-amber-600 bg-amber-50 gap-1 flex items-center py-1.5 px-3">
+                                        <XCircle className="h-3 w-3 text-amber-500" /> Day 16 Incomplete
+                                    </Badge>
+                                )}
+                            </div>
+                        )}
+
                         <div className="flex gap-1 border-l pl-2 border-gray-200">
                             {headerInfo.status !== 'Submitted' && (
                                 <Button
                                     variant="secondary"
-                                    onClick={() => handleSave("Draft")}
+                                    onClick={() => handleSave("Draft", false)}
                                     disabled={saving || !studentId}
                                     className="h-9 gap-2"
                                 >
@@ -827,10 +893,22 @@ const SixteenDayMonitoringSheet = ({
                                 </Button>
                             )}
 
+                            {headerInfo.status === 'Submitted' && (
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => handleSave("Submitted", false)}
+                                    disabled={saving || !studentId || isLocked || readOnly}
+                                    className="h-9 gap-2"
+                                >
+                                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                    Save Updates
+                                </Button>
+                            )}
+
                             <Button
                                 variant={headerInfo.status === 'Submitted' ? "outline" : "default"}
-                                onClick={() => handleSave("Submitted")}
-                                disabled={saving || !studentId}
+                                onClick={() => handleSave("Submitted", true)}
+                                disabled={saving || !studentId || !isDay16ColFilled || isLocked || readOnly}
                                 className="h-9 gap-2"
                             >
                                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -842,7 +920,7 @@ const SixteenDayMonitoringSheet = ({
                                     variant="outline"
                                     className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 gap-2"
                                     onClick={() => handleEmail()}
-                                    disabled={sendingEmail}
+                                    disabled={sendingEmail || !isDay16ColFilled}
                                 >
                                     {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                                     Email Report

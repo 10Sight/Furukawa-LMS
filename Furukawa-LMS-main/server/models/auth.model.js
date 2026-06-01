@@ -76,6 +76,7 @@ class User {
         this.customRole = data.customRole || null;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
+        this.ojt = typeof data.ojt === 'string' ? JSON.parse(data.ojt) : (data.ojt || []);
 
         // Internal tracking for password changes
         this._originalPassword = data.password;
@@ -198,7 +199,8 @@ class User {
                 { name: 'customRoleId', type: 'INT' },
                 { name: 'currentSkill', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
                 { name: 'currentEffeciency', type: 'FLOAT DEFAULT 0' },
-                { name: 'skillEffeciency', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' }
+                { name: 'skillEffeciency', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
+                { name: 'ojt', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' }
             ];
 
             for (const col of columnsToAdd) {
@@ -310,6 +312,46 @@ class User {
                 console.error("Migration error making email nullable:", err);
             }
 
+            // One-time data migration for currentSkill: convert stationId to subSectionId
+            try {
+                const [users] = await executeQuery("SELECT id, currentSkill FROM users WHERE currentSkill IS NOT NULL AND currentSkill != '{}'");
+                const [machines] = await executeQuery("SELECT id, subSectionId FROM [machines]");
+                
+                const stationToSubSection = {};
+                machines.forEach(m => {
+                    stationToSubSection[String(m.id)] = String(m.subSectionId);
+                });
+
+                for (const u of users) {
+                    let skillMap = {};
+                    try {
+                        skillMap = typeof u.currentSkill === 'string' ? JSON.parse(u.currentSkill) : u.currentSkill;
+                    } catch (e) {
+                        continue;
+                    }
+
+                    if (!skillMap || typeof skillMap !== 'object') continue;
+
+                    let migrated = false;
+                    const newSkillMap = {};
+                    for (const [key, val] of Object.entries(skillMap)) {
+                        if (stationToSubSection[key]) {
+                            const subSecId = stationToSubSection[key];
+                            newSkillMap[subSecId] = val;
+                            migrated = true;
+                        } else {
+                            newSkillMap[key] = val;
+                        }
+                    }
+
+                    if (migrated) {
+                        await executeQuery("UPDATE users SET currentSkill = ? WHERE id = ?", [JSON.stringify(newSkillMap), u.id]);
+                    }
+                }
+            } catch (migrationErr) {
+                console.error("Error during currentSkill schema migration:", migrationErr);
+            }
+
             console.log("Users table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating users table in MSSQL:", error);
@@ -342,7 +384,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt", "ojt"
         ];
 
         // Apply defaults if fields are missing in userData
@@ -357,7 +399,7 @@ class User {
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
                 return JSON.stringify(val || (field === 'avatar' ? {} : []));
             }
             if (val === undefined || val === "") return null;
@@ -380,20 +422,22 @@ class User {
 
         const whereClause = keys.map(key => `u.${key === 'id' ? 'id' : key} = ?`).join(" AND ");
         const values = keys.map(key => query[key]);
+        const hasStatusFilter = keys.includes('status');
+        const leftExclusion = hasStatusFilter ? '' : " AND u.status NOT IN ('LEFT', 'SUSPENDED', 'BANNED')";
 
         const sql = `
-            SELECT u.*, 
+            SELECT u.*,
                    d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
                    COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId) as resolvedDeptId,
                    COALESCE(u.sectionId, l_res.lSectionId) as resolvedSectionId,
                    COALESCE(u.lineId, ss_res.ssLineId) as resolvedLineId,
-                   cr.name as cr_name, cr.description as cr_description, 
+                   cr.name as cr_name, cr.description as cr_description,
                    cr.color as cr_color, cr.allowedPages as cr_allowedPages,
                    cr.permissions as cr_permissions, cr.generateManagementPage as cr_generateManagementPage,
                    cr.targetLayout as cr_targetLayout
             FROM users u
             OUTER APPLY (
-                SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 
+                SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId
                 FROM sub_sections ss WHERE ss.id = u.subSectionId
             ) ss_res
             OUTER APPLY (
@@ -406,14 +450,14 @@ class User {
             ) s_res
             OUTER APPLY (
                 SELECT TOP 1 d.id, d.name as deptName
-                FROM departments d 
+                FROM departments d
                 WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
             ) d
             OUTER APPLY (
                 SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
             ) st
             LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
-            WHERE ${whereClause}
+            WHERE ${whereClause}${leftExclusion}
         `;
 
         const [rows] = await executeQuery(`SELECT TOP 1 * FROM (${sql}) t`, values);
@@ -573,40 +617,42 @@ class User {
         const keys = Object.keys(query).filter(key => query[key] !== undefined);
         let sql = "SELECT * FROM users";
         let values = [];
+        const whereClauses = [];
 
-        if (keys.length > 0) {
-            const whereClauses = [];
+        for (const key of keys) {
+            const value = query[key];
+            const sqlKey = key === '_id' ? 'id' : key;
 
-            for (const key of keys) {
-                const value = query[key];
-                const sqlKey = key === '_id' ? 'id' : key;
-
-                // Check if value is an object with $in operator
-                if (value && typeof value === 'object' && value.$in && Array.isArray(value.$in)) {
-                    const validInValues = sqlKey === 'id' ? value.$in.filter(v => !isNaN(v)) : value.$in;
-                    if (validInValues.length > 0) {
-                        const placeholders = validInValues.map(() => '?').join(', ');
-                        whereClauses.push(`${sqlKey} IN (${placeholders})`);
-                        values.push(...validInValues);
-                    } else {
-                        whereClauses.push('1=0');
-                    }
-                } else if (value === null) {
-                    whereClauses.push(`${sqlKey} IS NULL`);
+            // Check if value is an object with $in operator
+            if (value && typeof value === 'object' && value.$in && Array.isArray(value.$in)) {
+                const validInValues = sqlKey === 'id' ? value.$in.filter(v => !isNaN(v)) : value.$in;
+                if (validInValues.length > 0) {
+                    const placeholders = validInValues.map(() => '?').join(', ');
+                    whereClauses.push(`${sqlKey} IN (${placeholders})`);
+                    values.push(...validInValues);
                 } else {
-                    // Defensive check for numeric ID
-                    if (sqlKey === 'id' && isNaN(value)) {
-                        whereClauses.push('1=0');
-                    } else {
-                        whereClauses.push(`${sqlKey} = ?`);
-                        values.push(value);
-                    }
+                    whereClauses.push('1=0');
+                }
+            } else if (value === null) {
+                whereClauses.push(`${sqlKey} IS NULL`);
+            } else {
+                // Defensive check for numeric ID
+                if (sqlKey === 'id' && isNaN(value)) {
+                    whereClauses.push('1=0');
+                } else {
+                    whereClauses.push(`${sqlKey} = ?`);
+                    values.push(value);
                 }
             }
+        }
 
-            if (whereClauses.length > 0) {
-                sql += ` WHERE ${whereClauses.join(" AND ")}`;
-            }
+        // Auto-exclude LEFT and legacy inactive users unless caller explicitly filters by status
+        if (!keys.includes('status')) {
+            whereClauses.push("status NOT IN ('LEFT', 'SUSPENDED', 'BANNED')");
+        }
+
+        if (whereClauses.length > 0) {
+            sql += ` WHERE ${whereClauses.join(" AND ")}`;
         }
 
         const [rows] = await executeQuery(sql, values);
@@ -622,6 +668,11 @@ class User {
             const whereClause = keys.map(key => `${key} = ?`).join(" AND ");
             sql += ` WHERE ${whereClause}`;
             values = keys.map(key => query[key]);
+        }
+
+        // Auto-exclude LEFT and legacy inactive users unless caller explicitly filters by status
+        if (!keys.includes('status')) {
+            sql += (keys.length > 0 ? ' AND ' : ' WHERE ') + "status NOT IN ('LEFT', 'SUSPENDED', 'BANNED')";
         }
 
         const [rows] = await executeQuery(sql, values);
@@ -648,7 +699,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt"
         ];
 
         // Only update fields that are defined on the instance
@@ -656,7 +707,7 @@ class User {
         const setClause = definedFields.map(field => `${field} = ?`).join(", ");
         const values = definedFields.map(field => {
             const val = this[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
                 return typeof val === 'object' ? JSON.stringify(val) : val;
             }
             if (val instanceof Date) return val;

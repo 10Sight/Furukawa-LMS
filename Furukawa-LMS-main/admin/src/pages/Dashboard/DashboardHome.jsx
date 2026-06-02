@@ -280,6 +280,77 @@ const ScrollableTenureChart = ({ dataLength = 0, children }) => {
     );
 };
 
+const getContractorChartInnerWidth = (dataLength = 0) => {
+    const safeLength = Number(dataLength) || 0;
+    // Set a generous spacing of 180px per contractor category to keep labels/bars well separated
+    if (safeLength <= 3) return "100%";
+    return `${Math.max(800, safeLength * 180)}px`;
+};
+
+const ScrollableContractorChart = ({ dataLength = 0, children }) => {
+    const scrollRef = useRef(null);
+
+    useEffect(() => {
+        const node = scrollRef.current;
+        if (!node) return;
+
+        window.requestAnimationFrame(() => {
+            node.scrollLeft = 0;
+        });
+    }, [dataLength]);
+
+    return (
+        <div className="w-full relative h-[320px]">
+            <div
+                ref={scrollRef}
+                className="absolute inset-0 overflow-x-auto overflow-y-hidden pb-2 overscroll-x-contain"
+            >
+                <div
+                    className="h-full relative"
+                    style={{
+                        width: getContractorChartInnerWidth(dataLength),
+                        minWidth: getContractorChartInnerWidth(dataLength),
+                    }}
+                >
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const renderContractorMultilineAxisTick = ({ x, y, payload }) => {
+    const lines = String(payload?.value || "")
+        .split(/[\s\/\\_-]+/)
+        .map(word => word.trim())
+        .filter(Boolean);
+
+    return (
+        <text
+            x={x}
+            y={y + 8}
+            textAnchor="middle"
+            fill="#475569"
+            fontSize={13}
+            fontWeight={900}
+            stroke="#ffffff"
+            strokeWidth={0.55}
+            paintOrder="stroke"
+            style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
+        >
+            {lines.map((line, index) => (
+                <tspan
+                    key={`${line}-${index}`}
+                    x={x}
+                    dy={index === 0 ? 0 : 15}
+                >
+                    {line}
+                </tspan>
+            ))}
+        </text>
+    );
+};
+
 const formatDateLocal = (date) => {
     if (!date) return undefined;
 
@@ -2094,7 +2165,7 @@ const ContractorPrefixChartCard = ({
             </CardHeader>
 
             <CardContent className="px-2 pb-4 pt-2">
-                <ScrollableTopChart dataLength={chartData.length}>
+                <ScrollableContractorChart dataLength={chartData.length}>
                     {isLoading && <ChartLoader />}
 
                     {!isLoading && isEmpty && (
@@ -2105,8 +2176,8 @@ const ContractorPrefixChartCard = ({
                         <BarChart
                             data={chartData}
                             margin={{ top: 66, right: 48, left: 4, bottom: 8 }}
-                            barCategoryGap="22%"
-                            barGap={18}
+                            barCategoryGap="25%"
+                            barGap={24}
                         >
                             <defs>
                                 <linearGradient id="contractorPrefixGrad" x1="0" y1="0" x2="0" y2="1">
@@ -2121,7 +2192,7 @@ const ContractorPrefixChartCard = ({
                                 dataKey="name"
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
+                                tick={renderContractorMultilineAxisTick}
                                 interval={0}
                             />
 
@@ -2163,7 +2234,7 @@ const ContractorPrefixChartCard = ({
                             )}
                         </BarChart>
                     </ResponsiveContainer>
-                </ScrollableTopChart>
+                </ScrollableContractorChart>
 
                 <SimpleLegend
                     items={[
@@ -2795,7 +2866,7 @@ const DashboardHome = () => {
                                 )}
                             </CardTitle>
                             <p className="text-sm text-slate-500 mt-1">
-                                Requirement line is purple and value is visible on every date
+                                Requirement line is orange and value is visible on every date
                             </p>
                         </div>
 
@@ -2949,9 +3020,9 @@ const DashboardHome = () => {
                                     type="monotone"
                                     dataKey="required"
                                     name="Required"
-                                    stroke="#7c3aed"
+                                    stroke="#ea580c"
                                     strokeWidth={2.8}
-                                    dot={{ r: 3, fill: "#7c3aed", strokeWidth: 0 }}
+                                    dot={{ r: 3, fill: "#ea580c", strokeWidth: 0 }}
                                     activeDot={false}
                                     label={(props) => {
                                         const { x, y, value } = props;
@@ -2961,10 +3032,10 @@ const DashboardHome = () => {
                                             <text
                                                 x={x}
                                                 y={y + 20}
-                                                fill="#7c3aed"
+                                                fill="#ea580c"
                                                 fontSize={13}
                                                 fontWeight={900}
-                                                stroke="#7c3aed"
+                                                stroke="#ea580c"
                                                 strokeWidth={0.55}
                                                 paintOrder="stroke"
                                                 style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
@@ -2983,7 +3054,7 @@ const DashboardHome = () => {
                         items={[
                             { color: '#e7ae12', label: 'Current Headcount' },
                             { color: '#2563eb', label: 'Actual Present' },
-                            { color: '#7c3aed', label: 'Required', type: 'line', dashed: false },
+                            { color: '#ea580c', label: 'Required', type: 'line', dashed: false },
                         ]}
                     />
                 </CardContent>

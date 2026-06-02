@@ -29,6 +29,9 @@ const init = () => {
         } catch (error) {
             console.error("Failed to run Combined Daily Reports Job:", error);
         }
+    }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata"
     });
 };
 

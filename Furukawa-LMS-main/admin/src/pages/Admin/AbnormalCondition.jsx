@@ -164,6 +164,16 @@ export default function AbnormalCondition() {
     const handleApproveRow = async (sNo, action) => {
         if (!activeSheet) return;
         try {
+            // Automatically save any pending changes first to prevent data loss (only if user has edit permissions)
+            if (canEdit) {
+                await updateSheet({
+                    id: activeSheet.id,
+                    entries: localEntries,
+                    metadata: localMetadata,
+                    isSubmitted: activeSheet.isSubmitted
+                }).unwrap();
+            }
+
             const res = await triggerApproveRow({
                 id: activeSheet.id,
                 sNo,

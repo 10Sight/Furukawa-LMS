@@ -821,9 +821,19 @@ const Students = () => {
         search: debouncedSearchTerm || "",
         status: statusFilter !== "ALL" ? statusFilter : "",
         unit: unitFilter !== "ALL" ? unitFilter : "",
+        includeLeft: "true",
       }).unwrap();
 
-      const allStudents = result?.data?.users || [];
+      let allStudents = result?.data?.users || [];
+
+      // Filter locally by department filter to match UI view
+      if (departmentFilter !== "ALL") {
+        allStudents = allStudents.filter((student) => {
+          if (departmentFilter === "HAS_DEPARTMENT") return !!student.department;
+          if (departmentFilter === "NO_DEPARTMENT") return !student.department;
+          return String(student.department?._id || student.department?.id) === String(departmentFilter);
+        });
+      }
 
       if (allStudents.length === 0) {
         toast.dismiss(toastId);

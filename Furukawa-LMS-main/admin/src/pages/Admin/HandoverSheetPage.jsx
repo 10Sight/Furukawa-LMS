@@ -37,9 +37,9 @@ const HandoverSheetPage = () => {
         departmentId: dept,
         sectionId: section === "0" ? "" : section,
         includeTemporary: "only",
-    }, { 
+    }, {
         skip: !dept,
-        refetchOnMountOrArgChange: true 
+        refetchOnMountOrArgChange: true
     });
 
     const { data: machinesData } = useGetMachinesByDepartmentQuery(dept, { skip: !dept });
@@ -151,7 +151,7 @@ const HandoverSheetPage = () => {
                                 <SelectContent>
                                     <SelectItem value="0">All Sections</SelectItem>
                                     {assignableSections.map((s) => (
-                                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                                        <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.category})</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -163,7 +163,7 @@ const HandoverSheetPage = () => {
             {/* Handover Sheet Area */}
             {dept ? (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <HandoverSheet 
+                    <HandoverSheet
                         departmentId={dept}
                         sectionId={section === "0" ? null : section}
                         students={students}

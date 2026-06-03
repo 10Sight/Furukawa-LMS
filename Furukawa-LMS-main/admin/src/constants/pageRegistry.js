@@ -334,8 +334,8 @@ export const PAGE_REGISTRY = [
     // CMS layout
     { key: "cms-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "cms", link: "/cms", icon: "IconLayoutDashboardFilled" },
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
-    { key: "abnormal-condition", label: "Abnormal Condition", labelKey: "nav.abnormalCondition", layout: "cms", link: "/cms/abnormal-condition", icon: "IconAlertTriangle" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
+    { key: "abnormal-condition", label: "Abnormal Condition", labelKey: "nav.abnormalCondition", layout: "cms", link: "/cms/abnormal-condition", icon: "IconAlertTriangle" },
     { key: "landing-page", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];
 

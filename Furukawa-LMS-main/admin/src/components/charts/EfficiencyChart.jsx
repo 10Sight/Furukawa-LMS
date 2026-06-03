@@ -68,13 +68,11 @@ const calculateUserEfficiency = (op) => {
 const getAvg = (arr) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100 : 0;
 const getOpDate = (op) => op.attendanceDate || op.date || op.logDate || '';
 const getDateText = (f) => {
-    if (f.dateFrom && f.dateTo) {
-        if (f.dateFrom === f.dateTo) return `Date: ${f.dateFrom}`;
-        return `Date: ${f.dateFrom} to ${f.dateTo}`;
-    }
-    if (f.dateFrom) return `From: ${f.dateFrom}`;
-    if (f.dateTo) return `To: ${f.dateTo}`;
-    return 'All Dates';
+    const today = new Date().toLocaleDateString('en-CA');
+    const from = f.dateFrom || today;
+    const to = f.dateTo || today;
+    if (from === to) return `Date: ${from}`;
+    return `Date: ${from} to ${to}`;
 };
 
 // Bar label renderer: always outside and above the bar with the respective outsideColor.
@@ -85,17 +83,31 @@ const barLabel = (staggerPx, outsideColor) => ({ x, y, width, height, value }) =
 
 const applyFilters = (ops, f) => {
     let r = ops || [];
+    // Condition 1: If user status is LEFT, exclude them
+    r = r.filter(op => op.status !== 'LEFT' && op.userStatus !== 'LEFT');
+
     if (f.deptIds?.length) r = r.filter(op => f.deptIds.includes(String(op.departmentId || op.departmentName)));
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
     if (f.lineIds?.length) r = r.filter(op => f.lineIds.includes(String(op.lineId || op.lineName)));
     if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || op.shiftName || 'General')));
-    if (f.dateFrom) r = r.filter(op => getOpDate(op) >= f.dateFrom);
-    if (f.dateTo) r = r.filter(op => getOpDate(op) <= f.dateTo);
+    
+    // Condition 2: Default under-the-hood date range to current date
+    const today = new Date().toLocaleDateString('en-CA');
+    const dateFrom = f.dateFrom || today;
+    const dateTo = f.dateTo || today;
+
+    r = r.filter(op => {
+        const opDate = getOpDate(op);
+        return opDate >= dateFrom && opDate <= dateTo;
+    });
     return r;
 };
 
 const applyFiltersNoDate = (ops, f) => {
     let r = ops || [];
+    // Condition 1: If user status is LEFT, exclude them
+    r = r.filter(op => op.status !== 'LEFT' && op.userStatus !== 'LEFT');
+
     if (f.deptIds?.length) r = r.filter(op => f.deptIds.includes(String(op.departmentId || op.departmentName)));
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
     if (f.lineIds?.length) r = r.filter(op => f.lineIds.includes(String(op.lineId || op.lineName)));
@@ -246,8 +258,7 @@ const MultiSelectDropdown = ({ label, options, value = [], onChange }) => {
 
 // ─── ChartFilter ──────────────────────────────────────────────────────────────
 const initF = () => {
-    const today = new Date().toLocaleDateString('en-CA');
-    return { deptIds: [], sectionIds: [], lineIds: [], shifts: [], dateFrom: today, dateTo: today };
+    return { deptIds: [], sectionIds: [], lineIds: [], shifts: [], dateFrom: "", dateTo: "" };
 };
 
 const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, shiftOpts, showDept, showSection, showLine, hideLegend = false, hideShift = false }) => {
@@ -451,20 +462,29 @@ const EfficiencyChart = () => {
         return { min: avg(withMin, 'minEfficiency'), max: avg(withMax, 'maxEfficiency') };
     }, [subSections]);
 
-    // lineId → sectionId / departmentId  (built from rawOps — no extra API call)
+    // lineId → sectionId / departmentId, sectionId → departmentId (built from rawOps — no extra API call)
     const hierarchyMap = useMemo(() => {
         const lineToSection = {};
         const lineToDept = {};
+        const sectionToDept = {};
         rawOps.forEach(op => {
             const lid = String(op.lineId || '');
-            if (!lid) return;
-            if (op.sectionId) lineToSection[lid] = String(op.sectionId);
-            if (op.departmentId || op.departmentName) lineToDept[lid] = String(op.departmentId || op.departmentName);
+            const sid = String(op.sectionId || '');
+            const did = String(op.departmentId || op.departmentName || '');
+            
+            if (lid) {
+                if (sid) lineToSection[lid] = sid;
+                if (did) lineToDept[lid] = did;
+            }
+            if (sid && did) {
+                sectionToDept[sid] = did;
+            }
         });
-        return { lineToSection, lineToDept };
+        return { lineToSection, lineToDept, sectionToDept };
     }, [rawOps]);
 
     // Sub-section min/max targets aggregated per line / section / department
+    // Line Target: Average of sub-section targets under each line (rounded to nearest integer)
     const targetsByLine = useMemo(() => {
         const map = {};
         subSections.forEach(ss => {
@@ -474,32 +494,76 @@ const EfficiencyChart = () => {
             if (ss.minEfficiency != null) map[lid].minArr.push(parseFloat(ss.minEfficiency));
             if (ss.maxEfficiency != null) map[lid].maxArr.push(parseFloat(ss.maxEfficiency));
         });
-        return map;
+
+        const averages = {};
+        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+        
+        Object.entries(map).forEach(([lid, val]) => {
+            averages[lid] = {
+                min: roundedAvg(val.minArr),
+                max: roundedAvg(val.maxArr)
+            };
+        });
+        return averages;
     }, [subSections]);
 
+    // Section Target: Average of Line targets under each section (rounded to nearest integer)
     const targetsBySection = useMemo(() => {
-        const map = {};
-        subSections.forEach(ss => {
-            const sid = hierarchyMap.lineToSection[String(ss.lineId || '')];
-            if (!sid) return;
-            if (!map[sid]) map[sid] = { minArr: [], maxArr: [] };
-            if (ss.minEfficiency != null) map[sid].minArr.push(parseFloat(ss.minEfficiency));
-            if (ss.maxEfficiency != null) map[sid].maxArr.push(parseFloat(ss.maxEfficiency));
+        const sectionLinesMap = {};
+        Object.entries(hierarchyMap.lineToSection).forEach(([lid, sid]) => {
+            if (!sectionLinesMap[sid]) sectionLinesMap[sid] = [];
+            sectionLinesMap[sid].push(lid);
         });
-        return map;
-    }, [subSections, hierarchyMap]);
 
-    const targetsByDept = useMemo(() => {
-        const map = {};
-        subSections.forEach(ss => {
-            const did = hierarchyMap.lineToDept[String(ss.lineId || '')];
-            if (!did) return;
-            if (!map[did]) map[did] = { minArr: [], maxArr: [] };
-            if (ss.minEfficiency != null) map[did].minArr.push(parseFloat(ss.minEfficiency));
-            if (ss.maxEfficiency != null) map[did].maxArr.push(parseFloat(ss.maxEfficiency));
+        const averages = {};
+        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+
+        Object.entries(sectionLinesMap).forEach(([sid, lineIds]) => {
+            const minVals = [];
+            const maxVals = [];
+            lineIds.forEach(lid => {
+                const lineT = targetsByLine[lid];
+                if (lineT) {
+                    if (lineT.min != null) minVals.push(lineT.min);
+                    if (lineT.max != null) maxVals.push(lineT.max);
+                }
+            });
+            averages[sid] = {
+                min: roundedAvg(minVals),
+                max: roundedAvg(maxVals)
+            };
         });
-        return map;
-    }, [subSections, hierarchyMap]);
+        return averages;
+    }, [hierarchyMap.lineToSection, targetsByLine]);
+
+    // Department Target: Average of Section targets under each department (rounded to nearest integer)
+    const targetsByDept = useMemo(() => {
+        const deptSectionsMap = {};
+        Object.entries(hierarchyMap.sectionToDept).forEach(([sid, did]) => {
+            if (!deptSectionsMap[did]) deptSectionsMap[did] = [];
+            deptSectionsMap[did].push(sid);
+        });
+
+        const averages = {};
+        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+
+        Object.entries(deptSectionsMap).forEach(([did, sectionIds]) => {
+            const minVals = [];
+            const maxVals = [];
+            sectionIds.forEach(sid => {
+                const sectT = targetsBySection[sid];
+                if (sectT) {
+                    if (sectT.min != null) minVals.push(sectT.min);
+                    if (sectT.max != null) maxVals.push(sectT.max);
+                }
+            });
+            averages[did] = {
+                min: roundedAvg(minVals),
+                max: roundedAvg(maxVals)
+            };
+        });
+        return averages;
+    }, [hierarchyMap.sectionToDept, targetsBySection]);
 
     // All unique shifts
     const allShifts = useMemo(() => {
@@ -523,7 +587,9 @@ const EfficiencyChart = () => {
         rawOps.forEach(op => {
             if (deptIds?.length && !deptIds.includes(String(op.departmentId || op.departmentName))) return;
             const id = String(op.sectionId || op.sectionName || '');
-            if (id && op.sectionName) m[id] = op.sectionName;
+            if (id && op.sectionName) {
+                m[id] = op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName;
+            }
         });
         return Object.entries(m).map(([value, label]) => ({ value, label }));
     };
@@ -612,7 +678,9 @@ const EfficiencyChart = () => {
         uniqueOps.forEach(op => {
             if (f2.deptIds?.length && !f2.deptIds.includes(String(op.departmentId || op.departmentName))) return;
             const id = String(op.sectionId || op.sectionName || '');
-            if (id && op.sectionName) m[id] = op.sectionName;
+            if (id && op.sectionName) {
+                m[id] = op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName;
+            }
         });
         let list = Object.entries(m).map(([id, name]) => ({ id, name }));
         if (f2.sectionIds?.length) {
@@ -674,15 +742,22 @@ const EfficiencyChart = () => {
         const base = buildGroupData(opsAll1, opsAtt1, op => String(op.departmentId || op.departmentName || ''), op => op.departmentName, sh1, allDepts);
         return base.map(item => {
             const tgt = targetsByDept[item.id] || {};
-            return { ...item, minEffTarget: tgt.minArr?.length ? getAvg(tgt.minArr) : null, maxEffTarget: tgt.maxArr?.length ? getAvg(tgt.maxArr) : null };
+            return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
         });
     }, [opsAll1, opsAtt1, sh1, targetsByDept, allDepts]);
 
     const d2 = useMemo(() => {
-        const base = buildGroupData(opsAll2, opsAtt2, op => String(op.sectionId || op.sectionName || ''), op => op.sectionName, sh2, allSections);
+        const base = buildGroupData(
+            opsAll2, 
+            opsAtt2, 
+            op => String(op.sectionId || op.sectionName || ''), 
+            op => op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName, 
+            sh2, 
+            allSections
+        );
         return base.map(item => {
             const tgt = targetsBySection[item.id] || {};
-            return { ...item, minEffTarget: tgt.minArr?.length ? getAvg(tgt.minArr) : null, maxEffTarget: tgt.maxArr?.length ? getAvg(tgt.maxArr) : null };
+            return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
         });
     }, [opsAll2, opsAtt2, sh2, targetsBySection, allSections]);
 
@@ -690,7 +765,7 @@ const EfficiencyChart = () => {
         const base = buildGroupData(opsAll3, opsAtt3, op => String(op.lineId || op.lineName || ''), op => op.lineName, sh3, allLines);
         return base.map(item => {
             const tgt = targetsByLine[item.id] || {};
-            return { ...item, minEffTarget: tgt.minArr?.length ? getAvg(tgt.minArr) : null, maxEffTarget: tgt.maxArr?.length ? getAvg(tgt.maxArr) : null };
+            return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
         });
     }, [opsAll3, opsAtt3, sh3, targetsByLine, allLines]);
 
@@ -700,38 +775,73 @@ const EfficiencyChart = () => {
             const ss = subSections.find(s => String(s.id) === String(item.id));
             return {
                 ...item,
-                minEffTarget: ss?.minEfficiency ?? null,
-                maxEffTarget: ss?.maxEfficiency ?? null,
+                minEffTarget: ss?.minEfficiency != null ? Math.round(parseFloat(ss.minEfficiency)) : null,
+                maxEffTarget: ss?.maxEfficiency != null ? Math.round(parseFloat(ss.maxEfficiency)) : null,
             };
         });
     }, [opsAll4, opsAtt4, sh4, subSections, allSubSections]);
 
-    // Chart 1: Attendance-wise — fixed 3 buckets: Total, Present, Absent
+    // Helper to calculate dynamic target based on hierarchy filters
+    const getFilteredMinTarget = (filter) => {
+        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+        
+        if (filter.lineIds?.length) {
+            const mins = filter.lineIds.map(id => targetsByLine[id]?.min ?? 0);
+            if (mins.length) return roundedAvg(mins);
+        }
+        if (filter.sectionIds?.length) {
+            const mins = filter.sectionIds.map(id => targetsBySection[id]?.min ?? 0);
+            if (mins.length) return roundedAvg(mins);
+        }
+        if (filter.deptIds?.length) {
+            const mins = filter.deptIds.map(id => targetsByDept[id]?.min ?? 0);
+            if (mins.length) return roundedAvg(mins);
+        }
+        
+        // Fallback: Average of all departments in the system, treating unconfigured ones as 0
+        if (allDeptOpts.length) {
+            const mins = allDeptOpts.map(d => targetsByDept[d.value]?.min ?? 0);
+            return roundedAvg(mins);
+        }
+        
+        return globalEffTarget.min != null ? Math.round(globalEffTarget.min) : null;
+    };
+
+    // Chart 1: Attendance-wise — fixed buckets: Min (if configured), Total, Present, Absent
     const d5 = useMemo(() => {
-        const hasData = (op) => op.currentEffeciency != null || op.evalData != null;
         const presOps = opsAtt5.filter(op => PRESENT_STATUSES.has(op.logStatus));
         const absOps = opsAtt5.filter(op => op.logStatus && !PRESENT_STATUSES.has(op.logStatus));
         
-        const allEffs = opsAll5.filter(hasData).map(calculateUserEfficiency);
-        const presEffs = presOps.filter(hasData).map(calculateUserEfficiency);
-        const absEffs = absOps.filter(hasData).map(calculateUserEfficiency);
+        const allEffs = opsAll5.map(calculateUserEfficiency);
+        const presEffs = presOps.map(calculateUserEfficiency);
+        const absEffs = absOps.map(calculateUserEfficiency);
         
         const items = [];
-        const tMin = globalEffTarget.min;
+        const tMin = getFilteredMinTarget(f5);
         const tAll = opsAll5.length ? getAvg(allEffs) : 0;
         let tPres = presOps.length ? getAvg(presEffs) : 0;
         let tAbs = absOps.length ? getAvg(absEffs) : 0;
         tPres = Math.min(tPres, 100);
         tAbs = Math.min(tAbs, 100);
         
-        if (tMin != null) items.push({ name: 'Min Efficiency', displayName: 'Min Efficiency', efficiency: tMin, isTarget: true });
+        if (tMin != null) {
+            items.push({
+                name: 'Min Efficiency',
+                displayName: 'Min Efficiency',
+                efficiency: tMin,
+                isTarget: true,
+                count: 0,
+                evaluated: 0
+            });
+        }
+        
         items.push(
-            { name: 'Total Efficiency', displayName: 'Total Efficiency', efficiency: tAll, count: opsAll5.length, evaluated: allEffs.length },
-            { name: 'Present Efficiency', displayName: 'Present Efficiency', efficiency: tPres, count: presOps.length, evaluated: presEffs.length },
-            { name: 'Absent Efficiency', displayName: 'Absent Efficiency', efficiency: tAbs, count: absOps.length, evaluated: absEffs.length },
+            { name: 'Total Efficiency', displayName: 'Total Efficiency', efficiency: tAll, count: opsAll5.length, evaluated: opsAll5.filter(op => op.currentEffeciency != null || op.evalData != null).length },
+            { name: 'Present Efficiency', displayName: 'Present Efficiency', efficiency: tPres, count: presOps.length, evaluated: presOps.filter(op => op.currentEffeciency != null || op.evalData != null).length },
+            { name: 'Absent Efficiency', displayName: 'Absent Efficiency', efficiency: tAbs, count: absOps.length, evaluated: absOps.filter(op => op.currentEffeciency != null || op.evalData != null).length },
         );
         return items;
-    }, [opsAll5, opsAtt5, globalEffTarget]);
+    }, [opsAll5, opsAtt5, f5, targetsByLine, targetsBySection, targetsByDept, globalEffTarget]);
 
     // Chart 6: Operator-wise (single bar — overall efficiency, color-coded by attendance)
     const d6 = useMemo(() => {
@@ -824,21 +934,20 @@ const EfficiencyChart = () => {
                                 {attendanceView === 'bar' ? (
                                     <>
                                         <ChartWrapper data={d5} minW={160}>
-                                            <BarChart data={d5} margin={commonMargin} barCategoryGap="40%">
+                                            <BarChart data={d5} margin={commonMargin} barCategoryGap="35%">
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                                 <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
                                                 <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                                <Bar dataKey="efficiency" radius={[10, 10, 0, 0]} maxBarSize={80}>
+                                                <Bar dataKey="efficiency" radius={[10, 10, 0, 0]} maxBarSize={52}>
                                                     {d5.map((entry, i) => (
-                                                        <Cell key={i} fill={getAttBarColor(entry.name)}
-                                                            opacity={entry.isTarget ? 0.6 : 1} />
+                                                        <Cell key={i} fill={getAttBarColor(entry.name)} opacity={entry.isTarget ? 0.65 : 1} />
                                                     ))}
                                                     <LabelList dataKey="efficiency" content={barLabel(0, '#1e293b')} />
                                                 </Bar>
                                             </BarChart>
                                         </ChartWrapper>
                                         <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
-                                            {globalEffTarget.min != null && (
+                                            {d5.some(item => item.isTarget) && (
                                                 <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
                                                     <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> Min Efficiency
                                                 </span>
@@ -859,7 +968,7 @@ const EfficiencyChart = () => {
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
                                                 <Pie
-                                                    data={d5}
+                                                    data={d5.filter(item => !item.isTarget)}
                                                     dataKey="efficiency"
                                                     nameKey="name"
                                                     cx="50%"
@@ -868,7 +977,7 @@ const EfficiencyChart = () => {
                                                     label={({ name, value }) => `${name}: ${value}%`}
                                                     labelLine
                                                 >
-                                                    {d5.map((entry, idx) => (
+                                                    {d5.filter(item => !item.isTarget).map((entry, idx) => (
                                                         <Cell key={`att-${idx}`} fill={getAttBarColor(entry.name)} />
                                                     ))}
                                                 </Pie>

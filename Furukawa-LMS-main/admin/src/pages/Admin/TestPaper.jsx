@@ -30,8 +30,9 @@ import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { useSelector } from "react-redux";
+import { se } from "date-fns/locale";
 
-const TestPaper = () => {
+const TestPaper = ({ isDojo: forceDojo }) => {
   const navigate = useNavigate();
   const currentUser = useSelector((state) => state.auth.user);
 
@@ -43,17 +44,17 @@ const TestPaper = () => {
   const canRead = hasPermission("test_paper:read") || currentUser?.role === "STUDENT" || currentUser?.isEmployee;
   const canManage = hasPermission("test_paper:create");
 
-  const isAuthorizedToAccessAll = currentUser?.role === "SUPERADMIN" || 
-                                  currentUser?.role === "ADMIN" || 
-                                  hasPermission("test_paper:access_all");
+  const isAuthorizedToAccessAll = currentUser?.role === "SUPERADMIN" ||
+    currentUser?.role === "ADMIN" ||
+    hasPermission("test_paper:access_all");
 
-  const canEdit = currentUser?.role === "SUPERADMIN" || 
-                  currentUser?.role === "ADMIN" || 
-                  hasPermission("test_paper:edit");
+  const canEdit = currentUser?.role === "SUPERADMIN" ||
+    currentUser?.role === "ADMIN" ||
+    hasPermission("test_paper:edit");
 
-  const canDelete = currentUser?.role === "SUPERADMIN" || 
-                    currentUser?.role === "ADMIN" || 
-                    hasPermission("test_paper:delete");
+  const canDelete = currentUser?.role === "SUPERADMIN" ||
+    currentUser?.role === "ADMIN" ||
+    hasPermission("test_paper:delete");
 
   const [selectedDepartment, setSelectedDepartment] = useState(() => {
     if (!isAuthorizedToAccessAll && currentUser?.departmentId) {
@@ -143,7 +144,7 @@ const TestPaper = () => {
     search: searchTerm,
     departmentId: selectedDepartment !== "ALL" ? selectedDepartment : undefined,
     sectionId: selectedSection !== "ALL" ? selectedSection : undefined,
-    isDojo: currentUser?.isTemporary ? true : undefined,
+    isDojo: forceDojo !== undefined ? forceDojo : (currentUser?.isTemporary ? true : undefined),
   });
 
   const { data: ojtData } = useGetStudentOJTsQuery(currentUser?.id, {
@@ -152,11 +153,11 @@ const TestPaper = () => {
 
   const isOjtApproved = useMemo(() => {
     if (!currentUser?.isTemporary) return true;
-    
+
     // Check real-time hook results
     const ojts = ojtData?.data || [];
     if (ojts.some(o => o.result === "Pass" || o.result === "Approved")) return true;
-    
+
     // Fallback to profile user ojt array
     const userOjts = currentUser?.ojt || [];
     return Array.isArray(userOjts) && userOjts.some(o => o.result === "Pass" || o.result === "Approved");
@@ -211,7 +212,7 @@ const TestPaper = () => {
         if (selectedTestType === "theoretical" && !quiz.isTheoretical) return false;
         if (selectedTestType === "practical" && (quiz.isDojo || quiz.isHandover || quiz.isTheoretical)) return false;
       }
-      
+
       // 5. OJT Gating Filter for Non-Dojo quizzes
       if (!quiz.isDojo && currentUser?.isTemporary && !isOjtApproved) {
         return false;
@@ -391,8 +392,8 @@ const TestPaper = () => {
           </Button>
           {canManage && (
             <Button onClick={() => {
-                const base = "/" + (window.location.pathname.split('/')[1] || "admin");
-                navigate(`${base}/add-test-paper`);
+              const base = "/" + (window.location.pathname.split('/')[1] || "admin");
+              navigate(`${base}/add-test-paper`);
             }} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
               <IconFileText className="h-4 w-4" />
               Create Test Paper
@@ -454,7 +455,7 @@ const TestPaper = () => {
                   <SelectItem value="ALL">All Sections</SelectItem>
                   {sections.map((sec) => (
                     <SelectItem key={sec.id} value={String(sec.id)}>
-                      {sec.name}
+                      {sec.name} ({sec.category})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -634,7 +635,7 @@ const TestPaper = () => {
                             const quizSubSections = (quiz.subSectionId || [])
                               .map(id => subSections.find(s => String(s.id) === String(id))?.name)
                               .filter(Boolean);
-                              
+
                             if (quizSubSections.length > 0) {
                               return (
                                 <div className="flex flex-wrap gap-1">

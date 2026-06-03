@@ -90,18 +90,21 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 /* ── Filter Select helper ── */
-const FilterSelect = ({ placeholder, value, onChange, items, disabled }) => (
+const FilterSelect = ({ placeholder, value, onChange, items, disabled, allLabel }) => (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger className="h-8 text-xs min-w-[130px] max-w-[160px]">
             <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-            <SelectItem value="all" className="text-xs">All</SelectItem>
-            {(items || []).map(item => (
-                <SelectItem key={item._id} value={item._id} className="text-xs">
-                    {item.name}
-                </SelectItem>
-            ))}
+            <SelectItem value="all" className="text-xs">{allLabel || "All"}</SelectItem>
+            {(items || []).map(item => {
+                const itemId = String(item.id || item._id || '');
+                return (
+                    <SelectItem key={itemId} value={itemId} className="text-xs">
+                        {item.name}
+                    </SelectItem>
+                );
+            })}
         </SelectContent>
     </Select>
 );
@@ -112,18 +115,12 @@ const DepartmentQuizChart = ({ dateRange }) => {
     const [filters, setFilters] = useState({
         departmentId: '',
         sectionId: '',
-        lineId: '',
-        subSectionId: '',
     });
 
     const set = (key) => (val) => {
         const cleared = val === 'all' ? '' : val;
         if (key === 'departmentId') {
-            setFilters(prev => ({ ...prev, departmentId: cleared, sectionId: '', lineId: '', subSectionId: '' }));
-        } else if (key === 'sectionId') {
-            setFilters(prev => ({ ...prev, sectionId: cleared, lineId: '', subSectionId: '' }));
-        } else if (key === 'lineId') {
-            setFilters(prev => ({ ...prev, lineId: cleared, subSectionId: '' }));
+            setFilters({ departmentId: cleared, sectionId: '' });
         } else {
             setFilters(prev => ({ ...prev, [key]: cleared }));
         }
@@ -134,8 +131,6 @@ const DepartmentQuizChart = ({ dateRange }) => {
         ...dateRange,
         departmentId: filters.departmentId,
         sectionId:    filters.sectionId,
-        lineId:       filters.lineId,
-        subSectionId: filters.subSectionId,
     });
 
     /* ── API: filter options ── */
@@ -143,20 +138,15 @@ const DepartmentQuizChart = ({ dateRange }) => {
     const { data: sectionData } = useGetSectionsByDepartmentQuery(
         filters.departmentId || skipToken
     );
-    const { data: linesAllData }    = useGetLinesQuery(undefined, { skip: !!filters.sectionId });
-    const { data: linesBySectData } = useGetLinesBySectionQuery(
-        filters.sectionId || skipToken
-    );
-    const { data: subSectionData }  = useGetSubSectionsQuery(
-        filters.lineId ? { lineId: filters.lineId } : undefined
-    );
 
     const departments = deptData?.data?.departments || [];
-    const sections    = sectionData?.data || sectionData || [];
-    const lines       = filters.sectionId
-        ? (linesBySectData?.data || linesBySectData || [])
-        : (linesAllData?.data   || linesAllData   || []);
-    const subSections = subSectionData?.data || subSectionData || [];
+    const formattedSections = React.useMemo(() => {
+        const rawSections = sectionData?.data || sectionData || [];
+        return rawSections.map(s => ({
+            ...s,
+            name: s.category ? `${s.name} (${s.category})` : s.name
+        }));
+    }, [sectionData]);
 
     const chartData = statsData?.data || [];
 
@@ -212,29 +202,16 @@ const DepartmentQuizChart = ({ dateRange }) => {
                             value={filters.departmentId || 'all'}
                             onChange={set('departmentId')}
                             items={departments}
+                            allLabel="All Department"
                         />
 
                         <FilterSelect
                             placeholder="Section"
                             value={filters.sectionId || 'all'}
                             onChange={set('sectionId')}
-                            items={sections}
+                            items={formattedSections}
                             disabled={!filters.departmentId}
-                        />
-
-                        <FilterSelect
-                            placeholder="Line"
-                            value={filters.lineId || 'all'}
-                            onChange={set('lineId')}
-                            items={lines}
-                        />
-
-                        <FilterSelect
-                            placeholder="Sub-Section"
-                            value={filters.subSectionId || 'all'}
-                            onChange={set('subSectionId')}
-                            items={subSections}
-                            disabled={!filters.lineId}
+                            allLabel="All Section"
                         />
                     </div>
                 </div>
@@ -291,9 +268,8 @@ const DepartmentQuizChart = ({ dateRange }) => {
                                     dataKey="passedCount"
                                     name="Passed"
                                     fill="url(#passGrad)"
-                                    radius={[7, 7, 0, 0]}
+                                    stackId="a"
                                     barSize={46}
-                                    minPointSize={2}
                                 >
                                     <LabelList content={<ValueLabel />} />
                                 </Bar>
@@ -302,9 +278,8 @@ const DepartmentQuizChart = ({ dateRange }) => {
                                     dataKey="failedCount"
                                     name="Failed"
                                     fill="url(#failGrad)"
-                                    radius={[7, 7, 0, 0]}
+                                    stackId="a"
                                     barSize={46}
-                                    minPointSize={2}
                                 >
                                     <LabelList content={<ValueLabel />} />
                                 </Bar>

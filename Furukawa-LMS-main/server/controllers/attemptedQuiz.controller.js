@@ -517,6 +517,8 @@ export const startQuiz = asyncHandler(async (req, res) => {
         subSectionNames: subSectionNames,
         level: quiz.level,
         conductedBy: quiz.conductedBy || "Education Cell",
+        paperTitle: quiz.paperTitle || null,
+        paperSubTitle: quiz.paperSubTitle || null,
         attemptsAllowed: isUnlimited ? 0 : attemptsAllowedWithExtra,
         attemptsUsed: previousAttempts,
         attemptsRemaining: isUnlimited ? null : attemptsRemainingWithExtra,

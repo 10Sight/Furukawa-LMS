@@ -64,18 +64,41 @@ import {
 } from "@tabler/icons-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import SearchInput from "@/components/common/SearchInput";
 import FilterSelect from "@/components/common/FilterSelect";
 import StatCard from "@/components/common/StatCard";
 import FilterBar from "@/components/common/FilterBar";
 import { useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+
+// Section tab component imports
+import TestPaper from "./TestPaper";
+import CertificateTemplates from "./CertificateTemplates";
+import EvaluationTestList from "./EvaluationTest/EvaluationTestList";
+import HandoverSheetPage from "./HandoverSheetPage";
+import SixteenDayMonitoring from "./SixteenDayMonitoring";
 
 const DojoHiring = () => {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const currentUser = useSelector((state) => state.auth.user);
+
+    // Support high-level tabs switching
+    const tabParam = searchParams.get("tab");
+    const [dojoTab, setDojoTab] = useState(tabParam || "dojoHiring");
+
+    useEffect(() => {
+        if (tabParam) {
+            setDojoTab(tabParam);
+        }
+    }, [tabParam]);
+
+    const handleDojoTabChange = (value) => {
+        setDojoTab(value);
+        setSearchParams({ tab: value });
+    };
 
     const hasPermission = (permission) => {
         if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
@@ -354,8 +377,19 @@ const DojoHiring = () => {
 
     return (
         <div className="p-6 space-y-6 animate-in fade-in duration-500 bg-slate-50/50 min-h-screen">
-            {/* Header Area */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <Tabs value={dojoTab} onValueChange={handleDojoTabChange} className="w-full">
+                <TabsList className="no-print mb-6 flex flex-wrap gap-2 w-fit bg-slate-100 p-1.5 rounded-xl shadow-sm border border-slate-200">
+                    <TabsTrigger value="dojoHiring" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">DOJO Hiring</TabsTrigger>
+                    <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Test Paper</TabsTrigger>
+                    <TabsTrigger value="certificateTemplates" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Certificate Templates</TabsTrigger>
+                    <TabsTrigger value="dojoEvaluationTest" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">DOJO Evaluation Test</TabsTrigger>
+                    <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Handover Sheet</TabsTrigger>
+                    <TabsTrigger value="sixteenDays" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">16 Days</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="dojoHiring" className="space-y-6">
+                    {/* Header Area */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                         <IconUserPlus className="w-8 h-8 text-blue-600" />
@@ -629,8 +663,30 @@ const DojoHiring = () => {
                     </Button>
                 </div>
             </div>
+        </TabsContent>
 
-            {/* Registration/Edit Modal */}
+            <TabsContent value="testPaper" className="space-y-6">
+                <TestPaper isDojo={true} />
+            </TabsContent>
+
+            <TabsContent value="certificateTemplates" className="space-y-6">
+                <CertificateTemplates />
+            </TabsContent>
+
+            <TabsContent value="dojoEvaluationTest" className="space-y-6">
+                <EvaluationTestList />
+            </TabsContent>
+
+            <TabsContent value="handoverSheet" className="space-y-6">
+                <HandoverSheetPage />
+            </TabsContent>
+
+            <TabsContent value="sixteenDays" className="space-y-6">
+                <SixteenDayMonitoring />
+            </TabsContent>
+        </Tabs>
+
+        {/* Registration/Edit Modal */}
             <Dialog open={isAddModalOpen} onOpenChange={(open) => !open && closeModal()}>
                 <DialogContent className="max-w-[1000px] w-full max-h-[90vh] overflow-y-auto">
                     <DialogHeader>

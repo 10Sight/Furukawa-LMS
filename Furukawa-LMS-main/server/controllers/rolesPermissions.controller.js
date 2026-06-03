@@ -131,7 +131,7 @@ const SYSTEM_PERMISSIONS = {
   HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
   HANDOVER_SHEET_READ: "handover_sheet:read",
   HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
-  
+
   // 10-Cycle Sheet Management
   TEN_CYCLE_MANAGE: "ten_cycle:manage",
   TEN_CYCLE_VERIFY: "ten_cycle:verify",
@@ -139,7 +139,10 @@ const SYSTEM_PERMISSIONS = {
 
   // DOJO Hiring Management
   DOJO_HIRING_CREATE: "dojo_hiring:create",
-  
+  DOJO_HIRING_READ: "dojo_hiring:read",
+  DOJO_HIRING_UPDATE: "dojo_hiring:update",
+  DOJO_HIRING_DELETE: "dojo_hiring:delete",
+
   // Test Paper Management
   TEST_PAPER_READ: "test_paper:read",
   TEST_PAPER_CREATE: "test_paper:create",
@@ -156,7 +159,7 @@ const SYSTEM_PERMISSIONS = {
   LEARNING_CREATE: "learning:create",
   LEARNING_UPDATE: "learning:update",
   LEARNING_DELETE: "learning:delete",
-  
+
   // Skill Matrix Approvals
   SKILL_MATRIX_QA_APPROVE: "skill_matrix:qa_approve",
   SKILL_MATRIX_SAFETY_APPROVE: "skill_matrix:safety_approve",
@@ -279,7 +282,11 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE,
       SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE,
       SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CONFIRM,
-      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_READ,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -432,7 +439,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },
-        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, name: "Onboard Candidates", description: "Onboard new temporary candidates into the pipeline" }
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, name: "Onboard Candidates", description: "Onboard new temporary candidates into the pipeline" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, name: "Update Candidates", description: "Edit candidate information" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, name: "Delete Candidates", description: "Remove temporary candidates from the pipeline" }
       ],
       "Test Paper Management": [
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_READ, name: "View Test Papers", description: "Access and view the list of test papers" },

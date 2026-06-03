@@ -24,6 +24,8 @@ class Quiz {
         this.isHandover = !!data.isHandover;
         this.isTheoretical = !!data.isTheoretical;
         this.conductedBy = data.conductedBy !== undefined && data.conductedBy !== null ? data.conductedBy : "";
+        this.paperTitle = data.paperTitle || null;
+        this.paperSubTitle = data.paperSubTitle || null;
 
         // Resource linking & Legacy fields
         this.courseId = data.courseId || data.course;
@@ -117,6 +119,8 @@ class Quiz {
                             isHandover BIT DEFAULT 0,
                             isTheoretical BIT DEFAULT 0,
                             conductedBy NVARCHAR(255) DEFAULT '',
+                            paperTitle NVARCHAR(500),
+                            paperSubTitle NVARCHAR(500),
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
                         );
@@ -136,7 +140,9 @@ class Quiz {
                     { name: 'isDojo', type: 'BIT DEFAULT 0' },
                     { name: 'isHandover', type: 'BIT DEFAULT 0' },
                     { name: 'isTheoretical', type: 'BIT DEFAULT 0' },
-                    { name: 'conductedBy', type: "NVARCHAR(255) DEFAULT ''" }
+                    { name: 'conductedBy', type: "NVARCHAR(255) DEFAULT ''" },
+                    { name: 'paperTitle', type: 'NVARCHAR(500)' },
+                    { name: 'paperSubTitle', type: 'NVARCHAR(500)' }
                 ];
 
                 for (const col of columns) {
@@ -192,7 +198,7 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "createdAt"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "createdAt"
         ];
 
         if (!quiz.createdAt) quiz.createdAt = new Date();
@@ -281,7 +287,7 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

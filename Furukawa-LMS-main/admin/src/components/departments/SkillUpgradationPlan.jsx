@@ -462,6 +462,20 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId }) => {
                 </div>
             </CardHeader>
             <CardContent className="overflow-x-auto">
+                {/* Sheet Metadata Header Block - Visible in screen & print */}
+                <div className="flex justify-between items-center w-full mb-4 pb-2 border-b border-slate-200 print:border-black">
+                    <div>
+                        <h2 className="text-lg font-bold uppercase tracking-wide text-slate-800 print:text-black hidden print:block">
+                            Plan for Skill Upgradation
+                        </h2>
+                        <span className="print:hidden text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            Interactive Skill Upgradation Plan
+                        </span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 border border-slate-950 bg-slate-50 px-3 py-1 rounded shadow-sm print:shadow-none print:bg-white print:rounded-none whitespace-nowrap">
+                        Document No: FRM-WH-QA-236
+                    </div>
+                </div>
                 <table className="w-full min-w-[1200px] border-collapse border border-black text-sm">
                     <thead>
                         {/* Line dropdown row */}

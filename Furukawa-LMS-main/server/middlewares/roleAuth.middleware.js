@@ -218,3 +218,48 @@ export const authorizeRoleHierarchy = () => {
     }
   };
 };
+
+/**
+ * Authorization middleware based on having ANY of the required permissions
+ * @param {string[]} allowedPermissions - Array of permission strings of which at least one is required
+ * @returns {Function} Express middleware function
+ */
+export const authorizeAnyPermission = (allowedPermissions) => {
+  return (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw new ApiError("User not authenticated", 401);
+      }
+
+      const userRole = req.user.role;
+
+      if (!userRole || (!DEFAULT_ROLES[userRole] && userRole !== 'CUSTOM')) {
+        throw new ApiError("Invalid user role", 403);
+      }
+
+      // SuperAdmin has all privileges
+      if (userRole === 'SUPERADMIN') {
+        return next();
+      }
+
+      const defaultPermissions = userRole !== 'CUSTOM' ? (DEFAULT_ROLES[userRole]?.permissions || []) : [];
+      const customPermissions = req.user.customRole?.permissions || [];
+      const allPermissions = [...new Set([...defaultPermissions, ...customPermissions])];
+
+      const hasAny = allowedPermissions.some(permission =>
+        allPermissions.includes(permission)
+      );
+
+      if (!hasAny) {
+        throw new ApiError(
+          `Insufficient permissions. Requires one of: ${allowedPermissions.join(', ')}`,
+          403
+        );
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+};

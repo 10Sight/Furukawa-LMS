@@ -45,6 +45,7 @@ const TakeQuiz = () => {
   const [step, setStep] = useState("loading"); // loading, quiz, result
 
   const { user: currentUser } = useSelector((state) => state.auth);
+  const STORAGE_KEY = `fme_quiz_session_${quizId}_${currentUser?.id || currentUser?._id || 'guest'}`;
   const isAdminOrTrainer = currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPERADMIN' || currentUser.role === 'INSTRUCTOR' || currentUser.role === 'TRAINER');
   const isCustomRole = currentUser?.role === 'CUSTOM';
   const isCustomAdminOrTrainer = isCustomRole && ['admin', 'superadmin', 'trainer', 'instructor'].includes(String(currentUser?.customRole?.targetLayout).toLowerCase());
@@ -178,21 +179,100 @@ const TakeQuiz = () => {
         }
 
         setQuiz(data.quiz);
-        setTimeRemaining(data.quiz.timeLimit ? data.quiz.timeLimit * 60 : null);
-        setStartTime(Date.now());
 
-        // Initialize answers array
-        const initialAnswers = {};
-        if (data.quiz.questions) {
-          data.quiz.questions.forEach((_, index) => {
-            initialAnswers[index] = null;
-          });
+        // Check if there is a saved session in localStorage
+        const savedSessionStr = localStorage.getItem(STORAGE_KEY);
+        let restoredSession = null;
+        if (savedSessionStr) {
+          try {
+            restoredSession = JSON.parse(savedSessionStr);
+          } catch (e) {
+            console.error("Failed to parse saved quiz session:", e);
+          }
         }
-        setAnswers(initialAnswers);
 
-        // Start timer if time limit exists
-        if (data.quiz.timeLimit) {
-          setTimerActive(true);
+        if (restoredSession && restoredSession.startTime) {
+          // Calculate elapsed time in seconds
+          const elapsedSeconds = Math.floor((Date.now() - restoredSession.startTime) / 1000);
+          const limitSeconds = data.quiz.timeLimit ? data.quiz.timeLimit * 60 : null;
+          
+          if (limitSeconds !== null) {
+            const remaining = limitSeconds - elapsedSeconds;
+            if (remaining <= 0) {
+              // The time has already expired while they were away
+              setTimeRemaining(0);
+              setStartTime(restoredSession.startTime);
+              
+              if (restoredSession.answers) {
+                setAnswers(restoredSession.answers);
+              } else {
+                const initialAnswers = {};
+                if (data.quiz.questions) {
+                  data.quiz.questions.forEach((_, index) => {
+                    initialAnswers[index] = null;
+                  });
+                }
+                setAnswers(initialAnswers);
+              }
+              
+              if (restoredSession.candidateName) setCandidateName(restoredSession.candidateName);
+              if (restoredSession.eCode) setECode(restoredSession.eCode);
+              if (restoredSession.selectedStudent) setSelectedStudent(restoredSession.selectedStudent);
+              if (restoredSession.conductedBy) setConductedBy(restoredSession.conductedBy);
+              
+              setStep("quiz");
+              setLoading(false);
+              // Trigger auto submit immediately
+              setTimeout(() => handleAutoSubmit(), 100);
+              return;
+            } else {
+              // Resuming with remaining time
+              setTimeRemaining(remaining);
+              setStartTime(restoredSession.startTime);
+              setTimerActive(true);
+            }
+          } else {
+            // No time limit quiz
+            setStartTime(restoredSession.startTime);
+          }
+
+          // Restore answers
+          if (restoredSession.answers) {
+            setAnswers(restoredSession.answers);
+          } else {
+            const initialAnswers = {};
+            if (data.quiz.questions) {
+              data.quiz.questions.forEach((_, index) => {
+                initialAnswers[index] = null;
+              });
+            }
+            setAnswers(initialAnswers);
+          }
+
+          // Restore candidate details
+          if (restoredSession.candidateName) setCandidateName(restoredSession.candidateName);
+          if (restoredSession.eCode) setECode(restoredSession.eCode);
+          if (restoredSession.selectedStudent) setSelectedStudent(restoredSession.selectedStudent);
+          if (restoredSession.conductedBy) setConductedBy(restoredSession.conductedBy);
+
+        } else {
+          // Initialize fresh attempt
+          setTimeRemaining(data.quiz.timeLimit ? data.quiz.timeLimit * 60 : null);
+          setStartTime(Date.now());
+
+          // Initialize answers array
+          const initialAnswers = {};
+          if (data.quiz.questions) {
+            data.quiz.questions.forEach((_, index) => {
+              initialAnswers[index] = null;
+            });
+          }
+          setAnswers(initialAnswers);
+
+          // Start timer if time limit exists
+          if (data.quiz.timeLimit) {
+            setTimerActive(true);
+          }
         }
 
         setError(null);
@@ -209,6 +289,21 @@ const TakeQuiz = () => {
       loadQuiz();
     }
   }, [quizId]);
+
+  // Auto-save quiz session to localStorage whenever state changes
+  useEffect(() => {
+    if (step === "quiz" && startTime) {
+      const sessionData = {
+        answers,
+        candidateName,
+        eCode,
+        selectedStudent,
+        conductedBy,
+        startTime
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
+    }
+  }, [answers, candidateName, eCode, selectedStudent, conductedBy, startTime, step, STORAGE_KEY]);
 
   // Timer countdown
   useEffect(() => {
@@ -302,6 +397,7 @@ const TakeQuiz = () => {
       });
 
       setResult(response.data.data);
+      localStorage.removeItem(STORAGE_KEY);
       setStep("result");
     } catch (err) {
       console.error("Failed to submit quiz:", err);
@@ -325,6 +421,7 @@ const TakeQuiz = () => {
   };
 
   const handleBackToCourse = () => {
+    localStorage.removeItem(STORAGE_KEY);
     const base = "/" + (window.location.pathname.split('/')[1] || "student");
 
     if (base === "/student") {
@@ -339,6 +436,7 @@ const TakeQuiz = () => {
   };
 
   const handleRetry = () => {
+    localStorage.removeItem(STORAGE_KEY);
     setResult(null);
     setAnswers({});
     setTimeRemaining(quiz?.timeLimit ? quiz.timeLimit * 60 : null);
@@ -499,10 +597,10 @@ const TakeQuiz = () => {
             {/* Title box */}
             <div className="col-span-6 border-r-[3px] border-black flex flex-col items-center justify-center py-4 bg-white text-center">
               <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight uppercase leading-none">
-                SKILL EVALUATION TEST PAPER
+                {quiz?.paperTitle || "SKILL EVALUATION TEST PAPER"}
               </h1>
               <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
-                New Manpower for {quiz?.level || "L-2"}
+                {quiz?.paperSubTitle || `New Manpower for ${quiz?.level || "L-2"}`}
               </h2>
             </div>
 
@@ -647,7 +745,7 @@ const TakeQuiz = () => {
 
           {/* PARAMETERS HEADER */}
           <div className="bg-gray-100/80 border-b-[3px] border-black p-3 font-bold uppercase text-lg tracking-wider text-center">
-            {quiz?.course?.title || quiz?.course?.name || "THEORITICAL PARAMETERS"}
+            {quiz?.course?.title || quiz?.course?.name || quiz?.title || "THEORITICAL PARAMETERS"}
           </div>
 
           {/* QUESTIONS TABLE */}
@@ -1120,7 +1218,7 @@ const TakeQuiz = () => {
 
           {/* PARAMETERS HEADER */}
           <div className="bg-gray-100/80 border-b-[3px] border-black p-3 font-bold uppercase text-lg tracking-wider text-center">
-            {quiz?.course?.title || quiz?.course?.name || "THEORITICAL PARAMETERS REVIEW"}
+            {quiz?.course?.title || quiz?.course?.name || quiz?.title || "THEORITICAL PARAMETERS REVIEW"}
           </div>
 
           {/* QUESTIONS TABLE */}

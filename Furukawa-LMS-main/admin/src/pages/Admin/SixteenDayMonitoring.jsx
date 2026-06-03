@@ -24,16 +24,16 @@ import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
 import { useGetInstructorByIdQuery } from '@/Redux/AllApi/InstructorApi';
-import { 
-    IconCalendarCheck, 
-    IconHierarchy2, 
-    IconSearch, 
-    IconUsersGroup, 
-    IconArrowLeft, 
-    IconEdit, 
-    IconPlus, 
-    IconDatabase, 
-    IconLayoutDashboard 
+import {
+    IconCalendarCheck,
+    IconHierarchy2,
+    IconSearch,
+    IconUsersGroup,
+    IconArrowLeft,
+    IconEdit,
+    IconPlus,
+    IconDatabase,
+    IconLayoutDashboard
 } from "@tabler/icons-react";
 import SixteenDayMonitoringSheet from '@/components/admin/SixteenDayMonitoringSheet';
 import MenteeFeedbackMonitoringSheet from '@/components/admin/MenteeFeedbackMonitoringSheet';
@@ -93,7 +93,7 @@ const SixteenDayMonitoring = () => {
     const [studentId, setStudentId] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
     const [forceNewAttempt, setForceNewAttempt] = useState(false);
-    
+
     // Monitoring Status List
     const [monitoringList, setMonitoringList] = useState([]);
     const [loadingList, setLoadingList] = useState(false);
@@ -304,7 +304,7 @@ const SixteenDayMonitoring = () => {
                                     <SelectContent>
                                         <SelectItem value="0">All Sections</SelectItem>
                                         {assignableSections.map((s) => (
-                                            <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                                            <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.category})</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
@@ -326,14 +326,14 @@ const SixteenDayMonitoring = () => {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            
+
                             {activeTab === 'stack' && (
                                 <div className="space-y-1.5 flex items-end">
                                     <div className="relative w-full">
                                         <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                        <Input 
-                                            className="pl-10 h-10 border-slate-200" 
-                                            placeholder="Search Operator..." 
+                                        <Input
+                                            className="pl-10 h-10 border-slate-200"
+                                            placeholder="Search Operator..."
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
                                         />
@@ -372,9 +372,9 @@ const SixteenDayMonitoring = () => {
                     ) : studentId ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
                             {!isEmployee && (
-                                <Button 
-                                    variant="ghost" 
-                                    size="sm" 
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
                                     className="mb-2 gap-2 text-slate-600 hover:text-indigo-600"
                                     onClick={() => setStudentId("")}
                                 >
@@ -382,7 +382,7 @@ const SixteenDayMonitoring = () => {
                                     Back to Stack
                                 </Button>
                             )}
-                            
+
                             <SixteenDayMonitoringSheet
                                 studentId={studentId}
                                 studentName={selectedStudent?.fullName}
@@ -430,7 +430,7 @@ const SixteenDayMonitoring = () => {
                                         filteredMonitoringList.map((item) => {
                                             const badge = getStatusBadge(item.status, item.verifiedBy, item.approvedBy);
                                             const lastActionBy = item.approvedBy || item.verifiedBy || item.checkedBy || "-";
-                                            
+
                                             return (
                                                 <TableRow key={item.id} className="hover:bg-slate-50/50 transition-colors border-slate-100 h-16">
                                                     <TableCell className="pl-6">
@@ -479,8 +479,8 @@ const SixteenDayMonitoring = () => {
                                                     </TableCell>
                                                     <TableCell className="text-right pr-6">
                                                         <div className="flex justify-end gap-2">
-                                                            <Button 
-                                                                size="sm" 
+                                                            <Button
+                                                                size="sm"
                                                                 variant={item.status ? "outline" : "default"}
                                                                 className={cn("h-8 text-xs font-bold", !item.status && "bg-indigo-600 hover:bg-indigo-700")}
                                                                 onClick={() => {
@@ -491,8 +491,8 @@ const SixteenDayMonitoring = () => {
                                                                 {item.status ? "View Latest" : "Start Monitoring"}
                                                             </Button>
                                                             {badge.label.includes("Rejected") && (
-                                                                <Button 
-                                                                    size="sm" 
+                                                                <Button
+                                                                    size="sm"
                                                                     variant="default"
                                                                     className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
                                                                     onClick={() => {

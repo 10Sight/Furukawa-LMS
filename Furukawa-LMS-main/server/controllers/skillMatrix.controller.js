@@ -523,10 +523,12 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
             u.id as userId,
             u.fullName,
             u.empId,
+            u.status as userStatus,
             d.id as departmentId,
             d.name as departmentName,
             s_res.sectionId,
             s_res.sectionName,
+            s_res.sectionCategory,
             l_res.lineId,
             l_res.lineName,
             ss_res.subSectionId,
@@ -549,7 +551,7 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
             FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
         ) l_res
         OUTER APPLY (
-            SELECT TOP 1 s.id as sectionId, s.name as sectionName, s.departmentId as sDeptId
+            SELECT TOP 1 s.id as sectionId, s.name as sectionName, s.category as sectionCategory, s.departmentId as sDeptId
             FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
         ) s_res
         OUTER APPLY (

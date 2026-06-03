@@ -38,8 +38,10 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
 
     const employees = students;
 
-    // 5 process slots -> select 5 lines.
-    const [selectedLines, setSelectedLines] = useState(["", "", "", "", ""]);
+    // Dynamic slots — sized to match lines available in the selected section/department.
+    const [selectedLines, setSelectedLines] = useState([]);
+    // Saved lines from backend before lines data loads, used to restore selections.
+    const [savedLines, setSavedLines] = useState(null);
 
     const { data: deptLines, isLoading: deptLinesLoading } = useGetLinesByDepartmentQuery(departmentId, {
         skip: !departmentId || !!sectionId,
@@ -51,33 +53,64 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
     const linesLoading = sectionId ? sectLinesLoading : deptLinesLoading;
     const lines = (sectionId ? sectLines?.data : deptLines?.data) || [];
 
-    const { data: machinesData0 } = useGetMachinesByLineQuery(selectedLines[0], { skip: !selectedLines[0] });
-    const { data: machinesData1 } = useGetMachinesByLineQuery(selectedLines[1], { skip: !selectedLines[1] });
-    const { data: machinesData2 } = useGetMachinesByLineQuery(selectedLines[2], { skip: !selectedLines[2] });
-    const { data: machinesData3 } = useGetMachinesByLineQuery(selectedLines[3], { skip: !selectedLines[3] });
-    const { data: machinesData4 } = useGetMachinesByLineQuery(selectedLines[4], { skip: !selectedLines[4] });
+    // Resize selectedLines whenever available lines change, restoring saved selections.
+    useEffect(() => {
+        if (linesLoading || lines.length === 0) return;
+        setSelectedLines(prev => lines.map((_, i) => {
+            const base = savedLines ?? prev;
+            return base[i] || "";
+        }));
+    }, [lines.length, linesLoading, savedLines]);
+
+    // Static hook calls up to a max of 15 slots (React rules of hooks forbid dynamic calls).
+    // Each is skipped when its slot index exceeds the actual line count or has no selection.
+    const { data: machinesData0  } = useGetMachinesByLineQuery(selectedLines[0],  { skip: !selectedLines[0]  });
+    const { data: machinesData1  } = useGetMachinesByLineQuery(selectedLines[1],  { skip: !selectedLines[1]  });
+    const { data: machinesData2  } = useGetMachinesByLineQuery(selectedLines[2],  { skip: !selectedLines[2]  });
+    const { data: machinesData3  } = useGetMachinesByLineQuery(selectedLines[3],  { skip: !selectedLines[3]  });
+    const { data: machinesData4  } = useGetMachinesByLineQuery(selectedLines[4],  { skip: !selectedLines[4]  });
+    const { data: machinesData5  } = useGetMachinesByLineQuery(selectedLines[5],  { skip: !selectedLines[5]  });
+    const { data: machinesData6  } = useGetMachinesByLineQuery(selectedLines[6],  { skip: !selectedLines[6]  });
+    const { data: machinesData7  } = useGetMachinesByLineQuery(selectedLines[7],  { skip: !selectedLines[7]  });
+    const { data: machinesData8  } = useGetMachinesByLineQuery(selectedLines[8],  { skip: !selectedLines[8]  });
+    const { data: machinesData9  } = useGetMachinesByLineQuery(selectedLines[9],  { skip: !selectedLines[9]  });
+    const { data: machinesData10 } = useGetMachinesByLineQuery(selectedLines[10], { skip: !selectedLines[10] });
+    const { data: machinesData11 } = useGetMachinesByLineQuery(selectedLines[11], { skip: !selectedLines[11] });
+    const { data: machinesData12 } = useGetMachinesByLineQuery(selectedLines[12], { skip: !selectedLines[12] });
+    const { data: machinesData13 } = useGetMachinesByLineQuery(selectedLines[13], { skip: !selectedLines[13] });
+    const { data: machinesData14 } = useGetMachinesByLineQuery(selectedLines[14], { skip: !selectedLines[14] });
 
     const machinesBySlot = [
-        machinesData0?.data || [],
-        machinesData1?.data || [],
-        machinesData2?.data || [],
-        machinesData3?.data || [],
-        machinesData4?.data || [],
-    ];
+        machinesData0?.data  || [], machinesData1?.data  || [], machinesData2?.data  || [],
+        machinesData3?.data  || [], machinesData4?.data  || [], machinesData5?.data  || [],
+        machinesData6?.data  || [], machinesData7?.data  || [], machinesData8?.data  || [],
+        machinesData9?.data  || [], machinesData10?.data || [], machinesData11?.data || [],
+        machinesData12?.data || [], machinesData13?.data || [], machinesData14?.data || [],
+    ].slice(0, lines.length);
 
-    const { data: subSectionsData0 } = useGetSubSectionsByLineQuery(selectedLines[0], { skip: !selectedLines[0] });
-    const { data: subSectionsData1 } = useGetSubSectionsByLineQuery(selectedLines[1], { skip: !selectedLines[1] });
-    const { data: subSectionsData2 } = useGetSubSectionsByLineQuery(selectedLines[2], { skip: !selectedLines[2] });
-    const { data: subSectionsData3 } = useGetSubSectionsByLineQuery(selectedLines[3], { skip: !selectedLines[3] });
-    const { data: subSectionsData4 } = useGetSubSectionsByLineQuery(selectedLines[4], { skip: !selectedLines[4] });
+    const { data: subSectionsData0  } = useGetSubSectionsByLineQuery(selectedLines[0],  { skip: !selectedLines[0]  });
+    const { data: subSectionsData1  } = useGetSubSectionsByLineQuery(selectedLines[1],  { skip: !selectedLines[1]  });
+    const { data: subSectionsData2  } = useGetSubSectionsByLineQuery(selectedLines[2],  { skip: !selectedLines[2]  });
+    const { data: subSectionsData3  } = useGetSubSectionsByLineQuery(selectedLines[3],  { skip: !selectedLines[3]  });
+    const { data: subSectionsData4  } = useGetSubSectionsByLineQuery(selectedLines[4],  { skip: !selectedLines[4]  });
+    const { data: subSectionsData5  } = useGetSubSectionsByLineQuery(selectedLines[5],  { skip: !selectedLines[5]  });
+    const { data: subSectionsData6  } = useGetSubSectionsByLineQuery(selectedLines[6],  { skip: !selectedLines[6]  });
+    const { data: subSectionsData7  } = useGetSubSectionsByLineQuery(selectedLines[7],  { skip: !selectedLines[7]  });
+    const { data: subSectionsData8  } = useGetSubSectionsByLineQuery(selectedLines[8],  { skip: !selectedLines[8]  });
+    const { data: subSectionsData9  } = useGetSubSectionsByLineQuery(selectedLines[9],  { skip: !selectedLines[9]  });
+    const { data: subSectionsData10 } = useGetSubSectionsByLineQuery(selectedLines[10], { skip: !selectedLines[10] });
+    const { data: subSectionsData11 } = useGetSubSectionsByLineQuery(selectedLines[11], { skip: !selectedLines[11] });
+    const { data: subSectionsData12 } = useGetSubSectionsByLineQuery(selectedLines[12], { skip: !selectedLines[12] });
+    const { data: subSectionsData13 } = useGetSubSectionsByLineQuery(selectedLines[13], { skip: !selectedLines[13] });
+    const { data: subSectionsData14 } = useGetSubSectionsByLineQuery(selectedLines[14], { skip: !selectedLines[14] });
 
     const subSectionsBySlot = [
-        subSectionsData0?.data || [],
-        subSectionsData1?.data || [],
-        subSectionsData2?.data || [],
-        subSectionsData3?.data || [],
-        subSectionsData4?.data || [],
-    ];
+        subSectionsData0?.data  || [], subSectionsData1?.data  || [], subSectionsData2?.data  || [],
+        subSectionsData3?.data  || [], subSectionsData4?.data  || [], subSectionsData5?.data  || [],
+        subSectionsData6?.data  || [], subSectionsData7?.data  || [], subSectionsData8?.data  || [],
+        subSectionsData9?.data  || [], subSectionsData10?.data || [], subSectionsData11?.data || [],
+        subSectionsData12?.data || [], subSectionsData13?.data || [], subSectionsData14?.data || [],
+    ].slice(0, lines.length);
 
     const lineNameById = useMemo(() => {
         const map = {};
@@ -263,6 +296,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
 
         const loadSavedPlan = async () => {
             try {
+                setSavedLines(null);
                 setIsLoadingPlan(true);
                 const response = await axiosInstance.get(`/api/multi-skilling-plan/department/${departmentId}`, {
                     params: { sectionId }
@@ -270,9 +304,8 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                 const data = response?.data?.data;
                 if (!cancelled && data) {
                     if (Array.isArray(data.selectedLines)) {
-                        const normalized = [...data.selectedLines];
-                        while (normalized.length < 5) normalized.push("");
-                        setSelectedLines(normalized.slice(0, 5));
+                        // Store raw saved lines; the lines-length effect will resize and apply them.
+                        setSavedLines(data.selectedLines);
                     }
                     if (data.tableData && typeof data.tableData === "object") {
                         setTableData((prev) => ({ ...prev, ...data.tableData }));
@@ -429,6 +462,20 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                 </div>
             </CardHeader>
             <CardContent className="overflow-x-auto">
+                {/* Sheet Metadata Header Block - Visible in screen & print */}
+                <div className="flex justify-between items-center w-full mb-4 pb-2 border-b border-slate-200 print:border-black">
+                    <div>
+                        <h2 className="text-lg font-bold uppercase tracking-wide text-slate-800 print:text-black hidden print:block">
+                            Training Plan for Multi Skilling
+                        </h2>
+                        <span className="print:hidden text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            Interactive Multi-Skilling Sheet
+                        </span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 border border-slate-950 bg-slate-50 px-3 py-1 rounded shadow-sm print:shadow-none print:bg-white print:rounded-none whitespace-nowrap">
+                        Document No: FRM-WH-QA-236
+                    </div>
+                </div>
                 <table className="w-full min-w-[1200px] border-collapse border border-black text-sm">
                     <thead>
                         {/* Line dropdown row */}

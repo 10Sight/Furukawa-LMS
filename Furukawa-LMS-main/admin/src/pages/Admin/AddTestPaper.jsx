@@ -83,6 +83,8 @@ const AddTestPaper = () => {
     isHandover: false,
     isTheoretical: false,
     conductedBy: "",
+    paperTitle: "",
+    paperSubTitle: "",
     questions: [
       {
         questionText: "",
@@ -547,6 +549,8 @@ const AddTestPaper = () => {
         isHandover: formData.isHandover,
         isTheoretical: formData.isTheoretical,
         conductedBy: formData.conductedBy || "",
+        paperTitle: formData.paperTitle || undefined,
+        paperSubTitle: formData.paperSubTitle || undefined,
       };
 
       await createQuiz(quizData).unwrap();
@@ -615,6 +619,31 @@ const AddTestPaper = () => {
                 placeholder="Enter test description (optional)"
                 rows={3}
               />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="paperTitle">Paper Header Title</Label>
+                <Input
+                  id="paperTitle"
+                  name="paperTitle"
+                  value={formData.paperTitle}
+                  onChange={handleInputChange}
+                  placeholder="Default: SKILL EVALUATION TEST PAPER"
+                />
+                <p className="text-[11px] text-muted-foreground">Printed at the top of the test paper. Leave blank to use the default.</p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="paperSubTitle">Paper Sub-Title</Label>
+                <Input
+                  id="paperSubTitle"
+                  name="paperSubTitle"
+                  value={formData.paperSubTitle}
+                  onChange={handleInputChange}
+                  placeholder={`Default: New Manpower for ${formData.level || "L-2"}`}
+                />
+                <p className="text-[11px] text-muted-foreground">Shown below the title. Leave blank to use the default.</p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

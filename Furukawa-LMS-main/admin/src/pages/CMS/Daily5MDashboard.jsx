@@ -159,7 +159,7 @@ const Daily5MDashboard = () => {
             setRecords([]);
             setChartData([]);
         }
-    }, [selectedDepartment, selectedSection, startDate, endDate, currentPage, pageSize]);
+    }, [selectedDepartment, selectedSection, startDate, endDate, currentPage, pageSize, selectedChartDepts, chartStartDate, chartEndDate]);
 
     // Fetch Row Stats (Pie Charts) - Independent triggers
     useEffect(() => {
@@ -223,19 +223,19 @@ const Daily5MDashboard = () => {
 
             let query = `/api/daily-5m/stats/daily/${deptId}?t=${Date.now()}`;
             if (selectedSection && selectedSection !== 'all') query += `&sectionId=${selectedSection}`;
-            if (startDate) query += `&startDate=${startDate}`;
-            if (endDate) query += `&endDate=${endDate}`;
+            if (chartStartDate) query += `&startDate=${chartStartDate}`;
+            if (chartEndDate) query += `&endDate=${chartEndDate}`;
 
             const response = await axiosInstance.get(query);
             if (response.data.success) {
                 const fetchedData = response.data.data;
                 
                 // Determine the range to display
-                // If user selected dates, use them. Otherwise show last 15 days.
-                let rangeEnd = endDate ? new Date(endDate) : new Date();
-                let rangeStart = startDate ? new Date(startDate) : new Date();
-                
-                if (!startDate) {
+                // If user selected chart dates, use them. Otherwise show last 30 days.
+                let rangeEnd = chartEndDate ? new Date(chartEndDate) : new Date();
+                let rangeStart = chartStartDate ? new Date(chartStartDate) : new Date();
+
+                if (!chartStartDate) {
                     rangeStart.setDate(rangeStart.getDate() - 29); // Default to last 30 days
                 }
 

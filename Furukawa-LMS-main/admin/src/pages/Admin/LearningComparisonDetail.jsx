@@ -1,23 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-    Video, 
-    FileText, 
-    FileSpreadsheet, 
-    File as FileIcon, 
-    Presentation, 
-    Copy, 
-    Download, 
+import {
+    Video,
+    FileText,
+    FileSpreadsheet,
+    File as FileIcon,
+    Presentation,
+    Copy,
+    Download,
     Eye,
     EyeOff,
     ArrowLeft,
     Clock,
     User,
-    ChevronRight,
-    ExternalLink,
-    Plus
+    Plus,
+    Image as ImageIcon,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from 'sonner';
@@ -47,42 +46,17 @@ const LearningComparisonDetail = () => {
     }, [id]);
 
     const copyToClipboard = async (path) => {
-        const fullUrl = `${baseUrl}${path}`;
         try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(fullUrl);
-                toast.success("Link copied to clipboard!");
-            } else {
-                throw new Error('Clipboard API not available');
-            }
-        } catch (err) {
-            // Fallback for non-secure contexts or older browsers
-            try {
-                const textArea = document.createElement("textarea");
-                textArea.value = fullUrl;
-                textArea.style.position = "fixed";
-                textArea.style.left = "-9999px";
-                textArea.style.top = "0";
-                document.body.appendChild(textArea);
-                textArea.focus();
-                textArea.select();
-                const successful = document.execCommand('copy');
-                document.body.removeChild(textArea);
-                if (successful) {
-                    toast.success("Link copied to clipboard!");
-                } else {
-                    toast.error("Failed to copy link");
-                }
-            } catch (fallbackErr) {
-                toast.error("Failed to copy link");
-            }
+            await navigator.clipboard.writeText(`${baseUrl}${path}`);
+            toast.success("Link copied to clipboard!");
+        } catch {
+            toast.error("Failed to copy link — clipboard not available");
         }
     };
 
     const handleDownload = (path, fileName) => {
-        const fullUrl = `${baseUrl}${path}`;
         const link = document.createElement('a');
-        link.href = fullUrl;
+        link.href = `${baseUrl}${path}`;
         link.download = fileName || 'download';
         document.body.appendChild(link);
         link.click();
@@ -90,21 +64,18 @@ const LearningComparisonDetail = () => {
     };
 
     const handleView = (path) => {
-        const fullUrl = `${baseUrl}${path}`;
-        window.open(fullUrl, '_blank');
+        window.open(`${baseUrl}${path}`, '_blank');
     };
 
-    const MediaPreview = ({ label, path, type }) => {
-        if (!path) return null;
+    // Renders a single video player entry
+    const VideoPreview = ({ path, index, total }) => {
         const fullUrl = `${baseUrl}${path}`;
-        
-        const isVideo = type === 'video' || path.match(/\.(mp4|webm|ogg)$/i);
-        
+        const label = total > 1 ? `Video ${index + 1}` : 'Video';
         return (
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
                     <h4 className="font-bold text-gray-700 text-sm flex items-center gap-2">
-                        {isVideo ? <Video className="w-4 h-4 text-rose-500" /> : <FileText className="w-4 h-4 text-blue-500" />}
+                        <Video className="w-4 h-4 text-rose-500" />
                         {label}
                     </h4>
                     <div className="flex items-center gap-1">
@@ -112,47 +83,109 @@ const LearningComparisonDetail = () => {
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDownload(path, label)}><Download className="w-3.5 h-3.5" /></Button>
                     </div>
                 </div>
-                
-                <div className="relative rounded-2xl overflow-hidden bg-black aspect-video shadow-inner group">
-                    {isVideo ? (
-                        <video 
-                            src={fullUrl} 
-                            controls 
-                            className="w-full h-full object-contain"
-                            poster="/video-placeholder.png"
-                        />
-                    ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
-                            <FileText className="w-12 h-12 mb-2" />
-                            <span className="text-xs font-medium">Document Preview Not Available</span>
-                            <Button variant="outline" size="sm" className="mt-4 bg-white" onClick={() => handleView(path)}>
-                                <Eye className="w-4 h-4 mr-2" /> View Document
-                            </Button>
-                        </div>
-                    )}
+                <div className="relative rounded-2xl overflow-hidden bg-black aspect-video shadow-inner">
+                    <video src={fullUrl} controls className="w-full h-full object-contain" poster="/video-placeholder.png" />
                 </div>
             </div>
         );
     };
 
-    const FileCard = ({ label, path, icon: Icon, color }) => {
-        if (!path) return null;
+    // Renders a single non-video file card
+    const FileCard = ({ path, label, icon: Icon, color }) => (
+        <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 transition-all group">
+            <div className="flex items-center gap-3 overflow-hidden">
+                <div className={`p-2 rounded-lg ${color} bg-opacity-10 shrink-0`}>
+                    <Icon className={`w-4 h-4 ${color}`} />
+                </div>
+                <div className="min-w-0">
+                    <h4 className="font-semibold text-gray-900 text-sm truncate">{label}</h4>
+                    <p className="text-[10px] text-gray-400 truncate">{path.split('/').pop()}</p>
+                </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-blue-600" onClick={() => copyToClipboard(path)}><Copy className="w-3.5 h-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-emerald-600" onClick={() => handleDownload(path, label)}><Download className="w-3.5 h-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-indigo-600" onClick={() => handleView(path)}><Eye className="w-3.5 h-3.5" /></Button>
+            </div>
+        </div>
+    );
+
+    // Renders all files of a given non-video type (array)
+    const FileSection = ({ paths, label, icon, color }) => {
+        if (!paths || paths.length === 0) return null;
         return (
-            <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 transition-all group">
-                <div className="flex items-center gap-3 overflow-hidden">
-                    <div className={`p-2 rounded-lg ${color} bg-opacity-10 shrink-0`}>
-                        <Icon className={`w-4 h-4 ${color}`} />
-                    </div>
-                    <div className="min-w-0">
-                        <h4 className="font-semibold text-gray-900 text-sm truncate">{label}</h4>
-                        <p className="text-[10px] text-gray-400 truncate">{path.split('/').pop()}</p>
-                    </div>
+            <div className="space-y-2">
+                {paths.map((path, i) => (
+                    <FileCard
+                        key={i}
+                        path={path}
+                        label={paths.length > 1 ? `${label} ${i + 1}` : label}
+                        icon={icon}
+                        color={color}
+                    />
+                ))}
+            </div>
+        );
+    };
+
+    const SideSection = ({ prefix, accentColor, bgColor, borderColor, title, icon: HeaderIcon, badgeClass, badgeText }) => {
+        const videos  = content[`${prefix}Video`]  || [];
+        const pdfs    = content[`${prefix}Pdf`]    || [];
+        const excels  = content[`${prefix}Excel`]  || [];
+        const words   = content[`${prefix}Word`]   || [];
+        const ppts    = content[`${prefix}Ppt`]    || [];
+        const images  = content[`${prefix}Image`]  || [];
+        const descText = content[`${prefix}Description`];
+
+        const hasAnyFile = videos.length || pdfs.length || excels.length || words.length || ppts.length || images.length;
+
+        return (
+            <div className={`space-y-6 ${prefix === 'after' && !showBefore ? 'animate-in fade-in duration-700' : ''}`}>
+                <div className="flex items-center justify-between">
+                    <h2 className={`text-2xl font-bold ${accentColor} flex items-center gap-3`}>
+                        <div className={`w-10 h-10 rounded-2xl ${bgColor} flex items-center justify-center`}>
+                            <HeaderIcon className={`w-5 h-5 ${accentColor}`} />
+                        </div>
+                        {title}
+                    </h2>
+                    <Badge variant="outline" className={badgeClass}>{badgeText}</Badge>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-blue-600" onClick={() => copyToClipboard(path)}><Copy className="w-3.5 h-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-emerald-600" onClick={() => handleDownload(path, label)}><Download className="w-3.5 h-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-indigo-600" onClick={() => handleView(path)}><Eye className="w-3.5 h-3.5" /></Button>
-                </div>
+                <Card className="border-none shadow-sm bg-gray-50/30 overflow-hidden">
+                    <CardContent className="p-6 space-y-6">
+                        {descText && (
+                            <div className={`p-4 rounded-xl ${borderColor} text-sm italic`}>
+                                {descText}
+                            </div>
+                        )}
+
+                        {/* Videos */}
+                        {videos.length > 0 && (
+                            <div className="space-y-4">
+                                {videos.map((path, i) => (
+                                    <VideoPreview key={i} path={path} index={i} total={videos.length} />
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Documents & Images */}
+                        {(pdfs.length || excels.length || words.length || ppts.length || images.length) > 0 && (
+                            <div className="space-y-3 pt-2 border-t border-gray-100">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Documents & Images</h4>
+                                <div className="space-y-2">
+                                    <FileSection paths={pdfs}   label="SOP Document"  icon={FileText}       color="text-red-500" />
+                                    <FileSection paths={excels} label="Data Sheet"     icon={FileSpreadsheet} color="text-emerald-500" />
+                                    <FileSection paths={words}  label="Word Manual"   icon={FileIcon}       color="text-blue-500" />
+                                    <FileSection paths={ppts}   label="Presentation"  icon={Presentation}   color="text-orange-500" />
+                                    <FileSection paths={images} label="Image"         icon={ImageIcon}      color="text-purple-500" />
+                                </div>
+                            </div>
+                        )}
+
+                        {!hasAnyFile && (
+                            <div className="text-center py-12 text-gray-400 italic">No files uploaded for this section</div>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
         );
     };
@@ -175,27 +208,22 @@ const LearningComparisonDetail = () => {
             {/* Navigation & Header */}
             <div className="flex flex-col gap-6 border-b pb-8">
                 <div className="flex items-center gap-4">
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => navigate('/admin/learning')}
-                        className="hover:bg-blue-50 hover:text-blue-600"
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => navigate('/admin/learning')} className="hover:bg-blue-50 hover:text-blue-600">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                     <div className="flex items-center gap-3">
                         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Learning Comparison</Badge>
                     </div>
                 </div>
-                
+
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="space-y-2">
                         <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">{content.title}</h1>
                         <p className="text-lg text-gray-500">{content.description || "No description provided."}</p>
                     </div>
-                    
+
                     <div className="flex flex-col md:flex-row items-center gap-4">
-                        <Button 
+                        <Button
                             onClick={() => setShowBefore(!showBefore)}
                             variant="outline"
                             className={`group relative overflow-hidden rounded-2xl px-5 py-6 transition-all duration-300 border-2 ${showBefore ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-amber-100 shadow-lg' : 'border-gray-100 hover:border-amber-300 hover:bg-amber-50/50'}`}
@@ -228,79 +256,30 @@ const LearningComparisonDetail = () => {
 
             {/* Comparison Grid */}
             <div className={`grid grid-cols-1 ${showBefore ? 'lg:grid-cols-2' : 'max-w-4xl mx-auto'} gap-8 transition-all duration-500`}>
-                {/* Before State */}
                 {showBefore && (
-                    <div className="space-y-6 animate-in slide-in-from-left duration-500">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-2xl font-bold text-amber-600 flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center">
-                                    <Clock className="w-5 h-5 text-amber-600" />
-                                </div>
-                                Before Implementation
-                            </h2>
-                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Initial State</Badge>
-                        </div>
-                        <Card className="border-none shadow-sm bg-gray-50/30 overflow-hidden">
-                            <CardContent className="p-6 space-y-8">
-                                {content.beforeDescription && (
-                                    <div className="p-4 rounded-xl bg-amber-50/30 border border-amber-100 text-amber-900 text-sm italic">
-                                        {content.beforeDescription}
-                                    </div>
-                                )}
-                                <MediaPreview label="Before Video" path={content.beforeVideo} type="video" />
-                                <div className="space-y-3 pt-4 border-t border-gray-100">
-                                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Documents</h4>
-                                    <div className="grid grid-cols-1 gap-3">
-                                        <FileCard label="SOP Document" path={content.beforePdf} icon={FileText} color="text-red-500" />
-                                        <FileCard label="Data Sheet" path={content.beforeExcel} icon={FileSpreadsheet} color="text-emerald-500" />
-                                        <FileCard label="Word Manual" path={content.beforeWord} icon={FileIcon} color="text-blue-500" />
-                                        <FileCard label="Presentation" path={content.beforePpt} icon={Presentation} color="text-orange-500" />
-                                    </div>
-                                </div>
-                                
-                                {![content.beforeVideo, content.beforePdf, content.beforeExcel, content.beforeWord, content.beforePpt].some(x => x) && (
-                                    <div className="text-center py-12 text-gray-400 italic">No files uploaded for this section</div>
-                                )}
-                            </CardContent>
-                        </Card>
+                    <div className="animate-in slide-in-from-left duration-500">
+                        <SideSection
+                            prefix="before"
+                            title="Before Implementation"
+                            icon={Clock}
+                            accentColor="text-amber-600"
+                            bgColor="bg-amber-100"
+                            borderColor="bg-amber-50/30 border border-amber-100 text-amber-900"
+                            badgeClass="bg-amber-50 text-amber-700 border-amber-200"
+                            badgeText="Initial State"
+                        />
                     </div>
                 )}
-
-                {/* After State */}
-                <div className={`space-y-6 ${!showBefore ? 'animate-in fade-in duration-700' : ''}`}>
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-2xl font-bold text-emerald-600 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center">
-                                <Plus className="w-5 h-5 text-emerald-600" />
-                            </div>
-                            After Implementation
-                        </h2>
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Optimized State</Badge>
-                    </div>
-                    <Card className="border-none shadow-sm bg-gray-50/30 overflow-hidden">
-                        <CardContent className="p-6 space-y-8">
-                            {content.afterDescription && (
-                                <div className="p-4 rounded-xl bg-emerald-50/30 border border-emerald-100 text-emerald-900 text-sm italic">
-                                    {content.afterDescription}
-                                </div>
-                            )}
-                            <MediaPreview label="After Video" path={content.afterVideo} type="video" />
-                            <div className="space-y-3 pt-4 border-t border-gray-100">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Documents</h4>
-                                <div className="grid grid-cols-1 gap-3">
-                                    <FileCard label="SOP Document" path={content.afterPdf} icon={FileText} color="text-red-500" />
-                                    <FileCard label="Data Sheet" path={content.afterExcel} icon={FileSpreadsheet} color="text-emerald-500" />
-                                    <FileCard label="Word Manual" path={content.afterWord} icon={FileIcon} color="text-blue-500" />
-                                    <FileCard label="Presentation" path={content.afterPpt} icon={Presentation} color="text-orange-500" />
-                                </div>
-                            </div>
-
-                            {![content.afterVideo, content.afterPdf, content.afterExcel, content.afterWord, content.afterPpt].some(x => x) && (
-                                <div className="text-center py-12 text-gray-400 italic">No files uploaded for this section</div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
+                <SideSection
+                    prefix="after"
+                    title="After Implementation"
+                    icon={Plus}
+                    accentColor="text-emerald-600"
+                    bgColor="bg-emerald-100"
+                    borderColor="bg-emerald-50/30 border border-emerald-100 text-emerald-900"
+                    badgeClass="bg-emerald-50 text-emerald-700 border-emerald-200"
+                    badgeText="Optimized State"
+                />
             </div>
         </div>
     );

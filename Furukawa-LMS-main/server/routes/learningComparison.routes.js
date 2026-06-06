@@ -15,18 +15,18 @@ const router = Router();
 router.use(verifyJWT);
 
 const uploadFields = [
-    { name: "beforeVideo", maxCount: 1 },
-    { name: "beforePdf", maxCount: 1 },
-    { name: "beforeExcel", maxCount: 1 },
-    { name: "beforeWord", maxCount: 1 },
-    { name: "beforePpt", maxCount: 1 },
-    { name: "beforeImage", maxCount: 1 },
-    { name: "afterVideo", maxCount: 1 },
-    { name: "afterPdf", maxCount: 1 },
-    { name: "afterExcel", maxCount: 1 },
-    { name: "afterWord", maxCount: 1 },
-    { name: "afterPpt", maxCount: 1 },
-    { name: "afterImage", maxCount: 1 }
+    { name: "beforeVideo", maxCount: 10 },
+    { name: "beforePdf", maxCount: 10 },
+    { name: "beforeExcel", maxCount: 10 },
+    { name: "beforeWord", maxCount: 10 },
+    { name: "beforePpt", maxCount: 10 },
+    { name: "beforeImage", maxCount: 10 },
+    { name: "afterVideo", maxCount: 10 },
+    { name: "afterPdf", maxCount: 10 },
+    { name: "afterExcel", maxCount: 10 },
+    { name: "afterWord", maxCount: 10 },
+    { name: "afterPpt", maxCount: 10 },
+    { name: "afterImage", maxCount: 10 }
 ];
 
 router.post("/", upload.fields(uploadFields), createComparison);

@@ -65,6 +65,31 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
         WHERE u.departmentId = ?
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
         AND (u.status IS NULL OR u.status != 'LEFT')
+        AND (
+            (m.studentId IS NOT NULL 
+             AND COALESCE(m.verifiedBy, '') NOT LIKE '%Rejected%' 
+             AND COALESCE(m.approvedBy, '') NOT LIKE '%Rejected%')
+            OR (
+                EXISTS (
+                    SELECT 1 FROM on_job_trainings ojt
+                    WHERE (
+                        ojt.student = CAST(u.id AS NVARCHAR(50))
+                        OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
+                        OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
+                    )
+                    AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
+                    AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+                )
+                AND EXISTS (
+                    SELECT 1 FROM attempted_quizzes aq
+                    JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+                    WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+                      AND (aq.status = 'PASSED' OR aq.status = 'PASS')
+                      AND q.isMultiSkilling = 1
+                      AND CAST(aq.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+                )
+            )
+        )
     `;
     const params = [departmentId];
 

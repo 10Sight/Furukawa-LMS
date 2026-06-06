@@ -21,7 +21,7 @@ class User {
         this.resetPasswordToken = data.resetPasswordToken;
         this.resetPasswordExpiry = data.resetPasswordExpiry ? new Date(data.resetPasswordExpiry) : null;
         this.role = data.role || "STUDENT";
-        this.currentLevel = data.currentLevel || "L1";
+        this.currentLevel = data.currentLevel || null;
         this.currentSkill = typeof data.currentSkill === 'string' ? JSON.parse(data.currentSkill) : (data.currentSkill || {});
         this.currentEffeciency = data.currentEffeciency || 0;
         this.skillEffeciency = typeof data.skillEffeciency === 'string' ? JSON.parse(data.skillEffeciency) : (data.skillEffeciency || {});
@@ -34,6 +34,7 @@ class User {
         this.isDeleted = !!data.isDeleted;
         this.department = data.department;
         this.departments = typeof data.departments === 'string' ? JSON.parse(data.departments) : (data.departments || []);
+        this.stations = typeof data.stations === 'string' ? JSON.parse(data.stations) : (data.stations || []);
         this.unit = data.unit;
         this.empId = data.empId || null;
         this.isEmployee = !!data.isEmployee;
@@ -48,8 +49,8 @@ class User {
         this.sectionId = data.resolvedSectionId || data.sectionId || null;
         this.subSectionId = data.subSectionId || null;
         this.lineId = data.resolvedLineId || data.lineId || null;
-        this.stationId = data.stationId || null;
-        this.departmentId = data.resolvedDeptId || data.departmentId || null;
+        this.stationId = data.stationId || (this.stations && this.stations.length > 0 ? parseInt(this.stations[0]) : null);
+        this.departmentId = data.resolvedDeptId || data.departmentId || (this.departments && this.departments.length > 0 ? parseInt(this.departments[0]) : null);
         this.targetDeptId = data.targetDeptId || null;
         this.targetSectionId = data.targetSectionId || null;
         this.targetLineId = data.targetLineId || null;
@@ -113,6 +114,7 @@ class User {
                     department NVARCHAR(255),
                     sub_section NVARCHAR(255) DEFAULT NULL,
                     departments NVARCHAR(MAX),
+                    stations NVARCHAR(MAX),
                     unit NVARCHAR(50) NOT NULL,
                     empId NVARCHAR(255),
                     isEmployee BIT DEFAULT 0,
@@ -200,7 +202,8 @@ class User {
                 { name: 'currentSkill', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
                 { name: 'currentEffeciency', type: 'FLOAT DEFAULT 0' },
                 { name: 'skillEffeciency', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
-                { name: 'ojt', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' }
+                { name: 'ojt', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
+                { name: 'stations', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' }
             ];
 
             for (const col of columnsToAdd) {
@@ -379,7 +382,7 @@ class User {
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
             "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "currentEffeciency", "skillEffeciency", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
-            "isDeleted", "department", "sub_section", "departments", "unit", "empId", "isEmployee",
+            "isDeleted", "department", "sub_section", "departments", "stations", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
@@ -397,9 +400,16 @@ class User {
         if (dataToInsert.isTemporary === undefined) dataToInsert.isTemporary = 0;
         // if (dataToInsert.currentLevel === undefined || dataToInsert.currentLevel === null) dataToInsert.currentLevel = 'L1';
 
+        if (dataToInsert.stations && Array.isArray(dataToInsert.stations) && dataToInsert.stations.length > 0) {
+            dataToInsert.stationId = parseInt(dataToInsert.stations[0]);
+        }
+        if (dataToInsert.departments && Array.isArray(dataToInsert.departments) && dataToInsert.departments.length > 0) {
+            dataToInsert.departmentId = parseInt(dataToInsert.departments[0]);
+        }
+
         const values = fields.map(field => {
             let val = dataToInsert[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
                 return JSON.stringify(val || (field === 'avatar' ? {} : []));
             }
             if (val === undefined || val === "") return null;
@@ -422,7 +432,7 @@ class User {
 
         const whereClause = keys.map(key => `u.${key === 'id' ? 'id' : key} = ?`).join(" AND ");
         const values = keys.map(key => query[key]);
-        const hasStatusFilter = keys.includes('status');
+        const hasStatusFilter = keys.includes('status') || keys.includes('id') || keys.includes('_id');
         const leftExclusion = hasStatusFilter ? '' : " AND u.status NOT IN ('LEFT', 'SUSPENDED', 'BANNED')";
 
         const sql = `
@@ -646,8 +656,8 @@ class User {
             }
         }
 
-        // Auto-exclude LEFT and legacy inactive users unless caller explicitly filters by status
-        if (!keys.includes('status')) {
+        // Auto-exclude LEFT and legacy inactive users unless caller explicitly filters by status or queries by specific ID
+        if (!keys.includes('status') && !keys.includes('id') && !keys.includes('_id')) {
             whereClauses.push("status NOT IN ('LEFT', 'SUSPENDED', 'BANNED')");
         }
 
@@ -670,8 +680,8 @@ class User {
             values = keys.map(key => query[key]);
         }
 
-        // Auto-exclude LEFT and legacy inactive users unless caller explicitly filters by status
-        if (!keys.includes('status')) {
+        // Auto-exclude LEFT and legacy inactive users unless caller explicitly filters by status or queries by specific ID
+        if (!keys.includes('status') && !keys.includes('id') && !keys.includes('_id')) {
             sql += (keys.length > 0 ? ' AND ' : ' WHERE ') + "status NOT IN ('LEFT', 'SUSPENDED', 'BANNED')";
         }
 
@@ -694,7 +704,7 @@ class User {
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
             "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "currentEffeciency", "skillEffeciency", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
-            "isDeleted", "department", "sub_section", "departments", "unit", "empId", "isEmployee",
+            "isDeleted", "department", "sub_section", "departments", "stations", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
@@ -702,12 +712,19 @@ class User {
             "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt"
         ];
 
+        if (this.stations && Array.isArray(this.stations) && this.stations.length > 0) {
+            this.stationId = parseInt(this.stations[0]);
+        }
+        if (this.departments && Array.isArray(this.departments) && this.departments.length > 0) {
+            this.departmentId = parseInt(this.departments[0]);
+        }
+
         // Only update fields that are defined on the instance
         const definedFields = fields.filter(field => this[field] !== undefined);
         const setClause = definedFields.map(field => `${field} = ?`).join(", ");
         const values = definedFields.map(field => {
             const val = this[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
                 return typeof val === 'object' ? JSON.stringify(val) : val;
             }
             if (val instanceof Date) return val;

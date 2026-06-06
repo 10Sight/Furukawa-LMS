@@ -17,10 +17,10 @@ export const instructorApi = createApi({
         }),
 
         getAllStudents: builder.query({
-            query: ({ page = 1, limit = 10, search = "", status = "", unit = "", sortBy = "createdAt", order = "desc", departmentId = "", sectionId = "", lineId = "", sixteenDayApprovedOnly = "" } = {}) => ({
+            query: ({ page = 1, limit = 10, search = "", status = "", unit = "", sortBy = "createdAt", order = "desc", departmentId = "", sectionId = "", lineId = "", sixteenDayApprovedOnly = "", includeLeft = "", includeTemporary = "", dojoHandoverPassedOnly = "" } = {}) => ({
                 url: `/api/users/students`,
                 method: "GET",
-                params: { page, limit, search, status, unit, sortBy, order, departmentId, sectionId, lineId, sixteenDayApprovedOnly }
+                params: { page, limit, search, status, unit, sortBy, order, departmentId, sectionId, lineId, sixteenDayApprovedOnly, includeLeft, includeTemporary, dojoHandoverPassedOnly }
             }),
             providesTags: ['Instructor'],
         }),

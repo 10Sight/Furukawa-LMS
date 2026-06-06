@@ -26,7 +26,7 @@ export const createQuiz = asyncHandler(async (req, res) => {
     const {
         courseId, moduleId, lessonId, scope, title, questions,
         passingScore, description, timeLimit, attemptsAllowed,
-        skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy
+        skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling
     } = req.body;
 
     if (!title || !questions || questions.length === 0) {
@@ -103,14 +103,14 @@ export const createQuiz = asyncHandler(async (req, res) => {
 
     const [insertRows] = await executeQuery(
         `INSERT INTO quizzes 
-        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, createdBy, createdAt, updatedAt)
+        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, createdBy, createdAt, updatedAt)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
         [
             resolvedCourseId, finalModuleId, finalLessonId, actualScope, title, slug, description,
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
             JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true,
-            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy !== undefined && conductedBy !== null ? conductedBy : "", req.user.id
+            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy !== undefined && conductedBy !== null ? conductedBy : "", isMultiSkilling ? 1 : 0, req.user.id
         ]
     );
 
@@ -181,6 +181,16 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
     } else if (req.query.isDojo !== undefined) {
         whereClauses.push("COALESCE(q.isDojo, 0) = ?");
         params.push(req.query.isDojo === 'true' || req.query.isDojo === '1' || req.query.isDojo === true ? 1 : 0);
+    }
+
+    if (req.query.skillUpgradation !== undefined) {
+        const val = req.query.skillUpgradation === 'true' || req.query.skillUpgradation === '1' ? 'true' : 'false';
+        whereClauses.push("COALESCE(q.skillUpgradation, 'false') = ?");
+        params.push(val);
+    }
+    if (req.query.isMultiSkilling !== undefined) {
+        whereClauses.push("COALESCE(q.isMultiSkilling, 0) = ?");
+        params.push(req.query.isMultiSkilling === 'true' || req.query.isMultiSkilling === '1' ? 1 : 0);
     }
 
     if (req.query.search) {
@@ -287,7 +297,7 @@ export const updateQuiz = asyncHandler(async (req, res) => {
 
     const {
         title, questions, description, passingScore, timeLimit,
-        attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy
+        attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling
     } = req.body;
 
     const [rows] = await executeQuery("SELECT * FROM quizzes WHERE id = ?", [id]);
@@ -313,6 +323,7 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (isHandover !== undefined) { updates.push("isHandover = ?"); values.push(isHandover ? 1 : 0); }
     if (isTheoretical !== undefined) { updates.push("isTheoretical = ?"); values.push(isTheoretical ? 1 : 0); }
     if (conductedBy !== undefined) { updates.push("conductedBy = ?"); values.push(conductedBy); }
+    if (isMultiSkilling !== undefined) { updates.push("isMultiSkilling = ?"); values.push(isMultiSkilling ? 1 : 0); }
 
     if (updates.length > 0) {
         updates.push("updatedAt = GETDATE()");

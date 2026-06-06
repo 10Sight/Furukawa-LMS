@@ -1,6 +1,19 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 
+// Parses a DB column that may be a JSON array string, a plain path string, or null.
+// Always returns an array for consistent frontend consumption.
+const parseFileField = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    try {
+        const parsed = JSON.parse(val);
+        return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+        return [val];
+    }
+};
+
 class LearningComparison {
     constructor(data) {
         this.id = data.id;
@@ -8,23 +21,21 @@ class LearningComparison {
         this.description = data.description;
         this.beforeDescription = data.beforeDescription;
         this.afterDescription = data.afterDescription;
-        
-        // Before fields
-        this.beforeVideo = data.beforeVideo;
-        this.beforePdf = data.beforePdf;
-        this.beforeExcel = data.beforeExcel;
-        this.beforeWord = data.beforeWord;
-        this.beforePpt = data.beforePpt;
-        this.beforeImage = data.beforeImage;
-        
-        // After fields
-        this.afterVideo = data.afterVideo;
-        this.afterPdf = data.afterPdf;
-        this.afterExcel = data.afterExcel;
-        this.afterWord = data.afterWord;
-        this.afterPpt = data.afterPpt;
-        this.afterImage = data.afterImage;
-        
+
+        this.beforeVideo = parseFileField(data.beforeVideo);
+        this.beforePdf   = parseFileField(data.beforePdf);
+        this.beforeExcel = parseFileField(data.beforeExcel);
+        this.beforeWord  = parseFileField(data.beforeWord);
+        this.beforePpt   = parseFileField(data.beforePpt);
+        this.beforeImage = parseFileField(data.beforeImage);
+
+        this.afterVideo  = parseFileField(data.afterVideo);
+        this.afterPdf    = parseFileField(data.afterPdf);
+        this.afterExcel  = parseFileField(data.afterExcel);
+        this.afterWord   = parseFileField(data.afterWord);
+        this.afterPpt    = parseFileField(data.afterPpt);
+        this.afterImage  = parseFileField(data.afterImage);
+
         this.createdBy = data.createdBy;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;

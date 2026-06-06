@@ -153,6 +153,8 @@ const SYSTEM_PERMISSIONS = {
   TEST_PAPER_ISSUE_CERTIFICATE: "test_paper:issue_certificate",
   TEST_PAPER_IS_DOJO: "test_paper:is_dojo",
   TEST_PAPER_IS_HANDOVER: "test_paper:is_handover",
+  TEST_PAPER_IS_THEORETICAL: "test_paper:is_theoretical",
+  TEST_PAPER_IS_MULTI_SKILLING: "test_paper:is_multi_skilling",
 
   // Learning Management
   LEARNING_READ: "learning:read",
@@ -278,6 +280,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.TEST_PAPER_ISSUE_CERTIFICATE,
       SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO,
       SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_THEORETICAL,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING,
       SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CREATE,
       SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE,
       SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE,
@@ -452,7 +456,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_SKILL_UPGRADATION, name: "Toggle Skill Upgradation", description: "Allows enabling/disabling skill upgradation for test papers" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_ISSUE_CERTIFICATE, name: "Toggle Issue Certificate", description: "Allows enabling/disabling automatic certificate generation for test papers" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO, name: "Toggle Is Dojo Quiz", description: "Allows marking test papers as Dojo quizzes" },
-        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER, name: "Toggle Is Handover Quiz", description: "Allows marking test papers as Handover quizzes" }
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER, name: "Toggle Is Handover Quiz", description: "Allows marking test papers as Handover quizzes" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_THEORETICAL, name: "Toggle Is Theoretical Quiz", description: "Allows marking test papers as Theoretical quizzes" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING, name: "Toggle Is Multi Skilling Quiz", description: "Allows marking test papers as Multi Skilling quizzes" }
       ],
       "Learning Management": [
         { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Learning Dashboard", description: "View the learning management dashboard and statistics" },

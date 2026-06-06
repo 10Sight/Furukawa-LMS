@@ -76,10 +76,10 @@ const DEFAULT_SKILL_CONFIG = {
         dateOfIssue: '04-02-2018'
     },
     levels: {
-        0: { title: "OK in education training of operation contents but speed is no more than 74%", items: [{ id: 1, text: "Learnt the basic knowledge of process or not", method: "Confirm the education record" }, { id: 2, text: "The understanding test result is satisfying the standard or not", method: "Look in the understand test result of education record" }, { id: 3, text: "The operation method is correct with the standard time or not", method: "Observe his operation by each product (type)" }, { id: 4, text: "Whether the operation is as operation-steps.", method: "Observe his operation by each product." }, { id: 5, text: "Whether he knows the inspection method, name of part, equipment, system", method: "Check the method of inspection at begin of operation" }, { id: 6, text: "Whether he knows the evaluation standard in operation (OK or NG product)", method: "Make question and hear his answer" }] },
+        0: { title: "OK in education training of operation contents but speed is no more than 74%", items: [{ id: 1, text: "Learnt the basic knowledge of process or not", method: "Confirm the education record" }, { id: 2, text: "The understanding test result is satisfying the standard or not", method: "Look in the understand test result of education record" }, { id: 3, text: "The operation method is correct with the standard or not", method: "Observe his operation by each product (type)" }, { id: 4, text: "Whether the operation is as operation-steps.", method: "Observe his operation by each product." }, { id: 5, text: "Whether he knows the inspection method, name of part, equipment, system", method: "Check the method of inspection at begin of operation" }, { id: 6, text: "Whether he knows the evaluation standard in operation (OK or NG product)", method: "Make question and hear his answer" }] },
         1: { title: "OK in education training of operation contents but speed is just 75-99%", items: [{ id: 1, text: "Whether he confirms the quality correctly?", method: "Observe the operation" }, { id: 2, text: "Whether his operation in charge is at least 75%?", method: "Measure the operation time" }, { id: 3, text: "Whether he can report the abnormality (Andon) correctly?", method: "Judge by operation observance and question" }, { id: 4, text: "Whether he changes the steps of operation or operation method by himself?", method: "Observe the operation" }] },
-        2: { title: "Able to operation by himself (Speed more than 99% & operation as the standard is OK)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?", method: "Make question and fill the answer" }, { id: 3, text: "Whether he understand the operation standard and obey as it. Can he give the an idea of improvement?", method: "Observe the operation in over 2 cycles and make question to him about the improvement (Standard operation table)" }] },
-        3: { title: "Speed more than 99% & operation as the standard is OK and (Able to teach other operators)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether the result in understanding test was over the standard", method: "Look in the understanding test result of education record" }, { id: 3, text: "Whether he understands the method of teaching", method: "Make questions about the teaching method and confirmation when teaching" }, { id: 4, text: "Whether he is good at confirmation about the understanding after teaching or in teaching", method: "Confirm the teaching method" }, { id: 5, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?", method: "Confirm the teaching method" }, { id: 6, text: "Whether he understand the operation standard and obey as it.", method: "Confirm the teaching method and operation content (basing on the standard-operation-table)" }] }
+        2: { title: "Able to operation by himself (Speed & operation as the standard is OK)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?", method: "Make question and fill the answer" }, { id: 3, text: "Whether he understand the operation standard and obey as it. Can he give the an idea of improvement?", method: "Observe the operation in over 2 cycles and make question to him about the improvement (Standard operation table)" }] },
+        3: { title: "Able to teach other operators", items: [{ id: 1, text: "Whether the result in understanding test was over the standard", method: "Look in the understanding test result of education record" }, { id: 2, text: "Whether he understands the method of teaching", method: "Make questions about the teaching method and confirmation when teaching" }, { id: 3, text: "Whether he is good at confirmation about the understanding after teaching or in teaching", method: "Confirm the teaching method" }, { id: 4, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?", method: "Confirm the teaching method" }, { id: 5, text: "Whether he understand the operation standard and obey as it.", method: "Confirm the teaching method and operation content (basing on the standard-operation-table)" }] }
     }
 };
 
@@ -119,6 +119,9 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
     const [configRemark, setConfigRemark] = useState('');
     const [history, setHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
+    const [traineeSuggestions, setTraineeSuggestions] = useState([]);
+    const [showTraineeSuggestions, setShowTraineeSuggestions] = useState(false);
+    const [isSearchingTrainee, setIsSearchingTrainee] = useState(false);
 
     const authUser = useSelector(state => state.auth.user);
 
@@ -327,6 +330,46 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
         }
     };
 
+    const handleTraineeChange = async (value) => {
+        setHeaderData(prev => ({ ...prev, trainee: value }));
+
+        if (!value.trim() || value.length < 2) {
+            setTraineeSuggestions([]);
+            setShowTraineeSuggestions(false);
+            return;
+        }
+
+        try {
+            setIsSearchingTrainee(true);
+            const response = await axiosInstance.get('/api/users/students', {
+                params: {
+                    search: value,
+                    page: 1,
+                    limit: 10,
+                    includeTemporary: "true",
+                    ojtApprovedToday: "true"
+                }
+            });
+            const list = response.data?.data?.users || [];
+            setTraineeSuggestions(list);
+            setShowTraineeSuggestions(list.length > 0);
+        } catch (err) {
+            console.error("Failed to search trainees:", err);
+        } finally {
+            setIsSearchingTrainee(false);
+        }
+    };
+
+    const handleSelectTrainee = (student) => {
+        setHeaderData(prev => ({
+            ...prev,
+            trainee: student.fullName,
+            employeeNo: student.empId || ''
+        }));
+        setTraineeSuggestions([]);
+        setShowTraineeSuggestions(false);
+    };
+
     const handleEvalChange = (levelIdx, itemIdx, field, value) => {
         setEvalData(prev => ({
             ...prev,
@@ -411,8 +454,35 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                             </div >
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Trainee</div>
-                                <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input type="text" className="w-full text-center outline-none" value={headerData.trainee} onChange={e => setHeaderData({ ...headerData, trainee: e.target.value })} />
+                                <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white relative">
+                                    <input
+                                        type="text"
+                                        className="w-full text-center outline-none"
+                                        value={headerData.trainee}
+                                        onChange={e => handleTraineeChange(e.target.value)}
+                                        onBlur={() => setTimeout(() => setShowTraineeSuggestions(false), 200)}
+                                        onFocus={() => { if (traineeSuggestions.length > 0) setShowTraineeSuggestions(true); }}
+                                        placeholder="Type to search..."
+                                    />
+                                    {isSearchingTrainee && (
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
+                                            Searching...
+                                        </div>
+                                    )}
+                                    {showTraineeSuggestions && traineeSuggestions.length > 0 && (
+                                        <ul className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto z-50 text-left font-normal normal-case">
+                                            {traineeSuggestions.map(student => (
+                                                <li
+                                                    key={student.id || student._id}
+                                                    onMouseDown={() => handleSelectTrainee(student)}
+                                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm flex flex-col"
+                                                >
+                                                    <span className="font-bold text-gray-800">{student.fullName}</span>
+                                                    <span className="text-xs text-gray-500 font-mono">E.Code: {student.empId || '—'}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
                                 </div>
                             </div>
                             <div className="flex border-b border-black">

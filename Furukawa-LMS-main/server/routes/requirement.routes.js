@@ -14,6 +14,7 @@ import {
     batchUpdateRequirements,
     deleteRequirement,
     approveBatchRequirements,
+    approveSingleRequirement,
 } from "../controllers/requirement.controller.js";
 
 const router = Router();
@@ -21,16 +22,8 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Public approval links from email
-router.get("/approve-batch", approveBatchRequirements);
-
-// IMPORTANT: edit requirement approve/reject link
-// Example: /api/requirements/123?token=xxx&action=approve
-router.get("/:id", (req, res, next) => {
-    if (req.query.token && req.query.action) {
-        return updateRequirement(req, res, next);
-    }
-    return next();
-});
+router.route("/approve-batch").get(approveBatchRequirements).post(approveBatchRequirements);
+router.route("/approve-single").get(approveSingleRequirement).post(approveSingleRequirement);
 
 // Create manually
 router.post(
@@ -94,6 +87,14 @@ router.get(
 // Get One
 router.get(
     "/:id",
+    (req, res, next) => {
+        const token = req.query.token || req.query["amp;token"];
+        if (token) {
+            req.query.id = req.params.id;
+            return approveSingleRequirement(req, res, next);
+        }
+        return next();
+    },
     verifyJWT,
     authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirementById

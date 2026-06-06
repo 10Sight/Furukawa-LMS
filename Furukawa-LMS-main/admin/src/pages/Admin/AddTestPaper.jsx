@@ -65,6 +65,13 @@ const AddTestPaper = () => {
     return '/admin';
   }, [location.pathname]);
 
+  const isAuthorizedToAccessAll = React.useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.role === "SUPERADMIN" || currentUser.role === "ADMIN") return true;
+    const userPermissions = currentUser.customRole?.permissions || [];
+    return userPermissions.includes("test_paper:access_all");
+  }, [currentUser]);
+
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -82,6 +89,7 @@ const AddTestPaper = () => {
     isDojo: false,
     isHandover: false,
     isTheoretical: false,
+    isMultiSkilling: false,
     conductedBy: "",
     paperTitle: "",
     paperSubTitle: "",
@@ -123,6 +131,16 @@ const AddTestPaper = () => {
     }
   }, [location.search]);
 
+  React.useEffect(() => {
+    if (!isAuthorizedToAccessAll && currentUser) {
+      setFormData(prev => ({
+        ...prev,
+        departmentId: currentUser.departmentId ? [String(currentUser.departmentId)] : prev.departmentId,
+        sectionId: currentUser.sectionId ? [String(currentUser.sectionId)] : prev.sectionId,
+      }));
+    }
+  }, [currentUser, isAuthorizedToAccessAll]);
+
   // Fetch all departments and sections to show options
   const { data: allDepartmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
   
@@ -145,21 +163,28 @@ const AddTestPaper = () => {
   }, [activeConfigData, formData.level]);
 
   const departmentOptions = React.useMemo(() => {
-    return (allDepartmentsData?.data?.departments || []).map(d => ({ value: String(d.id), label: d.name }));
-  }, [allDepartmentsData]);
+    const all = (allDepartmentsData?.data?.departments || []).map(d => ({ value: String(d.id), label: d.name }));
+    if (!isAuthorizedToAccessAll && currentUser?.departmentId) {
+      return all.filter(opt => opt.value === String(currentUser.departmentId));
+    }
+    return all;
+  }, [allDepartmentsData, isAuthorizedToAccessAll, currentUser]);
 
   const sectionOptions = React.useMemo(() => {
-    return (allSectionsData?.data || []).map(s => ({ value: String(s.id), label: s.name }));
-  }, [allSectionsData]);
+    const all = (allSectionsData?.data || []).map(s => ({ value: String(s.id), label: s.name }));
+    if (!isAuthorizedToAccessAll && currentUser?.sectionId) {
+      return all.filter(opt => opt.value === String(currentUser.sectionId));
+    }
+    return all;
+  }, [allSectionsData, isAuthorizedToAccessAll, currentUser]);
 
   const lineOptions = React.useMemo(() => {
-    // Filter lines based on selected sections if any, otherwise return empty or all.
-    // If no sections are selected, maybe we show nothing or let them pick.
     const allLines = allLinesData?.data || [];
+    let lines = [];
     if (formData.sectionId.length > 0) {
-      return allLines.filter(l => formData.sectionId.includes(String(l.sectionId))).map(l => ({ value: String(l.id), label: l.name }));
+      lines = allLines.filter(l => formData.sectionId.includes(String(l.sectionId)));
     }
-    return [];
+    return lines.map(l => ({ value: String(l.id), label: l.name }));
   }, [allLinesData, formData.sectionId]);
 
   const subSectionOptions = React.useMemo(() => {
@@ -167,10 +192,11 @@ const AddTestPaper = () => {
       ? allSubSectionsData.data 
       : (allSubSectionsData?.data?.subSections || []);
       
+    let subSecs = [];
     if (formData.lineId.length > 0) {
-      return allSubSections.filter(s => formData.lineId.includes(String(s.lineId))).map(s => ({ value: String(s.id), label: s.name, level: s.minimumRequiredLevel }));
+      subSecs = allSubSections.filter(s => formData.lineId.includes(String(s.lineId)));
     }
-    return [];
+    return subSecs.map(s => ({ value: String(s.id), label: s.name, level: s.minimumRequiredLevel }));
   }, [allSubSectionsData, formData.lineId]);
 
   const toggleItem = (field, id) => {
@@ -548,6 +574,7 @@ const AddTestPaper = () => {
         isDojo: formData.isDojo,
         isHandover: formData.isHandover,
         isTheoretical: formData.isTheoretical,
+        isMultiSkilling: formData.isMultiSkilling,
         conductedBy: formData.conductedBy || "",
         paperTitle: formData.paperTitle || undefined,
         paperSubTitle: formData.paperSubTitle || undefined,
@@ -655,19 +682,22 @@ const AddTestPaper = () => {
                     return (
                       <Badge key={id} variant="secondary" className="gap-1 pr-1 py-1">
                         {dept?.label || id}
-                        <button
-                          type="button"
-                          onClick={() => removeItem('departmentId', id)}
-                          className="hover:bg-muted rounded-full p-0.5"
-                        >
-                          <IconX className="h-3 w-3" />
-                        </button>
+                        {(!isAuthorizedToAccessAll && currentUser?.departmentId && String(currentUser.departmentId) === id) ? null : (
+                          <button
+                            type="button"
+                            onClick={() => removeItem('departmentId', id)}
+                            className="hover:bg-muted rounded-full p-0.5"
+                          >
+                            <IconX className="h-3 w-3" />
+                          </button>
+                        )}
                       </Badge>
                     );
                   })}
                 </div>
                 <Select
                   onValueChange={(val) => toggleItem('departmentId', val)}
+                  disabled={!isAuthorizedToAccessAll && !!currentUser?.departmentId}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={formData.departmentId.length > 0 
@@ -703,20 +733,22 @@ const AddTestPaper = () => {
                     return (
                       <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-blue-50/50">
                         {sec?.label || id}
-                        <button
-                          type="button"
-                          onClick={() => removeItem('sectionId', id)}
-                          className="hover:bg-blue-100 rounded-full p-0.5"
-                        >
-                          <IconX className="h-3 w-3" />
-                        </button>
+                        {(!isAuthorizedToAccessAll && currentUser?.sectionId && String(currentUser.sectionId) === id) ? null : (
+                          <button
+                            type="button"
+                            onClick={() => removeItem('sectionId', id)}
+                            className="hover:bg-blue-100 rounded-full p-0.5"
+                          >
+                            <IconX className="h-3 w-3" />
+                          </button>
+                        )}
                       </Badge>
                     );
                   })}
                 </div>
                 <Select
                   onValueChange={(val) => toggleItem('sectionId', val)}
-                  disabled={formData.departmentId.length === 0}
+                  disabled={(!isAuthorizedToAccessAll && !!currentUser?.sectionId) || formData.departmentId.length === 0}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={formData.sectionId.length > 0 
@@ -1009,26 +1041,51 @@ const AddTestPaper = () => {
                 </div>
               )}
 
-              <div className="grid gap-2">
-                <Label htmlFor="isTheoretical">Is Theoretical Quiz? *</Label>
-                <Select
-                  value={formData.isTheoretical ? "yes" : "no"}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      isTheoretical: value === "yes",
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select option" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">No (Practical)</SelectItem>
-                    <SelectItem value="yes">Yes (Theoretical)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {hasButtonPermission("test_paper:is_theoretical") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="isTheoretical">Is Theoretical Quiz? *</Label>
+                  <Select
+                    value={formData.isTheoretical ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isTheoretical: value === "yes",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No (Practical)</SelectItem>
+                      <SelectItem value="yes">Yes (Theoretical)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {hasButtonPermission("test_paper:is_multi_skilling") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="isMultiSkilling">Is Multi Skilling Quiz? *</Label>
+                  <Select
+                    value={formData.isMultiSkilling ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isMultiSkilling: value === "yes",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

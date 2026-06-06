@@ -31,6 +31,7 @@ export const superAdminApi = createApi({
           unit: params.unit || "",
           shift: params.shift || "",
           date: params.date || "",
+          includeLeft: params.includeLeft || "",
         },
       }),
       providesTags: ["User"],

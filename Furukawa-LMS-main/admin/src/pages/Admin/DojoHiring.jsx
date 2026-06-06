@@ -682,7 +682,7 @@ const DojoHiring = () => {
             </TabsContent>
 
             <TabsContent value="sixteenDays" className="space-y-6">
-                <SixteenDayMonitoring />
+                <SixteenDayMonitoring readOnly={true} />
             </TabsContent>
         </Tabs>
 

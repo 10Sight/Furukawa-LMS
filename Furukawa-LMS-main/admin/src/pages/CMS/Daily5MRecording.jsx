@@ -1657,11 +1657,61 @@ const Daily5MRecording = () => {
         setRowCount(maxIndex + 1);
     };
 
-    /**
-     * Helper to get the correct database field name for the Process Owner
-     * based on the active form type. 
-     */
     const getOwnerField = (type) => type === 'crimping' ? 'Process_Owner' : 'Owner_Sign';
+
+    const getStandardMandatoryFields = (i) => [
+        { key: `rec_${i}_Date`,        label: "Date" },
+        { key: `rec_${i}_Line`,        label: "Line" },
+        { key: `rec_${i}_Shift`,       label: "Shift" },
+        { key: `rec_${i}_Type`,        label: "Planned/Un-Planned" },
+        { key: `rec_${i}_Process`,     label: "Process" },
+        { key: `rec_${i}_Problem`,     label: "Problem" },
+        { key: `rec_${i}_OpName`,      label: "Operator Name" },
+        { key: `rec_${i}_CurSkill`,    label: "Current Skill Level" },
+        { key: `rec_${i}_ReqSkill`,    label: "Req. Min Skill Level" },
+        { key: `rec_${i}_Deputed`,     label: "Deputy Person Name" },
+        { key: `rec_${i}_DeputedCode`, label: "Employee Code" },
+        { key: `rec_${i}_ActSkill`,    label: "Actual Skill Level" },
+        { key: `rec_${i}_From`,        label: "Deputed From" },
+        { key: `rec_${i}_Plan`,        label: "Deputed on Plan" },
+        { key: `rec_${i}_OJT`,         label: "OJT Status" },
+        { key: `rec_${i}_Retro1_NA`,   label: "Retroactive Result" },
+        { key: `rec_${i}_FP_Leader`,   label: "Inspector Name" },
+        { key: `rec_${i}_FP_PartNo`,   label: "Part No." },
+        { key: `rec_${i}_FP_LotNo`,    label: "Lot No." },
+        { key: `rec_${i}_FP_SrNo_1`,   label: "Circuit No." },
+        { key: `rec_${i}_FP1_Chk1`,    label: "Result After Change" },
+        { key: `rec_${i}_Result_1`,    label: "QA Shift In-charge" },
+        { key: `rec_${i}_Owner_Sign`,  label: "Process Owner" },
+    ];
+
+    const getCrimpingMandatoryFields = (i) => [
+        { key: `rec_${i}_Date`,            label: "Date" },
+        { key: `rec_${i}_StationMC`,       label: "Station M/C No" },
+        { key: `rec_${i}_Shift`,           label: "Shift" },
+        { key: `rec_${i}_Type`,            label: "Planned/Un-Planned" },
+        { key: `rec_${i}_Problem`,         label: "Problem" },
+        { key: `rec_${i}_Process`,         label: "Process Name" },
+        { key: `rec_${i}_OperatorName`,    label: "Operator Name" },
+        { key: `rec_${i}_CSL`,             label: "Current Skill Level" },
+        { key: `rec_${i}_ReqSkill`,        label: "Req. Min Skill Level" },
+        { key: `rec_${i}_DeputedPerson`,   label: "Deputy Person Name" },
+        { key: `rec_${i}_EmpCode`,         label: "Employee Code" },
+        { key: `rec_${i}_ActSkill`,        label: "Actual Skill Level" },
+        { key: `rec_${i}_From`,            label: "Deputed From" },
+        { key: `rec_${i}_DeputedOnPlan`,   label: "Deputed on Plan" },
+        { key: `rec_${i}_OJT`,             label: "OJT Status" },
+        { key: `rec_${i}_Retro_C/H_F`,    label: "Retro Standard C/H (F)" },
+        { key: `rec_${i}_Retro_C/H_R`,    label: "Retro Standard C/H (R)" },
+        { key: `rec_${i}_Result_C/H_F`,   label: "Retro Result C/H (F)" },
+        { key: `rec_${i}_InspectorName`,   label: "Inspector Name" },
+        { key: `rec_${i}_PartNo`,          label: "Part No." },
+        { key: `rec_${i}_LotNo`,           label: "Lot No." },
+        { key: `rec_${i}_CircuitNo`,       label: "Circuit No." },
+        { key: `rec_${i}_Setup_C/H_F`,    label: "Setup Verification C/H (F)" },
+        { key: `rec_${i}_QA_Incharge`,     label: "QA Shift In-charge" },
+        { key: `rec_${i}_Process_Owner`,   label: "Process Owner" },
+    ];
 
     const handleInputChange = (recIndex, field, value) => {
         setFormData(prev => {
@@ -1738,26 +1788,31 @@ const Daily5MRecording = () => {
             return;
         }
 
-        // --- VALIDATION: Ensure all active rows have mandatory fields filled ---
+        // --- VALIDATION: All active rows must have all mandatory (non-containment) fields filled ---
         let hasActiveRows = false;
-        const activeRowsWithMissingFields = [];
+        const rowErrors = [];
+
         for (let i = 0; i < rowCount; i++) {
-            const lineValue = formData[`rec_${i}_Line`];
-            const stationValue = formData[`rec_${i}_StationMC`];
-            const opName = formData[`rec_${i}_OpName`];
+            const isActive = !!(
+                formData[`rec_${i}_Line`] ||
+                formData[`rec_${i}_StationMC`] ||
+                formData[`rec_${i}_OpName`] ||
+                formData[`rec_${i}_OperatorName`]
+            );
+            if (!isActive) continue;
 
-            // A row is "active" if it has a Line, Station, or Operator name
-            if (lineValue || stationValue || opName) {
-                hasActiveRows = true;
-                // Fields to check using helper for consistency
-                const ownerField = getOwnerField(formType);
-                const processOwner = formData[`rec_${i}_${ownerField}`];
-                const qaShiftIC = isCrimping ? formData[`rec_${i}_QA_Incharge`] : formData[`rec_${i}_Result_1`];
-                const approvedBy = formData[`rec_${i}_Approved_By`]; // Same for both layouts
+            hasActiveRows = true;
 
-                if (!qaShiftIC) {
-                    activeRowsWithMissingFields.push(i + 1);
-                }
+            const mandatoryFields = isCrimping
+                ? getCrimpingMandatoryFields(i)
+                : getStandardMandatoryFields(i);
+
+            const missingLabels = mandatoryFields
+                .filter(f => !formData[f.key]?.toString().trim())
+                .map(f => f.label);
+
+            if (missingLabels.length > 0) {
+                rowErrors.push({ row: i + 1, missing: missingLabels });
             }
         }
 
@@ -1766,12 +1821,13 @@ const Daily5MRecording = () => {
             return;
         }
 
-        if (activeRowsWithMissingFields.length > 0) {
-            toast.error(
-                `Row(s) [${activeRowsWithMissingFields.join(', ')}] are incomplete. ` +
-                `Please fill QA Shift In-charge before submitting.`,
-                { duration: 5000 }
-            );
+        if (rowErrors.length > 0) {
+            rowErrors.forEach(({ row, missing }) => {
+                toast.error(
+                    `Row ${row}: Missing — ${missing.join(', ')}`,
+                    { duration: 7000 }
+                );
+            });
             return;
         }
         // ----------------------------------------------------------------------

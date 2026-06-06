@@ -1,19 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BookOpen, 
-  Target, 
-  Award, 
-  Clock, 
-  TrendingUp, 
-  Users, 
+import {
   ChevronRight,
   Search,
-  Filter,
   Plus,
   ArrowRight,
   FileText,
   Edit,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,13 +30,6 @@ const Learning = () => {
   const canDelete = hasPrivilege("learning:delete");
   const canRead = hasPrivilege("learning:read");
 
-  const stats = [
-    { label: "Active Lessons", value: comparisons.length > 0 ? (comparisons.length * 2).toString() : "0", icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Total Comparisons", value: comparisons.length.toString(), icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
-    { label: "Implementation Rate", value: comparisons.length > 0 ? "100%" : "0%", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Avg. Quality Score", value: comparisons.length > 0 ? "88/100" : "0/100", icon: Award, color: "text-amber-600", bg: "bg-amber-50" },
-  ];
-
   useEffect(() => {
     const fetchComparisons = async () => {
       try {
@@ -57,12 +44,6 @@ const Learning = () => {
     if (canRead) fetchComparisons();
     else if (!loading) setLoading(false);
   }, [canRead, loading]);
-
-  const recentActivities = [
-    { id: 1, type: "Course Started", user: "Rahul Sharma", item: "Safety Protocol 101", time: "2 hours ago" },
-    { id: 2, type: "Test Passed", user: "Priya Patel", item: "Machine Operation v2", time: "5 hours ago" },
-    { id: 3, type: "Certificate Issued", user: "Amit Kumar", item: "Advanced Welding", time: "1 day ago" },
-  ];
 
   const handleDelete = async (id) => {
     if (!canDelete) return toast.error("You don't have permission to delete");
@@ -165,11 +146,11 @@ const Learning = () => {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary" className="bg-amber-50 text-amber-600 border-amber-100 text-[10px] h-5 px-1.5 font-bold">
-                            B: {Object.keys(item).filter(k => k.startsWith('before') && item[k]).length}
+                            B: {['beforeVideo','beforePdf','beforeExcel','beforeWord','beforePpt','beforeImage'].reduce((s, k) => s + (Array.isArray(item[k]) ? item[k].length : 0), 0)}
                           </Badge>
                           <ArrowRight className="w-3 h-3 text-gray-300" />
                           <Badge variant="secondary" className="bg-emerald-50 text-emerald-600 border-emerald-100 text-[10px] h-5 px-1.5 font-bold">
-                            A: {Object.keys(item).filter(k => k.startsWith('after') && item[k]).length}
+                            A: {['afterVideo','afterPdf','afterExcel','afterWord','afterPpt','afterImage'].reduce((s, k) => s + (Array.isArray(item[k]) ? item[k].length : 0), 0)}
                           </Badge>
                         </div>
                       </td>

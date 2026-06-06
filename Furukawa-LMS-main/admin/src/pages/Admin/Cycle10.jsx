@@ -81,7 +81,8 @@ const Cycle10 = () => {
         departmentId: selectedDepartmentFilter,
         limit: 1000,
         isEmployee: true,
-        passedQuizOnly: "true"
+        includeTemporary: "true",
+        ojtApprovedToday: "true"
     }, { skip: !selectedDepartmentFilter });
     const operators = usersData?.data?.users || [];
 

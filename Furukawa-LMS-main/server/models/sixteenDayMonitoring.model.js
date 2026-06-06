@@ -26,6 +26,7 @@ class SixteenDayMonitoring {
         this.verifiedBy = data.verifiedBy || "";
         this.approvedBy = data.approvedBy || "";
         this.status = data.status || "Draft";
+        this.startDate = data.startDate || "";
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -84,6 +85,11 @@ class SixteenDayMonitoring {
                 BEGIN
                     ALTER TABLE sixteen_day_monitorings ADD attemptNumber INT DEFAULT 1;
                 END
+                -- Add startDate column if missing
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'startDate')
+                BEGIN
+                    ALTER TABLE sixteen_day_monitorings ADD startDate VARCHAR(255);
+                END
             END
         `;
         await executeQuery(query);
@@ -111,14 +117,14 @@ class SixteenDayMonitoring {
         const {
             studentId, attemptNumber, employeeName, employeeCode, processName, dept,
             handoverDate, trgResult, workingWith, lineLeaderName,
-            gridData, checkedBy, verifiedBy, approvedBy, createdBy, status
+            gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate
         } = data;
 
         const query = `
-            INSERT INTO sixteen_day_monitorings 
-            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, createdBy, status)
+            INSERT INTO sixteen_day_monitorings
+            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -137,7 +143,8 @@ class SixteenDayMonitoring {
             verifiedBy || "",
             approvedBy || "",
             createdBy,
-            status || "Draft"
+            status || "Draft",
+            startDate || ""
         ];
 
         const [rows] = await executeQuery(query, values);
@@ -149,7 +156,7 @@ class SixteenDayMonitoring {
             UPDATE sixteen_day_monitorings SET
             employeeName = ?, employeeCode = ?, processName = ?, dept = ?, 
             handoverDate = ?, trgResult = ?, workingWith = ?, lineLeaderName = ?, 
-            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, attemptNumber = ?, updatedBy = ?, updatedAt = GETDATE()
+            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, attemptNumber = ?, startDate = ?, updatedBy = ?, updatedAt = GETDATE()
             WHERE id = ?
         `;
 
@@ -168,6 +175,7 @@ class SixteenDayMonitoring {
             this.approvedBy,
             this.status || "Draft",
             this.attemptNumber,
+            this.startDate || "",
             this.updatedBy,
             this.id
         ];

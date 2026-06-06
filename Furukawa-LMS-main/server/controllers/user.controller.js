@@ -18,6 +18,21 @@ const parseJSON = (data, fallback = null) => {
   return data || fallback;
 };
 
+// Helper to safely parse arrays
+const parseArray = (val) => {
+  if (!val) return [];
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return val.split(',').map(item => item.trim()).filter(Boolean);
+    }
+  }
+  if (Array.isArray(val)) return val;
+  return [val];
+};
+
 // --- Helpers ---
 
 const handleInstructorAssignments = async (userId, departmentIds) => {
@@ -188,10 +203,29 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const offset = (page - 1) * limit;
 
   let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  if (req.query.dojoHandoverPassedOnly === "true") {
+    whereClauses.push(`EXISTS (
+      SELECT 1 FROM attempted_quizzes aq 
+      JOIN quizzes q ON aq.quiz = q.id 
+      WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+        AND q.isDojo = 1 
+        AND q.isHandover = 1 
+        AND aq.status = 'PASSED'
+    )`);
+  }
+
   if (req.query.includeTemporary === "true") {
-    whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
+    if (req.query.dojoHandoverPassedOnly === "true") {
+      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
+    } else {
+      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
+    }
   } else if (req.query.includeTemporary === "only") {
-    whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
+    if (req.query.dojoHandoverPassedOnly === "true") {
+      whereClauses.push("(u.isTemporary = 1)");
+    } else {
+      whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
+    }
   } else {
     whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
   }
@@ -212,8 +246,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const stnId = normalizeParam(req.query.stationId);
 
   if (deptId) {
-    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = ?)");
-    params.push(deptId);
+    whereClauses.push("(u.departmentId = ? OR u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = ?))");
+    params.push(deptId, deptId);
   }
   if (sectId) {
     whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id = ?)");
@@ -241,6 +275,19 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   if (req.query.isTrainer === "true") { whereClauses.push("u.isTrainer = 1"); }
   if (req.query.passedQuizOnly === "true") {
     whereClauses.push("EXISTS (SELECT 1 FROM attempted_quizzes aq WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName) AND aq.status = 'PASSED')");
+  }
+
+  if (req.query.ojtApprovedToday === "true") {
+    whereClauses.push(`EXISTS (
+      SELECT 1 FROM on_job_trainings ojt
+      WHERE (
+        ojt.student = CAST(u.id AS NVARCHAR(50))
+        OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
+        OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
+      )
+      AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
+      AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+    )`);
   }
 
   if (req.query.excludeRoles) {
@@ -342,11 +389,12 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   const [countsData] = await executeQuery(`
     SELECT 
-      SUM(CASE WHEN al.logStatus = 'Present' THEN 1 ELSE 0 END) as presentCount,
-      SUM(CASE WHEN al.logStatus != 'Present' OR al.userId IS NULL THEN 1 ELSE 0 END) as absentCount,
-      AVG(CASE WHEN al.logStatus = 'Present' THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) ELSE NULL END) as presentEfficiency,
-      AVG(CASE WHEN al.logStatus = 'Present' THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) WHEN u.currentEffeciency IS NOT NULL THEN 0 ELSE NULL END) as overallEfficiency,
-      AVG(CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) as systemEfficiency
+      SUM(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as presentCount,
+      SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as absentCount,
+      SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
+      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) ELSE NULL END) as presentEfficiency,
+      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
+      AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) ELSE NULL END) as systemEfficiency
     FROM users u 
     ${getHierarchyJoinSQL} 
     ${attendanceJoinSQL}
@@ -355,6 +403,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   const presentCount = countsData[0]?.presentCount || 0;
   const absentCount = countsData[0]?.absentCount || 0;
+  const leftCount = countsData[0]?.leftCount || 0;
   const presentEfficiency = countsData[0]?.presentEfficiency || 0;
   const overallEfficiency = countsData[0]?.overallEfficiency || 0;
   const systemEfficiency = countsData[0]?.systemEfficiency || 0;
@@ -390,6 +439,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     totalUsers,
     presentCount,
     absentCount,
+    leftCount,
     presentEfficiency: Math.round(presentEfficiency * 100) / 100,
     overallEfficiency: Math.round(overallEfficiency * 100) / 100,
     systemEfficiency: Math.round(systemEfficiency * 100) / 100,
@@ -462,6 +512,16 @@ export const createUser = asyncHandler(async (req, res) => {
   const hashedPassword = await bcrypt.hash(data.password, 10);
   const slug = data.userName.toLowerCase().replace(/ /g, '-');
 
+  const departments = parseArray(data.departments);
+  const stations = parseArray(data.stations);
+
+  if (departments.length > 0 && !data.departmentId) {
+    data.departmentId = parseInt(departments[0]);
+  }
+  if (stations.length > 0 && !data.stationId) {
+    data.stationId = parseInt(stations[0]);
+  }
+
   // Sync department name
   let departmentName = data.department;
   if (data.departmentId) {
@@ -476,7 +536,7 @@ export const createUser = asyncHandler(async (req, res) => {
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "currentLevel", "isTemporary", "createdAt", "updatedAt"
+    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations"
   ];
 
   // For temporary users, map assignments to target fields and clear actual fields
@@ -501,6 +561,8 @@ export const createUser = asyncHandler(async (req, res) => {
     if (f === 'slug') return slug;
     if (f === 'department') return departmentName;
     if (f === 'createdAt' || f === 'updatedAt') return new Date();
+    if (f === 'departments') return JSON.stringify(departments);
+    if (f === 'stations') return JSON.stringify(stations);
     if (['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f)) return data[f] ? 1 : 0;
     return data[f] || null;
   });
@@ -510,22 +572,58 @@ export const createUser = asyncHandler(async (req, res) => {
 
   const newUserId = result[0].id;
 
-  // Trigger Hierarchy Sync for new user
-  if (data.lineId || data.subSectionId || data.stationId) {
-    try {
-      const SubSection = (await import("../models/subSection.model.js")).default;
-      const Line = (await import("../models/line.model.js")).default;
-      if (data.subSectionId) {
-        await SubSection.syncUserList(data.subSectionId);
-      } else if (data.lineId) {
-        await Line.syncUserList(data.lineId);
+  // Sync stations to machine_assignments
+  const assignedBy = req.user?.id || null;
+  for (const stationId of stations) {
+    const parsedStationId = parseInt(stationId);
+    if (!isNaN(parsedStationId)) {
+      const [existing] = await executeQuery(
+        "SELECT id FROM machine_assignments WHERE user_id = ? AND machine_id = ?",
+        [newUserId, parsedStationId]
+      );
+      if (existing.length === 0) {
+        await executeQuery(
+          "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
+          [newUserId, parsedStationId, assignedBy]
+        );
       }
-    } catch (error) {
-      logger.error(`Failed to trigger hierarchy sync in createUser: ${error.message}`);
     }
   }
-  if (data.departments && Array.isArray(data.departments)) {
-    await handleInstructorAssignments(newUserId, data.departments);
+
+  // Trigger Hierarchy Sync for new user
+  try {
+    const SubSection = (await import("../models/subSection.model.js")).default;
+    const Line = (await import("../models/line.model.js")).default;
+
+    const affectedSubSectionIds = new Set();
+    if (data.subSectionId) {
+      affectedSubSectionIds.add(parseInt(data.subSectionId));
+    }
+    if (stations.length > 0) {
+      const sanitizedStationIds = stations.map(id => parseInt(id)).filter(id => !isNaN(id));
+      if (sanitizedStationIds.length > 0) {
+        const [machines] = await executeQuery(
+          `SELECT DISTINCT subSectionId FROM machines WHERE id IN (${sanitizedStationIds.join(',')})`
+        );
+        machines.forEach(m => {
+          if (m.subSectionId) affectedSubSectionIds.add(m.subSectionId);
+        });
+      }
+    }
+
+    for (const subSecId of affectedSubSectionIds) {
+      await SubSection.syncUserList(subSecId);
+    }
+
+    if (data.lineId) {
+      await Line.syncUserList(data.lineId);
+    }
+  } catch (error) {
+    logger.error(`Failed to trigger hierarchy sync in createUser: ${error.message}`);
+  }
+
+  if (departments.length > 0) {
+    await handleInstructorAssignments(newUserId, departments);
   }
 
   // Fetch created user with joins
@@ -547,6 +645,20 @@ export const updateUser = asyncHandler(async (req, res) => {
   const [rows] = await executeQuery("SELECT * FROM users WHERE id = ?", [userId]);
   if (rows.length === 0) throw new ApiError("User not found", 404);
 
+  // Parse departments and stations if they exist in request body
+  if (data.departments !== undefined) {
+    const depts = parseArray(data.departments);
+    if (depts.length > 0 && data.departmentId === undefined) {
+      data.departmentId = parseInt(depts[0]);
+    }
+  }
+  if (data.stations !== undefined) {
+    const stns = parseArray(data.stations);
+    if (stns.length > 0 && data.stationId === undefined) {
+      data.stationId = parseInt(stns[0]);
+    }
+  }
+
   let updates = ["updatedAt = GETDATE()"];
   let values = [];
 
@@ -557,7 +669,8 @@ export const updateUser = asyncHandler(async (req, res) => {
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
     "customRoleId", "currentLevel", "isTemporary",
-    "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId"
+    "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
+    "departments", "stations"
   ];
 
   const oldUser = rows[0];
@@ -569,7 +682,7 @@ export const updateUser = asyncHandler(async (req, res) => {
       try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
     }
     // Set currentLevel to the level associated with the new station, default to L1
-    data.currentLevel = currentSkill[data.stationId] || "L1";
+    data.currentLevel = currentSkill[data.stationId] || null;
   }
 
   // Auto-set leavingDate if status is changed to LEFT and no date is provided
@@ -621,6 +734,12 @@ export const updateUser = asyncHandler(async (req, res) => {
         } else {
           updates.push("department = NULL");
         }
+      } else if (f === "departments") {
+        updates.push("departments = ?");
+        values.push(JSON.stringify(parseArray(data[f])));
+      } else if (f === "stations") {
+        updates.push("stations = ?");
+        values.push(JSON.stringify(parseArray(data[f])));
       } else {
         updates.push(`${f} = ?`);
         values.push(['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f) ? (data[f] ? 1 : 0) : (data[f] === undefined ? null : data[f]));
@@ -652,8 +771,56 @@ export const updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  // Sync stationId to machine_assignments to support multi-station assignment history
-  if (data.stationId) {
+  // Sync stations to machine_assignments
+  if (data.stations !== undefined) {
+    try {
+      const stations = parseArray(data.stations);
+      const targetStationIds = stations.map(id => parseInt(id)).filter(id => !isNaN(id));
+      
+      const [existingAssignments] = await executeQuery(
+        "SELECT machine_id FROM machine_assignments WHERE user_id = ?",
+        [userId]
+      );
+      const existingStationIds = existingAssignments.map(a => a.machine_id);
+      
+      const toInsert = targetStationIds.filter(id => !existingStationIds.includes(id));
+      const toDelete = existingStationIds.filter(id => !targetStationIds.includes(id));
+      
+      const affectedSubSectionIds = new Set();
+      const allStationIdsToCheck = [...new Set([...targetStationIds, ...existingStationIds])];
+      if (allStationIdsToCheck.length > 0) {
+        const [machines] = await executeQuery(
+          `SELECT id, subSectionId FROM machines WHERE id IN (${allStationIdsToCheck.join(',')})`
+        );
+        machines.forEach(m => {
+          if (m.subSectionId) affectedSubSectionIds.add(m.subSectionId);
+        });
+      }
+      
+      const assignedBy = req.user?.id || null;
+      for (const stationId of toInsert) {
+        await executeQuery(
+          "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
+          [userId, stationId, assignedBy]
+        );
+      }
+      
+      if (toDelete.length > 0) {
+        await executeQuery(
+          `DELETE FROM machine_assignments WHERE user_id = ? AND machine_id IN (${toDelete.join(',')})`,
+          [userId]
+        );
+      }
+      
+      const SubSection = (await import("../models/subSection.model.js")).default;
+      for (const subSecId of affectedSubSectionIds) {
+        await SubSection.syncUserList(subSecId);
+      }
+    } catch (e) {
+      console.error("Error syncing stations in updateUser:", e.message);
+    }
+  } else if (data.stationId) {
+    // Legacy single assignment fallback
     try {
       const [existing] = await executeQuery(
         "SELECT id FROM machine_assignments WHERE user_id = ? AND machine_id = ?",
@@ -665,13 +832,20 @@ export const updateUser = asyncHandler(async (req, res) => {
           [userId, data.stationId, req.user?.id || null]
         );
       }
+      
+      const [machineInfo] = await executeQuery("SELECT subSectionId FROM machines WHERE id = ?", [data.stationId]);
+      if (machineInfo.length > 0 && machineInfo[0].subSectionId) {
+        const SubSection = (await import("../models/subSection.model.js")).default;
+        await SubSection.syncUserList(machineInfo[0].subSectionId);
+      }
     } catch (e) {
       console.error("Error syncing station assignment in updateUser:", e.message);
     }
   }
 
-  if (data.departments && Array.isArray(data.departments)) {
-    await handleInstructorAssignments(userId, data.departments);
+  if (data.departments) {
+    const departments = parseArray(data.departments);
+    await handleInstructorAssignments(userId, departments);
   }
 
   const [updated] = await executeQuery(`
@@ -884,23 +1058,39 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
-  if (req.query.includeTemporary === "true") {
-    if (req.query.ojtApprovedOnly === "true") {
-      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
-    } else {
-      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
-    }
-  } else if (req.query.includeTemporary === "only") {
-    if (req.query.ojtApprovedOnly === "true") {
-      whereClauses.push("(u.isTemporary = 1)");
-    } else {
-      whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
-    }
+  if (req.query.dojoHandoverPassedOnly === "true") {
+    whereClauses.push(`EXISTS (
+      SELECT 1 FROM attempted_quizzes aq 
+      JOIN quizzes q ON aq.quiz = q.id 
+      WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+        AND q.isDojo = 1 
+        AND q.isHandover = 1 
+        AND aq.status = 'PASSED'
+    )`);
+  }
+
+  const isDojoVal = req.query.isDojo === "true" || req.query.isDojo === true;
+  if (isDojoVal) {
+    whereClauses.push("(u.isTemporary = 1)");
   } else {
-    if (req.query.ojtApprovedOnly === "true") {
-      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
+    if (req.query.includeTemporary === "true") {
+      if (req.query.ojtApprovedOnly === "true" || req.query.ojtApprovedToday === "true" || req.query.dojoHandoverPassedOnly === "true") {
+        whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
+      } else {
+        whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
+      }
+    } else if (req.query.includeTemporary === "only") {
+      if (req.query.ojtApprovedOnly === "true" || req.query.ojtApprovedToday === "true" || req.query.dojoHandoverPassedOnly === "true") {
+        whereClauses.push("(u.isTemporary = 1)");
+      } else {
+        whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
+      }
     } else {
-      whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+      if (req.query.ojtApprovedOnly === "true" || req.query.ojtApprovedToday === "true" || req.query.dojoHandoverPassedOnly === "true") {
+        whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
+      } else {
+        whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+      }
     }
   }
   let params = [];
@@ -933,10 +1123,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
                ROW_NUMBER() OVER (PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
         FROM sixteen_day_monitorings
       ) latest_sdm
-      WHERE latest_sdm.studentId = u.id 
-        AND latest_sdm.rn = 1 
-        AND latest_sdm.approvedBy LIKE '%Approved%' 
-        AND latest_sdm.approvedBy NOT LIKE '%Rejected%' 
+      WHERE latest_sdm.studentId = u.id
+        AND latest_sdm.rn = 1
+        AND latest_sdm.verifiedBy LIKE '%Approved%'
         AND latest_sdm.verifiedBy NOT LIKE '%Rejected%'
     )`);
   }
@@ -952,6 +1141,19 @@ export const getAllStudents = asyncHandler(async (req, res) => {
         )
         AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
       )
+    )`);
+  }
+
+  if (req.query.ojtApprovedToday === "true") {
+    whereClauses.push(`EXISTS (
+      SELECT 1 FROM on_job_trainings ojt
+      WHERE (
+        ojt.student = CAST(u.id AS NVARCHAR(50))
+        OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
+        OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
+      )
+      AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
+      AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
     )`);
   }
 

@@ -39,6 +39,7 @@ import {
     Eye,
     EyeOff,
     ArrowLeft,
+    GraduationCap,
 } from 'lucide-react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -2113,6 +2114,179 @@ const FullWidthToggleChartCard = ({
 };
 
 
+const getEducationChartInnerWidth = (dataLength = 0) => {
+    const safeLength = Number(dataLength) || 0;
+    if (safeLength <= 3) return "100%";
+    return `${Math.max(800, safeLength * 180)}px`;
+};
+
+const ScrollableEducationChart = ({ dataLength = 0, children }) => {
+    const scrollRef = useRef(null);
+
+    useEffect(() => {
+        const node = scrollRef.current;
+        if (!node) return;
+
+        window.requestAnimationFrame(() => {
+            node.scrollLeft = 0;
+        });
+    }, [dataLength]);
+
+    return (
+        <div className="w-full relative h-[320px]">
+            <div
+                ref={scrollRef}
+                className="absolute inset-0 overflow-x-auto overflow-y-hidden pb-2 overscroll-x-contain"
+            >
+                <div
+                    className="h-full relative"
+                    style={{
+                        width: getEducationChartInnerWidth(dataLength),
+                        minWidth: getEducationChartInnerWidth(dataLength),
+                    }}
+                >
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const EducationChartCard = ({
+    title,
+    subtitle,
+    data = [],
+    isLoading = false,
+    valueMode = "number",
+    onValueModeChange,
+    filter,
+    setFilter,
+    departments,
+}) => {
+    const chartData = convertComparisonToValueMode(data, valueMode).map(item => ({
+        ...item,
+        name: cleanDisplayName(item.name),
+        attendanceValue: Number(item.attendanceValue || 0),
+        masterValue: Number(item.masterValue || 0),
+        attendanceCount: Number(item.attendanceCount || 0),
+        masterCount: Number(item.masterCount || 0),
+    }));
+    const valueSuffix = valueMode === "percentage" ? "%" : "";
+    const hasMasterComparison = chartData.some(item => Number(item.masterValue || 0) > 0);
+    const isEmpty = !chartData || chartData.length === 0;
+
+    return (
+        <Card className="border-slate-200 shadow-sm bg-white w-full">
+            <CardHeader className="pb-2 pt-5 px-6 space-y-2">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                            <GraduationCap className="w-6 h-6 text-indigo-600" />
+                            {title}
+                        </CardTitle>
+
+                        {renderSubtitleText(subtitle, "text-sm text-slate-500 mt-1")}
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <GraphFilterBar
+                            filter={filter}
+                            setFilter={setFilter}
+                            departments={departments}
+                        />
+
+                        <ValueModeToggle
+                            value={valueMode}
+                            onChange={onValueModeChange}
+                        />
+                    </div>
+                </div>
+            </CardHeader>
+
+            <CardContent className="px-2 pb-4 pt-2">
+                <ScrollableEducationChart dataLength={chartData.length}>
+                    {isLoading && <ChartLoader />}
+
+                    {!isLoading && isEmpty && (
+                        <EmptyState text="No education data found" />
+                    )}
+
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={chartData}
+                            margin={{ top: 66, right: 48, left: 4, bottom: 8 }}
+                            barCategoryGap="25%"
+                            barGap={24}
+                        >
+                            <defs>
+                                <linearGradient id="educationPrefixGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#4f46e5" stopOpacity={1} />
+                                    <stop offset="100%" stopColor="#4338ca" stopOpacity={0.82} />
+                                </linearGradient>
+                            </defs>
+
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+
+                            <XAxis
+                                dataKey="name"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={renderContractorMultilineAxisTick}
+                                interval={0}
+                            />
+
+                            <YAxis
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fontSize: 13, fill: '#475569', fontWeight: 900 }}
+                                allowDecimals={valueMode === "percentage"}
+                                width={40}
+                            />
+
+                            {hasMasterComparison ? (
+                                <>
+                                    <Bar
+                                        dataKey="masterValue"
+                                        name="Users Total"
+                                        fill={USER_TOTAL_BAR_COLOR}
+                                        radius={[7, 7, 0, 0]}
+                                        maxBarSize={34}
+                                        label={renderUsersTotalLabel(valueSuffix, 12)}
+                                    />
+                                    <Bar
+                                        dataKey="attendanceValue"
+                                        name="Attendance"
+                                        fill="#4f46e5"
+                                        radius={[7, 7, 0, 0]}
+                                        maxBarSize={34}
+                                        label={renderAttendanceLabel("#4f46e5", valueSuffix, 12)}
+                                    />
+                                </>
+                            ) : (
+                                <Bar
+                                    dataKey="value"
+                                    fill="url(#educationPrefixGrad)"
+                                    radius={[7, 7, 0, 0]}
+                                    maxBarSize={46}
+                                    label={renderBarValueLabel("#4f46e5", valueSuffix, 13)}
+                                />
+                            )}
+                        </BarChart>
+                    </ResponsiveContainer>
+                </ScrollableEducationChart>
+
+                <SimpleLegend
+                    items={[
+                        ...(hasMasterComparison ? [{ color: USER_TOTAL_BAR_COLOR, label: 'Users Total' }] : []),
+                        { color: '#4f46e5', label: 'Attendance' },
+                    ]}
+                />
+            </CardContent>
+        </Card>
+    );
+};
+
+
 const ContractorPrefixChartCard = ({
     title,
     subtitle,
@@ -2494,6 +2668,7 @@ const DashboardHome = () => {
         district: "percentage",
         employeeGender: "percentage",
         designation: "percentage",
+        education: "percentage",
     });
 
     const navigate = useNavigate();
@@ -2529,7 +2704,8 @@ const DashboardHome = () => {
     const [districtFilter, setDistrictFilter] = useState(defaultFilter);
     const [employeeGenderFilter, setEmployeeGenderFilter] = useState(defaultFilter);
     const [designationFilter, setDesignationFilter] = useState(defaultFilter);
-    const [showEmployeeMasterGraphs, setShowEmployeeMasterGraphs] = useState(false);
+    const [educationFilter, setEducationFilter] = useState(defaultFilter);
+    const [showEmployeeMasterGraphs, setShowEmployeeMasterGraphs] = useState(true);
 
     const [selectedMasterState, setSelectedMasterState] = useState(["ALL"]);
     const [selectedMasterDistrict, setSelectedMasterDistrict] = useState(["ALL"]);
@@ -2646,6 +2822,12 @@ const DashboardHome = () => {
     } = useGetDashboardStatsQuery(getQueryParams(contractorPrefixFilter, {}));
 
     const {
+        data: educationStats,
+        isLoading: educationLoading,
+        isFetching: educationFetching,
+    } = useGetDashboardStatsQuery(getQueryParams(educationFilter, {}));
+
+    const {
         data: skillStats,
         isLoading: skillLoading,
         isFetching: skillFetching,
@@ -2747,6 +2929,7 @@ const DashboardHome = () => {
         leaderExpertStats?.data?.pieCharts?.leaderExpertTotalEmployees || 0;
     const contractorPrefixData =
         contractorPrefixStats?.data?.pieCharts?.contractorPrefix || [];
+    const educationData = educationStats?.data?.pieCharts?.education || [];
     const statePieData = stateStats?.data?.pieCharts?.state || [];
     const districtPieData = districtStats?.data?.pieCharts?.district || [];
     const employeeGenderPieData = employeeGenderStats?.data?.pieCharts?.gender || [];
@@ -3106,6 +3289,18 @@ const DashboardHome = () => {
                 onValueModeChange={(value) => setGraphValueMode("absenteeism", value)}
             />
 
+            <EducationChartCard
+                title="Education"
+                subtitle={withAttendanceDateSubtitle(`Education ${graphValueModes.education === "percentage" ? "percentage" : "count"} grouped by education column`, educationStats)}
+                data={educationData}
+                isLoading={educationLoading || educationFetching}
+                valueMode={graphValueModes.education}
+                onValueModeChange={(value) => setGraphValueMode("education", value)}
+                filter={educationFilter}
+                setFilter={setEducationFilter}
+                departments={departments}
+            />
+
             <ContractorPrefixChartCard
                 title="Contractor"
                 subtitle={withAttendanceDateSubtitle(`Contractor ${graphValueModes.contractorPrefix === "percentage" ? "percentage" : "count"} grouped by contractor column`, contractorPrefixStats)}
@@ -3265,38 +3460,7 @@ const DashboardHome = () => {
                 />
             </div>
 
-            <Card className="border-slate-200 shadow-sm bg-white w-full">
-                <CardContent className="p-4">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                        <div>
-                            <h2 className="text-lg font-bold text-slate-800">
-                                Employee Master Graphs
-                            </h2>
-                            <p className="text-sm text-slate-500 mt-1">
-                                State, District, Male/Female and Designation graphs are hidden. Click button to show all graphs.
-                            </p>
-                        </div>
-
-                        <Button
-                            type="button"
-                            onClick={() => setShowEmployeeMasterGraphs(prev => !prev)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                            {showEmployeeMasterGraphs ? (
-                                <>
-                                    <EyeOff className="w-4 h-4 mr-2" />
-                                    Hide Employee Graphs
-                                </>
-                            ) : (
-                                <>
-                                    <Eye className="w-4 h-4 mr-2" />
-                                    Show Employee Graphs
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
+            {/* Employee Master Graphs are always shown */}
 
             {showEmployeeMasterGraphs && (
                 <div className="w-full space-y-4 pb-2">

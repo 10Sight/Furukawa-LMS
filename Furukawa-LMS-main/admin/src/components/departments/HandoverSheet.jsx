@@ -43,7 +43,7 @@ const ProcessSelect = ({ departmentId, value, onValueChange, className = "" }) =
     );
 };
 
-const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [] }) => {
+const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -218,7 +218,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                     } 
                     // 2. Fallback to all eligible temporary students if no quiz-based suggestions and they are already loaded
                     else if (students && students.length > 0) {
-                        const eligibleStudents = students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
+                        const eligibleStudents = dojoHandoverPassedOnly 
+                            ? students 
+                            : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
                         initialEntries = eligibleStudents.map((student, index) => ({
                             sn: index + 1,
                             studentId: student._id || student.id,
@@ -278,7 +280,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
             const isCurrentlyEmpty = entries.length === 1 && entries[0].studentId === "" && !entries[0].employeeName;
             
             if (isCurrentlyEmpty) {
-                const eligibleStudents = students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
+                const eligibleStudents = dojoHandoverPassedOnly 
+                    ? students 
+                    : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
                 if (eligibleStudents.length > 0) {
                     const populatedEntries = eligibleStudents.map((student, index) => ({
                         sn: index + 1,
@@ -726,6 +730,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
                                                                 placeholder="Search..."
                                                                 compact={true}
+                                                                includeTemporary="only"
+                                                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
                                                                 className="w-full"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                             />
@@ -782,6 +788,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             placeholder="Search Employee..."
                                                             compact={true}
                                                             includeTemporary="only"
+                                                            dojoHandoverPassedOnly={dojoHandoverPassedOnly}
                                                             className="min-w-[150px]"
                                                             inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                         />

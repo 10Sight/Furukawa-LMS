@@ -7,7 +7,7 @@ import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesByLineQuery } from "@/Redux/AllApi/MachineApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
-import { IconDeviceFloppy, IconPrinter } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconTrash } from "@tabler/icons-react";
 import {
     Select,
     SelectContent,
@@ -25,7 +25,7 @@ import { format } from "date-fns";
 
 const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
     const authUser = useSelector(state => state.auth.user);
-    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
     const { canManage, canEditLayout, canViewHistory } = useMemo(() => {
         const permissions = authUser?.customRole?.permissions || [];
@@ -36,7 +36,39 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
         };
     }, [authUser, isAdmin]);
 
-    const employees = students;
+    const [searchText, setSearchText] = useState("");
+    const [activeEmployees, setActiveEmployees] = useState([]);
+    const [hasInitializedActiveEmployees, setHasInitializedActiveEmployees] = useState(false);
+    const [associateSearch, setAssociateSearch] = useState("");
+    const [showAssociateSuggestions, setShowAssociateSuggestions] = useState(false);
+
+    // Reset initialization state when department/section changes
+    useEffect(() => {
+        setHasInitializedActiveEmployees(false);
+        setActiveEmployees([]);
+    }, [departmentId, sectionId]);
+
+    const filteredEmployees = useMemo(() => {
+        if (!searchText.trim()) return activeEmployees;
+        const lower = searchText.toLowerCase();
+        return activeEmployees.filter(emp =>
+            (emp.fullName || "").toLowerCase().includes(lower) ||
+            (emp.cardNo || "").toLowerCase().includes(lower)
+        );
+    }, [activeEmployees, searchText]);
+
+    const filteredSearchStudents = useMemo(() => {
+        if (!associateSearch.trim()) return [];
+        const lower = associateSearch.toLowerCase();
+        return students.filter(s => {
+            const isAlreadyAdded = activeEmployees.some(ae => String(ae._id || ae.id) === String(s._id || s.id));
+            if (isAlreadyAdded) return false;
+            return (
+                (s.fullName || "").toLowerCase().includes(lower) ||
+                (s.cardNo || "").toLowerCase().includes(lower)
+            );
+        }).slice(0, 10);
+    }, [students, activeEmployees, associateSearch]);
 
     // Dynamic slots — sized to match lines available in the selected section/department.
     const [selectedLines, setSelectedLines] = useState([]);
@@ -277,18 +309,38 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
         }
     };
 
+    // Initialize active employees when both students and plan details are ready
     useEffect(() => {
-        setTableData((prev) => {
-            const next = { ...prev };
-            employees.forEach((emp) => {
-                const id = emp._id || emp.id;
-                if (id && !next[id]) {
-                    next[id] = { plan: {}, actual: {} };
-                }
-            });
-            return next;
-        });
-    }, [employees]);
+        if (!hasInitializedActiveEmployees && students.length > 0 && !isLoadingPlan) {
+            const savedUserIds = Object.keys(tableData || {});
+            const savedStudents = students.filter(s => savedUserIds.includes(String(s._id || s.id)));
+            const missingIds = savedUserIds.filter(id => !students.some(s => String(s._id || s.id) === String(id)));
+            
+            if (missingIds.length > 0) {
+                const fetchMissing = async () => {
+                    const fetchedUsers = [];
+                    for (const id of missingIds) {
+                        try {
+                            const res = await axiosInstance.get(`/api/users/${id}`);
+                            if (res.data.success && res.data.data) {
+                                fetchedUsers.push(res.data.data);
+                            } else {
+                                fetchedUsers.push({ _id: id, fullName: `Unknown User (${id.substring(0, 6)})`, cardNo: "-" });
+                            }
+                        } catch (err) {
+                            fetchedUsers.push({ _id: id, fullName: `Unknown User (${id.substring(0, 6)})`, cardNo: "-" });
+                        }
+                    }
+                    setActiveEmployees([...savedStudents, ...fetchedUsers]);
+                    setHasInitializedActiveEmployees(true);
+                };
+                fetchMissing();
+            } else {
+                setActiveEmployees(savedStudents);
+                setHasInitializedActiveEmployees(true);
+            }
+        }
+    }, [students, tableData, isLoadingPlan, hasInitializedActiveEmployees]);
 
     useEffect(() => {
         if (!departmentId) return;
@@ -298,6 +350,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
             try {
                 setSavedLines(null);
                 setIsLoadingPlan(true);
+                setTableData({});
                 const response = await axiosInstance.get(`/api/multi-skilling-plan/department/${departmentId}`, {
                     params: { sectionId }
                 });
@@ -308,7 +361,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                         setSavedLines(data.selectedLines);
                     }
                     if (data.tableData && typeof data.tableData === "object") {
-                        setTableData((prev) => ({ ...prev, ...data.tableData }));
+                        setTableData(data.tableData);
                     }
                 }
             } catch (error) {
@@ -324,7 +377,34 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
         return () => {
             cancelled = true;
         };
-    }, [departmentId]);
+    }, [departmentId, sectionId]);
+
+    const handleAddEmployee = (emp) => {
+        setActiveEmployees(prev => [...prev, emp]);
+        setTableData(prev => {
+            const id = emp._id || emp.id;
+            if (id && !prev[id]) {
+                return {
+                    ...prev,
+                    [id]: { plan: {}, actual: {} }
+                };
+            }
+            return prev;
+        });
+        setAssociateSearch("");
+        setShowAssociateSuggestions(false);
+        toast.success(`${emp.fullName || emp.name} added to training plan`);
+    };
+
+    const handleRemoveEmployee = (userId) => {
+        setActiveEmployees(prev => prev.filter(emp => String(emp._id || emp.id) !== String(userId)));
+        setTableData(prev => {
+            const next = { ...prev };
+            delete next[userId];
+            return next;
+        });
+        toast.success("Associate removed from sheet");
+    };
 
     useEffect(() => {
         if (machineIdsForLookup.length === 0) {
@@ -476,6 +556,60 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                         Document No: FRM-WH-QA-236
                     </div>
                 </div>
+                <div className="no-print flex flex-col sm:flex-row items-end gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    {canManage && (
+                        <div className="w-full sm:w-72 relative">
+                            <Label className="text-xs font-bold text-slate-700 mb-1 block">Add Associate to Sheet</Label>
+                            <Input
+                                placeholder="Type name or card no to add..."
+                                value={associateSearch}
+                                onChange={(e) => {
+                                    setAssociateSearch(e.target.value);
+                                    setShowAssociateSuggestions(true);
+                                }}
+                                onFocus={() => setShowAssociateSuggestions(true)}
+                                onBlur={() => setTimeout(() => setShowAssociateSuggestions(false), 200)}
+                                className="h-9 bg-white text-sm focus-visible:ring-amber-500"
+                            />
+                            {showAssociateSuggestions && filteredSearchStudents.length > 0 && (
+                                <ul className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50 py-1">
+                                    {filteredSearchStudents.map((s) => (
+                                        <li
+                                            key={s._id || s.id}
+                                            onMouseDown={() => handleAddEmployee(s)}
+                                            className="px-3 py-2 hover:bg-amber-50 hover:text-amber-900 cursor-pointer text-sm transition-colors flex flex-col"
+                                        >
+                                            <span className="font-semibold text-slate-800">{s.fullName || s.name}</span>
+                                            <span className="text-xs text-slate-500 font-mono">Card: {s.cardNo || "—"}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            {showAssociateSuggestions && associateSearch.trim() && filteredSearchStudents.length === 0 && (
+                                <ul className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-3 z-50 text-center text-xs text-slate-500">
+                                    No matching associates found.
+                                </ul>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="w-full sm:w-72">
+                        <Label className="text-xs font-bold text-slate-700 mb-1 block">Filter Table Rows</Label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                placeholder="Filter active associates..."
+                                value={searchText}
+                                onChange={(e) => setSearchText(e.target.value)}
+                                className="h-9 bg-white text-sm"
+                            />
+                            {searchText && (
+                                <Button variant="ghost" size="sm" onClick={() => setSearchText("")} className="h-9 px-2 text-xs">
+                                    Clear
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                </div>
                 <table className="w-full min-w-[1200px] border-collapse border border-black text-sm">
                     <thead>
                         {/* Line dropdown row */}
@@ -529,26 +663,40 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                     </thead>
 
                     <tbody>
-                        {employees.map((emp, index) => {
-                            const data = tableData[emp._id] || { plan: {}, actual: {} };
+                        {filteredEmployees.map((emp, index) => {
+                            const empId = String(emp._id || emp.id || "");
+                            const data = tableData[empId] || { plan: {}, actual: {} };
                             return (
-                                <React.Fragment key={emp._id}>
+                                <React.Fragment key={empId}>
                                     <tr className="hover:bg-gray-50">
                                         <td rowSpan="2" className="border border-black p-2 text-center">{index + 1}</td>
                                         <td rowSpan="2" className="border border-black p-2 font-bold text-blue-700 uppercase">
-                                            {emp.fullName}
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span>{emp.fullName || emp.name}</span>
+                                                {canManage && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handleRemoveEmployee(empId)}
+                                                        className="text-red-500 hover:text-red-700 p-1 h-auto no-print"
+                                                        title="Remove from sheet"
+                                                    >
+                                                        <IconTrash className="w-4 h-4 text-red-500 hover:text-red-700" />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </td>
                                         <td rowSpan="2" className="border border-black p-2 text-center font-bold text-blue-700">
-                                            {emp.username || emp.userName || emp.empId || "-"}
+                                            {emp.cardNo || emp.username || emp.empId || "-"}
                                         </td>
                                         <td className="border border-black p-1 text-center bg-gray-50 text-[10px] font-bold">Plan</td>
                                         {machineColumns.map((col) => (
-                                            <td key={`plan-${emp._id}-${col.key}`} className="border border-black p-0">
+                                            <td key={`plan-${empId}-${col.key}`} className="border border-black p-0">
                                                 <input
                                                     type="date"
                                                     className="w-full h-full text-center outline-none bg-transparent p-1 text-[10px] disabled:opacity-80"
                                                     value={data.plan?.[col.key] || ""}
-                                                    onChange={(e) => handleDataChange(emp._id, "plan", col.key, e.target.value)}
+                                                    onChange={(e) => handleDataChange(empId, "plan", col.key, e.target.value)}
                                                     disabled={!canManage}
                                                 />
                                             </td>
@@ -558,7 +706,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                                     <tr className="hover:bg-gray-50">
                                         <td className="border border-black p-1 text-center bg-gray-50 text-[10px] font-bold">Actual</td>
                                         {machineColumns.map((col) => {
-                                            const studentId = String(emp._id || emp.id || "");
+                                            const studentId = empId;
                                             const assignedDates = (col.machineIds || [])
                                                 .map(mId => assignmentDateMap[`${studentId}_${mId}`])
                                                 .filter(Boolean);
@@ -566,12 +714,12 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                                             const cellValue = assignedDate || data.actual?.[col.key] || "";
 
                                             return (
-                                                <td key={`actual-${emp._id}-${col.key}`} className="border border-black p-0">
+                                                <td key={`actual-${empId}-${col.key}`} className="border border-black p-0">
                                                     <input
                                                         type="date"
                                                         className="w-full h-full text-center outline-none bg-transparent p-1 text-[10px] disabled:opacity-80"
                                                         value={cellValue}
-                                                        onChange={(e) => handleDataChange(emp._id, "actual", col.key, e.target.value)}
+                                                        onChange={(e) => handleDataChange(empId, "actual", col.key, e.target.value)}
                                                         disabled={!!assignedDate || !canManage}
                                                     />
                                                 </td>
@@ -582,10 +730,12 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId }) => {
                             );
                         })}
 
-                        {employees.length === 0 && (
+                        {filteredEmployees.length === 0 && (
                             <tr>
                                 <td colSpan={4 + totalProcessCols} className="border border-black p-8 text-center text-muted-foreground">
-                                    No employees found in this department.
+                                    {activeEmployees.length === 0
+                                        ? "No associates added to this plan calendar sheet yet. Please use the search bar above to search and add associates."
+                                        : "No associates match the search filter."}
                                 </td>
                             </tr>
                         )}

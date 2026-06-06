@@ -238,44 +238,39 @@ export const addStudentToDepartment = asyncHandler(async (req, res) => {
     const department = await Department.findById(departmentId);
     if (!department) throw new ApiError("Department not found", 404);
 
-    // Validate capacity
-    if (department.capacity) {
-        const currentCount = department.students.length;
-        if (currentCount + idsToAdd.length > department.capacity) {
-            throw new ApiError(`Cannot add ${idsToAdd.length} students. Department capacity is ${department.capacity} and current count is ${currentCount}`, 400);
-        }
-    }
-
-    // Filter out already existing students
-    const existingStudentIds = department.students.map(String);
-    const newStudentIds = idsToAdd.filter(id => !existingStudentIds.includes(String(id)));
-
-    if (newStudentIds.length === 0) {
-        // If all students are already in the department, just return success
-        return res.json(new ApiResponse(200, department, "All students already in department"));
-    }
-
-    // Validate students exist and are employees/operators
-    // We'll be more flexible with isTrainer and customRoleId to match how operators are actually stored
+    // Validate students exist
     const users = await User.find({
-        _id: { $in: newStudentIds },
-        isEmployee: 1,
-        isDeleted: 0
+        _id: { $in: idsToAdd }
     });
 
-    if (users.length !== newStudentIds.length) {
-        // Some IDs might be invalid, not employees, trainers, or have custom roles
-        // For robustness, we'll only add the valid ones found
-        console.warn("Some provided student IDs were invalid, not employees, trainers, or had custom roles");
+    if (users.length === 0) {
+        throw new ApiError("None of the provided student IDs were found", 404);
+    }
+
+    if (users.length !== idsToAdd.length) {
+        console.warn("Some provided student IDs were not found");
     }
 
     const validIdsToAdd = users.map(u => u._id);
 
-    // Add to department
-    department.students.push(...validIdsToAdd);
-    await department.save();
+    // Filter out already existing students for the department's student list
+    const existingStudentIds = department.students.map(String);
+    const newStudentIds = validIdsToAdd.filter(id => !existingStudentIds.includes(String(id)));
 
-    // Update users: Set BOTH department (name) for legacy and departmentId (INT) for hierarchy
+    // Validate capacity if there are new students to add
+    if (newStudentIds.length > 0 && department.capacity) {
+        const currentCount = department.students.length;
+        if (currentCount + newStudentIds.length > department.capacity) {
+            throw new ApiError(`Cannot add ${newStudentIds.length} students. Department capacity is ${department.capacity} and current count is ${currentCount}`, 400);
+        }
+    }
+
+    if (newStudentIds.length > 0) {
+        department.students.push(...newStudentIds);
+        await department.save();
+    }
+
+    // ALWAYS update the user records to keep them synchronized with this department
     await User.updateMany(
         { _id: { $in: validIdsToAdd } },
         {
@@ -287,7 +282,7 @@ export const addStudentToDepartment = asyncHandler(async (req, res) => {
         }
     );
 
-    res.json(new ApiResponse(200, department, `${validIdsToAdd.length} students added successfully`));
+    res.json(new ApiResponse(200, department, `${validIdsToAdd.length} students synced with department successfully`));
 });
 
 export const removeStudentFromDepartment = asyncHandler(async (req, res) => {
@@ -1041,6 +1036,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 WHERE u.isTemporary = 1 
                   AND u.targetDeptId = ?
                   AND q.isHandover = 1
+                  AND q.isDojo = 1
                   AND (aq.status = 'PASSED' OR aq.status = 'PASS')
                   AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
                   AND (u.isDeleted = 0 OR u.isDeleted IS NULL)

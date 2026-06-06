@@ -3,6 +3,20 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
 
+const parseMultiParam = (value) => {
+    if (!value) return [];
+    const strVal = String(value).trim();
+    const upperVal = strVal.toUpperCase();
+    if (upperVal === "ALL" || upperVal === "UNDEFINED" || upperVal === "NULL" || strVal === "") return [];
+    return strVal
+        .split(",")
+        .map(item => item.trim())
+        .filter(Boolean)
+        .filter(item => {
+            const upper = item.toUpperCase();
+            return upper !== "ALL" && upper !== "UNDEFINED" && upper !== "NULL" && item !== "";
+        });
+};
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
     const {
@@ -20,7 +34,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const selectedShiftValue = shift && String(shift).trim().toUpperCase() !== 'ALL' ? String(shift).trim() : null;
 
 
-    const addShiftFilter = (sqlText, params, alias = "al") => {
+    function addShiftFilter(sqlText, params, alias = "al") {
         if (!selectedShiftValue) return sqlText;
 
         const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(${alias}.shift AS NVARCHAR(100)))))`;
@@ -54,12 +68,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         );
 
         return sqlText;
-    };
+    }
 
     // Same shift matching logic, but for users table.
     // This is used for Users Total/master bars so they are fetched from users table,
     // not from attendance_logs. It fixes missing employees in Contractor and other master graphs.
-    const addUserShiftFilter = (sqlText, params, alias = "u") => {
+    function addUserShiftFilter(sqlText, params, alias = "u") {
         if (!selectedShiftValue) return sqlText;
 
         const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(${alias}.shift AS NVARCHAR(100)))))`;
@@ -93,7 +107,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         );
 
         return sqlText;
-    };
+    }
 
     const isMasterAttendanceMode =
         String(masterAttendanceMode || "").toUpperCase() === "YES";
@@ -103,15 +117,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const hasSelectedDateForDashboard = Boolean(startDate);
 
     const safeName = (s) => String(s || "").replace(/'/g, "''");
-
-    const parseMultiParam = (value) => {
-        if (!value || String(value).toUpperCase() === "ALL") return [];
-        return String(value)
-            .split(",")
-            .map(item => item.trim())
-            .filter(Boolean)
-            .filter(item => item.toUpperCase() !== "ALL");
-    };
 
     const departmentIds = parseMultiParam(department);
     const sectionIds = parseMultiParam(section);
@@ -287,6 +292,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     };
                 });
 
+                const [sOptions, dOptions] = await Promise.all([
+                    getStateOptions().catch(() => []),
+                    getDistrictOptions().catch(() => []),
+                ]);
+
                 return res.status(200).json(
                     new ApiResponse(
                         200,
@@ -304,8 +314,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                                 leaderExpert: [],
                                 leaderExpertTotalEmployees: 0,
                                 contractorPrefix: [],
-                                stateOptions: [],
-                                districtOptions: [],
+                                stateOptions: sOptions,
+                                districtOptions: dOptions,
+                                education: [],
                             },
                             filters: {
                                 departmentName,
@@ -358,6 +369,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                             contractorPrefix: [],
                             stateOptions: [],
                             districtOptions: [],
+                            education: [],
                         },
                         filters: {
                             departmentName,
@@ -557,6 +569,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT
                     u.empId,
                     u.shift,
+                    u.state,
+                    u.district,
                     COALESCE(
                         TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(u.leavingDate)), ''), 23),
                         TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(u.leavingDate)), ''), 103),
@@ -724,7 +738,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const masterSqlStartDate = formatDateLocal(masterRangeStart);
     const masterSqlEndDate = formatDateLocal(masterRangeEnd);
 
-    const appendMultiHierarchyFilter = ({
+    function appendMultiHierarchyFilter({
         sqlText,
         params,
         unicodeColumn,
@@ -733,7 +747,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         ids,
         names,
         alias,
-    }) => {
+    }) {
         const numericIds = (ids || [])
             .map(id => parseInt(id, 10))
             .filter(id => !Number.isNaN(id));
@@ -759,9 +773,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         if (!parts.length) return sqlText;
         return `${sqlText} AND (${parts.join(" OR ")})`;
-    };
+    }
 
-    const addUserMasterFilters = (baseSql, params, alias = "u") => {
+    function addUserMasterFilters(baseSql, params, alias = "u") {
         let sqlText = baseSql;
 
         sqlText = appendMultiHierarchyFilter({
@@ -798,11 +812,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         });
 
         return sqlText;
-    };
+    }
 
-    const addStateDistrictFilters = (baseSql, params, options = {}) => {
+    function addStateDistrictFilters(baseSql, params, options = {}) {
         let sqlText = baseSql;
-        const { includeState = true, includeDistrict = true } = options;
+        const { includeState = true, includeDistrict = true, alias = "u" } = options;
 
         const stateValues = parseMultiParam(stateFilter);
         const districtValues = parseMultiParam(districtFilter);
@@ -813,7 +827,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 .join(",");
 
             sqlText += `
-                    AND UPPER(LTRIM(RTRIM(CAST(ISNULL(u.state, '') AS NVARCHAR(510))))) IN (${placeholders})
+                    AND UPPER(LTRIM(RTRIM(CAST(ISNULL(${alias}.state, '') AS NVARCHAR(510))))) IN (${placeholders})
                 `;
             params.push(...stateValues);
         }
@@ -824,13 +838,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 .join(",");
 
             sqlText += `
-                    AND UPPER(LTRIM(RTRIM(CAST(ISNULL(u.district, '') AS NVARCHAR(510))))) IN (${placeholders})
+                    AND UPPER(LTRIM(RTRIM(CAST(ISNULL(${alias}.district, '') AS NVARCHAR(510))))) IN (${placeholders})
                 `;
             params.push(...districtValues);
         }
 
         return sqlText;
-    };
+    }
 
     const attendanceMasterBaseFrom = `
         FROM attendance_logs al
@@ -884,6 +898,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         contractorPrefix: [],
         stateOptions: [],
         districtOptions: [],
+        education: [],
     });
 
     let pieCharts = makeEmptyPieData();
@@ -957,18 +972,24 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         }
     };
 
-    const getStateOptions = async () => {
+    async function getStateOptions() {
         try {
             let sqlText = `
                 SELECT DISTINCT
                     LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))) AS stateName
-                ${attendanceMasterBaseFrom}
-                AND u.state IS NOT NULL
-                AND LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))) != ''
+                FROM users u
+                LEFT JOIN user_hierarchy_snapshots uhs
+                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.state IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))) != ''
             `;
             const params = [];
             sqlText = addUserMasterFilters(sqlText, params, "u");
-            sqlText = addShiftFilter(sqlText, params, "al");
+            sqlText = addUserShiftFilter(sqlText, params, "u");
             sqlText += ` ORDER BY stateName`;
             const [rows] = await executeQuery(sqlText, params);
             return rows.map(row => String(row.stateName || "").trim()).filter(Boolean);
@@ -976,21 +997,27 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             console.warn("[DASHBOARD] state options failed:", e.message);
             return [];
         }
-    };
+    }
 
-    const getDistrictOptions = async () => {
+    async function getDistrictOptions() {
         try {
             let sqlText = `
                 SELECT DISTINCT
                     LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))) AS districtName
-                ${attendanceMasterBaseFrom}
-                AND u.district IS NOT NULL
-                AND LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))) != ''
+                FROM users u
+                LEFT JOIN user_hierarchy_snapshots uhs
+                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.district IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))) != ''
             `;
             const params = [];
             sqlText = addUserMasterFilters(sqlText, params, "u");
             sqlText = addStateDistrictFilters(sqlText, params, { includeState: true, includeDistrict: false });
-            sqlText = addShiftFilter(sqlText, params, "al");
+            sqlText = addUserShiftFilter(sqlText, params, "u");
             sqlText += ` ORDER BY districtName`;
             const [rows] = await executeQuery(sqlText, params);
             return rows.map(row => String(row.districtName || "").trim()).filter(Boolean);
@@ -998,7 +1025,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             console.warn("[DASHBOARD] district options failed:", e.message);
             return [];
         }
-    };
+    }
 
     const getUsersTotalDenominator = async ({ includeState = true, includeDistrict = true } = {}) => {
         try {
@@ -1205,18 +1232,20 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             leaderExpert,
             stateOptions,
             districtOptions,
+            educationData,
         ] = await Promise.all([
-            getGroupedComparisonChart({ columnSql: skillColumnSql, extraWhere: skillLevelWhere }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))), ''), 'Not Provided')", includeState: false, includeDistrict: true }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))), ''), 'Not Provided')", includeState: true, includeDistrict: false }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510)))), ''), 'Not Provided')" }),
+            getGroupedComparisonChart({ columnSql: skillColumnSql, extraWhere: skillLevelWhere }).catch(err => { console.warn("[DASHBOARD] skillLevels query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] genderData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))), ''), 'Not Provided')", includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))), ''), 'Not Provided')", includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
             getGroupedComparisonChart({
                 columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510)))), ''), 'Not Provided')",
                 extraWhere: leaderExpertWhere,
-            }),
-            getStateOptions(),
-            getDistrictOptions(),
+            }).catch(err => { console.warn("[DASHBOARD] leaderExpert query failed:", err.message); return []; }),
+            getStateOptions().catch(err => { console.warn("[DASHBOARD] stateOptions query failed:", err.message); return []; }),
+            getDistrictOptions().catch(err => { console.warn("[DASHBOARD] districtOptions query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] educationData query failed:", err.message); return []; }),
         ]);
 
         pieCharts = {
@@ -1230,6 +1259,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             leaderExpertTotalEmployees: shouldUseAttendanceMaster ? attendanceMasterTotal : snapshotTotal,
             stateOptions,
             districtOptions,
+            education: educationData,
         };
     } catch (e) {
         console.warn("[DASHBOARD] Pie/comparison charts failed:", e.message);
@@ -1476,15 +1506,6 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
 
     const safeName = (s) => String(s || "").replace(/'/g, "''");
 
-    const parseMultiParam = (value) => {
-        if (!value || String(value).toUpperCase() === "ALL") return [];
-        return String(value)
-            .split(",")
-            .map(item => item.trim())
-            .filter(Boolean)
-            .filter(item => item.toUpperCase() !== "ALL");
-    };
-
     const departmentIds = parseMultiParam(department);
     const sectionIds = parseMultiParam(section);
     const lineIds = parseMultiParam(line);
@@ -1618,15 +1639,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             : null;
 
     const safeName = (s) => String(s || "").replace(/'/g, "''");
-
-    const parseMultiParam = (value) => {
-        if (!value || String(value).toUpperCase() === "ALL") return [];
-        return String(value)
-            .split(",")
-            .map((item) => item.trim())
-            .filter(Boolean)
-            .filter((item) => item.toUpperCase() !== "ALL");
-    };
 
     const departmentIds = parseMultiParam(department);
     const sectionIds = parseMultiParam(section);

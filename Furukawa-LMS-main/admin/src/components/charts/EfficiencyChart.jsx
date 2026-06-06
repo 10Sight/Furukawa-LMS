@@ -491,8 +491,8 @@ const EfficiencyChart = () => {
             const lid = String(ss.lineId || '');
             if (!lid) return;
             if (!map[lid]) map[lid] = { minArr: [], maxArr: [] };
-            if (ss.minEfficiency != null) map[lid].minArr.push(parseFloat(ss.minEfficiency));
-            if (ss.maxEfficiency != null) map[lid].maxArr.push(parseFloat(ss.maxEfficiency));
+            map[lid].minArr.push(parseFloat(ss.minEfficiency) || 0);
+            map[lid].maxArr.push(parseFloat(ss.maxEfficiency) || 0);
         });
 
         const averages = {};
@@ -519,15 +519,9 @@ const EfficiencyChart = () => {
         const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
 
         Object.entries(sectionLinesMap).forEach(([sid, lineIds]) => {
-            const minVals = [];
-            const maxVals = [];
-            lineIds.forEach(lid => {
-                const lineT = targetsByLine[lid];
-                if (lineT) {
-                    if (lineT.min != null) minVals.push(lineT.min);
-                    if (lineT.max != null) maxVals.push(lineT.max);
-                }
-            });
+            if (!lineIds.length) return;
+            const minVals = lineIds.map(lid => targetsByLine[lid]?.min ?? 0);
+            const maxVals = lineIds.map(lid => targetsByLine[lid]?.max ?? 0);
             averages[sid] = {
                 min: roundedAvg(minVals),
                 max: roundedAvg(maxVals)
@@ -548,15 +542,9 @@ const EfficiencyChart = () => {
         const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
 
         Object.entries(deptSectionsMap).forEach(([did, sectionIds]) => {
-            const minVals = [];
-            const maxVals = [];
-            sectionIds.forEach(sid => {
-                const sectT = targetsBySection[sid];
-                if (sectT) {
-                    if (sectT.min != null) minVals.push(sectT.min);
-                    if (sectT.max != null) maxVals.push(sectT.max);
-                }
-            });
+            if (!sectionIds.length) return;
+            const minVals = sectionIds.map(sid => targetsBySection[sid]?.min ?? 0);
+            const maxVals = sectionIds.map(sid => targetsBySection[sid]?.max ?? 0);
             averages[did] = {
                 min: roundedAvg(minVals),
                 max: roundedAvg(maxVals)

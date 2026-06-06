@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { usePrivileges } from "@/hooks/usePrivileges";
 import MailManagementModal from "./AddMailRequirementChanges";
+import DepartmentCCModal from "./DepartmentCCModal";
 import * as XLSX from "xlsx";
 
 const MONTHS = [
@@ -236,6 +237,7 @@ export default function SetRequirements() {
   const [uploading, setUploading] = useState(false);
 
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
+  const [isCCModalOpen, setIsCCModalOpen] = useState(false);
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState(null);
@@ -328,6 +330,7 @@ export default function SetRequirements() {
           key,
           sectionCode: req?.sectionCode || "",
           sectionName: req?.sectionName || "",
+          sectionCategory: req?.sectionCategory || "Not Applicable",
           lineCode: req?.lineCode || "",
           lineDescription: req?.lineDescription || "",
           year: req?.year || "",
@@ -346,36 +349,44 @@ export default function SetRequirements() {
       if (month && MONTHS.includes(month)) {
         const sp = safeNum(req?.salesPlan);
         const pp = safeNum(req?.prodPlan);
+        const fn01 = safeNum(req?.prodPlanFN01);
+        const fn02 = safeNum(req?.prodPlanFN02);
         const isActive = req?.isActive === true || req?.is_active === true || req?.is_active === 1;
         const approvalStatus = normalizeApprovalStatus(req?.approvalStatus, isActive);
 
-        row.monthData[month] = {
-          salesPlan: sp,
-          prodPlan: pp,
-          isActive,
-          approvalStatus,
-          approvalOwnerName: req?.approvalOwnerName || null,
-          approvalOwnerEmail: req?.approvalOwnerEmail || null,
-          approvedBy: req?.approvedBy || null,
-          approvedByEmail: req?.approvedByEmail || null,
-          approvedAt: req?.approvedAt || null,
-          approvalSource: req?.approvalSource || null,
-          rejectedBy: req?.rejectedBy || null,
-          rejectedAt: req?.rejectedAt || null,
-        };
+        if (row.monthIds[month].length === 0) {
+          row.monthData[month] = {
+            salesPlan: sp,
+            prodPlan: pp,
+            prodPlanFN01: fn01,
+            prodPlanFN02: fn02,
+            isActive,
+            approvalStatus,
+            approvalOwnerName: req?.approvalOwnerName || null,
+            approvalOwnerEmail: req?.approvalOwnerEmail || null,
+            approvedBy: req?.approvedBy || null,
+            approvedByEmail: req?.approvedByEmail || null,
+            approvedAt: req?.approvedAt || null,
+            approvalSource: req?.approvalSource || null,
+            rejectedBy: req?.rejectedBy || null,
+            rejectedAt: req?.rejectedAt || null,
+          };
 
-        if (req?.id) row.monthIds[month].push(req.id);
+          if (approvalStatus === "pending" || approvalStatus === "rejected") {
+            row.isActive = false;
+          }
 
-        if (approvalStatus === "pending" || approvalStatus === "rejected") {
-          row.isActive = false;
+          if (!row.approvalOwnerName && req?.approvalOwnerName) {
+            row.approvalOwnerName = req.approvalOwnerName;
+          }
+
+          if (!row.approvalOwnerEmail && req?.approvalOwnerEmail) {
+            row.approvalOwnerEmail = req.approvalOwnerEmail;
+          }
         }
 
-        if (!row.approvalOwnerName && req?.approvalOwnerName) {
-          row.approvalOwnerName = req.approvalOwnerName;
-        }
-
-        if (!row.approvalOwnerEmail && req?.approvalOwnerEmail) {
-          row.approvalOwnerEmail = req.approvalOwnerEmail;
+        if (req?.id && !row.monthIds[month].includes(req.id)) {
+          row.monthIds[month].push(req.id);
         }
       }
     }
@@ -473,16 +484,19 @@ export default function SetRequirements() {
 
       let headerRowIdx = -1;
       let sectionCodeIdx = -1;
+      let sectionNameIdx = -1;
 
       for (let i = 0; i < Math.min(jsonData.length, 15); i++) {
         const row = jsonData[i];
         if (!row) continue;
         const stringRow = row.map((c) => String(c || "").trim().toLowerCase());
         const scIdx = stringRow.findIndex((s) => s.includes("section code"));
+        const snIdx = stringRow.findIndex((s) => s.includes("section") && !s.includes("code"));
 
         if (scIdx !== -1) {
           headerRowIdx = i;
           sectionCodeIdx = scIdx;
+          sectionNameIdx = snIdx;
           break;
         }
       }
@@ -498,7 +512,10 @@ export default function SetRequirements() {
         if (!row || row.length === 0) continue;
 
         const rawSectionCode = row[sectionCodeIdx] ? String(row[sectionCodeIdx]).trim() : "";
+        const rawSectionName = sectionNameIdx !== -1 && row[sectionNameIdx] ? String(row[sectionNameIdx]).trim() : "";
+
         if (rawSectionCode && rawSectionCode.toLowerCase() === "section code") continue;
+        if (!rawSectionCode && !rawSectionName) continue;
 
         const hasData = row.some(
           (val, idx) => idx !== sectionCodeIdx && val !== null && val !== "" && val !== undefined
@@ -561,9 +578,17 @@ export default function SetRequirements() {
 
     const copiedMonthData = {};
     for (const m of MONTHS) {
+      const mData = row?.monthData?.[m] || {};
+      const sp = safeNum(mData.salesPlan);
+      const pp = safeNum(mData.prodPlan);
+      const rawFn01 = safeNum(mData.prodPlanFN01);
+      const rawFn02 = safeNum(mData.prodPlanFN02);
+
       copiedMonthData[m] = {
-        salesPlan: row?.monthData?.[m]?.salesPlan ?? null,
-        prodPlan: row?.monthData?.[m]?.prodPlan ?? null,
+        salesPlan: sp,
+        prodPlan: pp,
+        prodPlanFN01: rawFn01 !== null ? rawFn01 : (pp !== null ? pp : null),
+        prodPlanFN02: rawFn02 !== null ? rawFn02 : (pp !== null ? 0 : null),
       };
     }
 
@@ -575,107 +600,129 @@ export default function SetRequirements() {
   };
 
   const handleEditMonthChange = (month, field, value) => {
-    setEditForm((prev) => ({
-      ...prev,
-      monthData: {
-        ...(prev?.monthData || {}),
-        [month]: {
-          ...(prev?.monthData?.[month] || { salesPlan: null, prodPlan: null }),
-          [field]: value === "" ? null : value,
+    setEditForm((prev) => {
+      const currentMonthData = prev?.monthData?.[month] || { salesPlan: null, prodPlan: null, prodPlanFN01: null, prodPlanFN02: null };
+      const parsedValue = value === "" ? null : Number(value);
+      const updatedMonthData = {
+        ...currentMonthData,
+        [field]: parsedValue,
+      };
+
+      if (field === "prodPlanFN01" || field === "prodPlanFN02") {
+        const fn01 = updatedMonthData.prodPlanFN01 || 0;
+        const fn02 = updatedMonthData.prodPlanFN02 || 0;
+        updatedMonthData.prodPlan = fn01 + fn02;
+      }
+
+      return {
+        ...prev,
+        monthData: {
+          ...(prev?.monthData || {}),
+          [month]: updatedMonthData,
         },
-      },
-    }));
+      };
+    });
   };
 
   const valuesAreSame = (a, b) => {
-  const n1 = safeNum(a);
-  const n2 = safeNum(b);
+    const n1 = safeNum(a);
+    const n2 = safeNum(b);
 
-  if (n1 === null && n2 === null) return true;
-  return Number(n1 || 0) === Number(n2 || 0);
+    if (n1 === null && n2 === null) return true;
+    return Number(n1 || 0) === Number(n2 || 0);
   };
 
-const handleSaveRowEdit = async () => {
-  if (!currentRow || !editForm) return;
-  if (!canManageRequirements) return toast.error("You don't have privilege to save.");
+  const handleSaveRowEdit = async () => {
+    if (!currentRow || !editForm) return;
+    if (!canManageRequirements) return toast.error("You don't have privilege to save.");
 
-  setSavingEdit(true);
+    setSavingEdit(true);
 
-  try {
-    let changedCount = 0;
+    try {
+      let changedCount = 0;
 
-    for (const month of MONTHS) {
-      const ids = currentRow.monthIds?.[month] || [];
+      for (const month of MONTHS) {
+        const ids = currentRow.monthIds?.[month] || [];
 
-      const oldSP = currentRow?.monthData?.[month]?.salesPlan;
-      const oldPP = currentRow?.monthData?.[month]?.prodPlan;
+        const oldSP = currentRow?.monthData?.[month]?.salesPlan;
+        const oldPP = currentRow?.monthData?.[month]?.prodPlan;
+        const oldFN01 = currentRow?.monthData?.[month]?.prodPlanFN01;
+        const oldFN02 = currentRow?.monthData?.[month]?.prodPlanFN02;
 
-      const newSP = safeNum(editForm?.monthData?.[month]?.salesPlan);
-      const newPP = safeNum(editForm?.monthData?.[month]?.prodPlan);
+        const newSP = safeNum(editForm?.monthData?.[month]?.salesPlan);
+        const newPP = safeNum(editForm?.monthData?.[month]?.prodPlan);
+        const newFN01 = safeNum(editForm?.monthData?.[month]?.prodPlanFN01);
+        const newFN02 = safeNum(editForm?.monthData?.[month]?.prodPlanFN02);
 
-      const spChanged = !valuesAreSame(oldSP, newSP);
-      const ppChanged = !valuesAreSame(oldPP, newPP);
+        const spChanged = !valuesAreSame(oldSP, newSP);
+        const ppChanged = !valuesAreSame(oldPP, newPP);
+        const fn01Changed = !valuesAreSame(oldFN01, newFN01);
+        const fn02Changed = !valuesAreSame(oldFN02, newFN02);
 
-      // IMPORTANT: unchanged month backend par nahi jayega
-      if (!spChanged && !ppChanged) {
-        continue;
-      }
-
-      changedCount++;
-
-      if (ids.length > 0) {
-        const patchRes = await axiosInstance.patch(`/api/requirements/${ids[0]}`, {
-          sectionCode: currentRow.sectionCode,
-          sectionName: currentRow.sectionName,
-          lineCode: currentRow.lineCode,
-          lineDescription: currentRow.lineDescription,
-          monthName: month,
-          year: currentRow.year,
-          salesPlan: newSP,
-          prodPlan: newPP,
-        });
-
-        console.log("Requirement update response:", patchRes.data);
-
-        for (const extraId of ids.slice(1)) {
-          await axiosInstance.delete(`/api/requirements/${extraId}`);
+        // IMPORTANT: unchanged month backend par nahi jayega
+        if (!spChanged && !ppChanged && !fn01Changed && !fn02Changed) {
+          continue;
         }
-      } else if (newSP !== null || newPP !== null) {
-        await axiosInstance.post(`/api/requirements`, {
-          sectionCode: currentRow.sectionCode,
-          sectionName: currentRow.sectionName,
-          lineCode: currentRow.lineCode,
-          lineDescription: currentRow.lineDescription,
-          monthName: month,
-          year: currentRow.year,
-          salesPlan: newSP,
-          prodPlan: newPP,
-        });
+
+        changedCount++;
+
+        if (ids.length > 0) {
+          const patchRes = await axiosInstance.patch(`/api/requirements/${ids[0]}`, {
+            sectionCode: currentRow.sectionCode,
+            sectionName: currentRow.sectionName,
+            lineCode: currentRow.lineCode,
+            lineDescription: currentRow.lineDescription,
+            monthName: month,
+            year: currentRow.year,
+            salesPlan: newSP,
+            prodPlan: newPP,
+            prodPlanFN01: newFN01,
+            prodPlanFN02: newFN02,
+          });
+
+          console.log("Requirement update response:", patchRes.data);
+
+          for (const extraId of ids.slice(1)) {
+            await axiosInstance.delete(`/api/requirements/${extraId}`);
+          }
+        } else if (newSP !== null || newPP !== null || newFN01 !== null || newFN02 !== null) {
+          await axiosInstance.post(`/api/requirements`, {
+            sectionCode: currentRow.sectionCode,
+            sectionName: currentRow.sectionName,
+            lineCode: currentRow.lineCode,
+            lineDescription: currentRow.lineDescription,
+            monthName: month,
+            year: currentRow.year,
+            salesPlan: newSP,
+            prodPlan: newPP,
+            prodPlanFN01: newFN01,
+            prodPlanFN02: newFN02,
+          });
+        }
       }
+
+      if (changedCount === 0) {
+        toast.info("No changes found.");
+        return;
+      }
+
+      toast.success(
+        changedCount === 1
+          ? "Requirement updated successfully. Approval mail sent for changed month."
+          : `${changedCount} requirements updated successfully. Approval mails sent for changed months.`
+      );
+
+      setEditModalOpen(false);
+      setCurrentRow(null);
+      setEditForm(null);
+      await fetchAllRequirements();
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.response?.data?.message || "Failed to update requirement");
+    } finally {
+      setSavingEdit(false);
     }
-
-    if (changedCount === 0) {
-      toast.info("No changes found.");
-      return;
-    }
-
-    toast.success(
-      changedCount === 1
-        ? "Requirement updated successfully. Approval mail sent for changed month."
-        : `${changedCount} requirements updated successfully. Approval mails sent for changed months.`
-    );
-
-    setEditModalOpen(false);
-    setCurrentRow(null);
-    setEditForm(null);
-    await fetchAllRequirements();
-  } catch (e) {
-    console.error(e);
-    toast.error(e?.response?.data?.message || "Failed to update requirement");
-  } finally {
-    setSavingEdit(false);
-  }
-};
+  };
 
   return (
     <div className="space-y-6 min-h-screen pb-10">
@@ -738,9 +785,8 @@ const handleSaveRowEdit = async () => {
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
-                  className={`h-9 justify-start text-left font-normal ${
-                    !filterState.dateRange?.from ? "text-muted-foreground" : ""
-                  }`}
+                  className={`h-9 justify-start text-left font-normal ${!filterState.dateRange?.from ? "text-muted-foreground" : ""
+                    }`}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {filterState.dateRange?.from ? (
@@ -797,6 +843,15 @@ const handleSaveRowEdit = async () => {
                 title="Manage Notification Emails"
               >
                 Emails
+              </Button>
+
+              <Button
+                onClick={() => setIsCCModalOpen(true)}
+                variant="outline"
+                className="bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm"
+                title="Configure CC Department Heads"
+              >
+                CC Department Head
               </Button>
 
               <Button
@@ -883,13 +938,24 @@ const handleSaveRowEdit = async () => {
                 {MONTHS.map((m) => (
                   <th
                     key={m}
-                    className="px-2 py-2 text-center border-l border-slate-200"
-                    style={{ width: "145px", minWidth: "145px" }}
+                    className="p-0 text-center border-l border-slate-200"
+                    style={{ width: "190px", minWidth: "190px" }}
                   >
-                    <div className="font-bold text-slate-700">{MONTHS_SHORT[m]}</div>
-                    <div className="flex justify-between px-2 mt-1 text-[10px] text-slate-400 font-semibold">
-                      <span>SP</span>
-                      <span>PP</span>
+                    <div className="font-bold text-slate-700 py-1.5 border-b border-slate-200 text-xs">
+                      {MONTHS_SHORT[m]}
+                    </div>
+                    <div className="grid grid-cols-3 text-[10px] text-slate-500 font-semibold leading-normal">
+                      <div className="col-span-1 border-r border-slate-200 flex flex-col justify-between py-1">
+                        <div>SP</div>
+                        <div className="text-[9px] text-slate-400 font-normal mt-0.5">&nbsp;</div>
+                      </div>
+                      <div className="col-span-2 flex flex-col py-1">
+                        <div className="border-b border-slate-200 pb-0.5">PP</div>
+                        <div className="grid grid-cols-2 text-[9px] text-slate-400 font-semibold pt-0.5">
+                          <div className="border-r border-slate-100">FN01</div>
+                          <div>FN02</div>
+                        </div>
+                      </div>
                     </div>
                   </th>
                 ))}
@@ -923,51 +989,56 @@ const handleSaveRowEdit = async () => {
                   return (
                     <tr
                       key={r.key}
-                      className={`group hover:bg-slate-50 transition-colors ${
-                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      className={`group hover:bg-slate-50 transition-colors ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50/40 hover:bg-red-50"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50/30 hover:bg-amber-50/50"
                             : ""
-                      }`}
+                        }`}
                     >
-                      <td className={`px-3 py-3 sticky left-0 z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${
-                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      <td className={`px-3 py-3 sticky left-0 z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700 font-bold"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700 font-bold"
                             : "bg-white"
-                      }`}>
+                        }`}>
                         <div className="font-medium text-xs truncate">{r.sectionCode || "-"}</div>
                       </td>
 
-                      <td className={`px-3 py-3 sticky left-[140px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${
-                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      <td className={`px-3 py-3 sticky left-[140px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700"
                             : "bg-white"
-                      }`}>
-                        <span className="text-xs truncate block">{r.sectionName || "-"}</span>
+                        }`}>
+                        <span className="text-xs truncate block font-bold">{r.sectionName || "-"}</span>
+                        {r.sectionCategory && (
+                          <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 mt-1 rounded ${r.sectionCategory.toLowerCase() === "direct"
+                              ? "bg-blue-100 text-blue-800 border border-blue-200"
+                              : r.sectionCategory.toLowerCase() === "indirect"
+                                ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                : "bg-slate-100 text-slate-800 border border-slate-200"
+                            }`}>
+                            {r.sectionCategory}
+                          </span>
+                        )}
                       </td>
 
-                      <td className={`px-3 py-3 sticky left-[320px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${
-                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      <td className={`px-3 py-3 sticky left-[320px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700"
                             : "bg-white"
-                      }`}>
+                        }`}>
                         <span className="text-xs truncate block">{r.lineCode || "-"}</span>
                       </td>
 
-                      <td className={`px-3 py-3 sticky left-[460px] z-30 group-hover:bg-slate-50 transition-colors border-r-2 border-slate-300 ${
-                        r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      <td className={`px-3 py-3 sticky left-[460px] z-30 group-hover:bg-slate-50 transition-colors border-r-2 border-slate-300 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700"
                             : "bg-white"
-                      }`}>
+                        }`}>
                         <span className="text-xs truncate block">{r.lineDescription || "-"}</span>
                       </td>
 
@@ -1001,21 +1072,54 @@ const handleSaveRowEdit = async () => {
                         const sp = safeNum(cell?.salesPlan);
                         const pp = safeNum(cell?.prodPlan);
 
+                        const rawFn01 = safeNum(cell?.prodPlanFN01);
+                        const rawFn02 = safeNum(cell?.prodPlanFN02);
+                        const fn01 = rawFn01 !== null ? rawFn01 : (pp !== null ? pp : null);
+                        const fn02 = rawFn02 !== null ? rawFn02 : (pp !== null ? 0 : null);
+
+                        const hasAnyData = sp !== null || fn01 !== null || fn02 !== null || pp !== null;
+                        const computedTotalPP = (rawFn01 !== null || rawFn02 !== null)
+                          ? ((rawFn01 || 0) + (rawFn02 || 0))
+                          : (pp !== null ? pp : 0);
+
                         return (
-                          <td key={m} className="px-2 py-3 text-center border-l border-slate-100 align-top">
-                            <div className="flex justify-between items-start gap-1">
-                              <span className={`w-full text-center text-xs font-bold ${getSalesPlanClass(cell)}`}>
-                                {sp !== null ? sp : <span className="text-slate-300">—</span>}
-                              </span>
+                          <td
+                            key={m}
+                            className="p-0 text-center border-l border-slate-100 align-top"
+                            style={{ width: "190px", minWidth: "190px" }}
+                          >
+                            {hasAnyData ? (
+                              <div className="flex flex-col h-full justify-between">
+                                <div className="grid grid-cols-3 items-center py-2 border-b border-slate-100">
+                                  <div className="col-span-1 border-r border-slate-100 px-1">
+                                    <span className={`text-xs font-bold block text-center ${getSalesPlanClass(cell)}`}>
+                                      {sp !== null ? sp : <span className="text-slate-300">—</span>}
+                                    </span>
+                                  </div>
 
-                              <span className="text-slate-200">|</span>
+                                  <div className="col-span-1 border-r border-slate-100 px-1">
+                                    <span className={`text-xs font-bold block text-center ${getProdPlanClass(cell)}`}>
+                                      {fn01 !== null ? fn01 : <span className="text-slate-300">—</span>}
+                                    </span>
+                                  </div>
 
-                              <span className={`w-full text-center text-xs font-bold ${getProdPlanClass(cell)}`}>
-                                {pp !== null ? pp : <span className="text-slate-300">—</span>}
-                              </span>
-                            </div>
+                                  <div className="col-span-1 px-1">
+                                    <span className={`text-xs font-bold block text-center ${getProdPlanClass(cell)}`}>
+                                      {fn02 !== null ? fn02 : <span className="text-slate-300">—</span>}
+                                    </span>
+                                  </div>
+                                </div>
 
-                            <MonthStatusLabel cell={cell} />
+                                <div className="p-1.5 flex flex-col items-center gap-1">
+                                  <div className="inline-flex items-center justify-center rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 leading-none">
+                                    PP: {computedTotalPP}
+                                  </div>
+                                  <MonthStatusLabel cell={cell} />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="py-8 text-slate-300 text-xs">—</div>
+                            )}
                           </td>
                         );
                       })}
@@ -1216,22 +1320,29 @@ const handleSaveRowEdit = async () => {
                   Month-wise Plans
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4">
                   {MONTHS.map((m) => {
                     const spVal = editForm?.monthData?.[m]?.salesPlan ?? null;
                     const ppVal = editForm?.monthData?.[m]?.prodPlan ?? null;
+                    const fn01Val = editForm?.monthData?.[m]?.prodPlanFN01 ?? null;
+                    const fn02Val = editForm?.monthData?.[m]?.prodPlanFN02 ?? null;
+
+                    const computedTotalPP = (fn01Val !== null || fn02Val !== null)
+                      ? ((fn01Val || 0) + (fn02Val || 0))
+                      : (ppVal || 0);
 
                     return (
-                      <div key={m} className="space-y-2 border border-slate-200 rounded-md p-3 bg-white">
+                      <div key={m} className="space-y-3 border border-slate-200 rounded-md p-3 bg-white">
                         <Label className="text-xs font-bold text-slate-700 uppercase tracking-wider block text-center border-b pb-1">
                           {m}
                         </Label>
 
                         <div>
-                          <Label className="text-xs text-slate-600 font-medium">Sales Plan</Label>
+                          <Label className="text-xs text-slate-500 font-semibold block text-center mb-1">Sales Plan (SP)</Label>
                           <Input
                             type="text"
                             inputMode="numeric"
+                            className="text-center h-9 font-medium"
                             value={spVal === null ? "" : spVal}
                             onChange={(e) =>
                               handleEditMonthChange(m, "salesPlan", e.target.value.replace(/[^0-9]/g, ""))
@@ -1239,16 +1350,37 @@ const handleSaveRowEdit = async () => {
                           />
                         </div>
 
-                        <div>
-                          <Label className="text-xs text-slate-600 font-medium">Prod Plan</Label>
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            value={ppVal === null ? "" : ppVal}
-                            onChange={(e) =>
-                              handleEditMonthChange(m, "prodPlan", e.target.value.replace(/[^0-9]/g, ""))
-                            }
-                          />
+                        <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                          <span className="text-xs font-bold text-slate-800 block text-center">Production Plan (PP)</span>
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <Label className="text-[10px] text-slate-500 font-bold block text-center">FN01</Label>
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                className="text-center h-8 px-1.5 py-1 text-xs font-semibold w-full"
+                                value={fn01Val === null ? "" : fn01Val}
+                                onChange={(e) =>
+                                  handleEditMonthChange(m, "prodPlanFN01", e.target.value.replace(/[^0-9]/g, ""))
+                                }
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <Label className="text-[10px] text-slate-500 font-bold block text-center">FN02</Label>
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                className="text-center h-8 px-1.5 py-1 text-xs font-semibold w-full"
+                                value={fn02Val === null ? "" : fn02Val}
+                                onChange={(e) =>
+                                  handleEditMonthChange(m, "prodPlanFN02", e.target.value.replace(/[^0-9]/g, ""))
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-bold mt-2 text-center">
+                            Total PP: <span className="text-slate-900 font-extrabold text-xs">{computedTotalPP}</span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1283,6 +1415,10 @@ const handleSaveRowEdit = async () => {
       <MailManagementModal
         isOpen={isMailModalOpen}
         onClose={() => setIsMailModalOpen(false)}
+      />
+      <DepartmentCCModal
+        isOpen={isCCModalOpen}
+        onClose={() => setIsCCModalOpen(false)}
       />
     </div>
   );

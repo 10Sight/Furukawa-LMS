@@ -32,7 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSelector } from "react-redux";
 import { se } from "date-fns/locale";
 
-const TestPaper = ({ isDojo: forceDojo }) => {
+const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, skillUpgradation: forceSkillUpgradation }) => {
   const navigate = useNavigate();
   const currentUser = useSelector((state) => state.auth.user);
 
@@ -145,6 +145,8 @@ const TestPaper = ({ isDojo: forceDojo }) => {
     departmentId: selectedDepartment !== "ALL" ? selectedDepartment : undefined,
     sectionId: selectedSection !== "ALL" ? selectedSection : undefined,
     isDojo: forceDojo !== undefined ? forceDojo : (currentUser?.isTemporary ? true : undefined),
+    ...(forceMultiSkilling !== undefined && { isMultiSkilling: forceMultiSkilling }),
+    ...(forceSkillUpgradation !== undefined && { skillUpgradation: forceSkillUpgradation }),
   });
 
   const { data: ojtData } = useGetStudentOJTsQuery(currentUser?.id, {
@@ -210,7 +212,8 @@ const TestPaper = ({ isDojo: forceDojo }) => {
         if (selectedTestType === "dojo" && !quiz.isDojo) return false;
         if (selectedTestType === "handover" && !quiz.isHandover) return false;
         if (selectedTestType === "theoretical" && !quiz.isTheoretical) return false;
-        if (selectedTestType === "practical" && (quiz.isDojo || quiz.isHandover || quiz.isTheoretical)) return false;
+        if (selectedTestType === "multiskilling" && !quiz.isMultiSkilling) return false;
+        if (selectedTestType === "practical" && (quiz.isDojo || quiz.isHandover || quiz.isTheoretical || quiz.isMultiSkilling)) return false;
       }
 
       // 5. OJT Gating Filter for Non-Dojo quizzes
@@ -393,7 +396,13 @@ const TestPaper = ({ isDojo: forceDojo }) => {
           {canManage && (
             <Button onClick={() => {
               const base = "/" + (window.location.pathname.split('/')[1] || "admin");
-              navigate(`${base}/add-test-paper`);
+              const queryParams = new URLSearchParams();
+              if (selectedDepartment !== "ALL") queryParams.append("departmentId", selectedDepartment);
+              if (selectedSection !== "ALL") queryParams.append("sectionId", selectedSection);
+              if (selectedLine !== "ALL") queryParams.append("lineId", selectedLine);
+              if (selectedSubSection !== "ALL") queryParams.append("subSectionId", selectedSubSection);
+              const queryString = queryParams.toString();
+              navigate(`${base}/add-test-paper${queryString ? `?${queryString}` : ""}`);
             }} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
               <IconFileText className="h-4 w-4" />
               Create Test Paper
@@ -548,6 +557,7 @@ const TestPaper = ({ isDojo: forceDojo }) => {
                   <SelectItem value="dojo">Dojo Hiring</SelectItem>
                   <SelectItem value="handover">Handover</SelectItem>
                   <SelectItem value="theoretical">Theoretical</SelectItem>
+                  <SelectItem value="multiskilling">Multi Skilling</SelectItem>
                   <SelectItem value="practical">Practical</SelectItem>
                 </SelectContent>
               </Select>
@@ -668,7 +678,12 @@ const TestPaper = ({ isDojo: forceDojo }) => {
                               Theoretical
                             </Badge>
                           )}
-                          {!quiz.isDojo && !quiz.isHandover && !quiz.isTheoretical && (
+                          {quiz.isMultiSkilling && (
+                            <Badge className="bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100/50 text-[10px] font-semibold tracking-wider">
+                              Multi Skilling
+                            </Badge>
+                          )}
+                          {!quiz.isDojo && !quiz.isHandover && !quiz.isTheoretical && !quiz.isMultiSkilling && (
                             <Badge variant="secondary" className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold tracking-wider">
                               Practical
                             </Badge>

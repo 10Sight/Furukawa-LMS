@@ -16,6 +16,22 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { checkModuleAccessForAssessments } from "../utils/moduleCompletion.js";
 
+// Helper to check if a student has an OJT approved today
+const checkOjtApprovedToday = async (userId) => {
+    const [rows] = await executeQuery(`
+        SELECT TOP 1 1 FROM on_job_trainings ojt
+        JOIN users u ON u.id = ?
+        WHERE (
+            ojt.student = CAST(u.id AS NVARCHAR(50))
+            OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
+            OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
+        )
+        AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
+        AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+    `, [userId]);
+    return rows.length > 0;
+};
+
 // Helper for population
 const populateAttempt = async (attempt) => {
     if (!attempt) return null;
@@ -460,6 +476,25 @@ export const startQuiz = asyncHandler(async (req, res) => {
         }
     }
 
+    // OJT Daily Gating for Multi-Skilling and Skill Upgradation Quizzes (for non-admins/trainers)
+    const isMultiOrUpgradation = !!quiz.isMultiSkilling || !!quiz.skillUpgradation;
+    if (isMultiOrUpgradation && !isAdminOrTrainer) {
+        const isOjtApprovedToday = await checkOjtApprovedToday(userId);
+        if (!isOjtApprovedToday) {
+            return res.json(new ApiResponse(200, {
+                canAttempt: false,
+                reason: "Access Denied: You must be approved in On-Job-Training (OJT) today before you can attempt this assessment. Please request your trainer to create and approve a new OJT session for today.",
+                quiz: {
+                    _id: quiz.id,
+                    title: quiz.title,
+                    course: quiz.course,
+                    module: quiz.module,
+                    level: quiz.level
+                }
+            }, "OJT approval today required"));
+        }
+    }
+
     const previousAttempts = await AttemptedQuiz.countDocuments({
         quiz: resolvedQuizId,
         student: userId
@@ -516,6 +551,9 @@ export const startQuiz = asyncHandler(async (req, res) => {
         passingScore: quiz.passingScore,
         subSectionNames: subSectionNames,
         level: quiz.level,
+        isDojo: quiz.isDojo,
+        isHandover: quiz.isHandover,
+        isTheoretical: quiz.isTheoretical,
         conductedBy: quiz.conductedBy || "Education Cell",
         paperTitle: quiz.paperTitle || null,
         paperSubTitle: quiz.paperSubTitle || null,
@@ -677,6 +715,15 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     // Populate needed
     if (quiz.course) quiz.course = await Course.findById(quiz.course);
     if (quiz.module) quiz.module = await Module.findById(quiz.module);
+
+    // OJT Daily Gating for Multi-Skilling and Skill Upgradation Quizzes on submit
+    const isMultiOrUpgradation = !!quiz.isMultiSkilling || !!quiz.skillUpgradation;
+    if (isMultiOrUpgradation) {
+        const isOjtApprovedToday = await checkOjtApprovedToday(userId);
+        if (!isOjtApprovedToday) {
+            throw new ApiError("Access Denied: The candidate must be approved in On-Job-Training (OJT) today before attempting or submitting this assessment.", 403);
+        }
+    }
 
     if (!answers || !Array.isArray(answers)) {
         throw new ApiError("Answers must be provided as an array", 400);

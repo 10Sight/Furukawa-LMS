@@ -59,6 +59,36 @@ const getDynamicPerformDateCount = (attemptDataObj, performDatesArr, baseCount) 
     return Math.max(baseCount, lastEvaluatedColIdx + 1);
 };
 
+const normalizeContentStructure = (structure, fallbackTitle) => {
+    if (!Array.isArray(structure) || structure.length === 0) {
+        return [
+            {
+                id: `mt-${Date.now()}`,
+                title: fallbackTitle || "1. Main Title Section",
+                contentSections: []
+            }
+        ];
+    }
+    
+    const isNewFormat = structure.every(item => item && Array.isArray(item.contentSections));
+    
+    if (isNewFormat) {
+        return structure.map(block => ({
+            id: block.id || `mt-${Date.now()}-${Math.random()}`,
+            title: block.title || "Main Title Section",
+            contentSections: Array.isArray(block.contentSections) ? block.contentSections : []
+        }));
+    }
+    
+    return [
+        {
+            id: "mt-auto-generated",
+            title: fallbackTitle || "1. Main Title Section",
+            contentSections: structure
+        }
+    ];
+};
+
 const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     const { id, attemptId } = useParams();
     const navigate = useNavigate();
@@ -133,7 +163,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
 
     const activeTemplate = (isView || isEdit) ? attemptResponse?.data : templateResponse?.data;
     const testTitle = activeTemplate?.title || activeTemplate?.testTitle || "Evaluation Test";
-    const contentStructure = activeTemplate?.contentStructure || [];
+    const contentStructure = React.useMemo(() => {
+        return normalizeContentStructure(activeTemplate?.contentStructure || [], testTitle);
+    }, [activeTemplate, testTitle]);
 
     // Dynamic perform date count state
     const [performDateCount, setPerformDateCount] = useState(4);
@@ -170,16 +202,18 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             
             // Pad attemptData question results arrays to performDateCount elements
             const paddedAttemptData = { ...rawAttemptData };
-            contentStructure.forEach(content => {
-                content.categories.forEach(cat => {
-                    cat.questions.forEach(q => {
-                        const qId = q.id;
-                        const current = paddedAttemptData[qId] || { results: [], comment: "" };
-                        const results = [...(current.results || [])];
-                        while (results.length < performDateCount) {
-                            results.push("");
-                        }
-                        paddedAttemptData[qId] = { ...current, results };
+            (contentStructure || []).forEach(block => {
+                (block.contentSections || []).forEach(content => {
+                    (content.categories || []).forEach(cat => {
+                        (cat.questions || []).forEach(q => {
+                            const qId = q.id;
+                            const current = paddedAttemptData[qId] || { results: [], comment: "" };
+                            const results = [...(current.results || [])];
+                            while (results.length < performDateCount) {
+                                results.push("");
+                            }
+                            paddedAttemptData[qId] = { ...current, results };
+                        });
                     });
                 });
             });
@@ -226,13 +260,15 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     useEffect(() => {
         if (!isView && !isEdit && contentStructure.length > 0) {
             const initialData = {};
-            contentStructure.forEach(content => {
-                content.categories.forEach(cat => {
-                    cat.questions.forEach(q => {
-                        initialData[q.id] = {
-                            results: Array.from({ length: performDateCount }).map(() => ""),
-                            comment: ""
-                        };
+            (contentStructure || []).forEach(block => {
+                (block.contentSections || []).forEach(content => {
+                    (content.categories || []).forEach(cat => {
+                        (cat.questions || []).forEach(q => {
+                            initialData[q.id] = {
+                                results: Array.from({ length: performDateCount }).map(() => ""),
+                                comment: ""
+                            };
+                        });
                     });
                 });
             });
@@ -344,20 +380,20 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         }
     };
 
-    // Auto-calculate spans for perfect cell merging
-    const getRowSpanCalculations = () => {
-        let globalIndex = 0;
+    // Auto-calculate spans for perfect cell merging per Main Title block
+    const getRowSpanCalculationsForBlock = (contentSections, startIdx = 1) => {
+        let globalIndex = startIdx - 1;
         const rowStructure = [];
 
-        contentStructure.forEach((content) => {
+        (contentSections || []).forEach((content) => {
             let contentQCount = 0;
             const contentRows = [];
 
-            content.categories.forEach((cat) => {
-                const catQCount = cat.questions.length;
+            (content.categories || []).forEach((cat) => {
+                const catQCount = (cat.questions || []).length;
                 contentQCount += catQCount;
 
-                cat.questions.forEach((q, qIdx) => {
+                (cat.questions || []).forEach((q, qIdx) => {
                     globalIndex++;
                     contentRows.push({
                         qId: q.id,
@@ -382,10 +418,18 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             rowStructure.push(...contentRows);
         });
 
-        return rowStructure;
+        return { rowStructure, nextIdx: globalIndex + 1 };
     };
 
-    const flatRows = getRowSpanCalculations();
+    const precomputedBlocks = React.useMemo(() => {
+        return (contentStructure || []).map((block) => {
+            const { rowStructure } = getRowSpanCalculationsForBlock(block.contentSections || [], 1);
+            return {
+                ...block,
+                rows: rowStructure
+            };
+        });
+    }, [contentStructure]);
 
     const handlePrint = () => {
         window.print();
@@ -654,170 +698,187 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                 </td>
                                 <td className="border border-black p-2 bg-white" colSpan={performDateCount + 1}></td>
                             </tr>
-
-                            {/* Dynamic Title Indicator row (Replaces "Auto Crimping Operation") */}
-                            <tr className="bg-blue-50/20 font-bold border border-black text-xs sm:text-sm uppercase text-left">
-                                <td className="p-3 border border-black font-extrabold text-blue-700 text-center" colSpan={1}>1.</td>
-                                <td className="p-3 border border-black bg-white" colSpan={performDateCount + 4}>
-                                    {testTitle}
-                                </td>
-                            </tr>
-
-                            {/* Row 1: Content, Checking items, Process Spec/Intro columns, Comment */}
-                            <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
-                                <th className="border-r border-black p-2 w-[12%] text-center align-middle" rowSpan={3}>Content</th>
-                                <th className="border-r border-black p-2 w-[42%] text-center align-middle" colSpan={3} rowSpan={3}>Checking items</th>
-                                {Array.from({ length: performDateCount }).map((_, idx) => (
-                                    <th
-                                        key={idx}
-                                        className="border-r border-black p-1 text-[8.5px] font-bold text-center leading-normal align-middle bg-white w-12 font-sans text-black"
-                                        rowSpan={1}
-                                    >
-                                        {idx === 0 ? "Process introduction & Process Specific" : "Process Specific"}
-                                    </th>
-                                ))}
-                                <th className="p-2 w-[15%] text-center uppercase tracking-wider align-middle" rowSpan={3}>Comment</th>
-                            </tr>
-                            {/* Row 2: Evaluation result spanning all evaluation columns */}
-                            <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
-                                <th className="border-r border-black p-2 text-center align-middle font-bold uppercase tracking-wider text-[11px]" colSpan={performDateCount} rowSpan={1}>
-                                    Evaluation result
-                                </th>
-                            </tr>
-                            {/* Row 3: Perform date indicators with inputs */}
-                            <tr className="bg-gray-50/50 border-b border-black font-semibold text-[9px] text-center">
-                                {Array.from({ length: performDateCount }).map((_, idx) => (
-                                    <th key={idx} className="border-r border-black p-1 text-[8.5px] font-bold whitespace-nowrap leading-tight align-middle w-24">
-                                        <div className="border-b border-gray-300 pb-0.5 mb-0.5">{idx + 1}</div>
-                                        <div className="flex flex-col items-center gap-1 mt-0.5">
-                                            <span className="text-[7.5px] uppercase tracking-wider text-gray-500 font-bold block">Perform Date</span>
-                                            {isView || isPrintMode || (isEdit && preFilledColumns[idx]) ? (
-                                                <span className="text-[9px] text-gray-800 font-bold font-mono px-1">
-                                                    {performDates[idx] ? new Date(performDates[idx]).toLocaleDateString("en-IN", {
-                                                        day: "2-digit",
-                                                        month: "short",
-                                                        year: "numeric"
-                                                    }) : "-"}
-                                                </span>
-                                            ) : (
-                                                <input 
-                                                    type="date"
-                                                    value={performDates[idx] || ""}
-                                                    onChange={(e) => {
-                                                        const newDates = [...performDates];
-                                                        newDates[idx] = e.target.value;
-                                                        setPerformDates(newDates);
-                                                    }}
-                                                    className="w-full text-center border border-gray-200 rounded px-1 py-0.5 font-bold font-mono text-[9px] bg-white focus:ring-1 focus:ring-blue-100 focus:outline-none"
-                                                />
-                                            )}
-                                        </div>
-                                    </th>
-                                ))}
-                            </tr>
                         </thead>
                         <tbody>
-                            {flatRows.length === 0 ? (
+
+                            {/* Dynamic Title Indicator row (Replaces "Auto Crimping Operation") */}
+                            {precomputedBlocks.length === 0 ? (
                                 <tr>
                                     <td colSpan={5 + performDateCount} className="p-8 text-center text-gray-400 italic">
                                         No checking items found in this evaluation sheet structure.
                                     </td>
                                 </tr>
                             ) : (
-                                flatRows.map((row, idx) => (
-                                    <tr key={row.qId} className="border-b border-black hover:bg-gray-50/40 transition-colors">
-                                        {/* Content Column Cell (Merged) */}
-                                        {row.isFirstInContent && (
-                                            <td 
-                                                rowSpan={row.contentSpan} 
-                                                className="border-r border-black p-2 font-bold text-center align-middle uppercase text-gray-800 bg-gray-50/20 text-[10px] break-all leading-normal"
-                                            >
-                                                {row.contentTitle}
+                                precomputedBlocks.map((block, blockIdx) => (
+                                    <React.Fragment key={block.id}>
+                                        {/* Dynamic Title Indicator row */}
+                                        <tr className="bg-blue-50/20 font-bold border border-black text-xs sm:text-sm uppercase text-left">
+                                            <td className="p-3 border border-black font-extrabold text-blue-700 text-center" colSpan={1}>
+                                                {blockIdx + 1}.
                                             </td>
-                                        )}
-
-                                        {/* Category Column Cell (Merged) - Omitted if category title is blank */}
-                                        {row.isFirstInCat && row.catTitle?.trim() && (
-                                            <td 
-                                                rowSpan={row.catSpan} 
-                                                className="border-r border-black p-2 font-semibold text-center align-middle text-gray-700 text-[10px] break-all leading-normal bg-gray-50/10"
-                                            >
-                                                {row.catTitle}
+                                            <td className="p-3 border border-black bg-white" colSpan={performDateCount + 4}>
+                                                {block.title || "Dynamic Title Section"}
                                             </td>
-                                        )}
+                                        </tr>
 
-                                        {/* Checking Question Number Cell */}
-                                        <td className="border-r border-black p-2 text-center align-middle font-bold text-blue-700 bg-gray-50/5 text-[10.5px] w-8 shrink-0">
-                                            {row.qIndex}
-                                        </td>
+                                        {/* Row 1: Content, Checking items, Process Spec/Intro columns, Comment */}
+                                        <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
+                                            <th className="border-r border-black p-2 w-[12%] text-center align-middle" rowSpan={3}>Content</th>
+                                            <th className="border-r border-black p-2 w-[42%] text-center align-middle" colSpan={3} rowSpan={3}>Checking items</th>
+                                            {Array.from({ length: performDateCount }).map((_, idx) => (
+                                                <th
+                                                    key={idx}
+                                                    className="border-r border-black p-1 text-[8.5px] font-bold text-center leading-normal align-middle bg-white w-12 font-sans text-black"
+                                                    rowSpan={1}
+                                                >
+                                                    {idx === 0 ? "Process introduction & Process Specific" : "Process Specific"}
+                                                </th>
+                                            ))}
+                                            <th className="p-2 w-[15%] text-center uppercase tracking-wider align-middle" rowSpan={3}>Comment</th>
+                                        </tr>
+                                        {/* Row 2: Evaluation result spanning all evaluation columns */}
+                                        <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
+                                            <th className="border-r border-black p-2 text-center align-middle font-bold uppercase tracking-wider text-[11px]" colSpan={performDateCount} rowSpan={1}>
+                                                Evaluation result
+                                            </th>
+                                        </tr>
+                                        {/* Row 3: Perform date indicators with inputs */}
+                                        <tr className="bg-gray-50/50 border-b border-black font-semibold text-[9px] text-center">
+                                            {Array.from({ length: performDateCount }).map((_, idx) => (
+                                                <th key={idx} className="border-r border-black p-1 text-[8.5px] font-bold whitespace-nowrap leading-tight align-middle w-24">
+                                                    <div className="border-b border-gray-300 pb-0.5 mb-0.5">{idx + 1}</div>
+                                                    <div className="flex flex-col items-center gap-1 mt-0.5">
+                                                        <span className="text-[7.5px] uppercase tracking-wider text-gray-500 font-bold block">Perform Date</span>
+                                                        {isView || isPrintMode || (isEdit && preFilledColumns[idx]) ? (
+                                                            <span className="text-[9px] text-gray-800 font-bold font-mono px-1">
+                                                                {performDates[idx] ? new Date(performDates[idx]).toLocaleDateString("en-IN", {
+                                                                    day: "2-digit",
+                                                                    month: "short",
+                                                                    year: "numeric"
+                                                                }) : "-"}
+                                                            </span>
+                                                        ) : (
+                                                            <input 
+                                                                type="date"
+                                                                value={performDates[idx] || ""}
+                                                                onChange={(e) => {
+                                                                    const newDates = [...performDates];
+                                                                    newDates[idx] = e.target.value;
+                                                                    setPerformDates(newDates);
+                                                                }}
+                                                                className="w-full text-center border border-gray-200 rounded px-1 py-0.5 font-bold font-mono text-[9px] bg-white focus:ring-1 focus:ring-blue-100 focus:outline-none"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                </th>
+                                            ))}
+                                        </tr>
 
-                                        {/* Checking Question Description Cell - Spans 2 columns if category is blank */}
-                                        <td 
-                                            colSpan={!row.catTitle?.trim() ? 2 : 1}
-                                            className="border-r border-black p-2.5 align-middle leading-relaxed text-[10.5px] text-gray-900 font-medium whitespace-pre-line"
-                                        >
-                                            {row.qText}
-                                        </td>
-
-                                        {/* Evaluation Columns Cells (ACTIVE GRADING INPUTS OR STATIC VIEWS) */}
-                                        {Array.from({ length: performDateCount }).map((_, colIdx) => {
-                                            const cellVal = attemptData[row.qId]?.results?.[colIdx] || "";
-                                            const cellColorClass = cellVal === "✓" 
-                                                ? "text-green-600 font-extrabold text-[14px]" 
-                                                : cellVal === "X" 
-                                                    ? "text-red-600 font-extrabold text-[14px]" 
-                                                    : "text-gray-400";
-
-                                            return (
-                                                <td key={colIdx} className="border-r border-black p-0 text-center align-middle w-16 h-10 bg-white">
-                                                    {(isView || (isEdit && preFilledColumns[colIdx])) ? (
-                                                        <span className={`font-bold whitespace-nowrap ${cellColorClass}`}>
-                                                            {cellVal || "-"}
-                                                        </span>
-                                                    ) : (
-                                                        <select
-                                                            value={cellVal}
-                                                            onChange={(e) => updateGrade(row.qId, colIdx, e.target.value)}
-                                                            className={`w-full h-full text-center border-0 focus:ring-1 focus:ring-blue-200 focus:outline-none bg-transparent font-bold cursor-pointer appearance-none px-1 ${cellColorClass}`}
-                                                        >
-                                                            <option value="" className="text-gray-400 font-normal">-</option>
-                                                            <option value="✓" className="font-extrabold text-green-600 text-[14px]">✓</option>
-                                                            <option value="X" className="font-extrabold text-red-600 text-[14px]">X</option>
-                                                        </select>
-                                                    )}
+                                        {/* Question Rows */}
+                                        {block.rows.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5 + performDateCount} className="p-6 text-center text-gray-400 italic">
+                                                    No checking items found under this title section.
                                                 </td>
-                                            );
-                                        })}
+                                            </tr>
+                                        ) : (
+                                            block.rows.map((row, idx) => (
+                                                <tr key={row.qId} className="border-b border-black hover:bg-gray-50/40 transition-colors">
+                                                    {/* Content Column Cell (Merged) */}
+                                                    {row.isFirstInContent && (
+                                                        <td 
+                                                            rowSpan={row.contentSpan} 
+                                                            className="border-r border-black p-2 font-bold text-center align-middle uppercase text-gray-800 bg-gray-50/20 text-[10px] break-words whitespace-normal leading-normal"
+                                                        >
+                                                            {row.contentTitle}
+                                                        </td>
+                                                    )}
 
-                                        {/* Comment Column Cell (ACTIVE GRADING INPUT OR STATIC VIEW) */}
-                                        <td className="p-0 align-middle text-left bg-white w-[15%]">
-                                            {isView ? (
-                                                <p className="text-[10px] text-gray-800 px-2 leading-tight">
-                                                    {attemptData[row.qId]?.comment || ""}
-                                                </p>
-                                            ) : (
-                                                <input 
-                                                    type="text"
-                                                    placeholder="Write comment..."
-                                                    value={attemptData[row.qId]?.comment || ""}
-                                                    onChange={(e) => updateComment(row.qId, e.target.value)}
-                                                    className="w-full h-full border-0 focus:ring-1 focus:ring-blue-100 focus:outline-none bg-transparent px-2 text-[10px] text-gray-800"
-                                                />
-                                            )}
-                                        </td>
-                                    </tr>
+                                                    {/* Category Column Cell (Merged) - Omitted if category title is blank */}
+                                                    {row.isFirstInCat && row.catTitle?.trim() && (
+                                                        <td 
+                                                            rowSpan={row.catSpan} 
+                                                            className="border-r border-black p-2 font-semibold text-center align-middle text-gray-700 text-[10px] break-words whitespace-normal leading-normal bg-gray-50/10"
+                                                        >
+                                                            {row.catTitle}
+                                                        </td>
+                                                    )}
+
+                                                    {/* Checking Question Number Cell */}
+                                                    <td className="border-r border-black p-2 text-center align-middle font-bold text-blue-700 bg-gray-50/5 text-[10.5px] w-8 shrink-0">
+                                                        {row.qIndex}
+                                                    </td>
+
+                                                    {/* Checking Question Description Cell - Spans 2 columns if category is blank */}
+                                                    <td 
+                                                        colSpan={!row.catTitle?.trim() ? 2 : 1}
+                                                        className="border-r border-black p-2.5 align-middle leading-relaxed text-[10.5px] text-gray-900 font-medium whitespace-pre-line"
+                                                    >
+                                                        {row.qText}
+                                                    </td>
+
+                                                    {/* Evaluation Columns Cells (ACTIVE GRADING INPUTS OR STATIC VIEWS) */}
+                                                    {Array.from({ length: performDateCount }).map((_, colIdx) => {
+                                                        const cellVal = attemptData[row.qId]?.results?.[colIdx] || "";
+                                                        const cellColorClass = cellVal === "✓" 
+                                                            ? "text-green-600 font-extrabold text-[14px]" 
+                                                            : cellVal === "X" 
+                                                                ? "text-red-600 font-extrabold text-[14px]" 
+                                                                : "text-gray-400";
+
+                                                        return (
+                                                            <td key={colIdx} className="border-r border-black p-0 text-center align-middle w-16 h-10 bg-white">
+                                                                {(isView || (isEdit && preFilledColumns[colIdx])) ? (
+                                                                    <span className={`font-bold whitespace-nowrap ${cellColorClass}`}>
+                                                                        {cellVal || "-"}
+                                                                    </span>
+                                                                ) : (
+                                                                    <select
+                                                                        value={cellVal}
+                                                                        onChange={(e) => updateGrade(row.qId, colIdx, e.target.value)}
+                                                                        className={`w-full h-full text-center border-0 focus:ring-1 focus:ring-blue-200 focus:outline-none bg-transparent font-bold cursor-pointer appearance-none px-1 ${cellColorClass}`}
+                                                                    >
+                                                                        <option value="" className="text-gray-400 font-normal">-</option>
+                                                                        <option value="✓" className="font-extrabold text-green-600 text-[14px]">✓</option>
+                                                                        <option value="X" className="font-extrabold text-red-600 text-[14px]">X</option>
+                                                                    </select>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+
+                                                    {/* Comment Column Cell (ACTIVE GRADING INPUT OR STATIC VIEW) */}
+                                                    <td className="p-0 align-middle text-left bg-white w-[15%]">
+                                                        {isView ? (
+                                                            <p className="text-[10px] text-gray-800 px-2 leading-tight">
+                                                                {attemptData[row.qId]?.comment || ""}
+                                                            </p>
+                                                        ) : (
+                                                            <input 
+                                                                type="text"
+                                                                placeholder="Write comment..."
+                                                                value={attemptData[row.qId]?.comment || ""}
+                                                                onChange={(e) => updateComment(row.qId, e.target.value)}
+                                                                className="w-full h-full border-0 focus:ring-1 focus:ring-blue-100 focus:outline-none bg-transparent px-2 text-[10px] text-gray-800"
+                                                            />
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+
+                                        {/* Evaluation footer statement for this Block */}
+                                        <tr className="border-t border-b-2 border-black font-semibold text-xs bg-gray-50/50">
+                                            <td colSpan={3} className="border-r border-black p-3 font-bold text-center uppercase tracking-wider align-middle bg-gray-100">
+                                                Evaluation
+                                            </td>
+                                            <td colSpan={2 + performDateCount} className="p-3 text-orange-600 font-bold text-center tracking-normal leading-relaxed text-[11px] sm:text-xs">
+                                                30 minutes daily session discussion (Question / Answer) hearing from employee
+                                            </td>
+                                        </tr>
+                                    </React.Fragment>
                                 ))
                             )}
-
-                            {/* Evaluation footer statement */}
-                            <tr className="border-t-2 border-black font-semibold text-xs bg-gray-50/50">
-                                <td colSpan={3} className="border-r border-black p-3 font-bold text-center uppercase tracking-wider align-middle bg-gray-100">
-                                    Evaluation
-                                </td>
-                                <td colSpan={2 + performDateCount} className="p-3 text-orange-600 font-bold text-center tracking-normal leading-relaxed text-[11px] sm:text-xs">
-                                    30 minutes daily session discussion (Question / Answer) hearing from employee
-                                </td>
-                            </tr>
                         </tbody>
                     </table>
                 </div>

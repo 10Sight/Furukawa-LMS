@@ -244,13 +244,31 @@ class Line {
     }
 
     static async findBySection(sectionId) {
-        const query = `
-            SELECT l.*, 
-            (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
-            FROM [lines] l 
-            WHERE l.sectionId = ? 
-            ORDER BY l.createdAt DESC`;
-        const [rows] = await executeQuery(query, [sectionId]);
+        let query;
+        let params = [];
+
+        if (typeof sectionId === 'string' && sectionId.includes(',')) {
+            const ids = sectionId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+            if (ids.length === 0) return [];
+            query = `
+                SELECT l.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
+                FROM [lines] l 
+                WHERE l.sectionId IN (${ids.join(',')}) 
+                ORDER BY l.createdAt DESC`;
+        } else {
+            const parsedId = parseInt(sectionId);
+            if (isNaN(parsedId)) return [];
+            query = `
+                SELECT l.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
+                FROM [lines] l 
+                WHERE l.sectionId = ? 
+                ORDER BY l.createdAt DESC`;
+            params = [parsedId];
+        }
+
+        const [rows] = await executeQuery(query, params);
         return rows.map(row => new Line(row));
     }
 

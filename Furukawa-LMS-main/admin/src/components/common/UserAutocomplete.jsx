@@ -21,6 +21,7 @@ const UserAutocomplete = ({
   excludeTrainers = false,
   excludeAdmins = false,
   includeTemporary = false,
+  dojoHandoverPassedOnly = false,
   onTextChange = null
 }) => {
   const [open, setOpen] = useState(false);
@@ -47,13 +48,15 @@ const UserAutocomplete = ({
         if (excludeTrainers) searchParams.excludeTrainers = "true";
         if (excludeAdmins) searchParams.excludeAdmins = "true";
         if (includeTemporary) searchParams.includeTemporary = String(includeTemporary);
+        if (dojoHandoverPassedOnly) searchParams.dojoHandoverPassedOnly = String(dojoHandoverPassedOnly);
         triggerAll(searchParams);
       } else {
         if (includeTemporary) searchParams.includeTemporary = String(includeTemporary);
+        if (dojoHandoverPassedOnly) searchParams.dojoHandoverPassedOnly = String(dojoHandoverPassedOnly);
         triggerStudents(searchParams);
       }
     }
-  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins]);
+  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly]);
 
   // Sync internal search state with external value when it changes externally
   useEffect(() => {

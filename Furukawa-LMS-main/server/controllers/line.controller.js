@@ -83,14 +83,28 @@ export const createLine = asyncHandler(async (req, res) => {
 // @access  Private
 export const getLinesBySection = asyncHandler(async (req, res) => {
     const { sectionId } = req.params;
-    const sid = await resolveSectionId(sectionId);
-    if (!sid) throw new ApiError(404, "Section not found");
+    let sectionIds = [];
+    
+    if (typeof sectionId === 'string' && sectionId.includes(',')) {
+        const parts = sectionId.split(',');
+        for (const part of parts) {
+            const resolved = await resolveSectionId(part.trim());
+            if (resolved) sectionIds.push(resolved);
+        }
+    } else {
+        const resolved = await resolveSectionId(sectionId);
+        if (resolved) sectionIds.push(resolved);
+    }
 
+    if (sectionIds.length === 0) {
+        throw new ApiError(404, "Section not found");
+    }
+
+    const idsString = sectionIds.join(',');
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
         (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
-        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId = ? OR l.department = ?) ORDER BY l.createdAt DESC`,
-        [sid, sid]
+        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId IN (${idsString}) OR l.department IN (${idsString})) ORDER BY l.createdAt DESC`
     );
 
     res.status(200).json(
@@ -103,14 +117,28 @@ export const getLinesBySection = asyncHandler(async (req, res) => {
 // @access  Private
 export const getLinesByDepartment = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
-    const did = await resolveDepartmentId(departmentId);
-    if (!did) throw new ApiError(404, "Department not found");
+    let departmentIds = [];
+    
+    if (typeof departmentId === 'string' && departmentId.includes(',')) {
+        const parts = departmentId.split(',');
+        for (const part of parts) {
+            const resolved = await resolveDepartmentId(part.trim());
+            if (resolved) departmentIds.push(resolved);
+        }
+    } else {
+        const resolved = await resolveDepartmentId(departmentId);
+        if (resolved) departmentIds.push(resolved);
+    }
 
+    if (departmentIds.length === 0) {
+        throw new ApiError(404, "Department not found");
+    }
+
+    const idsString = departmentIds.join(',');
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
         (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
-        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department = ? ORDER BY l.createdAt DESC`,
-        [did]
+        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department IN (${idsString}) ORDER BY l.createdAt DESC`
     );
 
     res.status(200).json(
@@ -266,19 +294,37 @@ export const getAllLines = asyncHandler(async (req, res) => {
     let conditions = [];
 
     if (sectionId && sectionId !== "undefined" && sectionId !== "null") {
-        const sid = await resolveSectionId(sectionId);
-        if (sid) {
-            conditions.push("(l.sectionId = ? OR l.department = ?)");
-            params.push(sid);
-            params.push(sid);
+        let sectionIds = [];
+        if (typeof sectionId === 'string' && sectionId.includes(',')) {
+            const parts = sectionId.split(',');
+            for (const part of parts) {
+                const resolved = await resolveSectionId(part.trim());
+                if (resolved) sectionIds.push(resolved);
+            }
+        } else {
+            const resolved = await resolveSectionId(sectionId);
+            if (resolved) sectionIds.push(resolved);
+        }
+        if (sectionIds.length > 0) {
+            const idsStr = sectionIds.join(',');
+            conditions.push(`(l.sectionId IN (${idsStr}) OR l.department IN (${idsStr}))`);
         }
     }
 
     if (departmentId && departmentId !== "undefined" && departmentId !== "null") {
-        const did = await resolveDepartmentId(departmentId);
-        if (did) {
-            conditions.push("l.department = ?");
-            params.push(did);
+        let departmentIds = [];
+        if (typeof departmentId === 'string' && departmentId.includes(',')) {
+            const parts = departmentId.split(',');
+            for (const part of parts) {
+                const resolved = await resolveDepartmentId(part.trim());
+                if (resolved) departmentIds.push(resolved);
+            }
+        } else {
+            const resolved = await resolveDepartmentId(departmentId);
+            if (resolved) departmentIds.push(resolved);
+        }
+        if (departmentIds.length > 0) {
+            conditions.push(`l.department IN (${departmentIds.join(',')})`);
         }
     }
 

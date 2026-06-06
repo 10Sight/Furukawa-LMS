@@ -44,6 +44,7 @@ class SectionHead {
         const query = `
             SELECT sh.*, 
                    s.name AS sectionName, 
+                   s.category AS sectionCategory,
                    l.name AS subSectionName
             FROM section_heads sh
             LEFT JOIN sections s ON sh.sectionId = s.id

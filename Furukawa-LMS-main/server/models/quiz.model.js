@@ -18,9 +18,19 @@ class Quiz {
         this.createdBy = data.createdBy;
         this.isPublished = !!data.isPublished;
         this.attemptsAllowed = data.attemptsAllowed !== undefined ? data.attemptsAllowed : 1;
-        this.skillUpgradation = !!data.skillUpgradation;
+        if (typeof data.skillUpgradation === 'string') {
+            try {
+                const parsed = JSON.parse(data.skillUpgradation);
+                this.skillUpgradation = !!parsed;
+            } catch (e) {
+                this.skillUpgradation = data.skillUpgradation === 'true';
+            }
+        } else {
+            this.skillUpgradation = !!data.skillUpgradation;
+        }
         this.issueCertificate = data.issueCertificate !== undefined ? !!data.issueCertificate : true;
         this.isDojo = !!data.isDojo;
+        this.isMultiSkilling = !!data.isMultiSkilling;
         this.isHandover = !!data.isHandover;
         this.isTheoretical = !!data.isTheoretical;
         this.conductedBy = data.conductedBy !== undefined && data.conductedBy !== null ? data.conductedBy : "";
@@ -142,7 +152,8 @@ class Quiz {
                     { name: 'isTheoretical', type: 'BIT DEFAULT 0' },
                     { name: 'conductedBy', type: "NVARCHAR(255) DEFAULT ''" },
                     { name: 'paperTitle', type: 'NVARCHAR(500)' },
-                    { name: 'paperSubTitle', type: 'NVARCHAR(500)' }
+                    { name: 'paperSubTitle', type: 'NVARCHAR(500)' },
+                    { name: 'isMultiSkilling', type: 'BIT DEFAULT 0' }
                 ];
 
                 for (const col of columns) {
@@ -198,7 +209,7 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "createdAt"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "createdAt", "isMultiSkilling"
         ];
 
         if (!quiz.createdAt) quiz.createdAt = new Date();
@@ -287,7 +298,7 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "isMultiSkilling"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

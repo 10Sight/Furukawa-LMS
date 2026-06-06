@@ -50,17 +50,32 @@ export const createMachine = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesBySubSection = asyncHandler(async (req, res) => {
     const { subSectionId } = req.params;
+    let machines = [];
 
-    if (isNaN(subSectionId)) {
-        throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
+    if (typeof subSectionId === 'string' && subSectionId.includes(',')) {
+        const ids = subSectionId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+        if (ids.length > 0) {
+            const [rows] = await executeQuery(`
+                SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+                (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+                FROM machines m 
+                LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+                WHERE m.subSectionId IN (${ids.join(',')}) ORDER BY m.createdAt DESC`);
+            machines = rows;
+        }
+    } else {
+        const parsedId = parseInt(subSectionId);
+        if (isNaN(parsedId)) {
+            throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
+        }
+        const [rows] = await executeQuery(`
+            SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+            (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+            FROM machines m 
+            LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+            WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [parsedId]);
+        machines = rows;
     }
-
-    const [machines] = await executeQuery(`
-        SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
-        FROM machines m 
-        LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [subSectionId]);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Stations fetched successfully")
@@ -72,19 +87,27 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesByLine = asyncHandler(async (req, res) => {
     const { lineId } = req.params;
+    let lineIds = [];
+    if (typeof lineId === 'string' && lineId.includes(',')) {
+        lineIds = lineId.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    } else {
+        const parsed = parseInt(lineId);
+        if (!isNaN(parsed)) lineIds.push(parsed);
+    }
 
-    if (isNaN(lineId)) {
+    if (lineIds.length === 0) {
         throw new ApiError(400, "Invalid Line ID parameter. Must be numeric.");
     }
 
+    const idsString = lineIds.join(',');
     const [machines] = await executeQuery(`
         SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE m.line = ? 
+        WHERE m.line IN (${idsString}) 
         ORDER BY m.createdAt DESC
-    `, [lineId]);
+    `);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Machines fetched successfully")
@@ -96,20 +119,28 @@ export const getMachinesByLine = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesBySection = asyncHandler(async (req, res) => {
     const { sectionId } = req.params;
+    let sectionIds = [];
+    if (typeof sectionId === 'string' && sectionId.includes(',')) {
+        sectionIds = sectionId.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    } else {
+        const parsed = parseInt(sectionId);
+        if (!isNaN(parsed)) sectionIds.push(parsed);
+    }
 
-    if (isNaN(sectionId)) {
+    if (sectionIds.length === 0) {
         throw new ApiError(400, "Invalid Section ID parameter. Must be numeric.");
     }
 
+    const idsString = sectionIds.join(',');
     const [machines] = await executeQuery(`
         SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE l.sectionId = ? 
+        WHERE l.sectionId IN (${idsString}) 
         ORDER BY l.name ASC, ss.name ASC, m.name ASC
-    `, [sectionId]);
+    `);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Section machines fetched successfully")
@@ -121,20 +152,28 @@ export const getMachinesBySection = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesByDepartment = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
+    let departmentIds = [];
+    if (typeof departmentId === 'string' && departmentId.includes(',')) {
+        departmentIds = departmentId.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    } else {
+        const parsed = parseInt(departmentId);
+        if (!isNaN(parsed)) departmentIds.push(parsed);
+    }
 
-    if (isNaN(departmentId)) {
+    if (departmentIds.length === 0) {
         throw new ApiError(400, "Invalid Department ID parameter. Must be numeric.");
     }
 
+    const idsString = departmentIds.join(',');
     const [machines] = await executeQuery(`
         SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
         (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE l.department = ? 
+        WHERE l.department IN (${idsString}) 
         ORDER BY l.name ASC, ss.name ASC, m.name ASC
-    `, [departmentId]);
+    `);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Department machines fetched successfully")

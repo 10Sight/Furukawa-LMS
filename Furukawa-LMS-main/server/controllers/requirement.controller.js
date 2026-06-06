@@ -1,6 +1,7 @@
 import mssql from "mssql";
 import ExcelJS from "exceljs";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { poolPromise } from "../db/connectDB.js";
 import Audit from "../models/audit.model.js";
 import RequirementLog from "../models/requirementLogs.model.js";
@@ -9,6 +10,7 @@ import sendMail from "../utils/mail.util.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import ENV from "../configs/env.config.js";
 
 /* ============================================================
    SQL HELPER
@@ -37,8 +39,8 @@ const executeSql = async (queryStr, params = [], transactionOrPool = null) => {
                 : 0,
             insertId:
                 result.recordset &&
-                result.recordset.length > 0 &&
-                result.recordset[0].id
+                    result.recordset.length > 0 &&
+                    result.recordset[0].id
                     ? result.recordset[0].id
                     : null,
         },
@@ -363,6 +365,43 @@ const findSectionHeadsForRequirement = async (reqRow) => {
     return heads || [];
 };
 
+const getDepartmentCCEmails = async (sectionCode, sectionName) => {
+    try {
+        const secCode = safeTrim(sectionCode);
+        const secName = safeTrim(sectionName);
+        if (!secCode && !secName) return "";
+
+        const [secRows] = await executeSql(
+            `
+            SELECT DISTINCT s.departmentId
+            FROM sections s
+            WHERE 
+                (UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(?))) AND LTRIM(RTRIM(?)) != '')
+                OR (UPPER(LTRIM(RTRIM(s.name))) = UPPER(LTRIM(RTRIM(?))) AND LTRIM(RTRIM(?)) != '')
+            `,
+            [secCode, secCode, secName, secName]
+        );
+
+        if (!secRows || secRows.length === 0) return "";
+
+        const deptId = secRows[0].departmentId;
+        const [ccRows] = await executeSql(
+            `
+            SELECT DepartmentHeadEmail 
+            FROM DepartmentCCConfig 
+            WHERE DeptID = ? AND IsActive = 1
+            `,
+            [deptId]
+        );
+
+        const ccEmails = ccRows.map((r) => r.DepartmentHeadEmail).filter(Boolean);
+        return ccEmails.join(", ");
+    } catch (err) {
+        console.error("[GET-DEPT-CC-EMAILS] Error:", err.message);
+        return "";
+    }
+};
+
 const sendRequirementEditApprovalMail = async ({
     req,
     requirementId,
@@ -371,6 +410,10 @@ const sendRequirementEditApprovalMail = async ({
 }) => {
     try {
         const heads = await findSectionHeadsForRequirement(newReq);
+        const ccEmails = await getDepartmentCCEmails(newReq.sectionCode, newReq.sectionName);
+        console.log("BASE_URL =", process.env.BASE_URL);
+        console.log("APP_BASE_URL =", process.env.APP_BASE_URL);
+        console.log("HOST =", `${req.protocol}://${req.get("host")}`);
 
         console.log("[REQ-EDIT-MAIL] Looking for section head:", {
             requirementId,
@@ -439,8 +482,8 @@ const sendRequirementEditApprovalMail = async ({
             process.env.APP_BASE_URL ||
             `${req.protocol}://${req.get("host")}`;
 
-        const approveUrl = `${BASE_URL}/api/requirements/${requirementId}?token=${token}&action=approve`;
-        const rejectUrl = `${BASE_URL}/api/requirements/${requirementId}?token=${token}&action=reject`;
+        const approveUrl = `${BASE_URL}/api/requirements/approve-single?id=${requirementId}&token=${token}&action=approve`;
+        const rejectUrl = `${BASE_URL}/api/requirements/approve-single?id=${requirementId}&token=${token}&action=reject`;
 
         const updatedByName =
             req.user?.fullName ||
@@ -452,8 +495,12 @@ const sendRequirementEditApprovalMail = async ({
 
         const oldSP = oldReq.salesPlan ?? "—";
         const oldPP = oldReq.prodPlan ?? "—";
+        const oldFN01 = oldReq.prodPlanFN01 ?? "—";
+        const oldFN02 = oldReq.prodPlanFN02 ?? "—";
         const newSP = newReq.salesPlan ?? "—";
         const newPP = newReq.prodPlan ?? "—";
+        const newFN01 = newReq.prodPlanFN01 ?? "—";
+        const newFN02 = newReq.prodPlanFN02 ?? "—";
 
         const sectionName = safeTrim(newReq.sectionName);
         const sectionCode = safeTrim(newReq.sectionCode);
@@ -536,6 +583,16 @@ const sendRequirementEditApprovalMail = async ({
             <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">${oldPP}</td>
             <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:800;">${newPP}</td>
         </tr>
+        <tr>
+            <td style="padding:9px 12px;border:1px solid #e2e8f0;font-weight:700;">FN01 Plan</td>
+            <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">${oldFN01}</td>
+            <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:800;">${newFN01}</td>
+        </tr>
+        <tr>
+            <td style="padding:9px 12px;border:1px solid #e2e8f0;font-weight:700;">FN02 Plan</td>
+            <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">${oldFN02}</td>
+            <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:800;">${newFN02}</td>
+        </tr>
     </table>
 </td>
 </tr>
@@ -567,7 +624,7 @@ const sendRequirementEditApprovalMail = async ({
 </html>`;
 
         const results = await Promise.allSettled(
-            heads.map((h) => sendMail(h.email, subject, htmlMsg))
+            heads.map((h) => sendMail(h.email, subject, htmlMsg, [], ccEmails))
         );
 
         results.forEach((r, i) => {
@@ -608,6 +665,8 @@ export const createRequirement = asyncHandler(async (req, res) => {
         year,
         salesPlan,
         prodPlan,
+        prodPlanFN01,
+        prodPlanFN02,
         count,
     } = req.body;
 
@@ -627,13 +686,15 @@ export const createRequirement = asyncHandler(async (req, res) => {
             monthNumber,
             salesPlan,
             prodPlan,
+            prodPlanFN01,
+            prodPlanFN02,
             year,
             is_active,
             approvalStatus,
             createdAt
         )
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
     `;
 
     const [rows] = await executeSql(query, [
@@ -646,6 +707,8 @@ export const createRequirement = asyncHandler(async (req, res) => {
         finalMonthNumber,
         salesPlan !== undefined ? salesPlan : count || 0,
         prodPlan !== undefined ? prodPlan : count || 0,
+        prodPlanFN01 !== undefined ? prodPlanFN01 : (prodPlan !== undefined ? prodPlan : count || 0),
+        prodPlanFN02 !== undefined ? prodPlanFN02 : 0,
         year || new Date().getFullYear(),
         1,
         "approved",
@@ -807,9 +870,10 @@ export const addRequirements = asyncHandler(async (req, res) => {
         srNo: colOf("sr. no.", "sr. no", "sr no", "sr"),
         sectionCode: colOf("section code"),
         sectionName: colOf("section"),
-        sectionDescUnicode: colOf("sectiondescunicode", "section desc unicode"),
+        sectionDescUnicode: colOf("sectiondescunicode", "section desc unicode", "line code/sub section", "line code", "sub section"),
         descriptionLine: colOf("description line", "description"),
         year: colOf("year"),
+        category: colOf("category"),
     };
 
     const getCellVal = (row, colIdx) =>
@@ -830,7 +894,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 if (cell.isMerged && cell.master && cell.master !== cell) {
                     effectiveCell = cell.master;
                 }
-            } catch (_) {}
+            } catch (_) { }
 
             const rawVal = readCell(effectiveCell);
 
@@ -850,32 +914,12 @@ export const addRequirements = asyncHandler(async (req, res) => {
     for (let i = 0; i < monthsSortedByCols.length; i++) {
         const mk = monthsSortedByCols[i];
         const startCol = monthStartColMap[mk];
-        const nextMonthStart =
-            i + 1 < monthsSortedByCols.length
-                ? monthStartColMap[monthsSortedByCols[i + 1]]
-                : startCol + 6;
 
-        let salesCol = null;
-        let prodCol = null;
+        const salesCol = startCol;
+        const fn01Col = startCol + 1;
+        const fn02Col = startCol + 2;
 
-        for (let col = startCol; col < nextMonthStart; col++) {
-            const role = subHeaderRoleMap[col];
-
-            if (role === "sales" && salesCol === null) salesCol = col;
-            if (role === "prod" && prodCol === null) prodCol = col;
-            if (salesCol !== null && prodCol !== null) break;
-        }
-
-        if (salesCol === null && prodCol === null) {
-            salesCol = startCol;
-            prodCol = startCol + 1;
-        } else if (salesCol === null) {
-            salesCol = prodCol === startCol ? startCol + 1 : startCol;
-        } else if (prodCol === null) {
-            prodCol = salesCol === startCol ? startCol + 1 : startCol;
-        }
-
-        monthColMap[mk] = { salesCol, prodCol };
+        monthColMap[mk] = { salesCol, fn01Col, fn02Col };
     }
 
     const rowsToProcess = [];
@@ -893,6 +937,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
         const sectionDescUnicode = getCellVal(row, COL.sectionDescUnicode) || "";
         const descriptionLine = getCellVal(row, COL.descriptionLine) || "";
         const yearStr = getCellVal(row, COL.year);
+        const category = getCellVal(row, COL.category);
         const year = yearStr
             ? parseInt(String(yearStr).trim(), 10)
             : new Date().getFullYear();
@@ -902,9 +947,12 @@ export const addRequirements = asyncHandler(async (req, res) => {
             if (!m) continue;
 
             const sp = safeNumber(readCell(row.getCell(m.salesCol)));
-            const pp = safeNumber(readCell(row.getCell(m.prodCol)));
+            const fn01 = safeNumber(readCell(row.getCell(m.fn01Col)));
+            const fn02 = safeNumber(readCell(row.getCell(m.fn02Col)));
 
-            if (sp === null && pp === null) continue;
+            if (sp === null && fn01 === null && fn02 === null) continue;
+
+            const pp = (fn01 || 0) + (fn02 || 0);
 
             rowsToProcess.push({
                 srNo,
@@ -912,11 +960,14 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 sectionName: safeTrim(sectionName) || null,
                 lineCode: safeTrim(sectionDescUnicode) || null,
                 lineDescription: safeTrim(descriptionLine) || null,
+                category: safeTrim(category) || null,
                 monthName: MONTH_FULL[mk],
                 monthNumber: MONTH_KEYS.indexOf(mk) + 1,
                 year,
                 salesPlan: sp !== null ? sp : 0,
-                prodPlan: pp !== null ? pp : 0,
+                prodPlan: pp,
+                prodPlanFN01: fn01 !== null ? fn01 : 0,
+                prodPlanFN02: fn02 !== null ? fn02 : 0,
             });
         }
     });
@@ -1039,15 +1090,18 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     row.monthNumber,
                     row.salesPlan,
                     row.prodPlan,
+                    row.prodPlanFN01 || 0,
+                    row.prodPlanFN02 || 0,
                     row.year,
                     0,
                     uploadBatchId,
-                    "pending"
+                    "pending",
+                    row.category
                 );
             });
 
             const placeholders = chunk
-                .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                 .join(", ");
 
             const insertQuery = `
@@ -1062,10 +1116,13 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     monthNumber,
                     salesPlan,
                     prodPlan,
+                    prodPlanFN01,
+                    prodPlanFN02,
                     year,
                     is_active,
                     uploadBatchId,
-                    approvalStatus
+                    approvalStatus,
+                    category
                 )
                 VALUES ${placeholders}
             `;
@@ -1093,9 +1150,12 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     monthNumber = ?,
                     salesPlan = ?,
                     prodPlan = ?,
+                    prodPlanFN01 = ?,
+                    prodPlanFN02 = ?,
                     is_active = ?,
                     uploadBatchId = ?,
                     approvalStatus = ?,
+                    category = ?,
                     approvalSource = NULL,
                     approvedBy = NULL,
                     approvedByEmail = NULL,
@@ -1116,9 +1176,12 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     row.monthNumber,
                     row.salesPlan,
                     row.prodPlan,
+                    row.prodPlanFN01 || 0,
+                    row.prodPlanFN02 || 0,
                     0,
                     uploadBatchId,
                     "pending",
+                    row.category,
                     row.id,
                 ],
                 transaction
@@ -1182,6 +1245,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
             for (const [secCode, secData] of sectionDataMap.entries()) {
                 const secName = secData.sectionName;
+                const ccEmails = await getDepartmentCCEmails(secCode, secName);
 
                 const [secHeads] = await executeSql(
                     `
@@ -1247,12 +1311,25 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         (s, r) => s + (Number(r.prodPlan) || 0),
                         0
                     );
+                    const totalFN01 = monthRows_.reduce(
+                        (s, r) => s + (Number(r.prodPlanFN01) || 0),
+                        0
+                    );
+                    const totalFN02 = monthRows_.reduce(
+                        (s, r) => s + (Number(r.prodPlanFN02) || 0),
+                        0
+                    );
 
                     monthRows += `
                     <tr>
                         <td style="padding:8px 14px;border:1px solid #e2e8f0;font-weight:600;color:#1e293b;">${month}</td>
                         <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">${totalSP}</td>
-                        <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">${totalPP}</td>
+                        <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">
+                            ${totalPP}
+                            <div style="font-size:11px;color:#64748b;font-weight:normal;margin-top:2px;">
+                                (FN01: ${totalFN01} / FN02: ${totalFN02})
+                            </div>
+                        </td>
                     </tr>`;
                 });
 
@@ -1387,7 +1464,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
 </body>
 </html>`;
 
-                    await sendMail(head.email, subject, htmlMsg)
+                    await sendMail(head.email, subject, htmlMsg, [], ccEmails)
                         .then(() =>
                             console.log(
                                 `[UPLOAD-EMAIL] Sent to ${head.email} for section: ${secName}`
@@ -1445,19 +1522,19 @@ export const getRequirements = asyncHandler(async (req, res) => {
     const limit = parseInt(req.query.limit) || 100;
     const offset = (page - 1) * limit;
 
-    let countSql = "SELECT COUNT(*) AS total FROM requirements WHERE 1=1";
-    let sql = "SELECT * FROM requirements WHERE 1=1";
+    let countSql = "SELECT COUNT(r.id) AS total FROM requirements r WHERE 1=1";
+    let sql = "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory FROM requirements r WHERE 1=1";
     const params = [];
 
     if (section && String(section).toLowerCase() !== "all") {
-        const cond = " AND sectionName = ?";
+        const cond = " AND r.sectionName = ?";
         countSql += cond;
         sql += cond;
         params.push(section);
     }
 
     if (sub_section && String(sub_section).toLowerCase() !== "all") {
-        const cond = " AND lineDescription = ?";
+        const cond = " AND r.lineDescription = ?";
         countSql += cond;
         sql += cond;
         params.push(sub_section);
@@ -1467,12 +1544,12 @@ export const getRequirements = asyncHandler(async (req, res) => {
         const searchPattern = `%${search}%`;
         const cond = `
             AND (
-                sectionCode LIKE ?
-                OR sectionName LIKE ?
-                OR lineCode LIKE ?
-                OR lineDescription LIKE ?
-                OR monthName LIKE ?
-                OR CAST(year AS NVARCHAR(20)) LIKE ?
+                r.sectionCode LIKE ?
+                OR r.sectionName LIKE ?
+                OR r.lineCode LIKE ?
+                OR r.lineDescription LIKE ?
+                OR r.monthName LIKE ?
+                OR CAST(r.year AS NVARCHAR(20)) LIKE ?
             )
         `;
         countSql += cond;
@@ -1490,7 +1567,7 @@ export const getRequirements = asyncHandler(async (req, res) => {
     if (startDate || endDate) {
         const dateExpr = `
             TRY_CAST(
-                '01 ' + SUBSTRING(monthName, 1, 3) + ' ' + CAST(year AS VARCHAR)
+                '01 ' + SUBSTRING(r.monthName, 1, 3) + ' ' + CAST(r.year AS VARCHAR)
                 AS DATE
             )
         `;
@@ -1512,7 +1589,7 @@ export const getRequirements = asyncHandler(async (req, res) => {
     const totalItems = countResult[0]?.total || 0;
     const totalPages = Math.max(1, Math.ceil(totalItems / limit));
 
-    sql += " ORDER BY id DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+    sql += " ORDER BY r.id DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
 
     const [results] = await executeSql(sql, [...params, offset, limit]);
 
@@ -1521,6 +1598,7 @@ export const getRequirements = asyncHandler(async (req, res) => {
 
         count: row.salesPlan,
         section: row.sectionName,
+        sectionCategory: row.category || row.sectionCategory || "Not Applicable",
         sub_section: row.lineDescription,
         line_area: "N/A",
 
@@ -1620,7 +1698,7 @@ export const getRequirementById = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
     const [result] = await executeSql(
-        "SELECT * FROM requirements WHERE id = ?",
+        "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory FROM requirements r WHERE r.id = ?",
         [id]
     );
 
@@ -1637,6 +1715,7 @@ export const getRequirementById = asyncHandler(async (req, res) => {
                 ...row,
                 count: row.salesPlan,
                 section: row.sectionName,
+                sectionCategory: row.category || row.sectionCategory || "Not Applicable",
                 sub_section: row.lineDescription,
                 line_area: "N/A",
                 isActive: row.is_active === true || row.is_active === 1,
@@ -1652,178 +1731,6 @@ export const getRequirementById = asyncHandler(async (req, res) => {
 ============================================================ */
 
 export const updateRequirement = asyncHandler(async (req, res) => {
-    const { token, action, reason } = { ...req.query, ...req.body };
-
-    if (token && action) {
-        const tokenDoc = await findRequirementToken(token);
-
-        const renderPage = (title, message) => `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title}</title>
-<style>
-body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;}
-.card{background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.10);padding:40px 36px;text-align:center;max-width:440px;width:100%;}
-h2{color:#1e293b;margin:0 0 12px;font-size:22px;}
-p{color:#475569;font-size:15px;line-height:1.6;margin:0;}
-.icon{font-size:52px;margin-bottom:16px;}
-</style>
-</head>
-<body>
-<div class="card">
-<div class="icon">ℹ️</div>
-<h2>${title}</h2>
-<p>${message}</p>
-</div>
-</body>
-</html>`;
-
-        if (!tokenDoc) {
-            return res
-                .status(400)
-                .send(
-                    renderPage(
-                        "Invalid Link",
-                        "This link is invalid or has already been used."
-                    )
-                );
-        }
-
-        const tokenStatus = getTokenField(tokenDoc, "status", "status");
-
-        const expiresAt =
-            getTokenField(tokenDoc, "expiresAt", "expires_at") ||
-            getTokenField(tokenDoc, "expires_at", "expiresAt");
-
-        if (expiresAt && new Date(expiresAt) < new Date()) {
-            return res
-                .status(400)
-                .send(
-                    renderPage(
-                        "Link Expired",
-                        "This approval link has expired. It was valid for 24 hours only."
-                    )
-                );
-        }
-
-        const requirementId =
-            getTokenField(tokenDoc, "requirementId", "requirement_id") ||
-            getTokenField(tokenDoc, "requirement_id", "requirementId");
-
-        const recipientEmail =
-            getTokenField(tokenDoc, "recipientEmail", "recipient_email") ||
-            getTokenField(tokenDoc, "recipient_email", "recipientEmail");
-
-        const senderEmail =
-            getTokenField(tokenDoc, "senderEmail", "sender_email") ||
-            getTokenField(tokenDoc, "sender_email", "senderEmail");
-
-        if (tokenStatus !== "pending") {
-            return res
-                .status(400)
-                .send(
-                    renderPage(
-                        "Already Processed",
-                        `This requirement was already <strong>${tokenStatus}</strong>.`
-                    )
-                );
-        }
-
-        if (!requirementId) {
-            return res
-                .status(400)
-                .send(
-                    renderPage(
-                        "Invalid Link",
-                        "Requirement ID was not found in this approval token."
-                    )
-                );
-        }
-
-        if (action === "approve") {
-            await executeSql(
-                `
-                UPDATE requirements
-                SET
-                    is_active = 1,
-                    approvalStatus = 'approved',
-                    approvedBy = ?,
-                    approvedByEmail = ?,
-                    approvedAt = GETDATE(),
-                    approvalSource = 'section_head',
-                    rejectedBy = NULL,
-                    rejectedAt = NULL
-                WHERE id = ?
-                `,
-                [recipientEmail || "Section Head", recipientEmail || "", requirementId]
-            );
-
-            await updateRequirementToken(token, { status: "approved" });
-
-            if (senderEmail) {
-                await sendMail(
-                    senderEmail,
-                    `Requirement Approved — ID #${requirementId}`,
-                    `<p>Requirement <strong>#${requirementId}</strong> has been approved.</p>`
-                ).catch((e) =>
-                    console.error("Approve mail error:", e.message)
-                );
-            }
-
-            return res.send(
-                renderPage(
-                    "Approved",
-                    "You have successfully approved this requirement."
-                )
-            );
-        }
-
-        if (action === "reject") {
-            const finalReason = reason || "Rejected by section head";
-
-            await executeSql(
-                `
-                UPDATE requirements
-                SET
-                    is_active = 0,
-                    approvalStatus = 'rejected',
-                    rejectedBy = ?,
-                    rejectedAt = GETDATE(),
-                    approvalSource = 'section_head'
-                WHERE id = ?
-                `,
-                [recipientEmail || "Section Head", requirementId]
-            );
-
-            await updateRequirementToken(token, {
-                status: "rejected",
-                rejection_reason: finalReason,
-            });
-
-            if (senderEmail) {
-                await sendMail(
-                    senderEmail,
-                    `Requirement Rejected — ID #${requirementId}`,
-                    `<p>Requirement <strong>#${requirementId}</strong> has been rejected.</p><p>Reason: ${finalReason}</p>`
-                ).catch((e) =>
-                    console.error("Reject mail error:", e.message)
-                );
-            }
-
-            return res.send(
-                renderPage(
-                    "Rejected",
-                    "You have rejected this requirement."
-                )
-            );
-        }
-
-        return res.status(400).send(renderPage("Unknown Action", "Invalid action."));
-    }
-
     const { id } = req.params;
 
     if (!id) throw new ApiError("Requirement ID is required", 400);
@@ -1840,11 +1747,11 @@ p{color:#475569;font-size:15px;line-height:1.6;margin:0;}
     const oldReq = existingRows[0];
 
     const isSameNumber = (a, b) => {
-    const n1 = a === null || a === undefined || a === "" ? null : Number(a);
-    const n2 = b === null || b === undefined || b === "" ? null : Number(b);
+        const n1 = a === null || a === undefined || a === "" ? null : Number(a);
+        const n2 = b === null || b === undefined || b === "" ? null : Number(b);
 
-    if (n1 === null && n2 === null) return true;
-    return Number(n1 || 0) === Number(n2 || 0);
+        if (n1 === null && n2 === null) return true;
+        return Number(n1 || 0) === Number(n2 || 0);
     };
 
     const {
@@ -1857,6 +1764,8 @@ p{color:#475569;font-size:15px;line-height:1.6;margin:0;}
         year,
         salesPlan,
         prodPlan,
+        prodPlanFN01,
+        prodPlanFN02,
     } = req.body;
 
     const finalMonthName = normalizeMonth(monthName || month);
@@ -1902,6 +1811,16 @@ p{color:#475569;font-size:15px;line-height:1.6;margin:0;}
     if (prodPlan !== undefined) {
         fields.push("prodPlan = ?");
         values.push(prodPlan);
+    }
+
+    if (prodPlanFN01 !== undefined) {
+        fields.push("prodPlanFN01 = ?");
+        values.push(prodPlanFN01);
+    }
+
+    if (prodPlanFN02 !== undefined) {
+        fields.push("prodPlanFN02 = ?");
+        values.push(prodPlanFN02);
     }
 
     if (fields.length === 0) {
@@ -1957,35 +1876,41 @@ p{color:#475569;font-size:15px;line-height:1.6;margin:0;}
         console.error("Failed to log requirement update:", logErr.message);
     }
 
-const salesChanged =
-    salesPlan !== undefined && !isSameNumber(oldReq.salesPlan, newReq.salesPlan);
+    const salesChanged =
+        salesPlan !== undefined && !isSameNumber(oldReq.salesPlan, newReq.salesPlan);
 
-const prodChanged =
-    prodPlan !== undefined && !isSameNumber(oldReq.prodPlan, newReq.prodPlan);
+    const prodChanged =
+        prodPlan !== undefined && !isSameNumber(oldReq.prodPlan, newReq.prodPlan);
 
-if (!salesChanged && !prodChanged) {
-    return res.status(200).json(
-        new ApiResponse(
-            200,
-            {
-                ...newReq,
-                mailSent: false,
-                mailInfo: {
-                    sent: false,
-                    reason: "No SP/PP value changed, mail skipped.",
+    const fn01Changed =
+        prodPlanFN01 !== undefined && !isSameNumber(oldReq.prodPlanFN01, newReq.prodPlanFN01);
+
+    const fn02Changed =
+        prodPlanFN02 !== undefined && !isSameNumber(oldReq.prodPlanFN02, newReq.prodPlanFN02);
+
+    if (!salesChanged && !prodChanged && !fn01Changed && !fn02Changed) {
+        return res.status(200).json(
+            new ApiResponse(
+                200,
+                {
+                    ...newReq,
+                    mailSent: false,
+                    mailInfo: {
+                        sent: false,
+                        reason: "No SP/PP/FN01/FN02 value changed, mail skipped.",
+                    },
                 },
-            },
-            "Requirement checked. No value changed, mail skipped."
-        )
-    );
-}
+                "Requirement checked. No value changed, mail skipped."
+            )
+        );
+    }
 
-const mailResult = await sendRequirementEditApprovalMail({
-    req,
-    requirementId: id,
-    oldReq,
-    newReq,
-});
+    const mailResult = await sendRequirementEditApprovalMail({
+        req,
+        requirementId: id,
+        oldReq,
+        newReq,
+    });
 
     res.status(200).json(
         new ApiResponse(
@@ -1994,7 +1919,7 @@ const mailResult = await sendRequirementEditApprovalMail({
                 ...newReq,
                 mailSent: mailResult.sent,
                 mailInfo: mailResult,
-            },  
+            },
             mailResult.sent
                 ? "Requirement updated successfully and approval mail sent."
                 : `Requirement updated successfully but mail not sent: ${mailResult.reason || "No matching section head found"}`
@@ -2027,6 +1952,8 @@ export const batchUpdateRequirements = asyncHandler(async (req, res) => {
         "year",
         "salesPlan",
         "prodPlan",
+        "prodPlanFN01",
+        "prodPlanFN02",
     ];
 
     const fields = [];
@@ -2096,15 +2023,576 @@ export const deleteRequirement = asyncHandler(async (req, res) => {
     );
 });
 
+const checkUserAuth = async (req) => {
+    const token = req?.cookies?.accessToken;
+    if (!token) return null;
+    try {
+        const decoded = jwt.verify(token, ENV.JWT_ACCESS_SECRET);
+        if (decoded.exp * 1000 < Date.now()) return null;
+
+        const User = (await import("../models/auth.model.js")).default;
+        const user = await User.findById(decoded.id);
+        if (!user || ['LEFT', 'SUSPENDED', 'BANNED'].includes(user.status)) {
+            return null;
+        }
+        return user;
+    } catch (_) {
+        return null;
+    }
+};
+
+const renderLoginPage = (id, token, action, isBatch, errorMsg = null) => {
+    const postUrl = isBatch
+        ? `/api/requirements/approve-batch?token=${token}&action=${action}`
+        : `/api/requirements/approve-single?id=${id}&token=${token}&action=${action}`;
+
+    const title = isBatch ? "Batch Approval Login" : "Requirement Approval Login";
+    const subtitle = isBatch
+        ? "Please login to authorize bulk requirement actions"
+        : `Please login to authorize action on Requirement #${id}`;
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Approval Login - Furukawa LMS</title>
+<style>
+body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    color: #f8fafc;
+}
+.card {
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    padding: 40px;
+    max-width: 400px;
+    width: 100%;
+}
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+.logo {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+h2 {
+    color: #fff;
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+}
+p.subtitle {
+    color: #94a3b8;
+    font-size: 13.5px;
+    margin: 0;
+    line-height: 1.5;
+}
+.form-group {
+    margin-bottom: 20px;
+}
+label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #cbd5e1;
+    margin-bottom: 8px;
+}
+input {
+    width: 100%;
+    padding: 12px 14px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 15px;
+    box-sizing: border-box;
+    transition: all 0.2s;
+}
+input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+}
+.btn {
+    width: 100%;
+    padding: 12px;
+    background: #2563eb;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 10px;
+}
+.btn:hover {
+    background: #1d4ed8;
+}
+.error-box {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="header">
+        <div class="logo">📋</div>
+        <h2>${title}</h2>
+        <p class="subtitle">${subtitle}</p>
+    </div>
+    
+    ${errorMsg ? `<div class="error-box">${errorMsg}</div>` : ""}
+    
+    <form method="POST" action="${postUrl}">
+        <div class="form-group">
+            <label for="userName">Username</label>
+            <input type="text" id="userName" name="userName" required autocomplete="username" placeholder="Enter username"/>
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Enter password"/>
+        </div>
+        <button type="submit" class="btn">Log In & Authorize</button>
+    </form>
+</div>
+</body>
+</html>`;
+};
+
+/* ============================================================
+   APPROVE / REJECT SINGLE REQUIREMENT FROM EMAIL
+============================================================ */
+
+export const approveSingleRequirement = asyncHandler(async (req, res) => {
+    const query = req.query || {};
+    const requirementId = query.id;
+    const token = query.token;
+    const action = query.action || query["amp;action"];
+    const reason = query.reason;
+
+    const renderPage = (title, message, isSuccess = false) => `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${title}</title>
+<style>
+body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    color: #f8fafc;
+}
+.card {
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    padding: 40px;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+}
+h2 {
+    color: #fff;
+    margin: 0 0 12px;
+    font-size: 22px;
+    font-weight: 700;
+}
+p {
+    color: #cbd5e1;
+    font-size: 15.5px;
+    line-height: 1.6;
+    margin: 0;
+}
+.icon {
+    font-size: 56px;
+    margin-bottom: 20px;
+}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="icon">${isSuccess ? "✅" : "❌"}</div>
+<h2>${title}</h2>
+<p>${message}</p>
+</div>
+</body>
+</html>`;
+
+    if (!token || !action || !requirementId) {
+        return res
+            .status(400)
+            .send(
+                renderPage(
+                    "Missing Parameters",
+                    "The link is missing required parameters (ID, token, or action)."
+                )
+            );
+    }
+
+    const finalAction = action ? String(action).toLowerCase().trim() : null;
+
+    if (finalAction !== "approve" && finalAction !== "reject") {
+        return res
+            .status(400)
+            .send(
+                renderPage(
+                    "Invalid Action",
+                    "The requested action is not valid."
+                )
+            );
+    }
+
+    // AUTH CHECK
+    let user = await checkUserAuth(req);
+
+    if (!user) {
+        if (req.method === "POST") {
+            const { userName, password } = req.body || {};
+            if (!userName || !password) {
+                return res.status(200).send(renderLoginPage(requirementId, token, action, false, "Username and password are required."));
+            }
+
+            try {
+                const User = (await import("../models/auth.model.js")).default;
+                const foundUser = await User.findOne({ userName: userName.toLowerCase() });
+                if (!foundUser) {
+                    return res.status(200).send(renderLoginPage(requirementId, token, action, false, "Invalid username or password."));
+                }
+
+                const isPasswordValid = await foundUser.comparePassword(password);
+                if (!isPasswordValid) {
+                    return res.status(200).send(renderLoginPage(requirementId, token, action, false, "Invalid username or password."));
+                }
+
+                if (['LEFT', 'SUSPENDED', 'BANNED'].includes(foundUser.status)) {
+                    return res.status(200).send(renderLoginPage(requirementId, token, action, false, "Your account has been deactivated."));
+                }
+
+                const { generateAuthTokens } = await import("./auth.controller.js");
+                const { accessToken, refreshToken } = await generateAuthTokens(foundUser.id);
+                const { accessTokenOptions, refreshTokenOptions } = await import("../utils/constant.js");
+
+                res.cookie("accessToken", accessToken, accessTokenOptions);
+                res.cookie("refreshToken", refreshToken, refreshTokenOptions);
+
+                user = foundUser;
+            } catch (authErr) {
+                console.error("Auth error in approval login:", authErr);
+                return res.status(200).send(renderLoginPage(requirementId, token, action, false, "An error occurred during login."));
+            }
+        } else {
+            return res.status(200).send(renderLoginPage(requirementId, token, action, false));
+        }
+    }
+
+    const tokenDoc = await findRequirementToken(token);
+
+    if (!tokenDoc) {
+        return res
+            .status(400)
+            .send(
+                renderPage(
+                    "Invalid Link",
+                    "This link is invalid or has already been used."
+                )
+            );
+    }
+
+    const tokenStatus = getTokenField(tokenDoc, "status", "status");
+
+    const expiresAt =
+        getTokenField(tokenDoc, "expiresAt", "expires_at") ||
+        getTokenField(tokenDoc, "expires_at", "expiresAt");
+
+    if (expiresAt && new Date(expiresAt) < new Date()) {
+        return res
+            .status(400)
+            .send(
+                renderPage(
+                    "Link Expired",
+                    "This approval link has expired. It was valid for 24 hours only."
+                )
+            );
+    }
+
+    const tokenRequirementId =
+        getTokenField(tokenDoc, "requirementId", "requirement_id") ||
+        getTokenField(tokenDoc, "requirement_id", "requirementId");
+
+    const recipientEmail =
+        getTokenField(tokenDoc, "recipientEmail", "recipient_email") ||
+        getTokenField(tokenDoc, "recipient_email", "recipientEmail");
+
+    const senderEmail =
+        getTokenField(tokenDoc, "senderEmail", "sender_email") ||
+        getTokenField(tokenDoc, "sender_email", "senderEmail");
+
+    if (tokenStatus !== "pending") {
+        return res
+            .status(400)
+            .send(
+                renderPage(
+                    "Already Processed",
+                    `This requirement was already <strong>${tokenStatus}</strong>.`
+                )
+            );
+    }
+
+    if (String(tokenRequirementId) !== String(requirementId)) {
+        return res
+            .status(400)
+            .send(
+                renderPage(
+                    "Invalid ID Match",
+                    "The requirement ID in the link does not match the token payload."
+                )
+            );
+    }
+
+    if (finalAction === "approve") {
+        await executeSql(
+            `
+            UPDATE requirements
+            SET
+                is_active = 1,
+                approvalStatus = 'approved',
+                approvedBy = ?,
+                approvedByEmail = ?,
+                approvedAt = GETDATE(),
+                approvalSource = 'section_head',
+                rejectedBy = NULL,
+                rejectedAt = NULL
+            WHERE id = ?
+            `,
+            [recipientEmail || "Section Head", recipientEmail || "", requirementId]
+        );
+
+        await updateRequirementToken(token, { status: "approved" });
+
+        if (senderEmail) {
+            await sendMail(
+                senderEmail,
+                `Requirement Approved — ID #${requirementId}`,
+                `<p>Requirement <strong>#${requirementId}</strong> has been approved.</p>`
+            ).catch((e) =>
+                console.error("Approve mail error:", e.message)
+            );
+        }
+
+        return res.send(
+            renderPage(
+                "Approval Successful",
+                `Requirement <strong>#${requirementId}</strong> has been approved successfully.`,
+                true
+            )
+        );
+    }
+
+    if (finalAction === "reject") {
+        const finalReason = reason || "Rejected by section head";
+
+        await executeSql(
+            `
+            UPDATE requirements
+            SET
+                is_active = 0,
+                approvalStatus = 'rejected',
+                rejectedBy = ?,
+                rejectedAt = GETDATE(),
+                approvalSource = 'section_head'
+            WHERE id = ?
+            `,
+            [recipientEmail || "Section Head", requirementId]
+        );
+
+        await updateRequirementToken(token, {
+            status: "rejected",
+            rejection_reason: finalReason,
+        });
+
+        if (senderEmail) {
+            await sendMail(
+                senderEmail,
+                `Requirement Rejected — ID #${requirementId}`,
+                `<p>Requirement <strong>#${requirementId}</strong> has been rejected.</p><p>Reason: ${finalReason}</p>`
+            ).catch((e) =>
+                console.error("Reject mail error:", e.message)
+            );
+        }
+
+        return res.send(
+            renderPage(
+                "Rejection Successful",
+                `Requirement <strong>#${requirementId}</strong> has been rejected successfully.`,
+                true
+            )
+        );
+    }
+
+    return res.status(400).send(renderPage("Unknown Action", "Invalid action."));
+});
+
 /* ============================================================
    APPROVE / REJECT UPLOAD BATCH FROM EMAIL
 ============================================================ */
 
 export const approveBatchRequirements = asyncHandler(async (req, res) => {
-    const { token, action } = req.query;
+    const query = req.query || {};
+    const token = query.token;
+    const action = query.action || query["amp;action"];
+
+    const renderBatchResult = (success, title, message) => `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${title}</title>
+<style>
+body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    color: #f8fafc;
+}
+.card {
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    padding: 40px;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+}
+h1 {
+    color: #fff;
+    margin: 0 0 12px;
+    font-size: 24px;
+    font-weight: 800;
+}
+p {
+    color: #cbd5e1;
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+}
+.icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    display: block;
+}
+</style>
+</head>
+<body>
+<div class="card">
+<span class="icon">${success ? "✅" : "❌"}</span>
+<h1>${title}</h1>
+<p>${message}</p>
+</div>
+</body>
+</html>`;
+
+    if (token) {
+        const finalAction = action ? String(action).toLowerCase().trim() : null;
+
+        if (finalAction !== "approve" && finalAction !== "reject") {
+            return res
+                .status(400)
+                .send(
+                    renderBatchResult(
+                        false,
+                        "Invalid Action",
+                        "The requested action is not valid."
+                    )
+                );
+        }
+    }
 
     if (!token || !action) {
         return res.status(400).send("Missing required parameters.");
+    }
+
+    // AUTH CHECK
+    let user = await checkUserAuth(req);
+
+    if (!user) {
+        if (req.method === "POST") {
+            const { userName, password } = req.body || {};
+            if (!userName || !password) {
+                return res.status(200).send(renderLoginPage(null, token, action, true, "Username and password are required."));
+            }
+
+            try {
+                const User = (await import("../models/auth.model.js")).default;
+                const foundUser = await User.findOne({ userName: userName.toLowerCase() });
+                if (!foundUser) {
+                    return res.status(200).send(renderLoginPage(null, token, action, true, "Invalid username or password."));
+                }
+
+                const isPasswordValid = await foundUser.comparePassword(password);
+                if (!isPasswordValid) {
+                    return res.status(200).send(renderLoginPage(null, token, action, true, "Invalid username or password."));
+                }
+
+                if (['LEFT', 'SUSPENDED', 'BANNED'].includes(foundUser.status)) {
+                    return res.status(200).send(renderLoginPage(null, token, action, true, "Your account has been deactivated."));
+                }
+
+                const { generateAuthTokens } = await import("./auth.controller.js");
+                const { accessToken, refreshToken } = await generateAuthTokens(foundUser.id);
+                const { accessTokenOptions, refreshTokenOptions } = await import("../utils/constant.js");
+
+                res.cookie("accessToken", accessToken, accessTokenOptions);
+                res.cookie("refreshToken", refreshToken, refreshTokenOptions);
+
+                user = foundUser;
+            } catch (authErr) {
+                console.error("Auth error in approval login:", authErr);
+                return res.status(200).send(renderLoginPage(null, token, action, true, "An error occurred during login."));
+            }
+        } else {
+            return res.status(200).send(renderLoginPage(null, token, action, true));
+        }
     }
 
     const tokenDoc = await findRequirementToken(token);
@@ -2132,19 +2620,19 @@ export const approveBatchRequirements = asyncHandler(async (req, res) => {
     const uploadBatchId = getTokenField(
         tokenDoc,
         "uploadBatchId",
-        "uploadBatchId"
+        "upload_batch_id"
     );
 
     const sectionCode = getTokenField(
         tokenDoc,
         "sectionCode",
-        "sectionCode"
+        "section_code"
     );
 
     const sectionName = getTokenField(
         tokenDoc,
         "sectionName",
-        "sectionName"
+        "section_name"
     );
 
     const recipientEmail =
@@ -2157,31 +2645,8 @@ export const approveBatchRequirements = asyncHandler(async (req, res) => {
             .send("Invalid token data. Batch or section not found.");
     }
 
-    const renderBatchResult = (success, title, message) => `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<style>
-body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;}
-.card{background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.08);padding:48px 40px;text-align:center;max-width:480px;width:100%;}
-.icon{font-size:64px;margin-bottom:20px;display:block;}
-h1{color:#1e293b;margin:0 0 12px;font-size:24px;font-weight:800;}
-p{color:#64748b;font-size:16px;line-height:1.6;margin:0;}
-</style>
-</head>
-<body>
-<div class="card">
-<span class="icon">${success ? "✅" : "❌"}</span>
-<h1>${title}</h1>
-<p>${message}</p>
-</div>
-</body>
-</html>`;
-
     if (action === "approve") {
-        await executeSql(
+        const [_, meta] = await executeSql(
             `
             UPDATE requirements
             SET
@@ -2193,9 +2658,9 @@ p{color:#64748b;font-size:16px;line-height:1.6;margin:0;}
                 approvalSource = 'section_head',
                 rejectedBy = NULL,
                 rejectedAt = NULL
-            WHERE uploadBatchId = ?
-              AND sectionCode = ?
-              AND ISNULL(approvalStatus, 'pending') = 'pending'
+            WHERE LTRIM(RTRIM(uploadBatchId)) = LTRIM(RTRIM(?))
+              AND LTRIM(RTRIM(sectionCode)) = LTRIM(RTRIM(?))
+              AND (approvalStatus IS NULL OR LTRIM(RTRIM(approvalStatus)) = '' OR LTRIM(RTRIM(approvalStatus)) = 'pending')
             `,
             [
                 recipientEmail || "Section Head",
@@ -2205,19 +2670,22 @@ p{color:#64748b;font-size:16px;line-height:1.6;margin:0;}
             ]
         );
 
+        const affected = meta?.affectedRows || 0;
+        console.log(`[APPROVE-BATCH] Token: ${token}, BatchId: ${uploadBatchId}, SectionCode: ${sectionCode}, Affected Rows: ${affected}`);
+
         await updateRequirementToken(token, { status: "approved" });
 
         return res.send(
             renderBatchResult(
                 true,
-                "Requirements Approved!",
-                `Successfully activated the new manpower requirements for <strong>${sectionName || sectionCode}</strong>.`
+                "Batch Requirements Approved",
+                `All pending requirements for batch <strong>${uploadBatchId}</strong> (Section: ${sectionName || sectionCode}) have been approved successfully (Rows affected: ${affected}).`
             )
         );
     }
 
     if (action === "reject") {
-        await executeSql(
+        const [_, meta] = await executeSql(
             `
             UPDATE requirements
             SET
@@ -2226,9 +2694,9 @@ p{color:#64748b;font-size:16px;line-height:1.6;margin:0;}
                 rejectedBy = ?,
                 rejectedAt = GETDATE(),
                 approvalSource = 'section_head'
-            WHERE uploadBatchId = ?
-              AND sectionCode = ?
-              AND ISNULL(approvalStatus, 'pending') = 'pending'
+            WHERE LTRIM(RTRIM(uploadBatchId)) = LTRIM(RTRIM(?))
+              AND LTRIM(RTRIM(sectionCode)) = LTRIM(RTRIM(?))
+              AND (approvalStatus IS NULL OR LTRIM(RTRIM(approvalStatus)) = '' OR LTRIM(RTRIM(approvalStatus)) = 'pending')
             `,
             [
                 recipientEmail || "Section Head",
@@ -2237,13 +2705,16 @@ p{color:#64748b;font-size:16px;line-height:1.6;margin:0;}
             ]
         );
 
+        const affected = meta?.affectedRows || 0;
+        console.log(`[REJECT-BATCH] Token: ${token}, BatchId: ${uploadBatchId}, SectionCode: ${sectionCode}, Affected Rows: ${affected}`);
+
         await updateRequirementToken(token, { status: "rejected" });
 
         return res.send(
             renderBatchResult(
                 true,
-                "Requirements Rejected",
-                `The uploaded requirements for <strong>${sectionName || sectionCode}</strong> have been rejected.`
+                "Batch Requirements Rejected",
+                `All pending requirements for batch <strong>${uploadBatchId}</strong> (Section: ${sectionName || sectionCode}) have been rejected (Rows affected: ${affected}).`
             )
         );
     }

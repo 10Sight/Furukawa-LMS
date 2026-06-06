@@ -180,13 +180,31 @@ class SubSection {
     }
 
     static async findByLine(lineId) {
-        const query = `
-            SELECT ss.*, 
-            (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
-            FROM [sub_sections] ss 
-            WHERE ss.lineId = ? 
-            ORDER BY ss.createdAt DESC`;
-        const [rows] = await executeQuery(query, [lineId]);
+        let query;
+        let params = [];
+
+        if (typeof lineId === 'string' && lineId.includes(',')) {
+            const ids = lineId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+            if (ids.length === 0) return [];
+            query = `
+                SELECT ss.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
+                FROM [sub_sections] ss 
+                WHERE ss.lineId IN (${ids.join(',')}) 
+                ORDER BY ss.createdAt DESC`;
+        } else {
+            const parsedId = parseInt(lineId);
+            if (isNaN(parsedId)) return [];
+            query = `
+                SELECT ss.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
+                FROM [sub_sections] ss 
+                WHERE ss.lineId = ? 
+                ORDER BY ss.createdAt DESC`;
+            params = [parsedId];
+        }
+
+        const [rows] = await executeQuery(query, params);
         return rows.map(row => new SubSection(row));
     }
 

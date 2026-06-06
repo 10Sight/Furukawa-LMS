@@ -86,12 +86,13 @@ const TakeQuiz = () => {
     try {
       setIsSearching(true);
       const response = await axiosInstance.get(`/api/users/students`, {
-        params: { 
-          search: value, 
-          page: 1, 
-          limit: 10, 
+        params: {
+          search: value,
+          page: 1,
+          limit: 10,
           includeTemporary: "true",
-          ojtApprovedOnly: !quiz?.isDojo ? "true" : undefined
+          isDojo: quiz?.isDojo ? "true" : undefined,
+          ojtApprovedToday: !quiz?.isDojo ? "true" : undefined
         }
       });
       const studentsList = response.data?.data?.users || [];
@@ -118,12 +119,13 @@ const TakeQuiz = () => {
 
     try {
       const response = await axiosInstance.get(`/api/users/students`, {
-        params: { 
-          search: value, 
-          page: 1, 
-          limit: 5, 
+        params: {
+          search: value,
+          page: 1,
+          limit: 5,
           includeTemporary: "true",
-          ojtApprovedOnly: !quiz?.isDojo ? "true" : undefined
+          isDojo: quiz?.isDojo ? "true" : undefined,
+          ojtApprovedToday: !quiz?.isDojo ? "true" : undefined
         }
       });
       const studentsList = response.data?.data?.users || [];
@@ -195,14 +197,14 @@ const TakeQuiz = () => {
           // Calculate elapsed time in seconds
           const elapsedSeconds = Math.floor((Date.now() - restoredSession.startTime) / 1000);
           const limitSeconds = data.quiz.timeLimit ? data.quiz.timeLimit * 60 : null;
-          
+
           if (limitSeconds !== null) {
             const remaining = limitSeconds - elapsedSeconds;
             if (remaining <= 0) {
               // The time has already expired while they were away
               setTimeRemaining(0);
               setStartTime(restoredSession.startTime);
-              
+
               if (restoredSession.answers) {
                 setAnswers(restoredSession.answers);
               } else {
@@ -214,12 +216,12 @@ const TakeQuiz = () => {
                 }
                 setAnswers(initialAnswers);
               }
-              
+
               if (restoredSession.candidateName) setCandidateName(restoredSession.candidateName);
               if (restoredSession.eCode) setECode(restoredSession.eCode);
               if (restoredSession.selectedStudent) setSelectedStudent(restoredSession.selectedStudent);
               if (restoredSession.conductedBy) setConductedBy(restoredSession.conductedBy);
-              
+
               setStep("quiz");
               setLoading(false);
               // Trigger auto submit immediately

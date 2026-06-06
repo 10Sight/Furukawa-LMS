@@ -127,6 +127,7 @@ const SixteenDayMonitoringSheet = ({
         verifiedBy: "",
         approvedBy: "",
         status: "Draft",
+        startDate: "",
     });
 
     const authUser = useSelector(state => state.auth.user);
@@ -211,7 +212,8 @@ const SixteenDayMonitoringSheet = ({
                             verifiedBy: "",
                             approvedBy: "",
                             status: "Draft",
-                            attemptNumber: (record.attemptNumber || 1) + 1
+                            attemptNumber: (record.attemptNumber || 1) + 1,
+                            startDate: "",
                         });
                         setGridData({});
                         setSelectedAttemptId("");
@@ -230,7 +232,8 @@ const SixteenDayMonitoringSheet = ({
                             verifiedBy: record.verifiedBy || "",
                             approvedBy: record.approvedBy || "",
                             status: record.status || "Draft",
-                            attemptNumber: record.attemptNumber || 1
+                            attemptNumber: record.attemptNumber || 1,
+                            startDate: record.startDate || "",
                         });
                         setGridData(record.gridData || {});
                         setSelectedAttemptId(record.id);
@@ -251,7 +254,8 @@ const SixteenDayMonitoringSheet = ({
                         verifiedBy: "",
                         approvedBy: "",
                         status: "Draft",
-                        attemptNumber: 1
+                        attemptNumber: 1,
+                        startDate: "",
                     });
                     setGridData({});
                     setSelectedAttemptId("");
@@ -329,7 +333,8 @@ const SixteenDayMonitoringSheet = ({
                     verifiedBy: record.verifiedBy || "",
                     approvedBy: record.approvedBy || "",
                     status: record.status || "Draft",
-                    attemptNumber: record.attemptNumber || 1
+                    attemptNumber: record.attemptNumber || 1,
+                    startDate: record.startDate || "",
                 });
                 setGridData(record.gridData || {});
             }
@@ -386,6 +391,17 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
+    const isDay1Filled = () => {
+        const attDateVal = gridData['attendance_date_1'];
+        if (attDateVal && attDateVal.toString().trim()) return true;
+        for (const cat of config) {
+            for (const row of cat.rows) {
+                if (gridData[`${row.id}_day_1`]?.toString().trim()) return true;
+            }
+        }
+        return false;
+    };
+
     const isDay16Filled = () => {
         if (!studentId) return false;
 
@@ -439,8 +455,16 @@ const SixteenDayMonitoringSheet = ({
 
         try {
             setSaving(true);
+
+            // Auto-capture startDate the first time Day-1 is filled
+            const computedStartDate =
+                !headerInfo.startDate && isDay1Filled()
+                    ? (gridData['attendance_date_1'] || new Date().toISOString().split('T')[0])
+                    : headerInfo.startDate;
+
             const payload = {
                 ...headerInfo,
+                startDate: computedStartDate,
                 gridData,
                 status: targetStatus,
                 isNewAttempt: isForceNewAttempt,
@@ -450,7 +474,7 @@ const SixteenDayMonitoringSheet = ({
 
             const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId || 0}`, payload);
             if (response.data.success) {
-                setHeaderInfo(prev => ({ ...prev, status: targetStatus }));
+                setHeaderInfo(prev => ({ ...prev, status: targetStatus, startDate: computedStartDate }));
                 setIsForceNewAttempt(false);
                 fetchHistoryAttempts();
                 toast.success(`Monitoring ${targetStatus === 'Submitted' ? 'Submitted' : 'Saved'} successfully`);

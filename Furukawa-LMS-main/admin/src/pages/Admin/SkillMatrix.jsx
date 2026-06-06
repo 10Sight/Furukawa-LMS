@@ -1054,7 +1054,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                 </ConditionalTabsContent>
 
                 <ConditionalTabsContent isEmbedded={isEmbeddedView} value="testPaper" className="space-y-6">
-                    <TestPaper />
+                    <TestPaper skillUpgradation={true} />
                 </ConditionalTabsContent>
 
                 <ConditionalTabsContent isEmbedded={isEmbeddedView} value="skillMatrix" className="space-y-6">
@@ -1405,7 +1405,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     <p>No machines/stations found for this selection.</p>
                                 </div>
                             ) : (
-                                <div id="printable-matrix" ref={tableRef} className="bg-white p-2 max-w-[1000px] w-full mx-auto overflow-hidden">
+                                <div className="overflow-x-auto w-full">
+                                <div id="printable-matrix" ref={tableRef} className="bg-white p-2 w-fit mx-auto">
                                     <PaginationControls />
                                     <div className="border border-black text-center mb-1">
                                         <h1 className="text-xl font-bold uppercase p-1">Skill Matrix</h1>
@@ -1945,6 +1946,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         <div>Rev Date: {config.documentInfo.revDate}</div>
                                         <div>Page: {config.documentInfo.page}</div>
                                     </div>
+                                </div>
                                 </div>
                             )}
                         </div>

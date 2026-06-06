@@ -37,11 +37,11 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
     let query = `
         SELECT 
             u.id, u.fullName, u.empId, u.avatar,
-            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber,
+            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber, m.startDate, m.gridData,
             stats.totalAttempts, stats.rejectedCount
         FROM users u
         LEFT JOIN (
-            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber,
+            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber, startDate, gridData,
                    ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
             FROM sixteen_day_monitorings
         ) m ON u.id = m.studentId AND m.rn = 1
@@ -77,8 +77,21 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
 
     const [rows] = await executeQuery(query, params);
 
+    const formattedRows = rows.map(row => {
+        if (row.gridData) {
+            try {
+                row.gridData = JSON.parse(row.gridData);
+            } catch (e) {
+                row.gridData = {};
+            }
+        } else {
+            row.gridData = {};
+        }
+        return row;
+    });
+
     return res.status(200).json(
-        new ApiResponse(200, rows, "16-Day monitoring status list fetched successfully")
+        new ApiResponse(200, formattedRows, "16-Day monitoring status list fetched successfully")
     );
 });
 
@@ -176,7 +189,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         employeeName, employeeCode, processName, dept,
         handoverDate, trgResult, workingWith, lineLeaderName,
         gridData, checkedBy, verifiedBy, approvedBy, status,
-        isNewAttempt, recordId
+        isNewAttempt, recordId, startDate
     } = req.body;
 
     let sheet;
@@ -200,6 +213,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet.verifiedBy = verifiedBy;
         sheet.approvedBy = approvedBy;
         sheet.status = status || sheet.status;
+        sheet.startDate = startDate;
         sheet.updatedBy = req.user?.fullName || req.user?.name;
         await sheet.save();
     } else {
@@ -223,7 +237,8 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             verifiedBy,
             approvedBy,
             createdBy: req.user?.fullName || req.user?.name,
-            status: status || "Draft"
+            status: status || "Draft",
+            startDate
         });
     }
 

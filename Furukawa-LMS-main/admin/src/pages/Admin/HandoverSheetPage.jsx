@@ -37,6 +37,7 @@ const HandoverSheetPage = () => {
         departmentId: dept,
         sectionId: section === "0" ? "" : section,
         includeTemporary: "only",
+        dojoHandoverPassedOnly: "true",
     }, {
         skip: !dept,
         refetchOnMountOrArgChange: true
@@ -172,6 +173,7 @@ const HandoverSheetPage = () => {
                         instructorName={authUser?.fullName}
                         departments={departments}
                         machines={machines}
+                        dojoHandoverPassedOnly={true}
                     />
                 </div>
             ) : (

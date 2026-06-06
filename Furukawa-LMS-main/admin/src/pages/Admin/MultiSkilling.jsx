@@ -202,7 +202,7 @@ const MultiSkilling = () => {
 
                 {/* Test Papers Tab */}
                 <TabsContent value="testPaper" className="space-y-6">
-                    <TestPaper />
+                    <TestPaper isMultiSkilling={true} />
                 </TabsContent>
 
                 {/* 5M Tab */}

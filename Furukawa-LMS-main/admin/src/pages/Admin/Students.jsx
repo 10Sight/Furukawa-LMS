@@ -92,6 +92,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { FormSelect } from "@/components/form/FormSelect";
+
 // Import reusable components
 import SearchInput from "@/components/common/SearchInput";
 import FilterSelect from "@/components/common/FilterSelect";
@@ -153,11 +155,11 @@ const Students = () => {
     fullName: "",
     fatherHusbandName: "",
     gender: "MALE",
-    departmentId: "",
-    sectionId: "",
-    lineId: "",
-    subSectionId: "",
-    stationId: "",
+    departments: [],
+    sections: [],
+    lines: [],
+    subSections: [],
+    stations: [],
     mentor: "",
     designation: "",
     isEmployee: true,
@@ -289,10 +291,10 @@ const Students = () => {
   const importLogs = importLogsData?.data || [];
 
   // Hierarchy Hooks
-  const { data: sectionsData } = useGetSectionsByDepartmentQuery(formData.departmentId, { skip: !formData.departmentId });
-  const { data: linesData } = useGetLinesBySectionQuery(formData.sectionId, { skip: !formData.sectionId });
-  const { data: subSectionsData } = useGetSubSectionsByLineQuery(formData.lineId, { skip: !formData.lineId });
-  const { data: machinesData } = useGetMachinesBySubSectionQuery(formData.subSectionId, { skip: !formData.subSectionId });
+  const { data: sectionsData } = useGetSectionsByDepartmentQuery(formData.departments.join(','), { skip: !formData.departments.length });
+  const { data: linesData } = useGetLinesBySectionQuery(formData.sections.join(','), { skip: !formData.sections.length });
+  const { data: subSectionsData } = useGetSubSectionsByLineQuery(formData.lines.join(','), { skip: !formData.lines.length });
+  const { data: machinesData } = useGetMachinesBySubSectionQuery(formData.subSections.join(','), { skip: !formData.subSections.length });
 
   const sections = sectionsData?.data || [];
   const lines = linesData?.data || [];
@@ -443,11 +445,11 @@ const Students = () => {
       fullName: "",
       fatherHusbandName: "",
       gender: "MALE",
-      departmentId: "",
-      sectionId: "",
-      lineId: "",
-      subSectionId: "",
-      stationId: "",
+      departments: [],
+      sections: [],
+      lines: [],
+      subSections: [],
+      stations: [],
       mentor: "",
       designation: "",
       isEmployee: true,
@@ -488,9 +490,6 @@ const Students = () => {
     }
     if (!formData.userName?.trim()) {
       errors.userName = "Username is required";
-    }
-    if (!formData.email?.trim()) {
-      errors.email = "Email is required";
     }
     if (!formData.phoneNumber?.trim()) {
       errors.phoneNumber = "Phone number is required";
@@ -549,11 +548,11 @@ const Students = () => {
         idCard: formData.idCard?.trim() || null,
         fatherHusbandName: formData.fatherHusbandName?.trim() || null,
         gender: formData.gender,
-        departmentId: formData.departmentId || null,
-        sectionId: formData.sectionId || null,
-        lineId: formData.lineId || null,
-        subSectionId: formData.subSectionId || null,
-        stationId: formData.stationId || null,
+        departments: formData.departments,
+        stations: formData.stations,
+        sectionId: formData.sections[0] || null,
+        subSectionId: formData.subSections[0] || null,
+        lineId: formData.lines[0] || null,
         mentor: formData.mentor?.trim() || null,
         designation: formData.designation?.trim() || null,
         dob: formData.dob || null,
@@ -593,7 +592,6 @@ const Students = () => {
     if (
       !formData.fullName?.trim() ||
       !formData.userName?.trim() ||
-      !formData.email?.trim() ||
       !formData.phoneNumber?.trim()
     ) {
       showToast("error", "Basic fields are required");
@@ -616,11 +614,11 @@ const Students = () => {
         idCard: updateData.idCard?.trim() || null,
         fatherHusbandName: updateData.fatherHusbandName?.trim() || null,
         gender: updateData.gender,
-        departmentId: updateData.departmentId || null,
-        sectionId: updateData.sectionId || null,
-        lineId: updateData.lineId || null,
-        subSectionId: updateData.subSectionId || null,
-        stationId: updateData.stationId || null,
+        departments: updateData.departments,
+        stations: updateData.stations,
+        sectionId: updateData.sections[0] || null,
+        subSectionId: updateData.subSections[0] || null,
+        lineId: updateData.lines[0] || null,
         mentor: updateData.mentor?.trim() || null,
         designation: updateData.designation?.trim() || null,
         dob: updateData.dob || null,
@@ -811,20 +809,31 @@ const Students = () => {
   };
 
   const handleExportExcel = async () => {
+    const toastId = toast.loading("Preparing Excel file...");
     try {
-      const toastId = toast.loading("Preparing Excel file...");
+      // Paginate through all records — backend may cap single-page results
+      const PAGE_SIZE = 100;
+      let allStudents = [];
+      let page = 1;
+      let totalUsers = Infinity;
 
-      // Fetch ALL students for export
-      const result = await triggerGetAllStudents({
-        page: 1,
-        limit: 10000,
-        search: debouncedSearchTerm || "",
-        status: statusFilter !== "ALL" ? statusFilter : "",
-        unit: unitFilter !== "ALL" ? unitFilter : "",
-        includeLeft: "true",
-      }).unwrap();
+      while (allStudents.length < totalUsers) {
+        const result = await triggerGetAllStudents({
+          page,
+          limit: PAGE_SIZE,
+          search: debouncedSearchTerm || "",
+          status: statusFilter !== "ALL" ? statusFilter : "",
+          unit: unitFilter !== "ALL" ? unitFilter : "",
+          includeLeft: "true",
+        }).unwrap();
 
-      let allStudents = result?.data?.users || [];
+        const batch = result?.data?.users || [];
+        totalUsers = result?.data?.totalUsers ?? 0;
+        allStudents = [...allStudents, ...batch];
+
+        if (batch.length === 0) break;
+        page++;
+      }
 
       // Filter locally by department filter to match UI view
       if (departmentFilter !== "ALL") {
@@ -844,18 +853,21 @@ const Students = () => {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Operators');
 
-      // Define columns to match Import Template exactly
       worksheet.columns = [
         { header: "Employee Code", key: "empId", width: 15 },
         { header: "Card No.", key: "idCard", width: 15 },
         { header: "Name", key: "fullName", width: 25 },
+        { header: "Username", key: "userName", width: 20 },
         { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
         { header: "Gender", key: "gender", width: 10 },
+        { header: "Unit", key: "unit", width: 12 },
         { header: "Department", key: "department", width: 25 },
         { header: "Section", key: "section", width: 20 },
         { header: "Line", key: "line", width: 15 },
         { header: "Sub Section", key: "subSection", width: 20 },
         { header: "Station No.", key: "stationNo", width: 15 },
+        { header: "Supervisor", key: "supervisor", width: 20 },
+        { header: "Incharge", key: "incharge", width: 20 },
         { header: "Mentor", key: "mentor", width: 20 },
         { header: "Designation", key: "designation", width: 20 },
         { header: "DOB", key: "dob", width: 15 },
@@ -867,25 +879,28 @@ const Students = () => {
         { header: "Bus Route", key: "busRoute", width: 15 },
         { header: "E-Mail ID", key: "email", width: 30 },
         { header: "Mobile No", key: "phoneNumber", width: 15 },
-        { header: "Lavel", key: "currentLevel", width: 10 },
+        { header: "Level", key: "currentLevel", width: 10 },
         { header: "Date of Leaving", key: "leavingDate", width: 15 },
         { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
         { header: "Status", key: "status", width: 15 },
       ];
 
-      // Add rows with correct mapping
       allStudents.forEach((student) => {
         worksheet.addRow({
           empId: student.empId || "",
           idCard: student.idCard || "",
           fullName: student.fullName || "",
+          userName: student.userName || "",
           fatherHusbandName: student.fatherHusbandName || "",
           gender: student.gender || "",
+          unit: student.unit || "",
           department: student.department?.name || "",
           section: student.sectionName || "",
           line: student.lineName || "",
           subSection: student.subSectionName || "",
           stationNo: student.stationName || "",
+          supervisor: student.supervisor || "",
+          incharge: student.incharge || "",
           mentor: student.mentor || "",
           designation: student.designation || "",
           dob: safeDateFormat(student.dob, "yyyy-MM-dd"),
@@ -897,14 +912,14 @@ const Students = () => {
           busRoute: student.busRoute || "",
           email: student.email || "",
           phoneNumber: student.phoneNumber || "",
-          currentLevel: student.currentLevel || "L1",
+          currentLevel: student.currentLevel || "",
           leavingDate: safeDateFormat(student.leavingDate, "yyyy-MM-dd"),
           reasonOfLeaving: student.reasonOfLeaving || "",
           status: student.status || "PRESENT",
         });
       });
 
-      // Style header
+      // Style header row
       worksheet.getRow(1).font = { bold: true };
       worksheet.getRow(1).fill = {
         type: 'pattern',
@@ -917,15 +932,48 @@ const Students = () => {
       saveAs(blob, `Operators_Export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
 
       toast.dismiss(toastId);
-      showToast("success", "Exported successfully!");
+      showToast("success", `Exported ${allStudents.length} operators successfully!`);
     } catch (error) {
       console.error("Export error:", error);
+      toast.dismiss(toastId);
       showToast("error", "Failed to export data");
     }
   };
 
   const openEditDialog = (student) => {
     setSelectedStudent(student);
+
+    const rawDepts = typeof student.departments === 'string' ? JSON.parse(student.departments || "[]") : (student.departments || []);
+    const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length
+      ? rawDepts.map(String)
+      : ((student.departmentId || student.DepartmentId) ? [String(student.departmentId || student.DepartmentId)] : (student.department?._id ? [String(student.department._id)] : []));
+
+    const rawStations = typeof student.stations === 'string' ? JSON.parse(student.stations || "[]") : (student.stations || []);
+    const resolvedStations = Array.isArray(rawStations) && rawStations.length
+      ? rawStations.map(String)
+      : ((student.stationId || student.StationId) ? [String(student.stationId || student.StationId)] : []);
+
+    const resolvedSections = [
+      ...new Set([
+        ...(student.sectionId ? [String(student.sectionId)] : []),
+        ...(student.assignments || []).map(a => String(a.sectionId))
+      ])
+    ].filter(Boolean);
+
+    const resolvedLines = [
+      ...new Set([
+        ...(student.lineId ? [String(student.lineId)] : []),
+        ...(student.assignments || []).map(a => String(a.lineId))
+      ])
+    ].filter(Boolean);
+
+    const resolvedSubSections = [
+      ...new Set([
+        ...(student.subSectionId ? [String(student.subSectionId)] : []),
+        ...(student.assignments || []).map(a => String(a.subSectionId))
+      ])
+    ].filter(Boolean);
+
     setFormData({
       fullName: student.fullName || "",
       userName: student.userName || "",
@@ -938,11 +986,11 @@ const Students = () => {
       idCard: student.idCard || "",
       fatherHusbandName: student.fatherHusbandName || student.FatherHusbandName || "",
       gender: student.gender || student.Gender || "MALE",
-      departmentId: (student.departmentId || student.DepartmentId) ? String(student.departmentId || student.DepartmentId) : (student.department?._id ? String(student.department._id) : ""),
-      sectionId: (student.sectionId || student.SectionId) ? String(student.sectionId || student.SectionId) : "",
-      lineId: (student.lineId || student.LineId) ? String(student.lineId || student.LineId) : "",
-      subSectionId: (student.subSectionId || student.SubSectionId) ? String(student.subSectionId || student.SubSectionId) : "",
-      stationId: (student.stationId || student.StationId) ? String(student.stationId || student.StationId) : "",
+      departments: resolvedDepts,
+      sections: resolvedSections,
+      lines: resolvedLines,
+      subSections: resolvedSubSections,
+      stations: resolvedStations,
       mentor: student.mentor || student.Mentor || "",
       designation: student.designation || student.Designation || "",
       supervisor: student.supervisor || student.Supervisor || "",
@@ -1035,7 +1083,29 @@ const Students = () => {
   };
 
   const getDepartmentInfo = (student) => {
-    if (!student.department && !student.sectionName && !student.lineName) {
+    const rawDepts = typeof student.departments === 'string' ? JSON.parse(student.departments || "[]") : (student.departments || []);
+    let deptNames = [];
+    if (Array.isArray(rawDepts) && rawDepts.length > 0) {
+      deptNames = rawDepts.map(id => {
+        const d = departments.find(item => String(item._id || item.id) === String(id));
+        return d ? d.name : null;
+      }).filter(Boolean);
+    }
+    if (deptNames.length === 0 && student.department) {
+      deptNames = [student.department.name];
+    }
+
+    const assignedSections = [...new Set((student.assignments || []).map(a => a.sectionName).filter(Boolean))];
+    const assignedLines = [...new Set((student.assignments || []).map(a => a.lineName).filter(Boolean))];
+    const assignedSubSections = [...new Set((student.assignments || []).map(a => a.subSectionName).filter(Boolean))];
+    const assignedStations = [...new Set((student.assignments || []).map(a => a.stationName).filter(Boolean))];
+
+    const sectionsList = assignedSections.length > 0 ? assignedSections : (student.sectionName ? [student.sectionName] : []);
+    const linesList = assignedLines.length > 0 ? assignedLines : (student.lineName ? [student.lineName] : []);
+    const subSectionsList = assignedSubSections.length > 0 ? assignedSubSections : (student.subSectionName ? [student.subSectionName] : []);
+    const stationsList = assignedStations.length > 0 ? assignedStations : (student.stationName ? [student.stationName] : []);
+
+    if (deptNames.length === 0 && sectionsList.length === 0 && linesList.length === 0) {
       return (
         <Badge variant="secondary" className="flex items-center gap-1 border-dashed">
           No Assignment
@@ -1045,22 +1115,26 @@ const Students = () => {
 
     return (
       <div className="flex flex-col gap-1 py-1">
-        {student.department && (
-          <Badge variant="outline" className="w-fit flex items-center gap-1 text-[10px] py-0 px-1.5 h-5 bg-blue-50 text-blue-700 border-blue-200">
-            <IconSchool className="h-2.5 w-2.5" />
-            {student.department.name}
-          </Badge>
-        )}
-        {(student.sectionName || student.lineName) && (
-          <div className="text-[10px] whitespace-nowrap overflow-hidden text-ellipsis font-medium text-muted-foreground flex items-center gap-1 pl-0.5">
-            {student.sectionName && <span>{student.sectionName}</span>}
-            {student.sectionName && student.lineName && <span className="text-[8px] opacity-50">&gt;</span>}
-            {student.lineName && <span>{student.lineName}</span>}
+        {deptNames.length > 0 && (
+          <div className="flex flex-wrap gap-1 max-w-[200px]">
+            {deptNames.map((name, idx) => (
+              <Badge key={idx} variant="outline" className="w-fit flex items-center gap-1 text-[10px] py-0 px-1.5 h-5 bg-blue-50 text-blue-700 border-blue-200">
+                <IconSchool className="h-2.5 w-2.5" />
+                {name}
+              </Badge>
+            ))}
           </div>
         )}
-        {(student.subSectionName || student.stationName) && (
-          <div className="text-[9px] opacity-80 italic text-muted-foreground flex items-center gap-1 pl-0.5">
-            {student.subSectionName || "..."} / {student.stationName || "..."}
+        {(sectionsList.length > 0 || linesList.length > 0) && (
+          <div className="text-[10px] font-medium text-muted-foreground flex flex-wrap items-center gap-1 pl-0.5">
+            <span className="text-foreground">{sectionsList.join(', ')}</span>
+            {sectionsList.length > 0 && linesList.length > 0 && <span className="text-[8px] opacity-50">&gt;</span>}
+            <span>{linesList.join(', ')}</span>
+          </div>
+        )}
+        {(subSectionsList.length > 0 || stationsList.length > 0) && (
+          <div className="text-[9px] opacity-80 italic text-muted-foreground flex flex-wrap items-center gap-1 pl-0.5">
+            {subSectionsList.length > 0 ? subSectionsList.join(', ') : "..."} / {stationsList.length > 0 ? stationsList.join(', ') : "..."}
           </div>
         )}
       </div>
@@ -1879,117 +1953,92 @@ const Students = () => {
 
             {/* Hierarchy Dropdowns */}
             <div className="grid gap-2">
-              <Label>Department</Label>
-              <Select
-                value={formData.departmentId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="departments"
+                label="Departments"
+                multiple={true}
+                value={formData.departments}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  departmentId: value,
-                  sectionId: "",
-                  lineId: "",
-                  subSectionId: "",
-                  stationId: ""
+                  departments: values,
+                  sections: [],
+                  lines: [],
+                  subSections: [],
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableDepartments.map((dept) => (
-                    <SelectItem key={dept._id} value={String(dept._id)}>{dept.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={availableDepartments.map(d => ({ value: String(d._id || d.id), label: d.name }))}
+                placeholder="Select Departments"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Section</Label>
-              <Select
-                value={formData.sectionId}
-                disabled={!formData.departmentId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="sections"
+                label="Sections"
+                multiple={true}
+                disabled={formData.departments.length === 0}
+                value={formData.sections}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  sectionId: value,
-                  lineId: "",
-                  subSectionId: "",
-                  stationId: ""
+                  sections: values,
+                  lines: [],
+                  subSections: [],
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Section" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sections.map((sec) => (
-                    <SelectItem key={sec.id} value={String(sec.id)}>{sec.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={sections.map(s => ({ value: String(s.id), label: s.name }))}
+                placeholder="Select Sections"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Line</Label>
-              <Select
-                value={formData.lineId}
-                disabled={!formData.sectionId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="lines"
+                label="Lines"
+                multiple={true}
+                disabled={formData.sections.length === 0}
+                value={formData.lines}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  lineId: value,
-                  subSectionId: "",
-                  stationId: ""
+                  lines: values,
+                  subSections: [],
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Line" />
-                </SelectTrigger>
-                <SelectContent>
-                  {lines.map((line) => (
-                    <SelectItem key={line.id} value={String(line.id)}>{line.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={lines.map(l => ({ value: String(l.id), label: l.name }))}
+                placeholder="Select Lines"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Sub-section</Label>
-              <Select
-                value={formData.subSectionId}
-                disabled={!formData.lineId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="subSections"
+                label="Sub-sections"
+                multiple={true}
+                disabled={formData.lines.length === 0}
+                value={formData.subSections}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  subSectionId: value,
-                  stationId: ""
+                  subSections: values,
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Sub-section" />
-                </SelectTrigger>
-                <SelectContent>
-                  {subSections.map((ss) => (
-                    <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={subSections.map(ss => ({ value: String(ss.id), label: ss.name }))}
+                placeholder="Select Sub-sections"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Station</Label>
-              <Select
-                value={formData.stationId}
-                disabled={!formData.subSectionId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="stations"
+                label="Stations"
+                multiple={true}
+                disabled={formData.subSections.length === 0}
+                value={formData.stations}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  stationId: value
+                  stations: values
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Station" />
-                </SelectTrigger>
-                <SelectContent>
-                  {machines.map((m) => (
-                    <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={machines.map(m => ({ value: String(m.id), label: m.name }))}
+                placeholder="Select Stations"
+              />
             </div>
 
             {/* Mentor & Education */}
@@ -2039,7 +2088,7 @@ const Students = () => {
 
             {/* Contact Details */}
             <div className="grid gap-2">
-              <Label htmlFor="email">Email *</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 name="email"
@@ -2351,117 +2400,92 @@ const Students = () => {
 
             {/* Hierarchy Dropdowns */}
             <div className="grid gap-2">
-              <Label>Department</Label>
-              <Select
-                value={formData.departmentId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="edit-departments"
+                label="Departments"
+                multiple={true}
+                value={formData.departments}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  departmentId: value,
-                  sectionId: "",
-                  lineId: "",
-                  subSectionId: "",
-                  stationId: ""
+                  departments: values,
+                  sections: [],
+                  lines: [],
+                  subSections: [],
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableDepartments.map((dept) => (
-                    <SelectItem key={dept._id} value={String(dept._id)}>{dept.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={availableDepartments.map(d => ({ value: String(d._id || d.id), label: d.name }))}
+                placeholder="Select Departments"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Section</Label>
-              <Select
-                value={formData.sectionId}
-                disabled={!formData.departmentId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="edit-sections"
+                label="Sections"
+                multiple={true}
+                disabled={formData.departments.length === 0}
+                value={formData.sections}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  sectionId: value,
-                  lineId: "",
-                  subSectionId: "",
-                  stationId: ""
+                  sections: values,
+                  lines: [],
+                  subSections: [],
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Section" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sections.map((sec) => (
-                    <SelectItem key={sec.id} value={String(sec.id)}>{sec.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={sections.map(s => ({ value: String(s.id), label: s.name }))}
+                placeholder="Select Sections"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Line</Label>
-              <Select
-                value={formData.lineId}
-                disabled={!formData.sectionId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="edit-lines"
+                label="Lines"
+                multiple={true}
+                disabled={formData.sections.length === 0}
+                value={formData.lines}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  lineId: value,
-                  subSectionId: "",
-                  stationId: ""
+                  lines: values,
+                  subSections: [],
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Line" />
-                </SelectTrigger>
-                <SelectContent>
-                  {lines.map((line) => (
-                    <SelectItem key={line.id} value={String(line.id)}>{line.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={lines.map(l => ({ value: String(l.id), label: l.name }))}
+                placeholder="Select Lines"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Sub-section</Label>
-              <Select
-                value={formData.subSectionId}
-                disabled={!formData.lineId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="edit-subSections"
+                label="Sub-sections"
+                multiple={true}
+                disabled={formData.lines.length === 0}
+                value={formData.subSections}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  subSectionId: value,
-                  stationId: ""
+                  subSections: values,
+                  stations: []
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Sub-section" />
-                </SelectTrigger>
-                <SelectContent>
-                  {subSections.map((ss) => (
-                    <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={subSections.map(ss => ({ value: String(ss.id), label: ss.name }))}
+                placeholder="Select Sub-sections"
+              />
             </div>
 
             <div className="grid gap-2">
-              <Label>Station</Label>
-              <Select
-                value={formData.stationId}
-                disabled={!formData.subSectionId}
-                onValueChange={(value) => setFormData({
+              <FormSelect
+                id="edit-stations"
+                label="Stations"
+                multiple={true}
+                disabled={formData.subSections.length === 0}
+                value={formData.stations}
+                onValueChange={(values) => setFormData({
                   ...formData,
-                  stationId: value
+                  stations: values
                 })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Station" />
-                </SelectTrigger>
-                <SelectContent>
-                  {machines.map((m) => (
-                    <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={machines.map(m => ({ value: String(m.id), label: m.name }))}
+                placeholder="Select Stations"
+              />
             </div>
 
             {/* Mentor & Education */}
@@ -2772,8 +2796,12 @@ const Students = () => {
                 </div>
               ) : departments.length > 0 ? (
                 departments.map((department) => {
+                  const rawStudentDepts = typeof selectedStudent?.departments === 'string'
+                    ? JSON.parse(selectedStudent.departments || "[]")
+                    : (selectedStudent?.departments || []);
                   const isCurrentlyAssigned =
-                    selectedStudent?.department?._id.toString() === department._id.toString();
+                    (selectedStudent?.department?._id?.toString() === department._id.toString()) ||
+                    (Array.isArray(rawStudentDepts) && rawStudentDepts.map(String).includes(department._id.toString()));
                   const isAtCapacity =
                     department.capacity && department.students?.length >= department.capacity;
 

@@ -13,6 +13,7 @@ import {
   IconMail,
   IconUserCheck,
   IconUserX,
+  IconUserMinus,
   IconShield,
   IconRefresh,
   IconChevronDown,
@@ -39,6 +40,7 @@ import { IconCalendar } from "@tabler/icons-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
+import { FormSelect } from "@/components/form/FormSelect";
 
 // shadcn/ui components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,11 +98,11 @@ const AllUsersManagement = () => {
     status: "ACTIVE",
     unit: "UNIT_1",
     customRoleId: "",
-    departmentId: currentUser?.role !== "SUPERADMIN" ? (String(currentUser?.departmentId || currentUser?.department?._id || "")) : "",
-    sectionId: "",
-    lineId: "",
-    subSectionId: "",
-    stationId: "",
+    departments: (currentUser?.role !== "SUPERADMIN" && (currentUser?.departmentId || currentUser?.department?._id)) ? [String(currentUser?.departmentId || currentUser?.department?._id)] : [],
+    sections: [],
+    lines: [],
+    subSections: [],
+    stations: [],
   });
 
   // API hooks
@@ -222,10 +224,22 @@ const AllUsersManagement = () => {
   const stations = machineData?.data || [];
 
   // Edit User Hierarchy Hooks
-  const { data: editSectionData } = useGetSectionsByDepartmentQuery(selectedUser?.departmentId, { skip: !selectedUser?.departmentId || !showEditModal });
-  const { data: editLineData } = useGetLinesBySectionQuery(selectedUser?.sectionId, { skip: !selectedUser?.sectionId || !showEditModal });
-  const { data: editSubSectionData } = useGetSubSectionsByLineQuery(selectedUser?.lineId, { skip: !selectedUser?.lineId || !showEditModal });
-  const { data: editMachineData } = useGetMachinesBySubSectionQuery(selectedUser?.subSectionId, { skip: !selectedUser?.subSectionId || !showEditModal });
+  const { data: editSectionData } = useGetSectionsByDepartmentQuery(
+    (selectedUser?.departments || []).join(","),
+    { skip: !selectedUser?.departments?.length || !showEditModal }
+  );
+  const { data: editLineData } = useGetLinesBySectionQuery(
+    (selectedUser?.sections || []).join(","),
+    { skip: !selectedUser?.sections?.length || !showEditModal }
+  );
+  const { data: editSubSectionData } = useGetSubSectionsByLineQuery(
+    (selectedUser?.lines || []).join(","),
+    { skip: !selectedUser?.lines?.length || !showEditModal }
+  );
+  const { data: editMachineData } = useGetMachinesBySubSectionQuery(
+    (selectedUser?.subSections || []).join(","),
+    { skip: !selectedUser?.subSections?.length || !showEditModal }
+  );
 
   const editSections = editSectionData?.data || [];
   const editLines = editLineData?.data || [];
@@ -233,10 +247,22 @@ const AllUsersManagement = () => {
   const editStations = editMachineData?.data || [];
 
   // Create User Hierarchy Hooks
-  const { data: createSectionData } = useGetSectionsByDepartmentQuery(newUser?.departmentId, { skip: !newUser?.departmentId || !showCreateModal });
-  const { data: createLineData } = useGetLinesBySectionQuery(newUser?.sectionId, { skip: !newUser?.sectionId || !showCreateModal });
-  const { data: createSubSectionData } = useGetSubSectionsByLineQuery(newUser?.lineId, { skip: !newUser?.lineId || !showCreateModal });
-  const { data: createMachineData } = useGetMachinesBySubSectionQuery(newUser?.subSectionId, { skip: !newUser?.subSectionId || !showCreateModal });
+  const { data: createSectionData } = useGetSectionsByDepartmentQuery(
+    (newUser?.departments || []).join(","),
+    { skip: !newUser?.departments?.length || !showCreateModal }
+  );
+  const { data: createLineData } = useGetLinesBySectionQuery(
+    (newUser?.sections || []).join(","),
+    { skip: !newUser?.sections?.length || !showCreateModal }
+  );
+  const { data: createSubSectionData } = useGetSubSectionsByLineQuery(
+    (newUser?.lines || []).join(","),
+    { skip: !newUser?.lines?.length || !showCreateModal }
+  );
+  const { data: createMachineData } = useGetMachinesBySubSectionQuery(
+    (newUser?.subSections || []).join(","),
+    { skip: !newUser?.subSections?.length || !showCreateModal }
+  );
 
   const createSections = createSectionData?.data || [];
   const createLines = createLineData?.data || [];
@@ -297,9 +323,58 @@ const AllUsersManagement = () => {
   const totalUsers = usersData?.data?.totalUsers || 0;
 
 
+  const handleOpenEditModal = (user) => {
+    const rawDepts = typeof user.departments === 'string' ? JSON.parse(user.departments || "[]") : (user.departments || []);
+    const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length
+      ? rawDepts.map(String)
+      : ((user.departmentId || user.DepartmentId) ? [String(user.departmentId || user.DepartmentId)] : (user.department?._id ? [String(user.department._id)] : []));
+
+    const rawStations = typeof user.stations === 'string' ? JSON.parse(user.stations || "[]") : (user.stations || []);
+    const resolvedStations = Array.isArray(rawStations) && rawStations.length
+      ? rawStations.map(String)
+      : ((user.stationId || user.StationId) ? [String(user.stationId || user.StationId)] : []);
+
+    const resolvedSections = [
+      ...new Set([
+        ...(user.sectionId ? [String(user.sectionId)] : []),
+        ...(user.assignments || []).map(a => String(a.sectionId))
+      ])
+    ].filter(Boolean);
+
+    const resolvedLines = [
+      ...new Set([
+        ...(user.lineId ? [String(user.lineId)] : []),
+        ...(user.assignments || []).map(a => String(a.lineId))
+      ])
+    ].filter(Boolean);
+
+    const resolvedSubSections = [
+      ...new Set([
+        ...(user.subSectionId ? [String(user.subSectionId)] : []),
+        ...(user.assignments || []).map(a => String(a.subSectionId))
+      ])
+    ].filter(Boolean);
+
+    setSelectedUser({
+      ...user,
+      departments: resolvedDepts,
+      sections: resolvedSections,
+      lines: resolvedLines,
+      subSections: resolvedSubSections,
+      stations: resolvedStations
+    });
+    setShowEditModal(true);
+  };
+
   const handleCreateUser = async () => {
     try {
-      const result = await createUser(newUser).unwrap();
+      const payload = {
+        ...newUser,
+        sectionId: newUser.sections[0] || null,
+        subSectionId: newUser.subSections[0] || null,
+        lineId: newUser.lines[0] || null,
+      };
+      const result = await createUser(payload).unwrap();
       toast.success("User created successfully!");
       setShowCreateModal(false);
       setNewUser({
@@ -311,11 +386,12 @@ const AllUsersManagement = () => {
         password: "",
         status: "ACTIVE",
         unit: "UNIT_1",
-        departmentId: "",
-        sectionId: "",
-        lineId: "",
-        subSectionId: "",
-        stationId: "",
+        customRoleId: "",
+        departments: (currentUser?.role !== "SUPERADMIN" && (currentUser?.departmentId || currentUser?.department?._id)) ? [String(currentUser?.departmentId || currentUser?.department?._id)] : [],
+        sections: [],
+        lines: [],
+        subSections: [],
+        stations: [],
       });
       refetch();
     } catch (error) {
@@ -327,7 +403,13 @@ const AllUsersManagement = () => {
   const handleUpdateUser = async () => {
     try {
       const { _id, ...updateData } = selectedUser;
-      await updateUser({ id: _id, ...updateData }).unwrap();
+      const payload = {
+        ...updateData,
+        sectionId: updateData.sections[0] || null,
+        subSectionId: updateData.subSections[0] || null,
+        lineId: updateData.lines[0] || null,
+      };
+      await updateUser({ id: _id, ...payload }).unwrap();
       toast.success("User updated successfully!");
       setShowEditModal(false);
       refetch();
@@ -410,6 +492,8 @@ const AllUsersManagement = () => {
         return "bg-red-100 text-red-800";
       case "PENDING":
         return "bg-blue-100 text-blue-800";
+      case "LEFT":
+        return "bg-slate-100 text-slate-600";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -604,76 +688,86 @@ const AllUsersManagement = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-xs font-medium text-gray-500">Department</Label>
-                        <Select 
-                           value={newUser.departmentId ? String(newUser.departmentId) : "unassigned"} 
-                           onValueChange={(val) => setNewUser({ ...newUser, departmentId: val === "unassigned" ? "" : val, sectionId: "", lineId: "", subSectionId: "", stationId: "" })}
-                        >
-                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Dept" /></SelectTrigger>
-                          <SelectContent>
-                            {currentUser?.role === 'SUPERADMIN' && <SelectItem value="unassigned">None</SelectItem>}
-                            {departments.map((d) => <SelectItem key={getDeptId(d)} value={String(getDeptId(d))}>{d.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <FormSelect
+                          multiple={true}
+                          placeholder="Select Departments"
+                          value={newUser.departments}
+                          onValueChange={(values) => setNewUser({
+                            ...newUser,
+                            departments: values,
+                            sections: [],
+                            lines: [],
+                            subSections: [],
+                            stations: []
+                          })}
+                          options={departments.map(d => ({ value: String(getDeptId(d)), label: d.name }))}
+                        />
                       </div>
 
                       <div className="space-y-2">
                         <Label className="text-xs font-medium text-gray-500">Section</Label>
-                        <Select 
-                           value={newUser.sectionId ? String(newUser.sectionId) : "unassigned"} 
-                           onValueChange={(val) => setNewUser({ ...newUser, sectionId: val === "unassigned" ? "" : val, lineId: "", subSectionId: "", stationId: "" })}
-                           disabled={!newUser.departmentId}
-                        >
-                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Section" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">None</SelectItem>
-                            {createSections.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <FormSelect
+                          multiple={true}
+                          placeholder="Select Sections"
+                          value={newUser.sections}
+                          onValueChange={(values) => setNewUser({
+                            ...newUser,
+                            sections: values,
+                            lines: [],
+                            subSections: [],
+                            stations: []
+                          })}
+                          options={createSections.map(s => ({ value: String(s.id), label: s.name }))}
+                          disabled={!newUser.departments.length}
+                        />
                       </div>
 
                       <div className="space-y-2">
                         <Label className="text-xs font-medium text-gray-500">Line</Label>
-                        <Select 
-                           value={newUser.lineId ? String(newUser.lineId) : "unassigned"} 
-                           onValueChange={(val) => setNewUser({ ...newUser, lineId: val === "unassigned" ? "" : val, subSectionId: "", stationId: "" })}
-                           disabled={!newUser.sectionId}
-                        >
-                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Line" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">None</SelectItem>
-                            {createLines.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <FormSelect
+                          multiple={true}
+                          placeholder="Select Lines"
+                          value={newUser.lines}
+                          onValueChange={(values) => setNewUser({
+                            ...newUser,
+                            lines: values,
+                            subSections: [],
+                            stations: []
+                          })}
+                          options={createLines.map(l => ({ value: String(l.id), label: l.name }))}
+                          disabled={!newUser.sections.length}
+                        />
                       </div>
 
                       <div className="space-y-2">
                         <Label className="text-xs font-medium text-gray-500">Sub-Section</Label>
-                        <Select 
-                           value={newUser.subSectionId ? String(newUser.subSectionId) : "unassigned"} 
-                           onValueChange={(val) => setNewUser({ ...newUser, subSectionId: val === "unassigned" ? "" : val, stationId: "" })}
-                           disabled={!newUser.lineId}
-                        >
-                          <SelectTrigger className="h-9"><SelectValue placeholder="Select SubSection" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">None</SelectItem>
-                            {createSubSections.map((ss) => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <FormSelect
+                          multiple={true}
+                          placeholder="Select Sub-sections"
+                          value={newUser.subSections}
+                          onValueChange={(values) => setNewUser({
+                            ...newUser,
+                            subSections: values,
+                            stations: []
+                          })}
+                          options={createSubSections.map(ss => ({ value: String(ss.id), label: ss.name }))}
+                          disabled={!newUser.lines.length}
+                        />
                       </div>
 
                       <div className="space-y-2 sm:col-span-2">
                         <Label className="text-xs font-medium text-gray-500">Station (Machine)</Label>
-                        <Select 
-                           value={newUser.stationId ? String(newUser.stationId) : "unassigned"} 
-                           onValueChange={(val) => setNewUser({ ...newUser, stationId: val === "unassigned" ? "" : val })}
-                           disabled={!newUser.subSectionId}
-                        >
-                          <SelectTrigger className="h-9"><SelectValue placeholder="Select Station" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">None</SelectItem>
-                            {createStations.map((st) => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <FormSelect
+                          multiple={true}
+                          placeholder="Select Stations"
+                          value={newUser.stations}
+                          onValueChange={(values) => setNewUser({
+                            ...newUser,
+                            stations: values
+                          })}
+                          options={createStations.map(st => ({ value: String(st.id), label: st.name }))}
+                          disabled={!newUser.subSections.length}
+                        />
                       </div>
                     </div>
                   </div>
@@ -689,7 +783,7 @@ const AllUsersManagement = () => {
                 </Button>
                 <Button
                   onClick={handleCreateUser}
-                  disabled={!newUser.fullName || !newUser.email}
+                  disabled={!newUser.fullName}
                   className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
                 >
                   Create User
@@ -806,81 +900,91 @@ const AllUsersManagement = () => {
                          Organizational Assignment
                        </h4>
                        
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                         <div className="space-y-2">
-                           <Label className="text-xs font-medium text-gray-500">Department</Label>
-                           <Select 
-                              value={selectedUser.departmentId ? String(selectedUser.departmentId) : "unassigned"} 
-                              onValueChange={(val) => setSelectedUser({ ...selectedUser, departmentId: val === "unassigned" ? "" : val, sectionId: "", lineId: "", subSectionId: "", stationId: "" })}
-                           >
-                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Dept" /></SelectTrigger>
-                             <SelectContent>
-                               {currentUser?.role === 'SUPERADMIN' && <SelectItem value="unassigned">None</SelectItem>}
-                               {departments.map((d) => <SelectItem key={getDeptId(d)} value={String(getDeptId(d))}>{d.name}</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                         </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium text-gray-500">Department</Label>
+                            <FormSelect
+                              multiple={true}
+                              placeholder="Select Departments"
+                              value={selectedUser.departments}
+                              onValueChange={(values) => setSelectedUser({
+                                ...selectedUser,
+                                departments: values,
+                                sections: [],
+                                lines: [],
+                                subSections: [],
+                                stations: []
+                              })}
+                              options={departments.map(d => ({ value: String(getDeptId(d)), label: d.name }))}
+                            />
+                          </div>
 
-                         <div className="space-y-2">
-                           <Label className="text-xs font-medium text-gray-500">Section</Label>
-                           <Select 
-                              value={selectedUser.sectionId ? String(selectedUser.sectionId) : "unassigned"} 
-                              onValueChange={(val) => setSelectedUser({ ...selectedUser, sectionId: val === "unassigned" ? "" : val, lineId: "", subSectionId: "", stationId: "" })}
-                              disabled={!selectedUser.departmentId}
-                           >
-                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Section" /></SelectTrigger>
-                             <SelectContent>
-                               <SelectItem value="unassigned">None</SelectItem>
-                               {editSections.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                         </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium text-gray-500">Section</Label>
+                            <FormSelect
+                              multiple={true}
+                              placeholder="Select Sections"
+                              value={selectedUser.sections}
+                              onValueChange={(values) => setSelectedUser({
+                                ...selectedUser,
+                                sections: values,
+                                lines: [],
+                                subSections: [],
+                                stations: []
+                              })}
+                              options={editSections.map(s => ({ value: String(s.id), label: s.name }))}
+                              disabled={!selectedUser.departments.length}
+                            />
+                          </div>
 
-                         <div className="space-y-2">
-                           <Label className="text-xs font-medium text-gray-500">Line</Label>
-                           <Select 
-                              value={selectedUser.lineId ? String(selectedUser.lineId) : "unassigned"} 
-                              onValueChange={(val) => setSelectedUser({ ...selectedUser, lineId: val === "unassigned" ? "" : val, subSectionId: "", stationId: "" })}
-                              disabled={!selectedUser.sectionId}
-                           >
-                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Line" /></SelectTrigger>
-                             <SelectContent>
-                               <SelectItem value="unassigned">None</SelectItem>
-                               {editLines.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                         </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium text-gray-500">Line</Label>
+                            <FormSelect
+                              multiple={true}
+                              placeholder="Select Lines"
+                              value={selectedUser.lines}
+                              onValueChange={(values) => setSelectedUser({
+                                ...selectedUser,
+                                lines: values,
+                                subSections: [],
+                                stations: []
+                              })}
+                              options={editLines.map(l => ({ value: String(l.id), label: l.name }))}
+                              disabled={!selectedUser.sections.length}
+                            />
+                          </div>
 
-                         <div className="space-y-2">
-                           <Label className="text-xs font-medium text-gray-500">Sub-Section</Label>
-                           <Select 
-                              value={selectedUser.subSectionId ? String(selectedUser.subSectionId) : "unassigned"} 
-                              onValueChange={(val) => setSelectedUser({ ...selectedUser, subSectionId: val === "unassigned" ? "" : val, stationId: "" })}
-                              disabled={!selectedUser.lineId}
-                           >
-                             <SelectTrigger className="h-9"><SelectValue placeholder="Select SubSection" /></SelectTrigger>
-                             <SelectContent>
-                               <SelectItem value="unassigned">None</SelectItem>
-                               {editSubSections.map((ss) => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                         </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium text-gray-500">Sub-Section</Label>
+                            <FormSelect
+                              multiple={true}
+                              placeholder="Select Sub-sections"
+                              value={selectedUser.subSections}
+                              onValueChange={(values) => setSelectedUser({
+                                ...selectedUser,
+                                subSections: values,
+                                stations: []
+                              })}
+                              options={editSubSections.map(ss => ({ value: String(ss.id), label: ss.name }))}
+                              disabled={!selectedUser.lines.length}
+                            />
+                          </div>
 
-                         <div className="space-y-2 sm:col-span-2">
-                           <Label className="text-xs font-medium text-gray-500">Station (Machine)</Label>
-                           <Select 
-                              value={selectedUser.stationId ? String(selectedUser.stationId) : "unassigned"} 
-                              onValueChange={(val) => setSelectedUser({ ...selectedUser, stationId: val === "unassigned" ? "" : val })}
-                              disabled={!selectedUser.subSectionId}
-                           >
-                             <SelectTrigger className="h-9"><SelectValue placeholder="Select Station" /></SelectTrigger>
-                             <SelectContent>
-                               <SelectItem value="unassigned">None</SelectItem>
-                               {editStations.map((st) => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                         </div>
-                       </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Label className="text-xs font-medium text-gray-500">Station (Machine)</Label>
+                            <FormSelect
+                              multiple={true}
+                              placeholder="Select Stations"
+                              value={selectedUser.stations}
+                              onValueChange={(values) => setSelectedUser({
+                                ...selectedUser,
+                                stations: values
+                              })}
+                              options={editStations.map(st => ({ value: String(st.id), label: st.name }))}
+                              disabled={!selectedUser.subSections.length}
+                            />
+                          </div>
+                        </div>
                     </div>
                   </div>
                 </div>
@@ -907,7 +1011,7 @@ const AllUsersManagement = () => {
       </div>
 
       {/* Attendance Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="bg-emerald-50/50 border-emerald-100 shadow-sm hover:shadow-md transition-all duration-300">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
@@ -940,6 +1044,21 @@ const AllUsersManagement = () => {
             </div>
             <div className="bg-rose-600 p-2.5 rounded-xl shadow-lg shadow-rose-200/50 text-white">
               <IconUserX className="w-6 h-6" strokeWidth={2.5} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-slate-50/50 border-slate-100 shadow-sm hover:shadow-md transition-all duration-300">
+          <CardContent className="p-4 flex items-center justify-between text-slate-900">
+            <div>
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Left Users</p>
+              <h3 className="text-2xl font-black leading-none">
+                {isLoading ? "..." : (usersData?.data?.leftCount || 0)}
+              </h3>
+              <p className="text-[10px] text-slate-600/70 font-bold mt-2">Resigned/Terminated</p>
+            </div>
+            <div className="bg-slate-600 p-2.5 rounded-xl shadow-lg shadow-slate-200/50 text-white">
+              <IconUserMinus className="w-6 h-6" strokeWidth={2.5} />
             </div>
           </CardContent>
         </Card>
@@ -1249,6 +1368,7 @@ const AllUsersManagement = () => {
                   <SelectItem value="SUSPENDED">System: Suspended</SelectItem>
                   <SelectItem value="BANNED">System: Banned</SelectItem>
                   <SelectItem value="PENDING">System: Pending</SelectItem>
+                  <SelectItem value="LEFT">Left (Resigned/Terminated)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1498,10 +1618,7 @@ const AllUsersManagement = () => {
                       <td className="px-6 py-4 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           <button
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setShowEditModal(true);
-                            }}
+                            onClick={() => handleOpenEditModal(user)}
                             className="p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
                             title="Edit User"
                           >
@@ -1575,10 +1692,7 @@ const AllUsersManagement = () => {
 
                         <div className="flex shrink-0 items-center space-x-1">
                           <button
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setShowEditModal(true);
-                            }}
+                            onClick={() => handleOpenEditModal(user)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                           >
                             <IconEdit className="w-4 h-4" />

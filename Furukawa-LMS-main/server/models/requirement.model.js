@@ -26,6 +26,8 @@ class Requirement {
         this.monthNumber = data.monthNumber;
         this.salesPlan = data.salesPlan || 0;
         this.prodPlan = data.prodPlan || 0;
+        this.prodPlanFN01 = data.prodPlanFN01 || 0;
+        this.prodPlanFN02 = data.prodPlanFN02 || 0;
         this.year = data.year;
         this.is_active = data.is_active !== undefined ? data.is_active : 1; // Default to 1 (active)
         this.createdAt = data.createdAt;
@@ -46,6 +48,8 @@ class Requirement {
                     monthNumber INT,
                     salesPlan FLOAT DEFAULT 0,
                     prodPlan FLOAT DEFAULT 0,
+                    prodPlanFN01 FLOAT DEFAULT 0,
+                    prodPlanFN02 FLOAT DEFAULT 0,
                     year INT,
                     is_active BIT DEFAULT 1,
                     createdAt DATETIME DEFAULT GETDATE()
@@ -57,6 +61,16 @@ class Requirement {
                 IF COL_LENGTH('requirements', 'is_active') IS NULL
                 BEGIN
                     ALTER TABLE requirements ADD is_active BIT DEFAULT 1;
+                END
+                -- Ensure prodPlanFN01 exists if table was already created
+                IF COL_LENGTH('requirements', 'prodPlanFN01') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD prodPlanFN01 FLOAT DEFAULT 0;
+                END
+                -- Ensure prodPlanFN02 exists if table was already created
+                IF COL_LENGTH('requirements', 'prodPlanFN02') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD prodPlanFN02 FLOAT DEFAULT 0;
                 END
             END
         `;
@@ -73,7 +87,7 @@ class Requirement {
             srNo, sectionCode, sectionName,
             lineCode, lineDescription,
             monthName, monthNumber,
-            salesPlan, prodPlan, year, is_active
+            salesPlan, prodPlan, prodPlanFN01, prodPlanFN02, year, is_active
         } = reqData;
 
         const query = `
@@ -93,19 +107,21 @@ class Requirement {
                     monthName = ?, 
                     salesPlan = ?, 
                     prodPlan = ?,
+                    prodPlanFN01 = ?,
+                    prodPlanFN02 = ?,
                     is_active = ?
             WHEN NOT MATCHED THEN 
-                INSERT (srNo, sectionCode, sectionName, lineCode, lineDescription, monthName, monthNumber, salesPlan, prodPlan, year, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                INSERT (srNo, sectionCode, sectionName, lineCode, lineDescription, monthName, monthNumber, salesPlan, prodPlan, prodPlanFN01, prodPlanFN02, year, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         `;
 
         const params = [
             // Keys for ON clause
             sectionCode, lineCode, monthNumber, year,
             // Fields for UPDATE
-            srNo, sectionName, lineDescription, monthName, salesPlan, prodPlan, (is_active !== undefined ? is_active : 1),
+            srNo, sectionName, lineDescription, monthName, salesPlan, prodPlan, prodPlanFN01 || 0, prodPlanFN02 || 0, (is_active !== undefined ? is_active : 1),
             // Fields for INSERT
-            srNo, sectionCode, sectionName, lineCode, lineDescription, monthName, monthNumber, salesPlan, prodPlan, year, (is_active !== undefined ? is_active : 1)
+            srNo, sectionCode, sectionName, lineCode, lineDescription, monthName, monthNumber, salesPlan, prodPlan, prodPlanFN01 || 0, prodPlanFN02 || 0, year, (is_active !== undefined ? is_active : 1)
         ];
 
         try {

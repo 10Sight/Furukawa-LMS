@@ -45,6 +45,36 @@ const DEFAULT_STRUCTURE = [
     }
 ];
 
+const normalizeContentStructure = (structure, fallbackTitle) => {
+    if (!Array.isArray(structure) || structure.length === 0) {
+        return [
+            {
+                id: `mt-${Date.now()}`,
+                title: fallbackTitle || "1. Main Title Section",
+                contentSections: []
+            }
+        ];
+    }
+    
+    const isNewFormat = structure.every(item => item && Array.isArray(item.contentSections));
+    
+    if (isNewFormat) {
+        return structure.map(block => ({
+            id: block.id || `mt-${Date.now()}-${Math.random()}`,
+            title: block.title || "Main Title Section",
+            contentSections: Array.isArray(block.contentSections) ? block.contentSections : []
+        }));
+    }
+    
+    return [
+        {
+            id: "mt-auto-generated",
+            title: fallbackTitle || "1. Main Title Section",
+            contentSections: structure
+        }
+    ];
+};
+
 const EvaluationTestBuilder = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -56,7 +86,7 @@ const EvaluationTestBuilder = () => {
     // Local builder states
     const [title, setTitle] = useState("Auto Crimping Operation");
     const [performDateCount, setPerformDateCount] = useState(4);
-    const [contentStructure, setContentStructure] = useState(DEFAULT_STRUCTURE);
+    const [contentStructure, setContentStructure] = useState(() => normalizeContentStructure(DEFAULT_STRUCTURE, "1. Taping operation"));
     const [isPrintMode, setIsPrintMode] = useState(isPrintModeUrl);
 
     // RTK Query API Hooks
@@ -70,7 +100,7 @@ const EvaluationTestBuilder = () => {
             const test = fetchResponse.data;
             setTitle(test.title || "");
             setPerformDateCount(test.performDateCount || 4);
-            setContentStructure(test.contentStructure || []);
+            setContentStructure(normalizeContentStructure(test.contentStructure || [], test.title));
         }
     }, [isEditMode, fetchResponse]);
 
@@ -86,147 +116,247 @@ const EvaluationTestBuilder = () => {
     }, [isPrintMode, isPrintModeUrl]);
 
     // Helper functions to manage the dynamic tree structure
-    const addContentBlock = () => {
+    const addMainTitleBlock = () => {
         const newBlock = {
-            id: `c-${Date.now()}`,
-            title: "New Content Section",
-            categories: [
+            id: `mt-${Date.now()}`,
+            title: "New Main Title Section",
+            contentSections: [
                 {
-                    id: `cat-${Date.now()}`,
-                    title: "New Category",
-                    questions: [{ id: `q-${Date.now()}`, text: "New Question / Checking Item" }]
+                    id: `c-${Date.now()}`,
+                    title: "New Content Section",
+                    categories: [
+                        {
+                            id: `cat-${Date.now()}`,
+                            title: "New Category",
+                            questions: [{ id: `q-${Date.now()}`, text: "New Question / Checking Item" }]
+                        }
+                    ]
                 }
             ]
         };
         setContentStructure([...contentStructure, newBlock]);
     };
 
-    const deleteContentBlock = (contentId) => {
-        setContentStructure(contentStructure.filter(c => c.id !== contentId));
+    const deleteMainTitleBlock = (blockId) => {
+        setContentStructure(contentStructure.filter(b => b.id !== blockId));
     };
 
-    const updateContentTitle = (contentId, value) => {
-        setContentStructure(contentStructure.map(c =>
-            c.id === contentId ? { ...c, title: value } : c
+    const updateMainTitleBlockTitle = (blockId, value) => {
+        setContentStructure(contentStructure.map(b =>
+            b.id === blockId ? { ...b, title: value } : b
         ));
     };
 
-    const addCategory = (contentId) => {
-        setContentStructure(contentStructure.map(c => {
-            if (c.id === contentId) {
-                const newCat = {
-                    id: `cat-${Date.now()}`,
-                    title: "New Category",
-                    questions: [{ id: `q-${Date.now()}`, text: "New Question" }]
+    const addContentBlock = (blockId) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
+                const newBlock = {
+                    id: `c-${Date.now()}`,
+                    title: "New Content Section",
+                    categories: [
+                        {
+                            id: `cat-${Date.now()}`,
+                            title: "New Category",
+                            questions: [{ id: `q-${Date.now()}`, text: "New Question / Checking Item" }]
+                        }
+                    ]
                 };
-                return { ...c, categories: [...c.categories, newCat] };
+                return { ...b, contentSections: [...(b.contentSections || []), newBlock] };
             }
-            return c;
+            return b;
         }));
     };
 
-    const deleteCategory = (contentId, catId) => {
-        setContentStructure(contentStructure.map(c => {
-            if (c.id === contentId) {
+    const deleteContentBlock = (blockId, contentId) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
                 return {
-                    ...c,
-                    categories: c.categories.filter(cat => cat.id !== catId)
+                    ...b,
+                    contentSections: (b.contentSections || []).filter(c => c.id !== contentId)
                 };
             }
-            return c;
+            return b;
         }));
     };
 
-    const updateCategoryTitle = (contentId, catId, value) => {
-        setContentStructure(contentStructure.map(c => {
-            if (c.id === contentId) {
+    const updateContentTitle = (blockId, contentId, value) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
                 return {
-                    ...c,
-                    categories: c.categories.map(cat =>
-                        cat.id === catId ? { ...cat, title: value } : cat
+                    ...b,
+                    contentSections: (b.contentSections || []).map(c =>
+                        c.id === contentId ? { ...c, title: value } : c
                     )
                 };
             }
-            return c;
+            return b;
         }));
     };
 
-    const addQuestion = (contentId, catId) => {
-        setContentStructure(contentStructure.map(c => {
-            if (c.id === contentId) {
+    const addCategory = (blockId, contentId) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
                 return {
-                    ...c,
-                    categories: c.categories.map(cat => {
-                        if (cat.id === catId) {
-                            return {
-                                ...cat,
-                                questions: [...cat.questions, { id: `q-${Date.now()}`, text: "New Question" }]
+                    ...b,
+                    contentSections: (b.contentSections || []).map(c => {
+                        if (c.id === contentId) {
+                            const newCat = {
+                                id: `cat-${Date.now()}`,
+                                title: "New Category",
+                                questions: [{ id: `q-${Date.now()}`, text: "New Question" }]
                             };
+                            return { ...c, categories: [...(c.categories || []), newCat] };
                         }
-                        return cat;
+                        return c;
                     })
                 };
             }
-            return c;
+            return b;
         }));
     };
 
-    const deleteQuestion = (contentId, catId, qId) => {
-        setContentStructure(contentStructure.map(c => {
-            if (c.id === contentId) {
+    const deleteCategory = (blockId, contentId, catId) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
                 return {
-                    ...c,
-                    categories: c.categories.map(cat => {
-                        if (cat.id === catId) {
+                    ...b,
+                    contentSections: (b.contentSections || []).map(c => {
+                        if (c.id === contentId) {
                             return {
-                                ...cat,
-                                questions: cat.questions.filter(q => q.id !== qId)
+                                ...c,
+                                categories: (c.categories || []).filter(cat => cat.id !== catId)
                             };
                         }
-                        return cat;
+                        return c;
                     })
                 };
             }
-            return c;
+            return b;
         }));
     };
 
-    const updateQuestionText = (contentId, catId, qId, value) => {
-        setContentStructure(contentStructure.map(c => {
-            if (c.id === contentId) {
+    const updateCategoryTitle = (blockId, contentId, catId, value) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
                 return {
-                    ...c,
-                    categories: c.categories.map(cat => {
-                        if (cat.id === catId) {
+                    ...b,
+                    contentSections: (b.contentSections || []).map(c => {
+                        if (c.id === contentId) {
                             return {
-                                ...cat,
-                                questions: cat.questions.map(q =>
-                                    q.id === qId ? { ...q, text: value } : q
+                                ...c,
+                                categories: (c.categories || []).map(cat =>
+                                    cat.id === catId ? { ...cat, title: value } : cat
                                 )
                             };
                         }
-                        return cat;
+                        return c;
                     })
                 };
             }
-            return c;
+            return b;
         }));
     };
 
-    // Calculate dynamic rows counts for perfect merged grid alignment
-    const getRowSpanCalculations = () => {
-        let globalIndex = 0;
+    const addQuestion = (blockId, contentId, catId) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
+                return {
+                    ...b,
+                    contentSections: (b.contentSections || []).map(c => {
+                        if (c.id === contentId) {
+                            return {
+                                ...c,
+                                categories: (c.categories || []).map(cat => {
+                                    if (cat.id === catId) {
+                                        return {
+                                            ...cat,
+                                            questions: [...(cat.questions || []), { id: `q-${Date.now()}`, text: "New Question" }]
+                                        };
+                                    }
+                                    return cat;
+                                })
+                            };
+                        }
+                        return c;
+                    })
+                };
+            }
+            return b;
+        }));
+    };
+
+    const deleteQuestion = (blockId, contentId, catId, qId) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
+                return {
+                    ...b,
+                    contentSections: (b.contentSections || []).map(c => {
+                        if (c.id === contentId) {
+                            return {
+                                ...c,
+                                categories: (c.categories || []).map(cat => {
+                                    if (cat.id === catId) {
+                                        return {
+                                            ...cat,
+                                            questions: (cat.questions || []).filter(q => q.id !== qId)
+                                        };
+                                    }
+                                    return cat;
+                                })
+                            };
+                        }
+                        return c;
+                    })
+                };
+            }
+            return b;
+        }));
+    };
+
+    const updateQuestionText = (blockId, contentId, catId, qId, value) => {
+        setContentStructure(contentStructure.map(b => {
+            if (b.id === blockId) {
+                return {
+                    ...b,
+                    contentSections: (b.contentSections || []).map(c => {
+                        if (c.id === contentId) {
+                            return {
+                                ...c,
+                                categories: (c.categories || []).map(cat => {
+                                    if (cat.id === catId) {
+                                        return {
+                                            ...cat,
+                                            questions: (cat.questions || []).map(q =>
+                                                q.id === qId ? { ...q, text: value } : q
+                                            )
+                                        };
+                                    }
+                                    return cat;
+                                })
+                            };
+                        }
+                        return c;
+                    })
+                };
+            }
+            return b;
+        }));
+    };
+
+    // Calculate dynamic rows counts for perfect merged grid alignment per Main Title block
+    const getRowSpanCalculationsForBlock = (contentSections, startIdx = 1) => {
+        let globalIndex = startIdx - 1;
         const rowStructure = [];
 
-        contentStructure.forEach((content) => {
+        (contentSections || []).forEach((content) => {
             let contentQCount = 0;
             const contentRows = [];
 
-            content.categories.forEach((cat) => {
-                const catQCount = cat.questions.length;
+            (content.categories || []).forEach((cat) => {
+                const catQCount = (cat.questions || []).length;
                 contentQCount += catQCount;
 
-                cat.questions.forEach((q, qIdx) => {
+                (cat.questions || []).forEach((q, qIdx) => {
                     globalIndex++;
                     contentRows.push({
                         qId: q.id,
@@ -251,10 +381,18 @@ const EvaluationTestBuilder = () => {
             rowStructure.push(...contentRows);
         });
 
-        return rowStructure;
+        return { rowStructure, nextIdx: globalIndex + 1 };
     };
 
-    const flatRows = getRowSpanCalculations();
+    const precomputedBlocks = React.useMemo(() => {
+        return contentStructure.map((block) => {
+            const { rowStructure } = getRowSpanCalculationsForBlock(block.contentSections || [], 1);
+            return {
+                ...block,
+                rows: rowStructure
+            };
+        });
+    }, [contentStructure]);
 
     const handleSave = async () => {
         if (!title.trim()) {
@@ -385,109 +523,122 @@ const EvaluationTestBuilder = () => {
                                 <td className="border border-black p-2 bg-white" colSpan={3}></td>
                                 <td className="border border-black p-2 bg-white" colSpan={performDateCount + 1}></td>
                             </tr>
-
-                            {/* Dynamic Title Indicator row (Replaces "Auto Crimping Operation") */}
-                            <tr className="bg-blue-50/20 font-bold border border-black text-xs sm:text-sm uppercase text-left">
-                                <td className="p-3 border border-black font-extrabold text-blue-700 text-center" colSpan={1}>1.</td>
-                                <td className="p-3 border border-black bg-white" colSpan={performDateCount + 4}>
-                                    {title || "Dynamic Test Paper Title"}
-                                </td>
-                            </tr>
-
-                            {/* Row 1: Content, Checking items, Process Spec/Intro columns, Comment */}
-                            <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
-                                <th className="border-r border-black p-2 w-[12%] text-center align-middle" rowSpan={3}>Content</th>
-                                <th className="border-r border-black p-2 w-[42%] text-center align-middle" colSpan={3} rowSpan={3}>Checking items</th>
-                                {Array.from({ length: performDateCount }).map((_, idx) => (
-                                    <th
-                                        key={idx}
-                                        className="border-r border-black p-1 text-[8.5px] font-bold text-center leading-normal align-middle bg-white w-12 font-sans text-black"
-                                        rowSpan={1}
-                                    >
-                                        {idx === 0 ? "Process introduction & Process Specific" : "Process Specific"}
-                                    </th>
-                                ))}
-                                <th className="p-2 w-[15%] text-center uppercase tracking-wider align-middle" rowSpan={3}>Comment</th>
-                            </tr>
-                            {/* Row 2: Evaluation result spanning all evaluation columns */}
-                            <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
-                                <th className="border-r border-black p-2 text-center align-middle font-bold uppercase tracking-wider text-[11px]" colSpan={performDateCount} rowSpan={1}>
-                                    Evaluation result
-                                </th>
-                            </tr>
-                            {/* Row 3: Perform date indicators */}
-                            <tr className="bg-gray-50/50 border-b border-black font-semibold text-[9px] text-center">
-                                {Array.from({ length: performDateCount }).map((_, idx) => (
-                                    <th key={idx} className="border-r border-black p-1 text-[8.5px] font-bold whitespace-nowrap leading-none align-middle">
-                                        <div className="border-b border-gray-200 pb-0.5 mb-0.5">{idx + 1}</div>
-                                        <div>Perform date</div>
-                                    </th>
-                                ))}
-                            </tr>
                         </thead>
                         <tbody>
-                            {flatRows.length === 0 ? (
+                            {precomputedBlocks.length === 0 ? (
                                 <tr>
                                     <td colSpan={5 + performDateCount} className="p-8 text-center text-gray-400 italic">
                                         No checking items added yet. Build the structure in the form panel.
                                     </td>
                                 </tr>
                             ) : (
-                                flatRows.map((row, idx) => (
-                                    <tr key={row.qId} className="border-b border-black hover:bg-gray-50/40 transition-colors">
-                                        {/* Content Column Cell (Merged) */}
-                                        {row.isFirstInContent && (
-                                            <td
-                                                rowSpan={row.contentSpan}
-                                                className="border-r border-black p-2 font-bold text-center align-middle uppercase text-gray-800 bg-gray-50/20 text-[10px] break-all leading-normal"
-                                            >
-                                                {row.contentTitle}
+                                precomputedBlocks.map((block, blockIdx) => (
+                                    <React.Fragment key={block.id}>
+                                        {/* Dynamic Title Indicator row (Main Title Section) */}
+                                        <tr className="bg-blue-50/20 font-bold border border-black text-xs sm:text-sm uppercase text-left">
+                                            <td className="p-3 border border-black font-extrabold text-blue-700 text-center" colSpan={1}>
+                                                {blockIdx + 1}.
                                             </td>
+                                            <td className="p-3 border border-black bg-white" colSpan={performDateCount + 4}>
+                                                {block.title || "Dynamic Test Paper Title"}
+                                            </td>
+                                        </tr>
+
+                                        {/* Sub-Header Rows for this Block */}
+                                        <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
+                                            <th className="border-r border-black p-2 w-[12%] text-center align-middle" rowSpan={3}>Content</th>
+                                            <th className="border-r border-black p-2 w-[42%] text-center align-middle" colSpan={3} rowSpan={3}>Checking items</th>
+                                            {Array.from({ length: performDateCount }).map((_, idx) => (
+                                                <th
+                                                    key={idx}
+                                                    className="border-r border-black p-1 text-[8.5px] font-bold text-center leading-normal align-middle bg-white w-12 font-sans text-black"
+                                                    rowSpan={1}
+                                                >
+                                                    {idx === 0 ? "Process introduction & Process Specific" : "Process Specific"}
+                                                </th>
+                                            ))}
+                                            <th className="p-2 w-[15%] text-center uppercase tracking-wider align-middle" rowSpan={3}>Comment</th>
+                                        </tr>
+                                        <tr className="bg-gray-100 border-b border-black font-bold text-center text-[10px] sm:text-xs">
+                                            <th className="border-r border-black p-2 text-center align-middle font-bold uppercase tracking-wider text-[11px]" colSpan={performDateCount} rowSpan={1}>
+                                                Evaluation result
+                                            </th>
+                                        </tr>
+                                        <tr className="bg-gray-50/50 border-b border-black font-semibold text-[9px] text-center">
+                                            {Array.from({ length: performDateCount }).map((_, idx) => (
+                                                <th key={idx} className="border-r border-black p-1 text-[8.5px] font-bold whitespace-nowrap leading-none align-middle">
+                                                    <div className="border-b border-gray-200 pb-0.5 mb-0.5">{idx + 1}</div>
+                                                    <div>Perform date</div>
+                                                </th>
+                                            ))}
+                                        </tr>
+
+                                        {/* Question Rows for this Block */}
+                                        {block.rows.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5 + performDateCount} className="p-6 text-center text-gray-400 italic">
+                                                    No questions added under this title section.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            block.rows.map((row, idx) => (
+                                                <tr key={row.qId} className="border-b border-black hover:bg-gray-50/40 transition-colors">
+                                                    {/* Content Column Cell (Merged) */}
+                                                    {row.isFirstInContent && (
+                                                        <td
+                                                            rowSpan={row.contentSpan}
+                                                            className="border-r border-black p-2 font-bold text-center align-middle uppercase text-gray-800 bg-gray-50/20 text-[10px] break-words whitespace-normal leading-normal"
+                                                        >
+                                                            {row.contentTitle}
+                                                        </td>
+                                                    )}
+
+                                                    {/* Category Column Cell (Merged) - Omitted if category title is blank */}
+                                                    {row.isFirstInCat && row.catTitle?.trim() && (
+                                                        <td
+                                                            rowSpan={row.catSpan}
+                                                            className="border-r border-black p-2 font-semibold text-center align-middle text-gray-700 text-[10px] break-words whitespace-normal leading-normal bg-gray-50/10"
+                                                        >
+                                                            {row.catTitle}
+                                                        </td>
+                                                    )}
+
+                                                    {/* Checking Question Number Cell */}
+                                                    <td className="border-r border-black p-2 text-center align-middle font-bold text-blue-700 bg-gray-50/5 text-[10.5px] w-8 shrink-0">
+                                                        {row.qIndex}
+                                                    </td>
+
+                                                    {/* Checking Question Description Cell - Spans 2 columns if category is blank */}
+                                                    <td 
+                                                        colSpan={!row.catTitle?.trim() ? 2 : 1}
+                                                        className="border-r border-black p-2.5 align-middle leading-relaxed text-[10.5px] text-gray-900 font-medium whitespace-pre-line"
+                                                    >
+                                                        {row.qText}
+                                                    </td>
+
+                                                    {/* Evaluation Columns Cells */}
+                                                    {Array.from({ length: performDateCount }).map((_, colIdx) => (
+                                                        <td key={colIdx} className="border-r border-black p-2 text-center align-middle w-12 h-10"></td>
+                                                    ))}
+
+                                                    {/* Comment Column Cell */}
+                                                    <td className="p-2 align-middle text-center w-[15%]"></td>
+                                                </tr>
+                                            ))
                                         )}
 
-                                        {/* Category Column Cell (Merged) - Omitted if category title is blank */}
-                                        {row.isFirstInCat && row.catTitle?.trim() && (
-                                            <td
-                                                rowSpan={row.catSpan}
-                                                className="border-r border-black p-2 font-semibold text-center align-middle text-gray-700 text-[10px] break-all leading-normal bg-gray-50/10"
-                                            >
-                                                {row.catTitle}
+                                        {/* Evaluation footer statement for this Block */}
+                                        <tr className="border-t border-b-2 border-black font-semibold text-xs bg-gray-50/50">
+                                            <td colSpan={3} className="border-r border-black p-3 font-bold text-center uppercase tracking-wider align-middle bg-gray-100">
+                                                Evaluation
                                             </td>
-                                        )}
-
-                                        {/* Checking Question Number Cell */}
-                                        <td className="border-r border-black p-2 text-center align-middle font-bold text-blue-700 bg-gray-50/5 text-[10.5px] w-8 shrink-0">
-                                            {row.qIndex}
-                                        </td>
-
-                                        {/* Checking Question Description Cell - Spans 2 columns if category is blank */}
-                                        <td 
-                                            colSpan={!row.catTitle?.trim() ? 2 : 1}
-                                            className="border-r border-black p-2.5 align-middle leading-relaxed text-[10.5px] text-gray-900 font-medium whitespace-pre-line"
-                                        >
-                                            {row.qText}
-                                        </td>
-
-                                        {/* Evaluation Columns Cells */}
-                                        {Array.from({ length: performDateCount }).map((_, colIdx) => (
-                                            <td key={colIdx} className="border-r border-black p-2 text-center align-middle w-12 h-10"></td>
-                                        ))}
-
-                                        {/* Comment Column Cell */}
-                                        <td className="p-2 align-middle text-center w-[15%]"></td>
-                                    </tr>
+                                            <td colSpan={2 + performDateCount} className="p-3 text-orange-600 font-bold text-center tracking-normal leading-relaxed text-[11px] sm:text-xs">
+                                                30 minutes daily session discussion (Question / Answer) hearing from employee
+                                            </td>
+                                        </tr>
+                                    </React.Fragment>
                                 ))
                             )}
-
-                            {/* Evaluation footer statement */}
-                            <tr className="border-t-2 border-black font-semibold text-xs bg-gray-50/50">
-                                <td colSpan={3} className="border-r border-black p-3 font-bold text-center uppercase tracking-wider align-middle bg-gray-100">
-                                    Evaluation
-                                </td>
-                                <td colSpan={2 + performDateCount} className="p-3 text-orange-600 font-bold text-center tracking-normal leading-relaxed text-[11px] sm:text-xs">
-                                    30 minutes daily session discussion (Question / Answer) hearing from employee
-                                </td>
-                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -600,20 +751,20 @@ const EvaluationTestBuilder = () => {
                     <Card className="border border-gray-150 shadow-sm rounded-xl">
                         <CardHeader className="bg-gray-50/60 rounded-t-xl border-b border-gray-100">
                             <CardTitle className="text-base font-semibold text-gray-800">Form Configuration</CardTitle>
-                            <CardDescription>Setup main titles, dynamic date counts, and structured checking lists.</CardDescription>
+                            <CardDescription>Setup overall test paper details and perform date counts.</CardDescription>
                         </CardHeader>
                         <CardContent className="p-5 space-y-4">
                             {/* Title Field */}
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">Test Paper Main Title</label>
+                                <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">Test Paper Overall Name</label>
                                 <Input
                                     type="text"
-                                    placeholder="e.g. Auto Crimping Operation"
+                                    placeholder="e.g. DOJO Evaluation test of practical education"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
                                     className="border-gray-200 focus:ring-blue-100"
                                 />
-                                <p className="text-[10px] text-gray-400">Replaces "Auto Crimping Operation" dynamically in your sheet layout.</p>
+                                <p className="text-[10px] text-gray-400">The overall identifier of this DOJO evaluation sheet.</p>
                             </div>
 
                             {/* Perform Date Columns Count Field */}
@@ -639,106 +790,152 @@ const EvaluationTestBuilder = () => {
                         <CardHeader className="bg-gray-50/60 rounded-t-xl border-b border-gray-100 flex flex-row items-center justify-between py-4">
                             <div>
                                 <CardTitle className="text-base font-semibold text-gray-800">Checking Structure Builder</CardTitle>
-                                <CardDescription>Arrange Content headers, sub-categories, and questions.</CardDescription>
+                                <CardDescription>Arrange Main Title sections, Content headers, sub-categories, and questions.</CardDescription>
                             </div>
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={addContentBlock}
+                                onClick={addMainTitleBlock}
                                 className="border-blue-200 text-blue-700 hover:bg-blue-50 text-xs font-bold flex items-center gap-1.5"
                             >
                                 <IconPlus className="h-3.5 w-3.5" />
-                                Add Content
+                                Add Main Title Section
                             </Button>
                         </CardHeader>
                         <CardContent className="p-5 space-y-6 overflow-y-auto max-h-[600px] scrollbar-thin">
-                            {contentStructure.map((content, cIdx) => (
-                                <div key={content.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50/40 space-y-4 shadow-sm relative group">
-                                    {/* Content Block Header */}
-                                    <div className="flex items-center justify-between gap-3">
+                            {contentStructure.map((block, bIdx) => (
+                                <div key={block.id} className="border border-gray-200 rounded-xl p-5 bg-white space-y-4 shadow-sm relative group mb-6">
+                                    {/* Main Title Block Header */}
+                                    <div className="flex items-center justify-between gap-3 border-b border-gray-150 pb-3">
                                         <div className="flex-1 space-y-1">
-                                            <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Content Section {cIdx + 1}</span>
+                                            <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                Main Title Section {bIdx + 1}
+                                            </span>
                                             <Input
                                                 type="text"
-                                                placeholder="Content Title (e.g. Preparation)"
-                                                value={content.title}
-                                                onChange={(e) => updateContentTitle(content.id, e.target.value)}
-                                                className="border-gray-200 font-bold bg-white text-sm focus:ring-blue-100"
+                                                placeholder="Main Title Section (e.g. 1. Taping operation)"
+                                                value={block.title}
+                                                onChange={(e) => updateMainTitleBlockTitle(block.id, e.target.value)}
+                                                className="border-gray-200 font-extrabold text-base focus:ring-blue-100 bg-blue-50/10"
                                             />
                                         </div>
                                         <Button
                                             variant="ghost"
                                             size="icon"
-                                            onClick={() => deleteContentBlock(content.id)}
+                                            onClick={() => deleteMainTitleBlock(block.id)}
                                             className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 self-end"
-                                            title="Delete Content Section"
+                                            title="Delete Main Title Section"
                                         >
                                             <IconTrash className="h-4.5 w-4.5" />
                                         </Button>
                                     </div>
 
-                                    {/* Nested Category Section */}
-                                    <div className="pl-4 border-l-2 border-blue-200 space-y-4">
-                                        {content.categories.map((cat, catIdx) => (
-                                            <div key={cat.id} className="border border-gray-150 rounded-lg p-3 bg-white space-y-3 relative">
-                                                <div className="flex items-center justify-between gap-2">
+                                    {/* Content Sections inside this Main Title Block */}
+                                    <div className="pl-4 border-l-2 border-blue-300 space-y-4">
+                                        {(block.contentSections || []).map((content, cIdx) => (
+                                            <div key={content.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50/40 space-y-4 shadow-xs relative group/c">
+                                                {/* Content Section Header */}
+                                                <div className="flex items-center justify-between gap-3">
                                                     <div className="flex-1 space-y-1">
-                                                        <span className="text-[9px] font-extrabold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Category {catIdx + 1}</span>
+                                                        <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                            Content Section {cIdx + 1}
+                                                        </span>
                                                         <Input
                                                             type="text"
-                                                            placeholder="Category Name (e.g. Prepare equipment)"
-                                                            value={cat.title}
-                                                            onChange={(e) => updateCategoryTitle(content.id, cat.id, e.target.value)}
-                                                            className="border-gray-200 font-semibold bg-white text-xs py-1 h-8 focus:ring-teal-100"
+                                                            placeholder="Content Section Title (e.g. Daily checking)"
+                                                            value={content.title}
+                                                            onChange={(e) => updateContentTitle(block.id, content.id, e.target.value)}
+                                                            className="border-gray-200 font-bold bg-white text-sm focus:ring-blue-100"
                                                         />
                                                     </div>
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        onClick={() => deleteCategory(content.id, cat.id)}
-                                                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 self-end"
-                                                        title="Delete Category"
+                                                        onClick={() => deleteContentBlock(block.id, content.id)}
+                                                        className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 self-end"
+                                                        title="Delete Content Section"
                                                     >
-                                                        <IconTrash className="h-4 w-4" />
+                                                        <IconTrash className="h-4.5 w-4.5" />
                                                     </Button>
                                                 </div>
 
-                                                {/* Nested Questions List */}
-                                                <div className="pl-3 border-l border-teal-200 space-y-2">
-                                                    <span className="text-[8px] font-extrabold text-gray-400 uppercase tracking-widest block">Checking Questions</span>
-                                                    {cat.questions.map((q, qIdx) => (
-                                                        <div key={q.id} className="flex gap-2 items-start group/q">
-                                                            <div className="flex-1 flex gap-2 items-center">
-                                                                <span className="text-[10px] font-bold text-gray-400 bg-gray-50 h-6 w-6 rounded-full flex items-center justify-center border border-gray-100 shrink-0">
-                                                                    {qIdx + 1}
-                                                                </span>
-                                                                <Input
-                                                                    type="text"
-                                                                    placeholder="e.g. Can he prepare applicator? क्या वह..."
-                                                                    value={q.text}
-                                                                    onChange={(e) => updateQuestionText(content.id, cat.id, q.id, e.target.value)}
-                                                                    className="border-gray-200 text-xs py-1 h-8 focus:ring-gray-100 bg-white"
-                                                                />
+                                                {/* Categories under Content Section */}
+                                                <div className="pl-4 border-l-2 border-indigo-250 space-y-4">
+                                                    {(content.categories || []).map((cat, catIdx) => (
+                                                        <div key={cat.id} className="border border-gray-150 rounded-lg p-3 bg-white space-y-3 relative">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <div className="flex-1 space-y-1">
+                                                                    <span className="text-[9px] font-extrabold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                                        Category {catIdx + 1}
+                                                                    </span>
+                                                                    <Input
+                                                                        type="text"
+                                                                        placeholder="Category Name (e.g. ASSY DRAWING)"
+                                                                        value={cat.title}
+                                                                        onChange={(e) => updateCategoryTitle(block.id, content.id, cat.id, e.target.value)}
+                                                                        className="border-gray-200 font-semibold bg-white text-xs py-1 h-8 focus:ring-teal-100"
+                                                                    />
+                                                                </div>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    onClick={() => deleteCategory(block.id, content.id, cat.id)}
+                                                                    className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 self-end"
+                                                                    title="Delete Category"
+                                                                >
+                                                                    <IconTrash className="h-4 w-4" />
+                                                                </Button>
                                                             </div>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                onClick={() => deleteQuestion(content.id, cat.id, q.id)}
-                                                                className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover/q:opacity-100 transition-opacity"
-                                                                title="Delete Question"
-                                                            >
-                                                                <IconTrash className="h-3.5 w-3.5" />
-                                                            </Button>
+
+                                                            {/* Questions List */}
+                                                            <div className="pl-3 border-l border-teal-200 space-y-2">
+                                                                <span className="text-[8px] font-extrabold text-gray-400 uppercase tracking-widest block">Checking Questions</span>
+                                                                {(cat.questions || []).map((q, qIdx) => (
+                                                                    <div key={q.id} className="flex gap-2 items-start group/q">
+                                                                        <div className="flex-1 flex gap-2 items-center">
+                                                                            <span className="text-[10px] font-bold text-gray-400 bg-gray-50 h-6 w-6 rounded-full flex items-center justify-center border border-gray-100 shrink-0">
+                                                                                {qIdx + 1}
+                                                                            </span>
+                                                                            <Input
+                                                                                type="text"
+                                                                                placeholder="e.g. Can he prepare applicator? क्या वह..."
+                                                                                value={q.text}
+                                                                                onChange={(e) => updateQuestionText(block.id, content.id, cat.id, q.id, e.target.value)}
+                                                                                className="border-gray-200 text-xs py-1 h-8 focus:ring-gray-100 bg-white"
+                                                                            />
+                                                                        </div>
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="icon"
+                                                                            onClick={() => deleteQuestion(block.id, content.id, cat.id, q.id)}
+                                                                            className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover/q:opacity-100 transition-opacity"
+                                                                            title="Delete Question"
+                                                                        >
+                                                                            <IconTrash className="h-3.5 w-3.5" />
+                                                                        </Button>
+                                                                    </div>
+                                                                ))}
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() => addQuestion(block.id, content.id, cat.id)}
+                                                                    className="text-[10px] font-bold text-teal-600 hover:text-teal-700 hover:bg-teal-50/70 p-1 h-6 flex items-center gap-1 mt-1"
+                                                                >
+                                                                    <IconPlus className="h-3.5 w-3.5" />
+                                                                    Add Question
+                                                                </Button>
+                                                            </div>
                                                         </div>
                                                     ))}
+
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => addQuestion(content.id, cat.id)}
-                                                        className="text-[10px] font-bold text-teal-600 hover:text-teal-700 hover:bg-teal-50/70 p-1 h-6 flex items-center gap-1 mt-1"
+                                                        onClick={() => addCategory(block.id, content.id)}
+                                                        className="text-xs font-bold text-teal-600 hover:text-teal-700 hover:bg-teal-50/70 py-1 px-2 h-7 flex items-center gap-1"
                                                     >
                                                         <IconPlus className="h-3.5 w-3.5" />
-                                                        Add Question
+                                                        Add Category
                                                     </Button>
                                                 </div>
                                             </div>
@@ -747,11 +944,11 @@ const EvaluationTestBuilder = () => {
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={() => addCategory(content.id)}
+                                            onClick={() => addContentBlock(block.id)}
                                             className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50/70 py-1 px-2 h-7 flex items-center gap-1"
                                         >
                                             <IconPlus className="h-3.5 w-3.5" />
-                                            Add Category
+                                            Add Content Section
                                         </Button>
                                     </div>
                                 </div>

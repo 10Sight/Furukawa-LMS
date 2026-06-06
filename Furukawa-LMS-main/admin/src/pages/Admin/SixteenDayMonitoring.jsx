@@ -42,8 +42,9 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import axiosInstance from '@/Helper/axiosInstance';
+import { toast } from 'sonner';
 
-const SixteenDayMonitoring = () => {
+const SixteenDayMonitoring = ({ readOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
 
@@ -87,10 +88,11 @@ const SixteenDayMonitoring = () => {
     const { studentId: paramStudentId } = useParams();
 
     // Selections
-    const [dept, setDept] = useState("");
+    const [dept, setDept] = useState("ALL");
     const [section, setSection] = useState("");
     const [line, setLine] = useState("");
     const [studentId, setStudentId] = useState("");
+    const [activeDept, setActiveDept] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
     const [forceNewAttempt, setForceNewAttempt] = useState(false);
 
@@ -142,14 +144,38 @@ const SixteenDayMonitoring = () => {
 
     // Fetch Monitoring Status List
     const fetchMonitoringList = async () => {
-        if (!dept || activeTab !== 'stack' || studentId) return;
+        if (activeTab !== 'stack' || studentId) return;
         try {
             setLoadingList(true);
-            const res = await axiosInstance.get(`/api/sixteen-day-monitoring`, {
-                params: { departmentId: dept, sectionId: section, lineId: line }
-            });
-            if (res.data.success) {
-                setMonitoringList(res.data.data);
+
+            if (dept === "ALL") {
+                // Backend requires a departmentId — fetch each accessible dept in parallel
+                if (assignableDepartments.length === 0) {
+                    setMonitoringList([]);
+                    return;
+                }
+                const results = await Promise.all(
+                    assignableDepartments.map(d =>
+                        axiosInstance.get(`/api/sixteen-day-monitoring`, {
+                            params: {
+                                departmentId: String(d.id || d._id),
+                                ...(section && { sectionId: section }),
+                                ...(line && { lineId: line }),
+                            }
+                        })
+                        .then(res => res.data.success ? res.data.data : [])
+                        .catch(() => [])
+                    )
+                );
+                setMonitoringList(results.flat());
+            } else {
+                const params = { departmentId: dept };
+                if (section) params.sectionId = section;
+                if (line) params.lineId = line;
+                const res = await axiosInstance.get(`/api/sixteen-day-monitoring`, { params });
+                if (res.data.success) {
+                    setMonitoringList(res.data.data);
+                }
             }
         } catch (error) {
             console.error("Error fetching monitoring list:", error);
@@ -159,10 +185,10 @@ const SixteenDayMonitoring = () => {
     };
 
     useEffect(() => {
-        if (dept && !studentId && activeTab === 'stack') {
+        if (!studentId && activeTab === 'stack') {
             fetchMonitoringList();
         }
-    }, [dept, section, line, studentId, activeTab]);
+    }, [dept, section, line, studentId, activeTab, assignableDepartments]);
 
     // Role-based Initialization & Auto-select
     useEffect(() => {
@@ -217,6 +243,17 @@ const SixteenDayMonitoring = () => {
         return { label: status, color: 'bg-slate-100 text-slate-600 border-slate-200' };
     };
 
+    const getLatestFilledDay = (gridData) => {
+        if (!gridData) return "Not Started";
+        for (let day = 16; day >= 1; day--) {
+            const dateVal = gridData[`attendance_date_${day}`];
+            if (dateVal && dateVal.toString().trim()) {
+                return `Day ${day} (${dateVal})`;
+            }
+        }
+        return "Not Started";
+    };
+
     const filteredMonitoringList = useMemo(() => {
         if (!searchTerm) return monitoringList;
         const lowSearch = searchTerm.toLowerCase();
@@ -251,12 +288,20 @@ const SixteenDayMonitoring = () => {
                         <IconDatabase size={18} />
                         Monitoring Stack
                     </button>
-                    {(isAdmin || hasManagePermission) && (
+                    {(isAdmin || hasManagePermission) && !readOnly && (
                         <button
-                            onClick={() => { setActiveTab('layout'); setStudentId(""); }}
+                            onClick={() => {
+                                if (dept === "ALL") {
+                                    toast.info("Select a specific department to manage its layout.");
+                                    return;
+                                }
+                                setActiveTab('layout');
+                                setStudentId("");
+                            }}
                             className={cn(
                                 "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
-                                activeTab === 'layout' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                activeTab === 'layout' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                                dept === "ALL" && "opacity-50 cursor-not-allowed"
                             )}
                         >
                             <IconLayoutDashboard size={18} />
@@ -281,11 +326,12 @@ const SixteenDayMonitoring = () => {
                                 <Label className="text-xs font-semibold text-slate-500 uppercase">Department</Label>
                                 <Select
                                     value={String(dept)}
-                                    onValueChange={(val) => { setDept(val); setSection(""); setLine(""); setStudentId(""); }}
-                                    disabled={(isSelectionLocked && !!authUser?.departmentId) || (!isAdmin && assignableDepartments.length <= 1 && !!dept)}
+                                    onValueChange={(val) => { setDept(val); setSection(""); setLine(""); setStudentId(""); setActiveDept(""); }}
+                                    disabled={(isSelectionLocked && !!authUser?.departmentId) || (!isAdmin && assignableDepartments.length <= 1 && !!dept && dept !== "ALL")}
                                 >
-                                    <SelectTrigger className="h-10 bg-white border-slate-200"><SelectValue placeholder="Select Dept" /></SelectTrigger>
+                                    <SelectTrigger className="h-10 bg-white border-slate-200"><SelectValue placeholder="All Departments" /></SelectTrigger>
                                     <SelectContent>
+                                        <SelectItem value="ALL">All Departments</SelectItem>
                                         {assignableDepartments.map((d) => (
                                             <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                         ))}
@@ -376,7 +422,7 @@ const SixteenDayMonitoring = () => {
                                     variant="ghost"
                                     size="sm"
                                     className="mb-2 gap-2 text-slate-600 hover:text-indigo-600"
-                                    onClick={() => setStudentId("")}
+                                    onClick={() => { setStudentId(""); setActiveDept(""); }}
                                 >
                                     <IconArrowLeft size={16} />
                                     Back to Stack
@@ -387,9 +433,9 @@ const SixteenDayMonitoring = () => {
                                 studentId={studentId}
                                 studentName={selectedStudent?.fullName}
                                 employeeCode={selectedStudent?.empId}
-                                departmentId={dept}
+                                departmentId={activeDept || (dept !== "ALL" ? dept : "")}
                                 sectionId={section || 0}
-                                readOnly={isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId))}
+                                readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
                                 initialForceNewAttempt={forceNewAttempt}
                                 onAfterSave={handleAfterMonitoringSave}
                             />
@@ -399,7 +445,7 @@ const SixteenDayMonitoring = () => {
                                     <MenteeFeedbackMonitoringSheet
                                         ref={feedbackRef}
                                         studentId={studentId}
-                                        readOnly={!(canManageFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId)))}
+                                        readOnly={readOnly || !(canManageFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId)))}
                                     />
                                 </div>
                             )}
@@ -410,8 +456,11 @@ const SixteenDayMonitoring = () => {
                                 <TableHeader className="bg-slate-50/50">
                                     <TableRow className="border-slate-200 h-12">
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500 pl-6 w-[300px]">Operator Details</TableHead>
+                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approval Status</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Monitoring Status</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Actions By</TableHead>
+                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Start Date</TableHead>
+                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Last Date</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Last Update</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500 text-right pr-6">Action</TableHead>
                                     </TableRow>
@@ -419,7 +468,7 @@ const SixteenDayMonitoring = () => {
                                 <TableBody>
                                     {loadingList ? (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="h-40 text-center text-slate-400">
+                                            <TableCell colSpan={8} className="h-40 text-center text-slate-400">
                                                 <div className="flex flex-col items-center gap-2">
                                                     <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                                                     <span className="text-xs font-medium">Loading operators...</span>
@@ -468,11 +517,26 @@ const SixteenDayMonitoring = () => {
                                                             )}
                                                         </div>
                                                     </TableCell>
+                                                    <TableCell className="text-xs font-semibold text-slate-700">
+                                                        {getLatestFilledDay(item.gridData)}
+                                                    </TableCell>
                                                     <TableCell className="text-xs font-medium text-slate-600">
                                                         <div className="flex flex-col">
                                                             <span>{lastActionBy}</span>
                                                             {item.attemptNumber > 1 && <span className="text-[9px] text-slate-400 italic">Latest Attempt</span>}
                                                         </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-xs font-medium text-slate-500">
+                                                        {item.startDate
+                                                            ? new Date(item.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                            : <span className="text-slate-300 italic">Not started</span>
+                                                        }
+                                                    </TableCell>
+                                                    <TableCell className="text-xs font-medium text-slate-500">
+                                                        {item.gridData?.attendance_date_16
+                                                            ? new Date(item.gridData.attendance_date_16).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                            : <span className="text-slate-300 italic">-</span>
+                                                        }
                                                     </TableCell>
                                                     <TableCell className="text-xs font-medium text-slate-500">
                                                         {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : "-"}
@@ -485,18 +549,20 @@ const SixteenDayMonitoring = () => {
                                                                 className={cn("h-8 text-xs font-bold", !item.status && "bg-indigo-600 hover:bg-indigo-700")}
                                                                 onClick={() => {
                                                                     setStudentId(String(item.id));
+                                                                    setActiveDept(String(item.departmentId || ""));
                                                                     setForceNewAttempt(false);
                                                                 }}
                                                             >
-                                                                {item.status ? "View Latest" : "Start Monitoring"}
+                                                                {item.status ? (readOnly ? "View" : "View Latest") : (readOnly ? "View" : "Start Monitoring")}
                                                             </Button>
-                                                            {badge.label.includes("Rejected") && (
+                                                            {badge.label.includes("Rejected") && !readOnly && (
                                                                 <Button
                                                                     size="sm"
                                                                     variant="default"
                                                                     className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
                                                                     onClick={() => {
                                                                         setStudentId(String(item.id));
+                                                                        setActiveDept(String(item.departmentId || ""));
                                                                         setForceNewAttempt(true);
                                                                     }}
                                                                 >
@@ -511,7 +577,7 @@ const SixteenDayMonitoring = () => {
                                         })
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="h-40 text-center">
+                                            <TableCell colSpan={8} className="h-40 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <IconUsersGroup className="w-12 h-12 text-slate-200" />
                                                     <span className="text-sm text-slate-400 font-medium">No operators found for selection</span>

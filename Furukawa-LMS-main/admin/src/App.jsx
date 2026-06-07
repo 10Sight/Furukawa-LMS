@@ -497,6 +497,9 @@ const App = () => {
             <Route path="on-job-training" element={<OnJobTraining />} />
             <Route path="onboarding-id" element={<OnboardingID />} />
             <Route path="attendance" element={<Attendance />} />
+            <Route path="requirements" element={<SetRequirements />} />
+            <Route path="requirement-logs" element={<RequirementUpdateLogs />} />
+            <Route path="email-reports" element={<EmailReports />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />
             <Route path="dpr-manage" element={<DPRManage />} />
             <Route path="16-day-monitoring" element={<SixteenDayMonitoring />} />

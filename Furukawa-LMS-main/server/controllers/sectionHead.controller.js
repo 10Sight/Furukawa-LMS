@@ -19,7 +19,7 @@ const getSectionHeadById = asyncHandler(async (req, res) => {
 });
 
 const createSectionHead = asyncHandler(async (req, res) => {
-    const { sectionId, subSectionId, email, name } = req.body;
+    const { sectionId, subSectionId, email, name, CCMail } = req.body;
     if (!email) {
         return res.status(400).json(new ApiResponse(400, null, "Email is required"));
     }
@@ -28,7 +28,8 @@ const createSectionHead = asyncHandler(async (req, res) => {
         sectionId,
         subSectionId,
         email,
-        name
+        name,
+        CCMail
     });
 
     return res.status(201).json(new ApiResponse(201, head, "Section head created successfully"));
@@ -36,9 +37,9 @@ const createSectionHead = asyncHandler(async (req, res) => {
 
 const updateSectionHead = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { sectionId, subSectionId, email, name } = req.body;
+    const { sectionId, subSectionId, email, name, CCMail } = req.body;
 
-    const updated = await SectionHead.update(id, { sectionId, subSectionId, email, name });
+    const updated = await SectionHead.update(id, { sectionId, subSectionId, email, name, CCMail });
     if (!updated) {
         return res.status(404).json(new ApiResponse(404, null, "Section head not found or no changes made"));
     }

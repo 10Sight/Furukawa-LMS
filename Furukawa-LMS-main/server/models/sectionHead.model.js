@@ -13,6 +13,7 @@ class SectionHead {
                     subSectionId INT NULL,
                     email NVARCHAR(255) NOT NULL,
                     name NVARCHAR(255) NULL,
+                    CCMail NVARCHAR(510) NULL,
                     created_at DATETIME DEFAULT GETDATE(),
                     CONSTRAINT FK_sh_Section FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE,
                     CONSTRAINT FK_sh_SubSection FOREIGN KEY (subSectionId) REFERENCES [lines](id) ON DELETE CASCADE
@@ -29,6 +30,12 @@ class SectionHead {
                     TRUNCATE TABLE [dbo].[section_heads];
                     
                     ALTER TABLE [dbo].[section_heads] ADD CONSTRAINT FK_sh_Section FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE;
+                END
+
+                -- Ensure CCMail column exists
+                IF COL_LENGTH('section_heads', 'CCMail') IS NULL
+                BEGIN
+                    ALTER TABLE [dbo].[section_heads] ADD CCMail NVARCHAR(510) NULL;
                 END
             END
         `;
@@ -79,14 +86,14 @@ class SectionHead {
     }
 
     static async create(data) {
-        const { sectionId, subSectionId, email, name } = data;
+        const { sectionId, subSectionId, email, name, CCMail } = data;
         const query = `
-            INSERT INTO section_heads (sectionId, subSectionId, email, name)
+            INSERT INTO section_heads (sectionId, subSectionId, email, name, CCMail)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
         `;
         // OUTPUT INSERTED.id puts the new id into result.recordset[0].id (not meta.insertId which is always null in mssqlHelper)
-        const [rows] = await executeSql(query, [sectionId || null, subSectionId || null, email, name || null]);
+        const [rows] = await executeSql(query, [sectionId || null, subSectionId || null, email, name || null, CCMail || null]);
         const insertedId = rows?.[0]?.id ?? null;
         return { id: insertedId, ...data };
     }
@@ -97,8 +104,8 @@ class SectionHead {
 
         if (updates.sectionId !== undefined) { fields.push("sectionId = ?"); values.push(updates.sectionId || null); }
         if (updates.subSectionId !== undefined) { fields.push("subSectionId = ?"); values.push(updates.subSectionId || null); }
-        if (updates.email !== undefined) { fields.push("email = ?"); values.push(updates.email); }
         if (updates.name !== undefined) { fields.push("name = ?"); values.push(updates.name || null); }
+        if (updates.CCMail !== undefined) { fields.push("CCMail = ?"); values.push(updates.CCMail || null); }
 
         if (fields.length === 0) return null;
 

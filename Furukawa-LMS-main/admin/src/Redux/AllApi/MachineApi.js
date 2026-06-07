@@ -13,7 +13,7 @@ export const MachineApi = createApi({
                 method: "POST",
                 data,
             }),
-            invalidatesTags: ["Machine"],
+            invalidatesTags: ["Machine", "SubSection", "Line", "Section"],
         }),
 
         // Get Machines by Sub-Section
@@ -59,7 +59,7 @@ export const MachineApi = createApi({
                 method: "PUT",
                 data,
             }),
-            invalidatesTags: ["Machine"],
+            invalidatesTags: ["Machine", "SubSection", "Line", "Section"],
         }),
 
         // Delete Machine
@@ -69,7 +69,7 @@ export const MachineApi = createApi({
                 method: "PUT",
                 data: { isActive },
             }),
-            invalidatesTags: ["Machine"],
+            invalidatesTags: ["Machine", "SubSection", "Line", "Section"],
         }),
 
         deleteMachine: builder.mutation({
@@ -77,7 +77,7 @@ export const MachineApi = createApi({
                 url: `/api/machines/${id}`,
                 method: "DELETE",
             }),
-            invalidatesTags: ["Machine"],
+            invalidatesTags: ["Machine", "SubSection", "Line", "Section"],
         }),
 
         // Get Machine By ID
@@ -100,7 +100,10 @@ export const MachineApi = createApi({
                 "MachineEmployees", 
                 { type: "User", id: userId }, 
                 { type: "User", id: "LIST" },
-                "User"
+                "User",
+                "SubSection",
+                "Line",
+                "Section"
             ],
         }),
 
@@ -114,7 +117,10 @@ export const MachineApi = createApi({
                 "MachineEmployees", 
                 { type: "User", id: userId },
                 { type: "User", id: "LIST" },
-                "User"
+                "User",
+                "SubSection",
+                "Line",
+                "Section"
             ],
         }),
 

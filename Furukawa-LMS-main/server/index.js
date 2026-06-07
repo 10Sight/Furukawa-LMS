@@ -53,12 +53,20 @@ import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
 import timelineScheduler from "./services/timelineScheduler.js";
 import departmentStatusScheduler from "./services/departmentStatusScheduler.js";
 import reportScheduler from "./services/reportScheduler.js";
+import handoverNotificationScheduler from "./services/handoverNotificationScheduler.js";
+import sixteenDayMonitoringScheduler from "./services/sixteenDayMonitoringScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
 import sixteenDayMonitoringRoutes from "./routes/sixteenDayMonitoring.routes.js";
+import threeDayMonitoringRoutes from "./routes/threeDayMonitoring.routes.js";
 import tenCycleSheetRoutes from "./routes/tenCycleSheet.routes.js";
 import reportClubRoutes from "./routes/reportClub.routes.js";
+import menteeFeedbackRoutes from "./routes/menteeFeedback.routes.js";
+import learningComparisonRoutes from "./routes/learningComparison.routes.js";
+import evaluationTestRoutes from "./routes/evaluationTest.routes.js";
+import adminHomeRoutes from "./routes/adminHome.routes.js";
+import abnormalConditionRoutes from "./routes/abnormalCondition.routes.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
 
 import machineRoutes from "./routes/machine.routes.js";
@@ -78,9 +86,12 @@ import Certificate from "./models/certificate.model.js";
 import HandoverSheet from "./models/handoverSheet.model.js";
 import attendanceRoutes from "./routes/attendance.routes.js";
 import multiSkillingPlanRoutes from "./routes/multiSkillingPlan.routes.js";
+import skillUpgradationPlanRoutes from "./routes/skillUpgradationPlan.routes.js";
 import HeadcountReport from "./models/headcountReport.model.js";
 import HandoverSheetConfig from "./models/handoverSheetConfig.model.js";
 import MultiSkillingPlanConfig from "./models/multiSkillingPlanConfig.model.js";
+import SkillUpgradationPlan from "./models/skillUpgradationPlan.model.js";
+import SkillUpgradationPlanConfig from "./models/skillUpgradationPlanConfig.model.js";
 import SkillMatrixDashboardConfig from "./models/skillMatrixDashboardConfig.model.js";
 import Requirement from "./models/requirement.model.js";
 import SubSection from "./models/subSection.model.js";
@@ -89,6 +100,11 @@ import LineRequirement from "./models/lineRequirement.model.js";
 import LineRequirementHistory from "./models/lineRequirementHistory.model.js";
 import ReportClub from "./models/reportClub.model.js";
 import UserHierarchySnapshot from "./models/userHierarchySnapshot.model.js";
+import MenteeFeedback from "./models/menteeFeedback.model.js";
+import Course from "./models/course.model.js";
+import Quiz from "./models/quiz.model.js";
+import EvaluationTest from "./models/evaluationTest.model.js";
+import EvaluationTestAttempt from "./models/evaluationTestAttempt.model.js";
 
 const app = express();
 const allowedOrigins = [
@@ -142,7 +158,33 @@ const uploadPath = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadPath)) {
     fs.mkdirSync(uploadPath, { recursive: true });
 }
-app.use("/uploads", express.static(uploadPath));
+app.use("/uploads", express.static(uploadPath, {
+    setHeaders: (res, filePath) => {
+        const ext = path.extname(filePath).toLowerCase();
+        
+        // Map extensions to content types
+        const typeMap = {
+            '.pdf': 'application/pdf',
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+            '.ogg': 'video/ogg',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.txt': 'text/plain',
+            '.mp3': 'audio/mpeg'
+        };
+
+        if (typeMap[ext]) {
+            res.setHeader('Content-Type', typeMap[ext]);
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
 
 
 // Security headers
@@ -224,6 +266,7 @@ app.use("/api/machines", machineRoutes);
 app.use("/api/lines", lineRoutes);
 app.use("/api/skill-matrix", skillMatrixRoutes);
 app.use("/api/multi-skilling-plan", multiSkillingPlanRoutes);
+app.use("/api/skill-upgradation-plan", skillUpgradationPlanRoutes);
 app.use("/api/import", importRoutes);
 app.use("/api/requirements", requirementRoutes);
 app.use("/api/line-requirements", lineRequirementRoutes);
@@ -233,12 +276,19 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/operator-observance", operatorObservanceRoutes);
 app.use("/api/daily-5m", daily5MRoutes);
 app.use("/api/daily-production-report", dailyProductionReportRoutes);
+app.use("/api/v1/daily-production-report", dailyProductionReportRoutes);
 app.use("/api/sixteen-day-monitoring", sixteenDayMonitoringRoutes);
+app.use("/api/three-day-monitoring", threeDayMonitoringRoutes);
 app.use("/api/ten-cycle-sheets", tenCycleSheetRoutes);
 app.use("/api/section-heads", sectionHeadRoutes);
 app.use("/api/sections", sectionRoutes);
 app.use("/api/sub-sections", subSectionRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
+app.use("/api/mentee-feedback", menteeFeedbackRoutes);
+app.use("/api/learning-comparisons", learningComparisonRoutes);
+app.use("/api/evaluation-tests", evaluationTestRoutes);
+app.use("/api/admin-home", adminHomeRoutes);
+app.use("/api/abnormal-conditions", abnormalConditionRoutes);
 
 
 // Initialize Socket.IO service
@@ -391,32 +441,46 @@ app.use('/api', (req, res) => {
 
 const startServer = async () => {
     try {
-
         // Validate DB Connection
         await connectDB();
-        await HandoverSheet.init();
-        await Requirement.init();
-        await SubSection.init();
-        await SectionHead.init();
-
-        // Initialize schedulers after DB connection
+        
+        // Initialize Schedulers
         timelineScheduler.init();
         departmentStatusScheduler.init();
         reportScheduler.init();
+        handoverNotificationScheduler.init();
+        sixteenDayMonitoringScheduler.init();
 
-        // Initialize Tables
+        // Initialize Core Tables
+        await HandoverSheet.init();
+        await Requirement.init();
+        await SectionHead.init();
         await HeadcountReport.init();
         await import("./models/skillMatrixConfig.model.js").then(m => m.SkillMatrixConfig.init());
         await import("./models/skillMatrixEvaluation.model.js").then(m => m.SkillMatrixEvaluation.init());
         await MonitoringConfig.init();
         await HandoverSheetConfig.init();
         await MultiSkillingPlanConfig.init();
+        await SkillUpgradationPlan.init();
+        await SkillUpgradationPlanConfig.init();
         await SkillMatrixDashboardConfig.init();
+        await Course.init();
+        await Quiz.init();
+        await EvaluationTest.init();
+        await EvaluationTestAttempt.init();
+
+        // Initialize Hierarchy in Order: Section -> Line -> SubSection
+        const Section = (await import("./models/section.model.js")).default;
+        await Section.init();
         await Line.init();
+        await SubSection.init();
+
         await LineRequirement.init();
         await LineRequirementHistory.init();
         await ReportClub.init();
         await UserHierarchySnapshot.init();
+        await MenteeFeedback.init();
+        await import("./models/abnormalCondition.model.js").then(m => m.default.init());
 
         server.listen(PORT, () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);
@@ -426,12 +490,16 @@ const startServer = async () => {
         process.on('SIGINT', () => {
             timelineScheduler.stop();
             departmentStatusScheduler.stop();
+            handoverNotificationScheduler.stop();
+            sixteenDayMonitoringScheduler.stop();
             process.exit(0);
         });
 
         process.on('SIGTERM', () => {
             timelineScheduler.stop();
             departmentStatusScheduler.stop();
+            handoverNotificationScheduler.stop();
+            sixteenDayMonitoringScheduler.stop();
             process.exit(0);
         });
 

@@ -2,6 +2,8 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { slugify } from "../utils/slugify.js";
 import logger from "../logger/winston.logger.js";
 
+import migrationHelper from "../db/migrationHelper.js";
+
 class Quiz {
     constructor(data) {
         this.id = data.id;
@@ -16,8 +18,24 @@ class Quiz {
         this.createdBy = data.createdBy;
         this.isPublished = !!data.isPublished;
         this.attemptsAllowed = data.attemptsAllowed !== undefined ? data.attemptsAllowed : 1;
-        this.skillUpgradation = !!data.skillUpgradation;
-        this.issueCertificate = data.issueCertificate !== undefined ? !!data.issueCertificate : true; // Default true for backward compatibility or logical sense? Or false? User request implies optionality. Let's verify defaults. Usually existing quizzes might want it to yes if they had skillUpgradation? Let's default to true locally if undefined, but explicit in SQL default might be needed. Let's checking init sql.
+        if (typeof data.skillUpgradation === 'string') {
+            try {
+                const parsed = JSON.parse(data.skillUpgradation);
+                this.skillUpgradation = !!parsed;
+            } catch (e) {
+                this.skillUpgradation = data.skillUpgradation === 'true';
+            }
+        } else {
+            this.skillUpgradation = !!data.skillUpgradation;
+        }
+        this.issueCertificate = data.issueCertificate !== undefined ? !!data.issueCertificate : true;
+        this.isDojo = !!data.isDojo;
+        this.isMultiSkilling = !!data.isMultiSkilling;
+        this.isHandover = !!data.isHandover;
+        this.isTheoretical = !!data.isTheoretical;
+        this.conductedBy = data.conductedBy !== undefined && data.conductedBy !== null ? data.conductedBy : "";
+        this.paperTitle = data.paperTitle || null;
+        this.paperSubTitle = data.paperSubTitle || null;
 
         // Resource linking & Legacy fields
         this.courseId = data.courseId || data.course;
@@ -33,6 +51,13 @@ class Quiz {
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
+
+        // Multi-department and section support
+        this.departmentId = typeof data.departmentId === 'string' ? JSON.parse(data.departmentId || "[]") : (data.departmentId || []);
+        this.sectionId = typeof data.sectionId === 'string' ? JSON.parse(data.sectionId || "[]") : (data.sectionId || []);
+        this.lineId = typeof data.lineId === 'string' ? JSON.parse(data.lineId || "[]") : (data.lineId || []);
+        this.subSectionId = typeof data.subSectionId === 'string' ? JSON.parse(data.subSectionId || "[]") : (data.subSectionId || []);
+        this.level = data.level;
     }
 
     calculateType() {
@@ -45,8 +70,10 @@ class Quiz {
             return "lesson";
         } else if (this.moduleId || this.module) {
             return "module";
-        } else {
+        } else if (this.courseId || this.course) {
             return "course";
+        } else {
+            return "standalone";
         }
     }
 
@@ -63,41 +90,102 @@ class Quiz {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='quizzes' and xtype='U')
-            BEGIN
-            CREATE TABLE quizzes (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                title NVARCHAR(255) NOT NULL,
-                slug NVARCHAR(255) UNIQUE,
-                description NVARCHAR(MAX),
-                questions NVARCHAR(MAX),
-                passingScore INT NOT NULL,
-                timeLimit INT,
-                createdBy NVARCHAR(255) NOT NULL,
-                isPublished BIT DEFAULT 0,
-                attemptsAllowed INT DEFAULT 1,
-                skillUpgradation NVARCHAR(MAX),
-                issueCertificate BIT DEFAULT 1,
-                courseId NVARCHAR(255),
-                course NVARCHAR(255),
-                moduleId NVARCHAR(255),
-                module NVARCHAR(255),
-                lesson NVARCHAR(255),
-                lessonId NVARCHAR(255),
-                type NVARCHAR(50),
-                scope NVARCHAR(50),
-                createdAt DATETIME DEFAULT GETDATE(),
-                updatedAt DATETIME DEFAULT GETDATE()
-            );
-            CREATE INDEX idx_quiz_course ON quizzes(course);
-            CREATE INDEX idx_quiz_module ON quizzes(module);
-            END
-        `;
-        try {
-            await executeQuery(query);
-        } catch (error) {
-            logger.error("Failed to initialize Quiz table", error);
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                const query = `
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'quizzes')
+                    BEGIN
+                        CREATE TABLE quizzes (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            title NVARCHAR(255) NOT NULL,
+                            slug NVARCHAR(255) UNIQUE,
+                            description NVARCHAR(MAX),
+                            questions NVARCHAR(MAX),
+                            passingScore INT NOT NULL,
+                            timeLimit INT,
+                            createdBy NVARCHAR(255) NOT NULL,
+                            isPublished BIT DEFAULT 0,
+                            attemptsAllowed INT DEFAULT 1,
+                            skillUpgradation NVARCHAR(MAX),
+                            issueCertificate BIT DEFAULT 1,
+                            courseId NVARCHAR(255),
+                            course NVARCHAR(255),
+                            moduleId NVARCHAR(255),
+                            module NVARCHAR(255),
+                            lesson NVARCHAR(255),
+                            lessonId NVARCHAR(255),
+                            type NVARCHAR(50),
+                            scope NVARCHAR(50),
+                            departmentId NVARCHAR(MAX),
+                            sectionId NVARCHAR(MAX),
+                            lineId NVARCHAR(MAX),
+                            subSectionId NVARCHAR(MAX),
+                            level NVARCHAR(50),
+                            isDojo BIT DEFAULT 0,
+                            isHandover BIT DEFAULT 0,
+                            isTheoretical BIT DEFAULT 0,
+                            conductedBy NVARCHAR(255) DEFAULT '',
+                            paperTitle NVARCHAR(500),
+                            paperSubTitle NVARCHAR(500),
+                            createdAt DATETIME DEFAULT GETDATE(),
+                            updatedAt DATETIME DEFAULT GETDATE()
+                        );
+                        CREATE INDEX idx_quiz_course ON quizzes(course);
+                        CREATE INDEX idx_quiz_module ON quizzes(module);
+                    END
+                `;
+                await executeQuery(query);
+
+                // Manual migration check for columns using INFORMATION_SCHEMA
+                const columns = [
+                    { name: 'departmentId', type: 'NVARCHAR(MAX)' },
+                    { name: 'sectionId', type: 'NVARCHAR(MAX)' },
+                    { name: 'lineId', type: 'NVARCHAR(MAX)' },
+                    { name: 'subSectionId', type: 'NVARCHAR(MAX)' },
+                    { name: 'level', type: 'NVARCHAR(50)' },
+                    { name: 'isDojo', type: 'BIT DEFAULT 0' },
+                    { name: 'isHandover', type: 'BIT DEFAULT 0' },
+                    { name: 'isTheoretical', type: 'BIT DEFAULT 0' },
+                    { name: 'conductedBy', type: "NVARCHAR(255) DEFAULT ''" },
+                    { name: 'paperTitle', type: 'NVARCHAR(500)' },
+                    { name: 'paperSubTitle', type: 'NVARCHAR(500)' },
+                    { name: 'isMultiSkilling', type: 'BIT DEFAULT 0' }
+                ];
+
+                for (const col of columns) {
+                    const checkColQuery = `
+                        IF NOT EXISTS (
+                            SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                            WHERE TABLE_NAME = 'quizzes' AND COLUMN_NAME = '${col.name}'
+                        )
+                        BEGIN
+                            ALTER TABLE [quizzes] ADD [${col.name}] ${col.type}
+                        END
+                    `;
+                    await executeQuery(checkColQuery);
+                }
+
+                // Ensure correct types
+                await migrationHelper.ensureColumnType('quizzes', 'departmentId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('quizzes', 'sectionId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('quizzes', 'lineId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('quizzes', 'subSectionId', 'NVARCHAR(MAX)');
+
+                logger.info("Quiz table initialized successfully");
+                break; // Success
+            } catch (error) {
+                if (error.message.toLowerCase().includes('deadlock') && attempts < maxAttempts) {
+                    logger.warn(`Quiz table initialization deadlock (attempt ${attempts}), retrying in 500ms...`);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } else {
+                    logger.error("Failed to initialize Quiz table", error);
+                    break;
+                }
+            }
         }
     }
 
@@ -121,14 +209,14 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "createdAt"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "createdAt", "isMultiSkilling"
         ];
 
         if (!quiz.createdAt) quiz.createdAt = new Date();
 
         const values = fields.map(field => {
             let val = quiz[field];
-            if (field === 'questions') return JSON.stringify(val);
+            if (field === 'questions' || field === 'departmentId' || field === 'sectionId' || field === 'lineId' || field === 'subSectionId') return JSON.stringify(val || []);
             if (val === undefined) return null;
             return val;
         });
@@ -210,13 +298,13 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "isMultiSkilling"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => {
             let val = this[field];
-            if (field === 'questions') return JSON.stringify(val);
+            if (field === 'questions' || field === 'departmentId' || field === 'sectionId' || field === 'lineId' || field === 'subSectionId') return JSON.stringify(val || []);
             return val;
         });
         values.push(this.id);

@@ -17,26 +17,70 @@ import {
     useUpdateSubSectionMutation,
     useDeleteSubSectionMutation,
 } from "@/Redux/AllApi/SubSectionApi";
-import { IconPlus, IconEdit, IconLoader, IconCheck, IconX, IconTrash } from "@tabler/icons-react";
+import { IconPlus, IconEdit, IconLoader, IconCheck, IconX, IconTrash, IconFileText, IconClipboardList } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
-const SubSectionManager = ({ lineId }) => {
+const SubSectionManager = ({ lineId, sectionId }) => {
     const navigate = useNavigate();
     const { departmentId } = useParams();
     const { data: subSectionsData, isLoading, error } = useGetSubSectionsByLineQuery(lineId);
     const [createSubSection, { isLoading: isCreating }] = useCreateSubSectionMutation();
     const [updateSubSection, { isLoading: isUpdating }] = useUpdateSubSectionMutation();
     const [deleteSubSection, { isLoading: isDeleting }] = useDeleteSubSectionMutation();
+    const { data: activeConfigData } = useGetActiveConfigQuery();
+    const activeLevels = activeConfigData?.data?.levels || [];
 
     const [newName, setNewName] = useState("");
     const [newDescription, setNewDescription] = useState("");
+    const [newMinLevel, setNewMinLevel] = useState("none");
+    const [newMinEff, setNewMinEff] = useState("");
+    const [newMaxEff, setNewMaxEff] = useState("");
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingSubSection, setEditingSubSection] = useState(null);
     const [editName, setEditName] = useState("");
     const [editDescription, setEditDescription] = useState("");
+    const [editMinLevel, setEditMinLevel] = useState("none");
+    const [editMinEff, setEditMinEff] = useState("");
+    const [editMaxEff, setEditMaxEff] = useState("");
+
+    const handleMinLevelChangeCreate = (value) => {
+        setNewMinLevel(value);
+        if (value === "none") return;
+        const selectedLevel = activeLevels.find(level => level.name === value);
+        if (selectedLevel) {
+            if (selectedLevel.minEfficiency !== undefined && selectedLevel.minEfficiency !== null && selectedLevel.minEfficiency !== "") {
+                setNewMinEff(String(selectedLevel.minEfficiency));
+            }
+            if (selectedLevel.maxEfficiency !== undefined && selectedLevel.maxEfficiency !== null && selectedLevel.maxEfficiency !== "") {
+                setNewMaxEff(String(selectedLevel.maxEfficiency));
+            }
+        }
+    };
+
+    const handleMinLevelChangeEdit = (value) => {
+        setEditMinLevel(value);
+        if (value === "none") return;
+        const selectedLevel = activeLevels.find(level => level.name === value);
+        if (selectedLevel) {
+            if (selectedLevel.minEfficiency !== undefined && selectedLevel.minEfficiency !== null && selectedLevel.minEfficiency !== "") {
+                setEditMinEff(String(selectedLevel.minEfficiency));
+            }
+            if (selectedLevel.maxEfficiency !== undefined && selectedLevel.maxEfficiency !== null && selectedLevel.maxEfficiency !== "") {
+                setEditMaxEff(String(selectedLevel.maxEfficiency));
+            }
+        }
+    };
 
     const handleCreate = async () => {
         if (!newName.trim()) {
@@ -48,11 +92,17 @@ const SubSectionManager = ({ lineId }) => {
             await createSubSection({
                 name: newName,
                 lineId,
-                description: newDescription
+                description: newDescription,
+                minimumRequiredLevel: newMinLevel === "none" ? null : newMinLevel,
+                minEfficiency: newMinEff !== "" ? parseFloat(newMinEff) : null,
+                maxEfficiency: newMaxEff !== "" ? parseFloat(newMaxEff) : null,
             }).unwrap();
             toast.success("Sub-Section created successfully");
             setNewName("");
             setNewDescription("");
+            setNewMinLevel("none");
+            setNewMinEff("");
+            setNewMaxEff("");
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create sub-section");
@@ -76,6 +126,9 @@ const SubSectionManager = ({ lineId }) => {
         setEditingSubSection(subSection);
         setEditName(subSection.name || "");
         setEditDescription(subSection.description || "");
+        setEditMinLevel(subSection.minimumRequiredLevel || "none");
+        setEditMinEff(subSection.minEfficiency !== null && subSection.minEfficiency !== undefined ? String(subSection.minEfficiency) : "");
+        setEditMaxEff(subSection.maxEfficiency !== null && subSection.maxEfficiency !== undefined ? String(subSection.maxEfficiency) : "");
         setIsEditDialogOpen(true);
     };
 
@@ -89,7 +142,10 @@ const SubSectionManager = ({ lineId }) => {
             await updateSubSection({
                 id: editingSubSection.id || editingSubSection._id,
                 name: editName,
-                description: editDescription
+                description: editDescription,
+                minimumRequiredLevel: editMinLevel === "none" ? null : editMinLevel,
+                minEfficiency: editMinEff !== "" ? parseFloat(editMinEff) : null,
+                maxEfficiency: editMaxEff !== "" ? parseFloat(editMaxEff) : null,
             }).unwrap();
             toast.success("Sub-Section updated successfully");
             setIsEditDialogOpen(false);
@@ -104,7 +160,8 @@ const SubSectionManager = ({ lineId }) => {
             toast.error("Invalid sub-section ID");
             return;
         }
-        navigate(`/admin/departments/${departmentId}/lines/${lineId}/sub-sections/${subId}`);
+        const baseLayout = window.location.pathname.split('/')[1] || 'admin';
+        navigate(`/${baseLayout}/departments/${departmentId}/lines/${lineId}/sub-sections/${subId}`);
     };
 
     return (
@@ -143,6 +200,50 @@ const SubSectionManager = ({ lineId }) => {
                                     onChange={(e) => setNewDescription(e.target.value)}
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="newMinLevel">Minimum Required Level</Label>
+                                <Select value={newMinLevel} onValueChange={handleMinLevelChangeCreate}>
+                                    <SelectTrigger id="newMinLevel">
+                                        <SelectValue placeholder="Select level" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">None</SelectItem>
+                                        {activeLevels.map((level) => (
+                                            <SelectItem key={level.name} value={level.name}>
+                                                {level.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <Label htmlFor="newMinEff">Min Efficiency (%)</Label>
+                                    <Input
+                                        id="newMinEff"
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        placeholder="e.g. 60"
+                                        value={newMinEff}
+                                        onChange={(e) => setNewMinEff(e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="newMaxEff">Max Efficiency (%)</Label>
+                                    <Input
+                                        id="newMaxEff"
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        placeholder="e.g. 100"
+                                        value={newMaxEff}
+                                        onChange={(e) => setNewMaxEff(e.target.value)}
+                                    />
+                                </div>
+                            </div>
                         </div>
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
@@ -178,6 +279,50 @@ const SubSectionManager = ({ lineId }) => {
                                     onChange={(e) => setEditDescription(e.target.value)}
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="editMinLevel">Minimum Required Level</Label>
+                                <Select value={editMinLevel} onValueChange={handleMinLevelChangeEdit}>
+                                    <SelectTrigger id="editMinLevel">
+                                        <SelectValue placeholder="Select level" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">None</SelectItem>
+                                        {activeLevels.map((level) => (
+                                            <SelectItem key={level.name} value={level.name}>
+                                                {level.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <Label htmlFor="editMinEff">Min Efficiency (%)</Label>
+                                    <Input
+                                        id="editMinEff"
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        placeholder="e.g. 60"
+                                        value={editMinEff}
+                                        onChange={(e) => setEditMinEff(e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="editMaxEff">Max Efficiency (%)</Label>
+                                    <Input
+                                        id="editMaxEff"
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        placeholder="e.g. 100"
+                                        value={editMaxEff}
+                                        onChange={(e) => setEditMaxEff(e.target.value)}
+                                    />
+                                </div>
+                            </div>
                         </div>
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
@@ -204,6 +349,8 @@ const SubSectionManager = ({ lineId }) => {
                                 <TableRow>
                                     <TableHead className="font-semibold">Name</TableHead>
                                     <TableHead className="font-semibold">Description</TableHead>
+                                    <TableHead className="font-semibold">Min. Level</TableHead>
+                                    <TableHead className="font-semibold">Efficiency Range</TableHead>
                                     <TableHead className="font-semibold">Operators</TableHead>
                                     <TableHead className="text-right font-semibold">Actions</TableHead>
                                 </TableRow>
@@ -212,28 +359,58 @@ const SubSectionManager = ({ lineId }) => {
                                 {subSectionsData?.data?.map((subSection) => (
                                     <TableRow key={subSection.id || subSection._id}>
                                         <TableCell>
-                                                <div 
-                                                    className="cursor-pointer hover:text-blue-600 transition-colors"
-                                                    onClick={() => handleSubSectionClick(subSection.id || subSection._id)}
-                                                >
-                                                    <p className="font-medium text-sm">{subSection.name}</p>
-                                                </div>
+                                            <div
+                                                className="cursor-pointer hover:text-blue-600 transition-colors"
+                                                onClick={() => handleSubSectionClick(subSection.id || subSection._id)}
+                                            >
+                                                <p className="font-medium text-sm">{subSection.name}</p>
+                                            </div>
                                         </TableCell>
                                         <TableCell className="text-sm text-muted-foreground">
                                             {subSection.description || "-"}
+                                        </TableCell>
+                                        <TableCell>
+                                            {subSection.minimumRequiredLevel ? (
+                                                <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                                                    {subSection.minimumRequiredLevel}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted-foreground text-xs">None</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-sm">
+                                            {subSection.minEfficiency !== null && subSection.minEfficiency !== undefined
+                                                ? (
+                                                    <span className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
+                                                        {subSection.minEfficiency}% – {subSection.maxEfficiency ?? "—"}%
+                                                    </span>
+                                                )
+                                                : <span className="text-muted-foreground text-xs">—</span>
+                                            }
                                         </TableCell>
                                         <TableCell className="text-sm font-medium">
                                             {subSection.subSectionCount || 0}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                                <div className="flex justify-end gap-1">
-                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-600" onClick={() => startEditing(subSection)}>
-                                                        <IconEdit className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => handleDelete(subSection.id || subSection._id)}>
-                                                        {isDeleting ? <IconLoader className="h-3.5 w-3.5 animate-spin" /> : <IconTrash className="h-3.5 w-3.5" />}
-                                                    </Button>
-                                                </div>
+                                            <div className="flex justify-end items-center gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    className="h-7 text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 border-0 shadow-none gap-1 px-2.5 flex items-center"
+                                                    onClick={() => {
+                                                        const baseLayout = window.location.pathname.split('/')[1] || 'admin';
+                                                        navigate(`/${baseLayout}/add-test-paper?departmentId=${departmentId}&sectionId=${sectionId || ""}&lineId=${lineId}&subSectionId=${subSection.id || subSection._id}&level=${subSection.minimumRequiredLevel || ""}`);
+                                                    }}
+                                                >
+                                                    <IconFileText className="h-3.5 w-3.5" />
+                                                    Test Paper
+                                                </Button>
+                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-600" onClick={() => startEditing(subSection)}>
+                                                    <IconEdit className="h-3.5 w-3.5" />
+                                                </Button>
+                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => handleDelete(subSection.id || subSection._id)}>
+                                                    {isDeleting ? <IconLoader className="h-3.5 w-3.5 animate-spin" /> : <IconTrash className="h-3.5 w-3.5" />}
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}

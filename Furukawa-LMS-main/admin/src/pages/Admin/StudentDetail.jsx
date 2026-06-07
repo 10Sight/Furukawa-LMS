@@ -15,9 +15,8 @@ import { Button } from "@/components/ui/button";
 import AttemptReviewModal from "@/components/common/AttemptReviewModal";
 import OnJobTrainingTable from "@/components/admin/OnJobTrainingTable"; // Keep this for detail view
 import OJTTrainingRecordSheet from "@/components/admin/OJTTrainingRecordSheet"; // New format
-import OJTList from "@/components/admin/OJTList";
-import CreateOJTDialog from "@/components/admin/CreateOJTDialog";
-import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
+import { useGetStudentOJTsQuery } from "@/Redux/AllApi/OnJobTrainingApi";
+// SkillMatrixCertificate import removed (moved to Skill Matrix page)
 import OperatorObservanceSheet from "@/components/admin/OperatorObservanceSheet";
 import SixteenDayMonitoringSheet from "@/components/admin/SixteenDayMonitoringSheet";
 import ThreeDayMonitoringSheet from "@/components/admin/ThreeDayMonitoringSheet";
@@ -62,6 +61,11 @@ import {
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getMediaUrl } from "@/utils/mediaUtils";
+import { safeDateFormat, displayDate } from "@/utils/dateUtils";
+
+const safeLocaleDate = (dateValue) => {
+  return displayDate(dateValue) || "—";
+};
 
 const StudentDetail = () => {
   const { studentId } = useParams();
@@ -115,13 +119,44 @@ const StudentDetail = () => {
     skip: !studentId || studentId === "undefined",
   });
 
+  const {
+    data: ojtData,
+    isLoading: ojtLoading,
+    error: ojtError,
+    refetch: refetchOjt,
+  } = useGetStudentOJTsQuery(studentId, {
+    skip: !studentId || studentId === "undefined",
+    refetchOnMountOrArgChange: true,
+  });
+
   const student = studentData?.data;
   const progressList = progressData?.data || [];
   const submissions = submissionsData?.data || [];
   const attempts = attemptsData?.data || [];
 
+  // Calculate Operator Efficiency values
+  const currentEff = useMemo(() => {
+    if (!student || student.currentEffeciency === undefined || student.currentEffeciency === null) return "0%";
+    return `${Math.round(student.currentEffeciency * 100) / 100}%`;
+  }, [student]);
+
+  const subSecEff = useMemo(() => {
+    if (!student || !student.subSectionId) return "—";
+    let skillEff = student.skillEffeciency;
+    if (typeof skillEff === 'string') {
+      try { skillEff = JSON.parse(skillEff); } catch (e) { skillEff = {}; }
+    }
+    const eff = skillEff?.[String(student.subSectionId)];
+    return eff !== undefined ? `${Math.round(eff * 100) / 100}%` : "0%";
+  }, [student]);
+
   // Loading state
-  const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading;
+  const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading || ojtLoading;
+
+  const passedOjts = useMemo(() => {
+    const ojts = ojtData?.data || [];
+    return ojts.filter(o => o.result === "Pass" || o.result === "Approved");
+  }, [ojtData]);
 
   // Calculate overall statistics
   const stats = useMemo(() => {
@@ -172,6 +207,7 @@ const StudentDetail = () => {
     refetchProgress();
     refetchSubmissions();
     refetchAttempts();
+    refetchOjt();
     toast.success("Operator data refreshed successfully!");
   };
 
@@ -337,7 +373,20 @@ const StudentDetail = () => {
               </AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">{student.fullName}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-bold tracking-tight">{student.fullName}</h1>
+                <Badge className="bg-indigo-600 text-white border-indigo-700 text-sm py-0.5 px-3">
+                  {student.primaryLevel || "L1"} • {student.primaryStationName || "No Station"}
+                </Badge>
+                <Badge className="bg-emerald-600 text-white border-emerald-700 text-sm py-0.5 px-3">
+                  Overall Eff: {currentEff}
+                </Badge>
+                {student.subSectionName && (
+                  <Badge className="bg-blue-600 text-white border-blue-700 text-sm py-0.5 px-3">
+                    {student.subSectionName} Eff: {subSecEff}
+                  </Badge>
+                )}
+              </div>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-muted-foreground">@{student.userName}</p>
                 {getStatusBadge(student.status)}
@@ -426,6 +475,20 @@ const StudentDetail = () => {
               <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Designation</label>
               <div className="text-sm font-semibold text-indigo-700">{student.designation || "Operator"}</div>
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Current Overall Efficiency</label>
+              <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
+                <IconTrophy className="h-4 w-4 text-amber-500" />
+                <span>{currentEff}</span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Sub-section Efficiency ({student.subSectionName || "No Sub-section"})</label>
+              <div className="flex items-center gap-2 text-sm font-bold text-blue-700">
+                <IconChartBar className="h-4 w-4 text-blue-500" />
+                <span>{subSecEff}</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -449,7 +512,7 @@ const StudentDetail = () => {
                   <div className="group">
                     <p className="text-[10px] text-muted-foreground mb-0.5">Gender / DOB</p>
                     <p className="text-sm font-medium">
-                      {student.gender || "—"} {student.dob ? `(${new Date(student.dob).toLocaleDateString()})` : ""}
+                      {student.gender || "—"} {student.dob ? `(${safeLocaleDate(student.dob)})` : ""}
                     </p>
                   </div>
                   <div className="group">
@@ -467,62 +530,104 @@ const StudentDetail = () => {
                 <div className="space-y-3">
                   <div className="col-span-1 md:col-span-2 mt-2 pt-3 border-t border-slate-100">
                     <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-semibold">Organizational Assignment Flow</p>
-                    <div className="flex flex-wrap items-center gap-y-3 gap-x-1 sm:gap-x-2">
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-md border border-blue-100 shadow-sm transition-all hover:bg-blue-100">
-                        <IconBuilding size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Dept</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">
-                            {typeof student.department === 'object' ? student.department?.name : (student.deptName || student.department || "N/A")}
-                          </span>
+                    <div className="space-y-3">
+                      {(student.assignments && student.assignments.length > 0 ? student.assignments : [
+                        {
+                          deptName: typeof student.department === 'object' ? student.department?.name : (student.deptName || student.department || "N/A"),
+                          sectionName: student.sectionName || "N/A",
+                          lineName: student.lineName || "N/A",
+                          subSectionName: student.subSectionName || "N/A",
+                          stationName: student.stationName || "N/A",
+                          machineId: student.stationId
+                        }
+                      ]).map((assignment, idx) => (
+                        <div key={idx} className={`flex flex-wrap items-center gap-y-2 gap-x-1 sm:gap-x-2 p-2 rounded-lg border relative transition-all ${assignment.machineId === student.stationId ? 'bg-blue-50/30 border-blue-200' : 'bg-slate-50/50 border-slate-100'}`}>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-blue-700 rounded-md border border-blue-100 shadow-sm">
+                            <IconBuilding size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Dept{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.deptName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-indigo-700 rounded-md border border-indigo-100 shadow-sm">
+                            <IconLayout size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Section{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.sectionName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-violet-700 rounded-md border border-violet-100 shadow-sm">
+                            <IconGitBranch size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Line{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.lineName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-purple-700 rounded-md border border-purple-100 shadow-sm">
+                            <IconGitCommit size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Sub-Sect{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.subSectionName}</span>
+                            </div>
+                          </div>
+
+                          <IconChevronRight size={12} className="text-slate-300" />
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-rose-700 rounded-md border border-rose-100 shadow-sm">
+                            <IconSettings size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Station{idx > 0 ? ` ${idx + 1}` : ''}</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{assignment.stationName}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100 shadow-sm ml-auto sm:ml-0">
+                            <IconTrophy size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Level</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">{student.currentSkill?.[assignment.subSectionId] || "L1"}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 shadow-sm">
+                            <IconChartBar size={14} className="shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="text-[7px] leading-none opacity-70 uppercase font-bold">Efficiency</span>
+                              <span className="text-[10px] font-bold whitespace-nowrap">
+                                {(() => {
+                                  let skillEff = student.skillEffeciency;
+                                  if (typeof skillEff === 'string') {
+                                    try { skillEff = JSON.parse(skillEff); } catch (e) { skillEff = {}; }
+                                  }
+                                  const eff = skillEff?.[String(assignment.subSectionId)];
+                                  return eff !== undefined ? `${Math.round(eff * 100) / 100}%` : "0%";
+                                })()}
+                              </span>
+                            </div>
+                          </div>
+
+                          {assignment.machineId === student.stationId && (
+                            <div className="absolute -top-2 -right-1">
+                              <Badge className="bg-blue-600 text-white border-blue-700 text-[6px] px-1.5 py-0 h-4">Primary</Badge>
+                            </div>
+                          )}
                         </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100 shadow-sm transition-all hover:bg-indigo-100">
-                        <IconLayout size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Section</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.sectionName || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-50 text-violet-700 rounded-md border border-violet-100 shadow-sm transition-all hover:bg-violet-100">
-                        <IconGitBranch size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Line</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.lineName || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-50 text-purple-700 rounded-md border border-purple-100 shadow-sm transition-all hover:bg-purple-100">
-                        <IconGitCommit size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Sub-Section</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.subSectionName || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      <IconChevronRight size={14} className="text-slate-400 mx-0.5" />
-
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200 shadow-sm transition-all hover:bg-slate-200">
-                        <IconSettings size={14} className="shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] leading-none opacity-70 uppercase font-bold">Station</span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">{student.stationName || "N/A"}</span>
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                   <div className="group">
                     <p className="text-[10px] text-muted-foreground mb-0.5">Joining Date</p>
                     <p className="text-sm font-medium">
-                      {student.joiningDate ? new Date(student.joiningDate).toLocaleDateString() : (student.createdAt ? new Date(student.createdAt).toLocaleDateString() : "—")}
+                      {student.joiningDate ? safeLocaleDate(student.joiningDate) : (student.createdAt ? safeLocaleDate(student.createdAt) : "—")}
                     </p>
                   </div>
                 </div>
@@ -639,7 +744,6 @@ const StudentDetail = () => {
           <TabsTrigger value="submissions">Submissions ({stats.totalSubmissions})</TabsTrigger>
           <TabsTrigger value="quizzes">Test Attempts ({stats.totalAttempts})</TabsTrigger>
           <TabsTrigger value="ojt">On Job Training</TabsTrigger>
-          <TabsTrigger value="skillMatrix">Skill Matrix Certificate</TabsTrigger>
           <TabsTrigger value="observance">Operator Observance</TabsTrigger>
           <TabsTrigger value="monitoring3">3 Day Monitoring</TabsTrigger>
           <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
@@ -706,7 +810,7 @@ const StudentDetail = () => {
                             <span className="font-medium">Last Activity: </span>
                             <span>
                               {progress.updatedAt
-                                ? new Date(progress.updatedAt).toLocaleDateString()
+                                ? safeLocaleDate(progress.updatedAt)
                                 : "No activity"
                               }
                             </span>
@@ -743,7 +847,7 @@ const StudentDetail = () => {
                         <div>
                           <p className="font-medium text-sm">{submission.assignment?.title || "Assignment"}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(submission.submittedAt).toLocaleDateString()}
+                            {safeLocaleDate(submission.submittedAt)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -787,7 +891,7 @@ const StudentDetail = () => {
                         <div>
                           <p className="font-medium text-sm">{attempt.quiz?.title || "Quiz"}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(attempt.attemptedAt).toLocaleDateString()}
+                            {safeLocaleDate(attempt.attemptedAt)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -877,7 +981,7 @@ const StudentDetail = () => {
                             <span>Last Activity:</span>
                             <span className="font-medium">
                               {progress.updatedAt
-                                ? new Date(progress.updatedAt).toLocaleDateString()
+                                ? displayDate(progress.updatedAt)
                                 : "No activity"
                               }
                             </span>
@@ -951,7 +1055,7 @@ const StudentDetail = () => {
                           {submission.assignment?.course?.title || "Unknown Course"}
                         </TableCell>
                         <TableCell>
-                          {new Date(submission.submittedAt).toLocaleDateString()}
+                          {displayDate(submission.submittedAt)}
                         </TableCell>
                         <TableCell>
                           {getSubmissionStatusBadge(submission)}
@@ -1035,7 +1139,7 @@ const StudentDetail = () => {
                           {attempt.quiz?.course?.title || "Unknown Course"}
                         </TableCell>
                         <TableCell>
-                          {new Date(attempt.attemptedAt).toLocaleDateString()}
+                          {displayDate(attempt.attemptedAt)}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">{attempt.scorePercent || 0}%</Badge>
@@ -1079,19 +1183,19 @@ const StudentDetail = () => {
               </TabsList>
 
               <TabsContent value="record">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xl font-bold">OJT Training Record Sheet</CardTitle>
+                <Card className="border border-slate-200 shadow-sm">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
+                    <CardTitle className="text-xl font-bold text-slate-800">OJT Training Record Sheet</CardTitle>
                     <Button variant="outline" size="sm" onClick={() => setSelectedOjtId(null)}>
                       <IconArrowLeft className="h-4 w-4 mr-2" />
                       Back to List
                     </Button>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     <OJTTrainingRecordSheet
                       ojtId={selectedOjtId}
                       studentName={student.fullName}
-                      readOnly={false}
+                      readOnly={true}
                       onBack={() => setSelectedOjtId(null)}
                     />
                   </CardContent>
@@ -1099,20 +1203,20 @@ const StudentDetail = () => {
               </TabsContent>
 
               <TabsContent value="evaluation">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xl font-bold">On Job Training Evaluation Form</CardTitle>
+                <Card className="border border-slate-200 shadow-sm">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
+                    <CardTitle className="text-xl font-bold text-slate-800">On Job Training Evaluation Form</CardTitle>
                     <Button variant="outline" size="sm" onClick={() => setSelectedOjtId(null)}>
                       <IconArrowLeft className="h-4 w-4 mr-2" />
                       Back to List
                     </Button>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     <OnJobTrainingTable
                       ojtId={selectedOjtId}
                       studentName={student.fullName}
                       model="-"
-                      readOnly={false}
+                      readOnly={true}
                       onBack={() => setSelectedOjtId(null)}
                     />
                   </CardContent>
@@ -1120,37 +1224,93 @@ const StudentDetail = () => {
               </TabsContent>
             </Tabs>
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>On Job Training</CardTitle>
-                <CardDescription>Manage Level-1 Practical Evaluations</CardDescription>
+            <Card className="border-slate-200 shadow-md">
+              <CardHeader className="pb-3 border-b bg-slate-50/50">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                      <IconTrophy className="h-5 w-5 text-amber-500" />
+                      On Job Training Portfolio
+                    </CardTitle>
+                    <CardDescription>
+                      Approved and passed Level-1 Practical Evaluations for this operator
+                    </CardDescription>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent>
-                <OJTList
-                  studentId={studentId}
-                  onViewDetails={(ojt) => setSelectedOjtId(ojt.id || ojt._id)}
-                  onAddTraining={() => setCreateOjtOpen(true)}
-                />
+              <CardContent className="pt-6">
+                {passedOjts.length === 0 ? (
+                  <div className="text-center py-16 border border-dashed border-slate-200 rounded-xl bg-slate-50/30 text-slate-500">
+                    <IconTrophy className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                    <h3 className="text-base font-semibold text-slate-700">No Passed OJT Records</h3>
+                    <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
+                      This operator has not passed any On Job Training assessments yet.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow>
+                          <TableHead className="font-bold text-slate-700">Training Topic</TableHead>
+                          <TableHead className="font-bold text-slate-700">Department</TableHead>
+                          <TableHead className="font-bold text-slate-700">Section & Line</TableHead>
+                          <TableHead className="font-bold text-slate-700">Sub-Section & Machine</TableHead>
+                          <TableHead className="font-bold text-slate-700">Approved Date</TableHead>
+                          <TableHead className="font-bold text-slate-700">Status</TableHead>
+                          <TableHead className="font-bold text-slate-700 text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {passedOjts.map((ojtItem) => (
+                          <TableRow key={ojtItem.id || ojtItem._id} className="hover:bg-slate-50/40 transition-colors">
+                            <TableCell className="font-semibold text-slate-900">
+                              {ojtItem.trainingTopic || ojtItem.name || "Practical Evaluation"}
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              {ojtItem.department?.name || ojtItem.department || "-"}
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              <span className="font-medium">{ojtItem.section?.name || ojtItem.section || "-"}</span>
+                              <span className="text-slate-400 mx-1">/</span>
+                              <span className="text-xs">{ojtItem.line?.name || ojtItem.line || "-"}</span>
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              <span className="font-medium">{ojtItem.subSection?.name || ojtItem.subSection || "-"}</span>
+                              <span className="text-slate-400 mx-1">/</span>
+                              <span className="text-xs font-mono bg-slate-100 px-1 rounded">{ojtItem.machine?.name || ojtItem.machine || "-"}</span>
+                            </TableCell>
+                            <TableCell className="text-slate-600">
+                              {new Date(ojtItem.updatedAt || ojtItem.createdAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 font-bold hover:bg-emerald-100">
+                                Approved
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-indigo-100 text-indigo-700 hover:bg-indigo-50/50 hover:text-indigo-800 gap-1.5"
+                                onClick={() => setSelectedOjtId(ojtItem.id || ojtItem._id)}
+                              >
+                                <IconEye className="h-4 w-4" />
+                                View Portfolio
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
-
-          <CreateOJTDialog
-            open={createOjtOpen}
-            onOpenChange={setCreateOjtOpen}
-            studentId={studentId}
-            onSuccess={handleRefreshAll}
-          />
         </TabsContent>
 
-        <TabsContent value="skillMatrix">
-          <SkillMatrixCertificate
-            studentId={studentId}
-            studentName={student?.fullName}
-            employeeCode={student?.userName || student?.empId || student?.employeeId}
-            departmentId={typeof student.department === 'object' ? (student.department?._id || student.department?.id || "GLOBAL") : (student.department || "GLOBAL")}
-          />
-        </TabsContent>
+
 
         <TabsContent value="observance">
           <OperatorObservanceSheet

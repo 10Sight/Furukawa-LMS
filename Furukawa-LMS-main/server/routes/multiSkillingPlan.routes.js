@@ -13,30 +13,36 @@ const router = Router();
 
 router.use(verifyJWT);
 
+// Get multi skilling plan by department
+// Get multi skilling plan by department and section
 router.get(
     "/department/:departmentId",
     authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
     getMultiSkillingPlanByDepartment
 );
 
+// Save multi skilling plan by department and section
 router.post(
     "/department/:departmentId",
     authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
     saveMultiSkillingPlanByDepartment
 );
 
+// Get multi skilling plan config by department
 router.get(
     "/config/:departmentId",
     authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
     getMultiSkillingPlanConfig
 );
 
+// Save multi skilling plan config by department
 router.post(
     "/config/save",
     authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
     saveMultiSkillingPlanConfig
 );
 
+// Get multi skilling plan history by department
 router.get(
     "/history/:departmentId",
     authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),

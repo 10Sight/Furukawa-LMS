@@ -13,6 +13,8 @@ const SYSTEM_PERMISSIONS = {
   USER_DELETE: "user:delete",
   USER_SUSPEND: "user:suspend",
   USER_ACTIVATE: "user:activate",
+  USER_IMPORT_EXCEL: "user:import_excel",
+  USER_IMPORT_LOGS: "user:import_logs",
 
   // Course Management
   COURSE_CREATE: "course:create",
@@ -95,7 +97,97 @@ const SYSTEM_PERMISSIONS = {
   ROLE_ASSIGN: "role:assign",
 
   // CMS Management
-  DAILY_5M_APPROVE: "daily5m:approve"
+  DAILY_5M_APPROVE: "daily5m:approve",
+  DAILY_5M_READ: "daily5m:read",
+  DAILY_5M_UPDATE: "daily5m:update",
+  DAILY_5M_EDIT_SUBMITTED: "daily5m:edit_submitted",
+
+  // 16-Day Monitoring Management
+  SIXTEEN_DAY_EDIT_LAYOUT: "sixteen_day:edit_layout",
+  SIXTEEN_DAY_MANAGE: "sixteen_day:manage",
+  SIXTEEN_DAY_VERIFY: "sixteen_day:verify",
+  SIXTEEN_DAY_APPROVE: "sixteen_day:approve",
+
+  // 3-Day Monitoring Management
+  THREE_DAY_EDIT_LAYOUT: "three_day:edit_layout",
+  THREE_DAY_MANAGE: "three_day:manage",
+  THREE_DAY_VERIFY: "three_day:verify",
+  THREE_DAY_APPROVE: "three_day:approve",
+
+  // Mentee Feedback Management
+  MENTEE_FEEDBACK_MANAGE: "mentee_feedback:manage",
+  MENTEE_FEEDBACK_VIEW: "mentee_feedback:view",
+
+  // Multi Skilling Management
+  MULTI_SKILLING_MANAGE: "multi_skilling:manage",
+  MULTI_SKILLING_EDIT_LAYOUT: "multi_skilling:edit_layout",
+  MULTI_SKILLING_VIEW_HISTORY: "multi_skilling:view_history",
+
+  // Skill Upgradation Management
+  SKILL_UPGRADATION_MANAGE: "skill_upgradation:manage",
+  SKILL_UPGRADATION_EDIT_LAYOUT: "skill_upgradation:edit_layout",
+  SKILL_UPGRADATION_VIEW_HISTORY: "skill_upgradation:view_history",
+
+  HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
+  HANDOVER_SHEET_READ: "handover_sheet:read",
+  HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
+
+  // 10-Cycle Sheet Management
+  TEN_CYCLE_MANAGE: "ten_cycle:manage",
+  TEN_CYCLE_VERIFY: "ten_cycle:verify",
+  TEN_CYCLE_APPROVE: "ten_cycle:approve",
+
+  // DOJO Hiring Management
+  DOJO_HIRING_CREATE: "dojo_hiring:create",
+  DOJO_HIRING_READ: "dojo_hiring:read",
+  DOJO_HIRING_UPDATE: "dojo_hiring:update",
+  DOJO_HIRING_DELETE: "dojo_hiring:delete",
+
+  // Test Paper Management
+  TEST_PAPER_READ: "test_paper:read",
+  TEST_PAPER_CREATE: "test_paper:create",
+  TEST_PAPER_ACCESS_ALL: "test_paper:access_all",
+  TEST_PAPER_EDIT: "test_paper:edit",
+  TEST_PAPER_DELETE: "test_paper:delete",
+  TEST_PAPER_SKILL_UPGRADATION: "test_paper:skill_upgradation",
+  TEST_PAPER_ISSUE_CERTIFICATE: "test_paper:issue_certificate",
+  TEST_PAPER_IS_DOJO: "test_paper:is_dojo",
+  TEST_PAPER_IS_HANDOVER: "test_paper:is_handover",
+  TEST_PAPER_IS_THEORETICAL: "test_paper:is_theoretical",
+  TEST_PAPER_IS_MULTI_SKILLING: "test_paper:is_multi_skilling",
+
+  // Learning Management
+  LEARNING_READ: "learning:read",
+  LEARNING_CREATE: "learning:create",
+  LEARNING_UPDATE: "learning:update",
+  LEARNING_DELETE: "learning:delete",
+
+  // Skill Matrix Approvals
+  SKILL_MATRIX_QA_APPROVE: "skill_matrix:qa_approve",
+  SKILL_MATRIX_SAFETY_APPROVE: "skill_matrix:safety_approve",
+  SKILL_MATRIX_PROCESS_APPROVE: "skill_matrix:process_approve",
+
+  // On Job Training (OJT) Management
+  ON_JOB_TRAINING_READ: "on_job_training:read",
+  ON_JOB_TRAINING_CREATE: "on_job_training:create",
+  ON_JOB_TRAINING_UPDATE: "on_job_training:update",
+  ON_JOB_TRAINING_DELETE: "on_job_training:delete",
+  ON_JOB_TRAINING_CHECKED_BY: "on_job_training:checked_by",
+  ON_JOB_TRAINING_APPROVED_BY: "on_job_training:approved_by",
+
+  // Abnormal Condition Management
+  ABNORMAL_CONDITION_READ: "abnormal_condition:read",
+  ABNORMAL_CONDITION_CREATE: "abnormal_condition:create",
+  ABNORMAL_CONDITION_UPDATE: "abnormal_condition:update",
+  ABNORMAL_CONDITION_DELETE: "abnormal_condition:delete",
+  ABNORMAL_CONDITION_APPROVE: "abnormal_condition:approve",
+
+  // DOJO Evaluation Test Management
+  DOJO_EVALUATION_TEST_CREATE: "dojo_evaluation_test:create",
+  DOJO_EVALUATION_TEST_TAKE: "dojo_evaluation_test:take",
+  DOJO_EVALUATION_TEST_APPROVE: "dojo_evaluation_test:approve",
+  DOJO_EVALUATION_TEST_CONFIRM: "dojo_evaluation_test:confirm",
+  DOJO_EVALUATION_TEST_VIEW: "dojo_evaluation_test:view",
 };
 
 // Define default role permissions
@@ -110,7 +202,10 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.RESOURCE_READ,
       SYSTEM_PERMISSIONS.QUIZ_READ,
       SYSTEM_PERMISSIONS.ASSIGNMENT_READ,
-      SYSTEM_PERMISSIONS.CERTIFICATE_READ
+      SYSTEM_PERMISSIONS.CERTIFICATE_READ,
+      SYSTEM_PERMISSIONS.DAILY_5M_READ,
+      SYSTEM_PERMISSIONS.LEARNING_READ,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ
     ],
     isSystemRole: true,
     color: "#3B82F6"
@@ -162,7 +257,40 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.CERTIFICATE_ISSUE,
       // Analytics & User Management
       SYSTEM_PERMISSIONS.ANALYTICS_READ,
-      SYSTEM_PERMISSIONS.USER_READ
+      SYSTEM_PERMISSIONS.USER_READ,
+      SYSTEM_PERMISSIONS.DAILY_5M_READ,
+      SYSTEM_PERMISSIONS.DAILY_5M_UPDATE,
+      SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE,
+      SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY,
+      SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ,
+      SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE,
+      SYSTEM_PERMISSIONS.LEARNING_READ,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CREATE,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_UPDATE,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_DELETE,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CHECKED_BY,
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_APPROVED_BY,
+      SYSTEM_PERMISSIONS.TEST_PAPER_SKILL_UPGRADATION,
+      SYSTEM_PERMISSIONS.TEST_PAPER_ISSUE_CERTIFICATE,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_THEORETICAL,
+      SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CREATE,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CONFIRM,
+      SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_READ,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE,
+      SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -177,6 +305,9 @@ const DEFAULT_ROLES = {
       ),
       SYSTEM_PERMISSIONS.AUDIT_READ,
       SYSTEM_PERMISSIONS.ROLE_READ,
+      SYSTEM_PERMISSIONS.ROLE_CREATE,
+      SYSTEM_PERMISSIONS.ROLE_UPDATE,
+      SYSTEM_PERMISSIONS.ROLE_DELETE,
       SYSTEM_PERMISSIONS.BULK_ENROLLMENT,
       SYSTEM_PERMISSIONS.BULK_EMAIL,
       SYSTEM_PERMISSIONS.BULK_CERTIFICATES
@@ -204,7 +335,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.USER_UPDATE, name: "Update Users", description: "Edit user information and profiles" },
         { id: SYSTEM_PERMISSIONS.USER_DELETE, name: "Delete Users", description: "Permanently delete user accounts" },
         { id: SYSTEM_PERMISSIONS.USER_SUSPEND, name: "Suspend Users", description: "Suspend user accounts" },
-        { id: SYSTEM_PERMISSIONS.USER_ACTIVATE, name: "Activate Users", description: "Activate suspended accounts" }
+        { id: SYSTEM_PERMISSIONS.USER_ACTIVATE, name: "Activate Users", description: "Activate suspended accounts" },
+        { id: SYSTEM_PERMISSIONS.USER_IMPORT_EXCEL, name: "Import Excel Data", description: "Import users from Excel files" },
+        { id: SYSTEM_PERMISSIONS.USER_IMPORT_LOGS, name: "View Import Logs", description: "View history and details of user imports" }
       ],
       "Course Management": [
         { id: SYSTEM_PERMISSIONS.COURSE_CREATE, name: "Create Courses", description: "Create new courses" },
@@ -285,7 +418,80 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.ROLE_ASSIGN, name: "Assign Roles", description: "Assign roles to users" }
       ],
       "CMS Management": [
-        { id: SYSTEM_PERMISSIONS.DAILY_5M_APPROVE, name: "Approve Daily 5M", description: "Approve or decline daily 5M recording sessions" }
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_APPROVE, name: "Approve Daily 5M", description: "Approve or decline daily 5M recording sessions" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_READ, name: "View Daily 5M", description: "View daily 5M recording data" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_UPDATE, name: "Update Daily 5M", description: "Edit daily 5M recording data" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT, name: "Edit 16-Day Monitoring Layout", description: "Modify the structure and categories of 16-day monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_MANAGE, name: "Manage 16-Day Monitoring", description: "Manage 16-day monitoring records" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT, name: "Edit 3-Day Monitoring Layout", description: "Modify the structure and categories of 3-day monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_MANAGE, name: "Manage 3-Day Monitoring", description: "Manage 3-day monitoring records" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_VERIFY, name: "Verify 3-Day Monitoring", description: "Verify 3-day monitoring records (Area Incharge sign-off)" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_APPROVE, name: "Approve 3-Day Monitoring", description: "Approve 3-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_MANAGE, name: "Manage Mentee Feedback", description: "Fill out and manage mentee feedback monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_VIEW, name: "View Mentee Feedback", description: "View mentee feedback monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE, name: "Manage Multi Skilling", description: "Fill out and manage multi skilling training plans" },
+        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT, name: "Edit Multi Skilling Layout", description: "Modify the table configuration and structure of multi skilling sheets" },
+        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE, name: "Manage Skill Upgradation", description: "Fill out and manage skill upgradation training plans" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT, name: "Edit Skill Upgradation Layout", description: "Modify the table configuration and structure of skill upgradation sheets" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet", description: "Fill out, save, and submit 10-cycle sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, name: "Onboard Candidates", description: "Onboard new temporary candidates into the pipeline" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, name: "Update Candidates", description: "Edit candidate information" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, name: "Delete Candidates", description: "Remove temporary candidates from the pipeline" }
+      ],
+      "Test Paper Management": [
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_READ, name: "View Test Papers", description: "Access and view the list of test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_CREATE, name: "Create/Manage Test Papers", description: "Create or modify test paper entries" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_ACCESS_ALL, name: "Access All Test Papers", description: "View all test papers and use all department/section/line/sub-section/level filters freely" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_EDIT, name: "Edit Test Papers", description: "Allows editing of existing test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_DELETE, name: "Delete Test Papers", description: "Allows deleting of existing test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_SKILL_UPGRADATION, name: "Toggle Skill Upgradation", description: "Allows enabling/disabling skill upgradation for test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_ISSUE_CERTIFICATE, name: "Toggle Issue Certificate", description: "Allows enabling/disabling automatic certificate generation for test papers" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO, name: "Toggle Is Dojo Quiz", description: "Allows marking test papers as Dojo quizzes" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER, name: "Toggle Is Handover Quiz", description: "Allows marking test papers as Handover quizzes" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_THEORETICAL, name: "Toggle Is Theoretical Quiz", description: "Allows marking test papers as Theoretical quizzes" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING, name: "Toggle Is Multi Skilling Quiz", description: "Allows marking test papers as Multi Skilling quizzes" }
+      ],
+      "Learning Management": [
+        { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Learning Dashboard", description: "View the learning management dashboard and statistics" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_CREATE, name: "Create Learning Content", description: "Create new before & after learning comparisons" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_UPDATE, name: "Update Learning Content", description: "Edit existing learning comparison entries" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_DELETE, name: "Delete Learning Content", description: "Remove learning comparison entries from the system" }
+      ],
+      "Skill Matrix Management": [
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_QA_APPROVE, name: "QA In-charge Approval", description: "Approve or reject the Skill Matrix as QA In-charge" },
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_SAFETY_APPROVE, name: "Safety In-charge Approval", description: "Approve or reject the Skill Matrix as Safety In-charge" },
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_PROCESS_APPROVE, name: "Process In-charge Approval", description: "Approve or reject the Skill Matrix as Process In-charge" }
+      ],
+      "On Job Training (OJT) Management": [
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ, name: "View OJT", description: "Access and view On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CREATE, name: "Create OJT", description: "Create new On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_UPDATE, name: "Manage/Update OJT", description: "Modify, edit or score On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_DELETE, name: "Delete OJT", description: "Delete On the Job Training sheets" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CHECKED_BY, name: "Checked By sign-off", description: "Sign off On the Job Training sheets as Checked By" },
+        { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_APPROVED_BY, name: "Approved By sign-off", description: "Sign off On the Job Training sheets as Approved By" }
+      ],
+      "Abnormal Condition Management": [
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_READ, name: "View Abnormal Conditions", description: "View Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_CREATE, name: "Create Abnormal Conditions", description: "Create new Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_UPDATE, name: "Update Abnormal Conditions", description: "Edit Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_DELETE, name: "Delete Abnormal Conditions", description: "Delete Abnormal Condition sheets" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_APPROVE, name: "Approve Abnormal Conditions", description: "Approve or Reject Abnormal Condition sheets as Head, QA" }
+      ],
+      "DOJO Evaluation Test": [
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CREATE, name: "Create DOJO Evaluation Test", description: "Create and manage DOJO evaluation test papers" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE, name: "Take DOJO Evaluation Test", description: "Attempt and submit DOJO evaluation tests" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE, name: "Approve DOJO Evaluation Test", description: "Approve submitted DOJO evaluation tests" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CONFIRM, name: "Confirm DOJO Evaluation Test", description: "Confirm/verify submitted DOJO evaluation tests" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW, name: "View DOJO Evaluation Test", description: "View list and details of DOJO evaluation tests and attempts" }
       ]
     };
 

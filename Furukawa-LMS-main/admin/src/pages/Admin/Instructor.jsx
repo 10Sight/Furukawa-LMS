@@ -676,7 +676,7 @@ const Instructor = () => {
                 <TableHead className="w-[40px] px-4"><Checkbox checked={instructors.length > 0 && selectedIds.length === instructors.length} onCheckedChange={toggleSelectAll} /></TableHead>
                 <TableHead>Instructor</TableHead>
                 <TableHead>Emp Code</TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead>Joining / Leaving</TableHead>
                 <TableHead>Hierarchy Path</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Contact</TableHead>
@@ -702,7 +702,18 @@ const Instructor = () => {
                     </TableCell>
                     <TableCell><Badge variant="outline" className="font-mono bg-blue-50/50">{instructor.empId || "N/A"}</Badge></TableCell>
                     <TableCell className="text-sm text-gray-500 whitespace-nowrap">
-                      {instructor.logDate ? format(new Date(instructor.logDate), "dd MMM yyyy") : "-"}
+                      {instructor.status === "LEFT" ? (
+                        instructor.leavingDate ? (
+                          <div className="flex flex-col">
+                            <span className="text-red-600 font-medium">{format(new Date(instructor.leavingDate), "dd MMM yyyy")}</span>
+                            <span className="text-[10px] text-red-400">Left</span>
+                          </div>
+                        ) : (
+                          <span className="italic text-gray-400">Date not set</span>
+                        )
+                      ) : (
+                        instructor.joiningDate ? format(new Date(instructor.joiningDate), "dd MMM yyyy") : "-"
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-0.5 max-w-[200px]">

@@ -118,3 +118,69 @@
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  .no-print,
+  .fixed:not(.print-visible),
+  header,
+  footer,
+  aside,
+  nav {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Reset layout margins so the form uses the full paper width */
+  .ml-16, .ml-20, .ml-64, .pt-20, .pb-6 {
+    margin-left: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  
+  /* Allow the browser to scale the table to fit the page */
+  table {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Prevent row breaks across pages */
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  
+  /* Force tight packing for wide tables */
+  table, th, td, input, select, textarea {
+    font-size: 9px !important;
+    line-height: 1.1 !important;
+  }
+  
+  th, td {
+    padding: 1px 2px !important;
+  }
+  
+  input, select, textarea {
+    min-width: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
+  
+  .Card {
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+
+@page {
+  size: landscape;
+  margin: 1cm;
+}

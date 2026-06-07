@@ -1,0 +1,33 @@
+{
+  "attempts": [
+    {
+      "id": 1,
+      "testId": 1,
+      "traineeName": "SUBHASH SINGH",
+      "employeeNo": "AS080255",
+      "educatorName": "Admin User",
+      "attemptData": "{\"q-1\":{\"results\":[\"✓\",\"✓\",\"X\",\"\"],\"comment\":\"\"},\"q-2\":{\"results\":[\"✓\",\"X\",\"✓\",\"\"],\"comment\":\"\"},\"q-3\":{\"results\":[\"✓\",\"✓\",\"✓\",\"\"],\"comment\":\"\"},\"q-1780058720387\":{\"results\":[\"✓\",\"X\",\"✓\",\"\"],\"comment\":\"\"},\"_performDates\":[\"2026-05-29\",\"\",\"\",\"\"],\"_approvedStatus\":\"APPROVED\",\"_approvedBy\":\"Admin User\"}",
+      "createdBy": "Admin User",
+      "createdAt": "2026-05-29T19:01:35.810Z",
+      "userId": 14836
+    },
+    {
+      "id": 2,
+      "testId": 1,
+      "traineeName": "KARISHMA",
+      "employeeNo": "NE2626",
+      "educatorName": "Admin User",
+      "attemptData": "{\"q-1\":{\"results\":[\"✓\",\"X\",\"\",\"\"],\"comment\":\"\"},\"q-2\":{\"results\":[\"✓\",\"✓\",\"\",\"\"],\"comment\":\"\"},\"q-3\":{\"results\":[\"✓\",\"✓\",\"\",\"\"],\"comment\":\"\"},\"q-1780058720387\":{\"results\":[\"✓\",\"✓\",\"\",\"\"],\"comment\":\"\"},\"_performDates\":[\"2026-05-31\",\"2026-06-01\",\"\",\"\"]}",
+      "createdBy": "Admin User",
+      "createdAt": "2026-06-01T00:12:15.430Z",
+      "userId": 12916
+    }
+  ],
+  "tests": [
+    {
+      "id": 1,
+      "title": "Auto Crimping Operation",
+      "performDateCount": 4
+    }
+  ]
+}

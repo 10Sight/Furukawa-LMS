@@ -11,6 +11,7 @@ import TenCycleCheck from "../models/tenCycleCheck.model.js";
 import ThreeDayMonitoring from "../models/threeDayMonitoring.model.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import NotificationService from "../services/notification.service.js";
+import logger from "../logger/winston.logger.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -39,6 +40,7 @@ const resolveStudentId = async (studentId) => {
 };
 
 const getStudentAssignedMachineLine = async (studentId) => {
+    // 1. Try machine_assignments first (latest active assignment)
     const [rows] = await executeQuery(`
         SELECT TOP 1 m.name AS processName, l.name AS lineName, l.lineLeader AS lineLeader
         FROM machine_assignments ma
@@ -48,7 +50,18 @@ const getStudentAssignedMachineLine = async (studentId) => {
         ORDER BY ma.assigned_at DESC, ma.id DESC
     `, [studentId]);
 
-    return rows[0] || { processName: "", lineName: "", lineLeader: "" };
+    if (rows.length > 0) return rows[0];
+
+    // 2. Fallback: Check user profile directly (handles direct assignments)
+    const [fallbackRows] = await executeQuery(`
+        SELECT m.name AS processName, l.name AS lineName, l.lineLeader AS lineLeader
+        FROM users u
+        LEFT JOIN machines m ON u.stationId = m.id
+        LEFT JOIN [lines] l ON u.lineId = l.id
+        WHERE u.id = ?
+    `, [studentId]);
+
+    return fallbackRows[0] || { processName: "", lineName: "", lineLeader: "" };
 };
 
 export const initializeProgress = asyncHandler(async (req, res) => {
@@ -278,8 +291,24 @@ export const upgradeLevel = asyncHandler(async (req, res) => {
     if (hasNext) {
         const nextLevel = levels[currentIdx + 1];
         await executeQuery("UPDATE progress SET currentLevel = ? WHERE id = ?", [nextLevel.name, progress.id]);
-        await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [nextLevel.name, userId]);
         progress.currentLevel = nextLevel.name;
+
+        // Sync to user profile with station awareness
+        const { default: UserModel } = await import("../models/auth.model.js");
+        const userData = await UserModel.findById(userId);
+        if (userData && userData.subSectionId) {
+            let currentSkill = userData.currentSkill || {};
+            if (typeof currentSkill === 'string') {
+                try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+            }
+            currentSkill[userData.subSectionId] = nextLevel.name;
+            await executeQuery(
+                "UPDATE users SET currentLevel = ?, currentSkill = ? WHERE id = ?",
+                [nextLevel.name, JSON.stringify(currentSkill), userId]
+            );
+        } else {
+            await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [nextLevel.name, userId]);
+        }
 
         // --- AUTOMATED HANDOVER & MAX LEVEL CHECK ---
         // If user is upgraded from L1 -> Add to Handover Sheet + Email Trainer
@@ -517,7 +546,11 @@ export const getOrInitializeProgress = asyncHandler(async (req, res) => {
 });
 
 export const setStudentLevel = asyncHandler(async (req, res) => {
-    let { studentId, courseId, level, lock } = req.body;
+    let { studentId, courseId, stationId, level, lock } = req.body;
+
+    if (!studentId) {
+        throw new ApiError("studentId is required", 400);
+    }
 
     // Check config
     if (level) {
@@ -533,65 +566,102 @@ export const setStudentLevel = asyncHandler(async (req, res) => {
         level = matchedLevel.name;
     }
 
-    let [rows] = await executeQuery("SELECT * FROM progress WHERE student = ? AND course = ?", [studentId, courseId]);
-    let progress;
-    if (rows.length === 0) {
-        const levelConfig = await getActiveLevelConfig();
-        const firstLevel = levelConfig && levelConfig.levels.length > 0 ? levelConfig.levels[0].name : "L1";
-        const [resP] = await executeQuery(
-            `INSERT INTO progress (student, course, currentLevel, completedLessons, completedModules, quizzes, assignments, progressPercent, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
-            [studentId, courseId, level || firstLevel, '[]', '[]', '[]', '[]', 0]
-        );
-        const [newP] = await executeQuery("SELECT * FROM progress WHERE id = ?", [resP[0].id]);
-        progress = newP[0];
-    } else {
-        progress = rows[0];
-    }
+    const { default: UserModel } = await import("../models/auth.model.js");
+    const userData = await UserModel.findById(studentId);
+    if (!userData) throw new ApiError("User not found", 404);
 
-    let updates = [];
-    let values = [];
-    const levelChanged = !!level && String(progress.currentLevel) !== String(level);
-    if (level) { updates.push("currentLevel = ?"); values.push(level); }
-    if (levelChanged) { updates.push("levelStartDate = GETDATE()"); }
-    if (typeof lock === 'boolean') {
-        updates.push("levelLockEnabled = ?"); values.push(lock);
-        updates.push("lockedLevel = ?"); values.push(lock ? (level || progress.currentLevel) : null);
-        if (lock && (level || progress.currentLevel) && (progress.currentLevel !== (level || progress.currentLevel))) {
-            // Logic says force level if locking
-            if (!level) { updates.push("currentLevel = ?"); values.push(progress.lockedLevel); }
-            // Logic overlap handled, mostly setting locked values
+    if (!stationId) stationId = userData.stationId;
+
+    let progress = null;
+    if (courseId && courseId !== "undefined" && courseId !== "null") {
+        let [rows] = await executeQuery("SELECT * FROM progress WHERE student = ? AND course = ?", [studentId, courseId]);
+        if (rows.length === 0) {
+            const levelConfig = await getActiveLevelConfig();
+            const firstLevel = levelConfig && levelConfig.levels.length > 0 ? levelConfig.levels[0].name : "L1";
+            const [resP] = await executeQuery(
+                `INSERT INTO progress (student, course, currentLevel, completedLessons, completedModules, quizzes, assignments, progressPercent, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+                [studentId, courseId, level || firstLevel, '[]', '[]', '[]', '[]', 0]
+            );
+            const [newP] = await executeQuery("SELECT * FROM progress WHERE id = ?", [resP[0].id]);
+            progress = newP[0];
+        } else {
+            progress = rows[0];
         }
     }
 
-    if (updates.length > 0) {
-        await executeQuery(`UPDATE progress SET ${updates.join(', ')} WHERE id = ?`, [...values, progress.id]);
+    if (progress) {
+        let updates = [];
+        let values = [];
+        if (level) { updates.push("currentLevel = ?"); values.push(level); }
+        if (typeof lock === 'boolean') {
+            updates.push("levelLockEnabled = ?"); values.push(lock);
+            updates.push("lockedLevel = ?"); values.push(lock ? (level || progress.currentLevel) : null);
+        }
 
-        // Sync to user profile if level changed
-        if (level) {
-            await executeQuery("UPDATE users SET currentLevel = ? WHERE id = ?", [level, studentId]);
+        if (updates.length > 0) {
+            await executeQuery(`UPDATE progress SET ${updates.join(', ')} WHERE id = ?`, [...values, progress.id]);
+            // Re-fetch for response
+            const [upP] = await executeQuery("SELECT * FROM progress WHERE id = ?", [progress.id]);
+            progress = upP[0];
+        }
+    }
 
-            // --- TRIGGER AUTOMATED HANDOVER & MAX LEVEL CHECK ---
-            if (level !== 'L1') {
-                try {
-                    const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("../utils/handover.util.js");
-                    await checkAndProcessHandover(studentId, level);
-                    await checkAndProcessMaxLevelNotification(studentId, level);
-                } catch (err) {
-                    console.error("[SetStudentLevel] Handover/MaxLevel trigger failed:", err);
-                }
+    // 2. Sync to User Profile with Station Awareness
+    if (level || typeof lock === 'boolean') {
+        let currentSkill = userData.currentSkill || {};
+        if (typeof currentSkill === 'string') {
+            try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+        }
+
+        let subSectionId = userData.subSectionId;
+        if (stationId) {
+            const [mRows] = await executeQuery("SELECT subSectionId FROM [machines] WHERE id = ?", [stationId]);
+            if (mRows.length > 0) {
+                subSectionId = mRows[0].subSectionId;
             }
-            // ----------------------------------------------------
         }
 
-        // Refresh
-        const [final] = await executeQuery("SELECT * FROM progress WHERE id = ?", [progress.id]);
-        progress = final[0];
+        if (subSectionId) {
+            if (level) currentSkill[subSectionId] = level;
+            if (typeof lock === 'boolean') {
+                currentSkill[`${subSectionId}_locked`] = lock;
+                if (lock) currentSkill[`${subSectionId}_lockedLevel`] = level || currentSkill[subSectionId] || "L1";
+            }
+        }
+
+        const updateFields = [];
+        const updateParams = [];
+
+        // If this is the user's primary station, also update the main currentLevel column
+        if (String(userData.stationId) === String(stationId) && level) {
+            updateFields.push("currentLevel = ?");
+            updateParams.push(level);
+        }
+
+        updateFields.push("currentSkill = ?");
+        updateParams.push(JSON.stringify(currentSkill));
+        updateParams.push(studentId);
+
+        await executeQuery(`UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
+
+        // --- TRIGGER AUTOMATED HANDOVER & MAX LEVEL CHECK ---
+        if (level && level !== 'L1') {
+            try {
+                const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("../utils/handover.util.js");
+                await checkAndProcessHandover(studentId, level);
+                await checkAndProcessMaxLevelNotification(studentId, level);
+            } catch (err) {
+                console.error("[SetStudentLevel] Handover/MaxLevel trigger failed:", err);
+            }
+        }
     }
 
-    progress.completedLessons = parseJSON(progress.completedLessons);
-    progress.completedModules = parseJSON(progress.completedModules);
+    if (progress) {
+        progress.completedLessons = typeof progress.completedLessons === 'string' ? JSON.parse(progress.completedLessons) : (progress.completedLessons || []);
+        progress.completedModules = typeof progress.completedModules === 'string' ? JSON.parse(progress.completedModules) : (progress.completedModules || []);
+    }
 
-    res.json(new ApiResponse(200, progress, "Student level updated successfully"));
+    res.json(new ApiResponse(200, progress || { success: true }, "Operator level updated successfully"));
 });
 
 export const getCourseProgress = asyncHandler(async (req, res) => {
@@ -1036,6 +1106,8 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
     const student = userRows[0];
 
     if (!data) {
+        const lineLeaderStr = assignmentInfo.lineLeader || "";
+        const lineLeaderOptions = lineLeaderStr.split(',').map(s => s.trim()).filter(Boolean);
         return res.status(200).json(
             new ApiResponse(200, {
                 isNew: true,
@@ -1044,14 +1116,16 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
                 departmentId: student?.departmentId || null,
                 processName: assignmentInfo.processName || "",
                 lineName: assignmentInfo.lineName || "",
-                lineLeader: assignmentInfo.lineLeader || "",
+                lineLeader: lineLeaderStr,
+                lineLeaderOptions,
             }, "No record found")
         );
     }
 
     const resolvedProcessName = data.processName || assignmentInfo.processName || "";
     const resolvedLineName = data.lineName || assignmentInfo.lineName || "";
-    const resolvedLineLeader = assignmentInfo.lineLeader || "";
+    const lineLeaderStr = assignmentInfo.lineLeader || "";
+    const lineLeaderOptions = lineLeaderStr.split(',').map(s => s.trim()).filter(Boolean);
 
     return res.status(200).json(
         new ApiResponse(200, {
@@ -1061,7 +1135,8 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
             departmentId: student?.departmentId || null,
             processName: resolvedProcessName,
             lineName: resolvedLineName,
-            lineLeader: resolvedLineLeader,
+            lineLeader: lineLeaderStr,
+            lineLeaderOptions,
             isNew: false,
         }, "3 Day Monitoring fetched successfully")
     );
@@ -1073,12 +1148,17 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
     const {
-        processName, lineName, entries, evaluation,
-        checkedBy, verifiedBy, approvedBy
+        headerInfo, gridData, footerData, status
     } = req.body;
-    const assignmentInfo = await getStudentAssignedMachineLine(sid);
-    const finalProcessName = processName || assignmentInfo.processName || "";
-    const finalLineName = lineName || assignmentInfo.lineName || "";
+
+    const finalProcessName = headerInfo?.processName || "";
+    const finalLineName = headerInfo?.lineName || "";
+    const entries = gridData || {};
+    const evaluation = footerData || {};
+    const checkedBy = footerData?.checkedByName || "";
+    const verifiedBy = footerData?.verifiedByName || "";
+    const approvedBy = footerData?.approvedByName || "";
+    const targetStatus = status || "Draft";
 
     let sheet = await ThreeDayMonitoring.findByStudentId(sid);
 
@@ -1090,7 +1170,9 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
         sheet.checkedBy = checkedBy;
         sheet.verifiedBy = verifiedBy;
         sheet.approvedBy = approvedBy;
-        sheet.updatedBy = req.user?.name;
+        sheet.status = targetStatus;
+        sheet.updatedBy = req.user?.fullName || req.user?.userName;
+        logger.info(`[3Day] Updating existing sheet for sid: ${sid} by ${sheet.updatedBy}`);
         await sheet.save();
     } else {
         sheet = await ThreeDayMonitoring.create({
@@ -1102,8 +1184,10 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
             checkedBy,
             verifiedBy,
             approvedBy,
-            createdBy: req.user?.name
+            status: targetStatus,
+            createdBy: req.user?.fullName || req.user?.userName
         });
+        logger.info(`[3Day] Created new sheet for sid: ${sid} by ${sheet.createdBy}`);
     }
 
     // Trigger Email Notification

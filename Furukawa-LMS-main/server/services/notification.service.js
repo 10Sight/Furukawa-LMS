@@ -5,9 +5,12 @@ import Department from "../models/department.model.js";
 import User from "../models/auth.model.js";
 import Machine from "../models/machine.model.js";
 import Line from "../models/line.model.js";
+import SubSection from "../models/subSection.model.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import MonitoringConfig from "../models/monitoringConfig.model.js";
 import ENV from "../configs/env.config.js";
+import emailTemplates from "../utils/emailTemplates.js";
 
 class NotificationService {
     /**
@@ -93,7 +96,7 @@ class NotificationService {
                         <div style="margin: 25px 0;">
                             <a href="${reviewUrl}" 
                                style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-                               Review & Approve Recording
+                                Review & Approve Recording
                             </a>
                         </div>
 
@@ -101,6 +104,150 @@ class NotificationService {
                         <p>Regards,<br/><strong>FME Digital Portal</strong></p>
                     </div>
                 `;
+            } else if (formName === "On Job Training Evaluation Sheet" || formName === "On Job Training Record Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const ojtId = formData.ojtId || "";
+                const reviewUrl = `${adminUrl}/admin/on-job-training?ojtId=${ojtId}`;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <p>Dear All,</p>
+                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
+                        <p><strong>Sub:</strong> (${formName} Update - ${deptName})</p>
+                        <p>The <strong>${formName}</strong> for department <strong>${deptName}</strong> has been successfully filled and submitted.</p>
+                        <p>Please find the attached Excel report for your reference.</p>
+                        
+                        <div style="margin: 25px 0;">
+                            <a href="${reviewUrl}" 
+                               style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                                View & Review OJT Sheet
+                            </a>
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
+                    </div>
+                `;
+            } else if (formName === "16-Day Monitoring Sheet" || formName === "3-Day Monitoring Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const is16Day = formName === "16-Day Monitoring Sheet";
+                const resolvedStudentId = formData.studentId || studentId; // Fallback to arg
+                const reviewUrl = is16Day 
+                    ? `${adminUrl}/admin/16-day-monitoring/${resolvedStudentId}`
+                    : `${adminUrl}/admin/3-day-monitoring/${resolvedStudentId}`;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <p>Dear All,</p>
+                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
+                        <p><strong>Sub:</strong> (${formName} Update - ${deptName})</p>
+                        <p>The <strong>${formName}</strong> for <strong>${formData.employeeName || 'Operator'}</strong> in department <strong>${deptName}</strong> has been updated.</p>
+                        <p>Please find the attached report for your reference.</p>
+                        
+                        <div style="margin: 25px 0;">
+                            <a href="${reviewUrl}" 
+                               style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                                Review & Approve Monitoring
+                            </a>
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
+                    </div>
+                `;
+            } else if (formName === "Handover Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const reviewUrl = `${adminUrl}/admin/handover-sheet?dept=${departmentId}&section=${sectionId || formData.sectionId || ''}`;
+                
+                // Get Section Name if possible
+                let sectionName = "All Sections";
+                if (sectionId || formData.sectionId) {
+                    const [secRows] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [sectionId || formData.sectionId]);
+                    if (secRows.length > 0) sectionName = secRows[0].name;
+                }
+
+                htmlMessage = emailTemplates.generateHandoverSheetEmail({
+                    departmentName: deptName,
+                    sectionName: sectionName,
+                    date: formData.date,
+                    entries: formData.entries || [],
+                    portalUrl: reviewUrl
+                });
+            } else if (formName === "Abnormal Condition Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const deptId = departmentId || "";
+                const sectionIdVal = sectionId || formData.sectionId || "";
+                const lineIdVal = formData.lineId || "";
+                const subSectionIdVal = formData.subSectionId || "";
+                const dateVal = formData.date ? formData.date.split("T")[0] : "";
+
+                const reviewUrl = `${adminUrl}/cms/abnormal-condition?deptId=${deptId}&sectionId=${sectionIdVal}&lineId=${lineIdVal}&subSectionId=${subSectionIdVal}&date=${dateVal}&isSheetOpen=true`;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px;">
+                        <h2 style="color: #ef4444; border-bottom: 2px solid #ef4444; padding-bottom: 8px; margin-top: 0;">Abnormal Condition Countermeasure Sheet</h2>
+                        <p>Dear Reviewer,</p>
+                        <p>An Abnormal Condition countermeasure sheet has been submitted for review.</p>
+                        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+                            <tr>
+                                <td style="padding: 8px 0; font-weight: bold; color: #64748b; width: 120px;">Department:</td>
+                                <td style="padding: 8px 0; color: #1e293b;">${deptName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Date:</td>
+                                <td style="padding: 8px 0; color: #1e293b;">${dateVal}</td>
+                            </tr>
+                        </table>
+                        <p>Please review and sign off on the process countermeasure entries using the link below:</p>
+                        
+                        <div style="margin: 30px 0; text-align: center;">
+                            <a href="${reviewUrl}" 
+                               style="background-color: #ef4444; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.2); display: inline-block;">
+                                Review and approve
+                            </a>
+                        </div>
+                        
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+                        <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">This is an automated notification from the FME Digital Portal.</p>
+                    </div>
+                `;
+            } else if (formName === "Skill Matrix Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const month = formData.month || new Date().toISOString().slice(0, 7);
+                const sectionId = formData.section || "";
+                const lineId = formData.line || "";
+                const subSectionId = formData.subSection || "";
+                const stationId = formData.station || "";
+                
+                const reviewUrl = `${adminUrl}/admin/skill-matrix?dept=${departmentId}&section=${sectionId}&line=${lineId}&subSection=${subSectionId}&station=${stationId}&month=${month}`;
+
+                // Resolve hierarchy names
+                let sectionName = "-";
+                if (sectionId) {
+                    const [secRows] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [sectionId]);
+                    if (secRows.length > 0) sectionName = secRows[0].name;
+                }
+                let lineName = "-";
+                if (lineId) {
+                    const [lineRows] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [lineId]);
+                    if (lineRows.length > 0) lineName = lineRows[0].name;
+                }
+                let subSectionName = "-";
+                if (subSectionId) {
+                    const [subSecRows] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [subSectionId]);
+                    if (subSecRows.length > 0) subSectionName = subSecRows[0].name;
+                }
+
+                htmlMessage = emailTemplates.generateSkillMatrixEmail({
+                    departmentName: deptName,
+                    sectionName: sectionName,
+                    lineName: lineName,
+                    subSectionName: subSectionName,
+                    month: month,
+                    entries: formData.entries || [],
+                    portalUrl: reviewUrl,
+                    config: formData.footerInfo?.config || {}
+                });
             }
 
 
@@ -135,6 +282,9 @@ class NotificationService {
 
         switch (formName) {
             case "Multi Skill Sheet":
+                await this._fillMultiSkillSheet(worksheet, departmentId, formData);
+                break;
+            case "Skill Upgradation Sheet":
                 await this._fillMultiSkillSheet(worksheet, departmentId, formData);
                 break;
             case "Handover Sheet":
@@ -180,7 +330,7 @@ class NotificationService {
     }
 
     static async _fillMultiSkillSheet(worksheet, departmentId, formData) {
-        const { selectedLines = [], tableData = {} } = formData || {};
+        const { year, tableData = {} } = formData || {};
 
         // 1. Fetch Department & Students
         const department = await Department.findById(departmentId);
@@ -192,7 +342,6 @@ class NotificationService {
         // Fetch students (Users) in this department
         let students = [];
         try {
-            // SQL abstraction fix: User.find with $or is not supported. Fetching and filtering manually for accuracy.
             const allUsers = await User.find({ isDeleted: 0 });
             students = allUsers.filter(u => {
                 const isByDeptName = u.department === department.name;
@@ -204,76 +353,44 @@ class NotificationService {
             logger.error(`[NotificationService] Error fetching students: ${error.message}`);
         }
 
-        // 2. Fetch Machines and Lines for selected lines to build columns
-        const machineColumns = [];
-        const linesMap = {};
-        for (let i = 0; i < selectedLines.length; i++) {
-            const lineId = selectedLines[i];
-            if (!lineId) {
-                machineColumns.push({
-                    key: `slot-${i}-empty`,
-                    machineName: "-",
-                    lineName: "-",
-                    slotIdx: i
-                });
-                continue;
-            }
-
-            if (!linesMap[lineId]) {
-                const line = await Line.findById(lineId);
-                linesMap[lineId] = line ? line.name : "Unknown Line";
-            }
-
-            const machines = await Machine.find({ line: lineId, isActive: 1 });
-            if (machines.length === 0) {
-                machineColumns.push({
-                    key: `slot-${i}-no-machine`,
-                    machineName: "-",
-                    lineName: linesMap[lineId],
-                    slotIdx: i
-                });
-            } else {
-                machines.forEach(m => {
-                    machineColumns.push({
-                        key: `slot-${i}-machine-${m.id}`,
-                        machineName: m.name,
-                        lineName: linesMap[lineId],
-                        slotIdx: i
-                    });
-                });
-            }
-        }
-
-        const totalProcessCols = machineColumns.length || 1;
-
         // --- Header Section ---
-        worksheet.mergeCells(1, 1, 1, 4 + totalProcessCols);
+        worksheet.mergeCells(1, 1, 1, 18);
         const companyCell = worksheet.getCell(1, 1);
         companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
         companyCell.font = { bold: true, size: 10 };
         companyCell.alignment = { horizontal: 'right' };
 
-        worksheet.mergeCells(2, 1, 2, 4 + totalProcessCols);
+        worksheet.mergeCells(2, 1, 2, 18);
         const titleCell = worksheet.getCell(2, 1);
         titleCell.value = 'MULTI SKILLING PLAN & ACTUAL SHEET';
         titleCell.font = { bold: true, size: 14 };
         titleCell.alignment = { horizontal: 'center' };
 
-        // Row 3: Info row (optional, like department name)
-        worksheet.mergeCells(3, 1, 3, 4 + totalProcessCols);
+        // Row 3: Info row (department and year)
+        worksheet.mergeCells(3, 1, 3, 18);
         const infoCell = worksheet.getCell(3, 1);
-        infoCell.value = `Department: ${department.name} | Date: ${new Date().toLocaleDateString()}`;
+        infoCell.value = `Department: ${department.name} | Year: ${year || new Date().getFullYear()} | Date: ${new Date().toLocaleDateString()}`;
         infoCell.font = { bold: true };
 
         // --- Table Headers ---
-        // Row 4: Static Headers + Line Names
-        const row4Values = ['Sr. No', 'Associates Name', 'Card No', 'Plan/Actual'];
-        machineColumns.forEach(col => row4Values.push(col.lineName));
+        // Row 4: Static Headers + Quarter Headers
+        const row4Values = [
+            'Sr. No', 'Associates Name', 'Card No', 'Shift', 'Model & Line', 'Station',
+            'Jan-March', '', '',
+            'April-June', '', '',
+            'July-Sep', '', '',
+            'Oct-Dec', '', ''
+        ];
         const row4 = worksheet.addRow(row4Values);
 
-        // Row 5: Static Headers + Machine names
-        const row5Values = ['', '', '', ''];
-        machineColumns.forEach(col => row5Values.push(col.machineName));
+        // Row 5: Static Headers placeholders + Sub-section names
+        const row5Values = [
+            '', '', '', '', '', '',
+            'Skill Level', 'Updation Date', 'Status',
+            'Skill Level', 'Updation Date', 'Status',
+            'Skill Level', 'Updation Date', 'Status',
+            'Skill Level', 'Updation Date', 'Status'
+        ];
         const row5 = worksheet.addRow(row5Values);
 
         // Merging static headers across Row 4 & 5
@@ -281,20 +398,14 @@ class NotificationService {
         worksheet.mergeCells('B4:B5');
         worksheet.mergeCells('C4:C5');
         worksheet.mergeCells('D4:D5');
+        worksheet.mergeCells('E4:E5');
+        worksheet.mergeCells('F4:F5');
 
-        // Merge Line Names horizontally for machines belonging to same line
-        let startCol = 5;
-        for (let i = 0; i < machineColumns.length; i++) {
-            const currentLine = machineColumns[i].lineName;
-            const nextLine = machineColumns[i + 1]?.lineName;
-
-            if (currentLine !== nextLine) {
-                if (startCol < 5 + i) {
-                    worksheet.mergeCells(4, startCol, 4, 5 + i);
-                }
-                startCol = 5 + i + 1;
-            }
-        }
+        // Merge Quarter Headers horizontally
+        worksheet.mergeCells('G4:I4');
+        worksheet.mergeCells('J4:L4');
+        worksheet.mergeCells('M4:O4');
+        worksheet.mergeCells('P4:R4');
 
         // Style headers
         [row4, row5].forEach(row => {
@@ -303,63 +414,50 @@ class NotificationService {
 
         // Set column widths
         worksheet.getColumn(1).width = 8;
-        worksheet.getColumn(2).width = 30;
+        worksheet.getColumn(2).width = 25;
         worksheet.getColumn(3).width = 15;
-        worksheet.getColumn(4).width = 12;
-        for (let i = 5; i <= 4 + totalProcessCols; i++) {
+        worksheet.getColumn(4).width = 10;
+        worksheet.getColumn(5).width = 18;
+        worksheet.getColumn(6).width = 15;
+        for (let i = 7; i <= 18; i++) {
             worksheet.getColumn(i).width = 15;
         }
 
         // --- Data Rows ---
         students.forEach((student, index) => {
             const studentId = String(student.id || student._id);
-            const userPlanActual = tableData[studentId] || { plan: {}, actual: {} };
+            const data = tableData[studentId] || {};
 
-            // Plan Row
-            const planRowValues = [
+            const rowValues = [
                 index + 1,
                 student.fullName,
                 student.empId || student.userName,
-                'Plan'
+                data.shift || "",
+                data.modelLine || "",
+                data.station || "",
+                data.q1Skill || "",
+                data.q1Date || "",
+                data.q1Status || "",
+                data.q2Skill || "",
+                data.q2Date || "",
+                data.q2Status || "",
+                data.q3Skill || "",
+                data.q3Date || "",
+                data.q3Status || "",
+                data.q4Skill || "",
+                data.q4Date || "",
+                data.q4Status || ""
             ];
-            machineColumns.forEach(col => {
-                planRowValues.push(userPlanActual.plan?.[col.key] || "");
-            });
-            const planRow = worksheet.addRow(planRowValues);
 
-            // Actual Row
-            const actualRowValues = [
-                '',
-                '',
-                '',
-                'Actual'
-            ];
-            machineColumns.forEach(col => {
-                actualRowValues.push(userPlanActual.actual?.[col.key] || "");
-            });
-            const actualRow = worksheet.addRow(actualRowValues);
-
-            // Merge student info cells across Plan/Actual rows
-            const startRow = planRow.number;
-            worksheet.mergeCells(`A${startRow}:A${startRow + 1}`);
-            worksheet.mergeCells(`B${startRow}:B${startRow + 1}`);
-            worksheet.mergeCells(`C${startRow}:C${startRow + 1}`);
-
-            [planRow, actualRow].forEach(row => {
-                row.eachCell(cell => this._applyBorderStyle(cell));
-                row.getCell(4).font = { bold: true };
-            });
-
-            // Color 'Plan' and 'Actual' identifiers
-            planRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
-            actualRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+            const row = worksheet.addRow(rowValues);
+            row.eachCell(cell => this._applyBorderStyle(cell));
         });
 
         // --- Footer Section ---
         const footerRowNumber = worksheet.lastRow.number + 2;
-        worksheet.mergeCells(footerRowNumber, 1, footerRowNumber, 4 + totalProcessCols);
+        worksheet.mergeCells(footerRowNumber, 1, footerRowNumber, 18);
         const footerCell = worksheet.getCell(footerRowNumber, 1);
-        footerCell.value = 'FRM-WH-QA-150 | REV: 01 | REV DATE: 01.01.2023 | PAGE: 1 OF 1';
+        footerCell.value = 'FRM-WH-QA-236 | REV: 01 | REV DATE: 01.01.2023 | PAGE: 1 OF 1';
         footerCell.font = { italic: true, size: 9 };
         footerCell.alignment = { horizontal: 'center' };
     }
@@ -517,14 +615,41 @@ class NotificationService {
         attHeader.eachCell(cell => this._applyHeaderStyle(cell));
 
         const attendance = formData.attendanceRecords || [];
-        for (let i = 0; i < 10; i++) {
-            const left = attendance[i] || {};
-            const right = attendance[i + 10] || {};
+        const N = attendance.length;
+        const half = Math.ceil(N / 2);
+        for (let i = 0; i < half; i++) {
+            const leftIndex = i;
+            const rightIndex = i + half;
+            const left = attendance[leftIndex] || {};
+            const right = attendance[rightIndex] || {};
             const row = worksheet.addRow([
-                i + 1, left.date || '', left.name || '', left.ecode || '', left.department || '',
-                i + 11, right.date || '', right.name || '', right.ecode || '', right.department || ''
+                leftIndex + 1, left.date || '', left.name || '', left.ecode || '', left.department || '',
+                rightIndex + 1, rightIndex < N ? (right.date || '') : '', rightIndex < N ? (right.name || '') : '', rightIndex < N ? (right.ecode || '') : '', rightIndex < N ? (right.department || '') : ''
             ]);
             row.eachCell(cell => this._applyBorderStyle(cell));
+        }
+
+        // --- Prepared By / Checked By Footer ---
+        worksheet.addRow([]);
+        const signRow = worksheet.addRow([
+            'Prepared By :-', formData.creatorName || formData.trainingGivenBy || '', '', '', '',
+            'Checked By :-', '', '', '', ''
+        ]);
+        signRow.font = { bold: true, size: 10 };
+        worksheet.mergeCells(signRow.number, 1, signRow.number, 1);
+        worksheet.mergeCells(signRow.number, 2, signRow.number, 5);
+        worksheet.mergeCells(signRow.number, 6, signRow.number, 6);
+        worksheet.mergeCells(signRow.number, 7, signRow.number, 10);
+        
+        for (let c = 1; c <= 10; c++) {
+            const cell = signRow.getCell(c);
+            cell.alignment = { vertical: 'middle', horizontal: c === 2 ? 'left' : 'center' };
+            cell.border = {
+                top: { style: 'thin' },
+                bottom: { style: 'thin' },
+                left: c === 1 || c === 6 ? { style: 'thin' } : undefined,
+                right: c === 5 || c === 10 ? { style: 'thin' } : undefined
+            };
         }
 
         // --- Footer ---
@@ -713,123 +838,447 @@ class NotificationService {
     }
 
     static async _fillThreeDaySheet(worksheet, formData) {
-        // --- Header ---
-        worksheet.mergeCells('A1:G1');
-        const companyCell = worksheet.getCell('A1');
+        const { gridData = {}, employeeName, employeeCode, dept, handoverDate, trgResult, workingWith, lineLeaderName, studentId } = formData;
+
+        // 1. Resolve Config
+        let config = formData.config;
+        if (!config && studentId) {
+            const user = await User.findById(studentId);
+            const resolvedConfig = await MonitoringConfig.findByTypeAndDepartment('3DAY', user?.departmentId || dept, user?.sectionId || 0);
+            config = resolvedConfig?.config;
+        }
+        if (!config) config = []; // Fallback
+
+        // 2. Setup Columns (Total 5 + 33 + 1 = 39)
+        // Static: S.No (1), Parameters (2), Check Name (3,4), Mark (5) -> 5
+        // Monitoring: 33 (11 per day * 3)
+        // Eval: 1
+        const columns = [
+            { width: 5 }, // S.No
+            { width: 25 }, // Parameters
+            { width: 35 }, // Check Name Label
+            { width: 10 }, // Mark (Static space for Eval label alignment)
+            { width: 8 }, // Mark (Max)
+        ];
+        // Detailed Days (1-3) -> 11 cols each
+        for (let d = 0; d < 3; d++) {
+            for (let i = 0; i < 10; i++) columns.push({ width: 4 });
+            columns.push({ width: 6 }); // Total
+        }
+        // Evaluation
+        columns.push({ width: 20 });
+        worksheet.columns = columns;
+
+        // 3. Header Section
+        worksheet.mergeCells(1, 1, 1, 39);
+        const companyCell = worksheet.getCell(1, 1);
         companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
         companyCell.font = { bold: true, size: 10 };
         companyCell.alignment = { horizontal: 'right' };
 
-        worksheet.mergeCells('A2:G2');
-        const titleCell = worksheet.getCell('A2');
+        worksheet.mergeCells(2, 1, 2, 35);
+        const titleCell = worksheet.getCell(2, 1);
         titleCell.value = '3-DAY MONITORING SHEET';
         titleCell.font = { bold: true, size: 16 };
-        titleCell.alignment = { horizontal: 'center' };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // --- Info Section ---
-        worksheet.addRow(['Line:', formData.lineName || '', 'Process:', formData.processName || '', 'Station:', formData.stationName || '', 'Operator:', formData.studentName || '']);
-        worksheet.getRow(worksheet.lastRow.number).font = { bold: true };
+        // Doc Info Box
+        worksheet.mergeCells(2, 36, 2, 39);
+        const docInfoCell = worksheet.getCell(2, 36);
+        docInfoCell.value = 'Document No.: FRM-HR-003\nRevision No.: 05\nRevision Date: 12.08.23';
+        docInfoCell.font = { size: 8, bold: true };
+        docInfoCell.alignment = { wrapText: true, vertical: 'middle' };
+        docInfoCell.border = { top: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' }, bottom: { style: 'thin' } };
 
-        // --- Monitoring Table ---
-        worksheet.addRow([]);
-        const headerRow = worksheet.addRow(['Day', 'Checkpoint / Activity', 'Status (OK/NG)', 'Remarks', '', '', 'Final Result']);
-        worksheet.mergeCells(headerRow.number, 4, headerRow.number, 6);
-        headerRow.eachCell(cell => this._applyHeaderStyle(cell));
+        // 4. Info Grid
+        const applyInfoStyle = (cell) => {
+            cell.font = { bold: true, size: 9 };
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' }, bottom: { style: 'thin' } };
+        };
 
-        worksheet.columns = [
-            { key: 'day', width: 10 },
-            { key: 'checkpoint', width: 40 },
-            { key: 'status', width: 15 },
-            { key: 'rem1', width: 10 },
-            { key: 'rem2', width: 10 },
-            { key: 'rem3', width: 10 },
-            { key: 'result', width: 15 }
-        ];
+        const addInfoRow = (label1, val1, label2, val2, startRow) => {
+            worksheet.mergeCells(startRow, 1, startRow, 2);
+            const l1 = worksheet.getCell(startRow, 1);
+            l1.value = label1;
+            applyInfoStyle(l1);
 
-        if (formData.entries) {
-            Object.entries(formData.entries).forEach(([day, checkpoints]) => {
-                if (typeof checkpoints === 'object' && checkpoints !== null) {
-                    Object.entries(checkpoints).forEach(([cp, status], idx) => {
-                        const row = worksheet.addRow({
-                            day: idx === 0 ? day : '',
-                            checkpoint: cp,
-                            status: status,
-                            rem1: '', rem2: '', rem3: '',
-                            result: ''
-                        });
-                        worksheet.mergeCells(row.number, 4, row.number, 6);
-                        row.eachCell(cell => this._applyBorderStyle(cell));
-                    });
-                }
+            worksheet.mergeCells(startRow, 3, startRow, 15);
+            const v1 = worksheet.getCell(startRow, 3);
+            v1.value = `: ${val1 || ''}`;
+            v1.font = { color: { argb: 'FF0000FF' }, bold: true };
+            applyInfoStyle(v1);
+
+            worksheet.mergeCells(startRow, 16, startRow, 18);
+            const l2 = worksheet.getCell(startRow, 16);
+            l2.value = label2;
+            applyInfoStyle(l2);
+
+            worksheet.mergeCells(startRow, 19, startRow, 39);
+            const v2 = worksheet.getCell(startRow, 19);
+            v2.value = `: ${val2 || ''}`;
+            v2.font = { color: { argb: 'FF0000FF' }, bold: true };
+            applyInfoStyle(v2);
+        };
+
+        addInfoRow('Employee Name', employeeName, 'Handover Date', handoverDate, 3);
+        addInfoRow('Employee Code', employeeCode, 'Trg. Result', trgResult, 4);
+        addInfoRow('Process Name', formData.processName, 'Working With', workingWith, 5);
+        addInfoRow('Dept.', dept, 'Line & Leader Name', lineLeaderName, 6);
+
+        // 5. Table Headers (Row 7-9)
+        worksheet.mergeCells(7, 1, 9, 1); worksheet.getCell(7, 1).value = 'S.No';
+        worksheet.mergeCells(7, 2, 9, 2); worksheet.getCell(7, 2).value = 'Parameters';
+        worksheet.mergeCells(7, 3, 9, 4); worksheet.getCell(7, 3).value = 'Check Items';
+        worksheet.mergeCells(7, 5, 9, 5); worksheet.getCell(7, 5).value = 'Mark (Max)';
+        worksheet.mergeCells(7, 6, 7, 38); worksheet.getCell(7, 6).value = 'DAY WISE PERFORMANCE MONITORING';
+        worksheet.mergeCells(7, 39, 9, 39); worksheet.getCell(7, 39).value = 'Evaluation after monitoring of 3 days';
+
+        // Day Headers
+        for (let d = 1; d <= 3; d++) {
+            const startCol = 6 + (d - 1) * 11;
+            worksheet.mergeCells(8, startCol, 8, startCol + 10);
+            worksheet.getCell(8, startCol).value = `Day-${d}`;
+            for (let i = 1; i <= 10; i++) worksheet.getCell(9, startCol + i - 1).value = i;
+            worksheet.getCell(9, startCol + 10).value = 'Total';
+        }
+
+        // Style Headers
+        for (let r = 7; r <= 9; r++) {
+            worksheet.getRow(r).eachCell(cell => {
+                this._applyHeaderStyle(cell);
+                cell.font = { bold: true, size: 8 };
             });
         }
 
-        // --- Footer ---
-        const lastRowNumber = worksheet.lastRow.number + 2;
-        worksheet.mergeCells(`A${lastRowNumber}:G${lastRowNumber}`);
-        const footerCell = worksheet.getCell(`A${lastRowNumber}`);
-        footerCell.value = 'FRM-WH-QA-180 | REV: 01 | REV DATE: 12.08.2023 | PAGE: 1 OF 1';
+        // 6. Data Rows
+        let currentRow = 10;
+        config.forEach((cat, catIdx) => {
+            const catId = cat.id || `cat${catIdx + 1}`;
+            
+            cat.rows.forEach((row, rowIdx) => {
+                const isCycleDetailed = row.type === 'cycle_detailed';
+                const hasCT = !!row.hasCT;
+                
+                // Detailed cycle rows create two Excel rows if hasCT is true
+                const subRows = hasCT ? [
+                    { id: 'ct', label: row.label, mark: 'C/T', bg: 'FFF8F8F8' },
+                    { id: 'score', label: '', mark: row.weight, hasMark: true }
+                ] : [{ id: (isCycleDetailed ? 'score' : ''), label: row.label, mark: row.weight, hasMark: true }];
+
+                subRows.forEach((sub, sIdx) => {
+                    const excelRow = worksheet.getRow(currentRow);
+                    
+                    // Merges for Category Labels
+                    if (rowIdx === 0 && sIdx === 0) {
+                        const rowCount = cat.rows.reduce((acc, r) => acc + (r.hasCT ? 2 : 1), 0);
+                        worksheet.mergeCells(currentRow, 1, currentRow + rowCount - 1, 1);
+                        worksheet.getCell(currentRow, 1).value = catIdx + 1;
+                        worksheet.mergeCells(currentRow, 2, currentRow + rowCount - 1, 2);
+                        worksheet.getCell(currentRow, 2).value = cat.category;
+
+                        // Evaluation Side Box
+                        worksheet.mergeCells(currentRow, 39, currentRow + rowCount - 1, 39);
+                        const evalBox = worksheet.getCell(currentRow, 39);
+                        evalBox.value = `Total Mark: ${cat.totalMark}\nActual: ${gridData[`${catId}_eval_total`] || '0'}\nTarget: ${cat.target || '100%'}\nActual %: ${gridData[`${catId}_eval_actual`] || '0%'}`;
+                        evalBox.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+                    }
+
+                    // Check Item Label (Merged horizontally)
+                    if (hasCT && sIdx === 0) {
+                        worksheet.mergeCells(currentRow, 3, currentRow + 1, 3);
+                        worksheet.getCell(currentRow, 3).value = sub.label;
+                    } else if (!hasCT) {
+                        worksheet.mergeCells(currentRow, 3, currentRow, 4);
+                        worksheet.getCell(currentRow, 3).value = sub.label;
+                    }
+
+                    // Mark column content
+                    worksheet.getCell(currentRow, 5).value = sub.mark;
+
+                    // Monitoring Data
+                    for (let d = 1; d <= 3; d++) {
+                        const startCol = 6 + (d - 1) * 11;
+                        if (isCycleDetailed) {
+                            for (let i = 0; i < 10; i++) {
+                                const key = `${row.id}_day${d}_${sub.id}_${i}`;
+                                worksheet.getCell(currentRow, startCol + i).value = gridData[key] || '';
+                            }
+                            const avgKey = `${row.id}_day${d}_${sub.id}_avg`;
+                            const avgCell = worksheet.getCell(currentRow, startCol + 10);
+                            avgCell.value = gridData[avgKey] || '';
+                            avgCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                        } else {
+                            worksheet.mergeCells(currentRow, startCol, currentRow, startCol + 10);
+                            worksheet.getCell(currentRow, startCol).value = gridData[`${row.id}_day${d}`] || '';
+                            worksheet.getCell(currentRow, startCol).alignment = { horizontal: 'center' };
+                        }
+                    }
+
+                    excelRow.eachCell(cell => {
+                        this._applyBorderStyle(cell);
+                        cell.font = { size: 8 };
+                        if (sub.bg) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sub.bg } };
+                    });
+
+                    currentRow++;
+                });
+            });
+        });
+
+        // 7. Footer
+        worksheet.mergeCells(currentRow + 1, 1, currentRow + 1, 39);
+        const footerCell = worksheet.getCell(currentRow + 1, 1);
+        footerCell.value = 'FRM-HR-003 | REV: 05 | REV DATE: 12.08.23 | PAGE: 1 OF 1';
         footerCell.alignment = { horizontal: 'center' };
     }
 
     static async _fillSixteenDaySheet(worksheet, formData) {
-        // --- Header ---
-        worksheet.mergeCells('A1:H1');
-        const companyCell = worksheet.getCell('A1');
+        const { gridData = {}, employeeName, employeeCode, dept, handoverDate, trgResult, workingWith, lineLeaderName, studentId } = formData;
+
+        // 1. Resolve Config
+        let config = formData.config;
+        if (!config && studentId) {
+            const user = await User.findById(studentId);
+            const resolvedConfig = await MonitoringConfig.findByTypeAndDepartment('16DAY', user?.departmentId || dept, user?.sectionId || 0);
+            config = resolvedConfig?.config;
+        }
+        if (!config) config = []; // Fallback
+
+        const daysDetailed = ["d1", "d2", "d3"];
+        const daysSummary = Array.from({ length: 13 }, (_, i) => `day${i + 4}`);
+
+        // 2. Setup Columns (Total 5 + 46 + 1 = 52)
+        // Static: S.No (1), Parameters (2), Check Name (3,4), Mark (5) -> 5
+        // Monitoring: 46
+        // Eval: 1
+        const columns = [
+            { width: 5 }, // S.No
+            { width: 25 }, // Parameters
+            { width: 35 }, // Check Name Label
+            { width: 20 }, // Check Name Sub-label
+            { width: 8 }, // Mark
+        ];
+        // Detailed Days (1-3) -> 11 cols each
+        for (let d = 0; d < 3; d++) {
+            for (let i = 0; i < 10; i++) columns.push({ width: 4 });
+            columns.push({ width: 6 }); // Avg/Total
+        }
+        // Summary Days (4-16) -> 13 cols
+        for (let d = 0; d < 13; d++) columns.push({ width: 8 });
+        // Evaluation
+        columns.push({ width: 15 });
+
+        worksheet.columns = columns;
+
+        // 3. Header Section (Matching UI)
+        worksheet.mergeCells(1, 1, 1, 52);
+        const companyCell = worksheet.getCell(1, 1);
         companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
         companyCell.font = { bold: true, size: 10 };
         companyCell.alignment = { horizontal: 'right' };
 
-        worksheet.mergeCells('A2:H2');
-        const titleCell = worksheet.getCell('A2');
-        titleCell.value = '16-DAY MONITORING SHEET';
-        titleCell.font = { bold: true, size: 16 };
-        titleCell.alignment = { horizontal: 'center' };
+        worksheet.mergeCells(2, 1, 2, 48);
+        const titleCell = worksheet.getCell(2, 1);
+        titleCell.value = 'ASSOCIATE PERFORMANCE MONITORING CHECK SHEET';
+        titleCell.font = { bold: true, size: 14 };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // --- Info Section ---
-        worksheet.addRow(['Employee Name:', formData.studentName || '', 'Emp Code:', formData.studentCode || '', 'Line:', formData.lineName || '']);
-        worksheet.addRow(['Date of Joining:', formData.doj || '', 'Process:', formData.processName || '', 'Mentor:', formData.mentorName || '']);
-        worksheet.getRow(worksheet.lastRow.number - 1).font = { bold: true };
-        worksheet.getRow(worksheet.lastRow.number).font = { bold: true };
+        // Doc Info Box
+        worksheet.mergeCells(2, 49, 2, 52);
+        const docInfoCell = worksheet.getCell(2, 49);
+        docInfoCell.value = 'Document No.: FRM-HR-004\nRevision No.: 07\nRevision Date: 11.12.21';
+        docInfoCell.font = { size: 8, bold: true };
+        docInfoCell.alignment = { wrapText: true, vertical: 'middle' };
+        docInfoCell.border = { top: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' }, bottom: { style: 'thin' } };
 
-        // --- Table Headers ---
-        worksheet.addRow([]);
-        const headerRow = worksheet.addRow(['Day', 'Target', 'Actual', 'Efficiency (%)', 'Quality (%)', 'Safety', 'Machine Status', 'Final Judgment']);
-        headerRow.eachCell(cell => this._applyHeaderStyle(cell));
+        // 4. Info Grid (Row 3-6)
+        const applyInfoStyle = (cell) => {
+            cell.font = { bold: true, size: 9 };
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' }, bottom: { style: 'thin' } };
+        };
 
-        worksheet.columns = [
-            { key: 'day', width: 8 },
-            { key: 'target', width: 12 },
-            { key: 'actual', width: 12 },
-            { key: 'efficiency', width: 15 },
-            { key: 'quality', width: 12 },
-            { key: 'safety', width: 12 },
-            { key: 'machine', width: 15 },
-            { key: 'judgment', width: 15 }
-        ];
+        const addInfoRow = (label1, val1, label2, val2, startRow) => {
+            worksheet.mergeCells(startRow, 1, startRow, 2);
+            const l1 = worksheet.getCell(startRow, 1);
+            l1.value = label1;
+            applyInfoStyle(l1);
 
-        // --- Data Rows (1 to 16) ---
-        const monitoringData = formData.monitoringData || {};
-        for (let i = 1; i <= 16; i++) {
-            const dayData = monitoringData[`day_${i}`] || {};
-            const row = worksheet.addRow({
-                day: `Day ${i}`,
-                target: dayData.target || '',
-                actual: dayData.actual || '',
-                efficiency: dayData.efficiency || '',
-                quality: dayData.quality || '',
-                safety: dayData.safety || 'OK',
-                machine: dayData.machine || 'OK',
-                judgment: dayData.judgment || ''
-            });
-            row.eachCell(cell => this._applyBorderStyle(cell));
+            worksheet.mergeCells(startRow, 3, startRow, 26);
+            const v1 = worksheet.getCell(startRow, 3);
+            v1.value = `: ${val1 || ''}`;
+            v1.font = { color: { argb: 'FF0000FF' }, bold: true };
+            applyInfoStyle(v1);
+
+            worksheet.mergeCells(startRow, 27, startRow, 29);
+            const l2 = worksheet.getCell(startRow, 27);
+            l2.value = label2;
+            applyInfoStyle(l2);
+
+            worksheet.mergeCells(startRow, 30, startRow, 52);
+            const v2 = worksheet.getCell(startRow, 30);
+            v2.value = `: ${val2 || ''}`;
+            v2.font = { color: { argb: 'FF0000FF' }, bold: true };
+            applyInfoStyle(v2);
+        };
+
+        addInfoRow('Employee Name', employeeName, 'Handover Date', handoverDate, 3);
+        addInfoRow('Employee Code', employeeCode, 'Trg. Result', trgResult, 4);
+        addInfoRow('Process Name', formData.processName, 'Working With', workingWith, 5);
+        addInfoRow('Dept.', dept, 'Line & Leader Name', lineLeaderName, 6);
+
+        // 5. Table Headers (Row 7-9)
+        worksheet.mergeCells(7, 1, 9, 1); // S.No
+        const snH = worksheet.getCell(7, 1); snH.value = 'S.No';
+        worksheet.mergeCells(7, 2, 9, 2); // Parameters
+        const paramH = worksheet.getCell(7, 2); paramH.value = 'Parameters';
+        worksheet.mergeCells(7, 3, 9, 4); // Check Name
+        const checkH = worksheet.getCell(7, 3); checkH.value = 'Check Name';
+        worksheet.mergeCells(7, 5, 9, 5); // Mark
+        const markH = worksheet.getCell(7, 5); markH.value = 'Mark (Max)';
+
+        worksheet.mergeCells(7, 6, 7, 51); // Day Wise Title
+        const dayWiseH = worksheet.getCell(7, 6); dayWiseH.value = 'DAY WISE PERFORMANCE MONITORING';
+        dayWiseH.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+
+        worksheet.mergeCells(7, 52, 9, 52); // Evaluation
+        const evalH = worksheet.getCell(7, 52); evalH.value = 'Evaluation after monitoring of 16 days';
+
+        // Row 8: Days
+        worksheet.mergeCells(8, 6, 8, 16); // Day 1
+        worksheet.getCell(8, 6).value = 'Day-1';
+        worksheet.mergeCells(8, 17, 8, 27); // Day 2
+        worksheet.getCell(8, 17).value = 'Day-2';
+        worksheet.mergeCells(8, 28, 8, 38); // Day 3
+        worksheet.getCell(8, 28).value = 'Day-3';
+
+        for (let i = 4; i <= 16; i++) {
+            worksheet.mergeCells(8, 38 + (i - 3), 9, 38 + (i - 3));
+            worksheet.getCell(8, 38 + (i - 3)).value = `Day-${i}`;
         }
 
-        // --- Footer ---
-        const lastRowNumber = worksheet.lastRow.number + 2;
-        worksheet.mergeCells(`A${lastRowNumber}:H${lastRowNumber}`);
-        const footerCell = worksheet.getCell(`A${lastRowNumber}`);
-        footerCell.value = 'FRM-WH-QA-182 | REV: 01 | REV DATE: 20.09.2023 | PAGE: 1 OF 1';
+        // Row 9: Sub-cols for Day 1-3
+        for (let d = 0; d < 3; d++) {
+            const startCol = 6 + (d * 11);
+            for (let i = 0; i < 10; i++) {
+                worksheet.getCell(9, startCol + i).value = i + 1;
+            }
+            worksheet.getCell(9, startCol + 10).value = 'Avg/Total';
+        }
+
+        // Style all headers
+        for (let r = 7; r <= 9; r++) {
+            const row = worksheet.getRow(r);
+            row.eachCell(cell => {
+                this._applyHeaderStyle(cell);
+                cell.font = { bold: true, size: 8 };
+            });
+        }
+
+        // 6. Data Rows
+        let currentRow = 10;
+        config.forEach((cat, catIdx) => {
+            const totalRowsInCat = cat.rows.reduce((acc, row) => acc + (row.type === 'cycle_detailed' ? 4 : 1), 0);
+            
+            // Render rows for category
+            cat.rows.forEach((row, rowIdx) => {
+                const isCycleDetailed = row.type === 'cycle_detailed';
+                const subRows = isCycleDetailed ? [
+                    { id: 'target', label: 'C/T Target (Sec.)', hasMark: false },
+                    { id: 'actual', label: 'C/T Actual', hasMark: false },
+                    { id: 'achievement', label: 'Achievement %', hasMark: false, bg: 'FFFFFFE0' },
+                    { id: 'score', label: 'Score', hasMark: true }
+                ] : [{ id: '', label: row.label, hasMark: true }];
+
+                subRows.forEach((sub, sIdx) => {
+                    const excelRow = worksheet.getRow(currentRow);
+                    
+                    // Merges for Category Labels
+                    if (rowIdx === 0 && sIdx === 0) {
+                        worksheet.mergeCells(currentRow, 1, currentRow + totalRowsInCat - 1, 1);
+                        worksheet.getCell(currentRow, 1).value = catIdx + 1;
+                        worksheet.mergeCells(currentRow, 2, currentRow + totalRowsInCat - 1, 2);
+                        worksheet.getCell(currentRow, 2).value = cat.category;
+                    }
+
+                    // Merges for Parameter Label
+                    if (isCycleDetailed && sIdx === 0) {
+                        worksheet.mergeCells(currentRow, 3, currentRow + 2, 3);
+                        worksheet.getCell(currentRow, 3).value = row.label;
+                    } else if (!isCycleDetailed) {
+                        worksheet.mergeCells(currentRow, 3, currentRow, 4);
+                        worksheet.getCell(currentRow, 3).value = row.label;
+                    }
+
+                    // Sub-label (Target/Actual/etc)
+                    if (isCycleDetailed) {
+                        worksheet.getCell(currentRow, 4).value = sub.label;
+                    }
+
+                    // Mark
+                    if (sub.hasMark) {
+                        worksheet.getCell(currentRow, 5).value = row.weight;
+                    }
+
+                    // Data - Detailed Days (1-3)
+                    daysDetailed.forEach((dayPrefix, dIdx) => {
+                        const startCol = 6 + (dIdx * 11);
+                        for (let i = 0; i < 10; i++) {
+                            const key = isCycleDetailed ? `${row.id}_${dayPrefix}_${sub.id}_${i}` : `${row.id}_${dayPrefix}_${i}`;
+                            worksheet.getCell(currentRow, startCol + i).value = gridData[key] || '';
+                        }
+                        const avgKey = isCycleDetailed ? `${row.id}_${dayPrefix}_${sub.id}_avg` : `${row.id}_${dayPrefix}_avg`;
+                        const avgCell = worksheet.getCell(currentRow, startCol + 10);
+                        avgCell.value = gridData[avgKey] || '';
+                        avgCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow
+                    });
+
+                    // Data - Summary Days (4-16)
+                    daysSummary.forEach((dayKey, dsIdx) => {
+                        const colIdx = 39 + dsIdx;
+                        const key = isCycleDetailed ? `${row.id}_${dayKey}_${sub.id}` : `${row.id}_${dayKey}`;
+                        worksheet.getCell(currentRow, colIdx).value = gridData[key] || '';
+                    });
+
+                    // Evaluation
+                    if (sub.hasMark || !isCycleDetailed) {
+                        worksheet.getCell(currentRow, 52).value = gridData[`${row.id}_eval`] || '';
+                    }
+
+                    // Final styling for row
+                    excelRow.eachCell(cell => {
+                        this._applyBorderStyle(cell);
+                        cell.font = { size: 8 };
+                        if (sub.bg) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sub.bg } };
+                    });
+
+                    currentRow++;
+                });
+            });
+
+            // Category Summary Row (Actual % / Total)
+            const summaryRow = worksheet.getRow(currentRow);
+            worksheet.mergeCells(currentRow, 1, currentRow, 4);
+            worksheet.getCell(currentRow, 1).value = `Total Achievement % for ${cat.category.split('\n')[0]}`;
+            worksheet.getCell(currentRow, 5).value = cat.totalMark || '';
+
+            [...daysDetailed, ...daysSummary].forEach((d, dIdx) => {
+                const colIdx = dIdx < 3 ? 16 + (dIdx * 11) : 39 + (dIdx - 3);
+                worksheet.getCell(currentRow, colIdx).value = gridData[`${cat.id}_${d}_actual`] || '';
+            });
+            worksheet.getCell(currentRow, 52).value = gridData[`${cat.id}_eval_actual`] || '';
+
+            summaryRow.eachCell(cell => {
+                this._applyBorderStyle(cell);
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCEEFF' } }; // Light Blue
+                cell.font = { bold: true, size: 8 };
+            });
+            currentRow++;
+        });
+
+        // 7. Footer
+        worksheet.mergeCells(currentRow + 1, 1, currentRow + 1, 52);
+        const footerCell = worksheet.getCell(currentRow + 1, 1);
+        footerCell.value = 'FRM-HR-004 | REV: 07 | REV DATE: 11.12.21 | PAGE: 1 OF 1';
         footerCell.alignment = { horizontal: 'center' };
     }
 
@@ -927,51 +1376,116 @@ class NotificationService {
 
     static async _fillDPRSheet(worksheet, formData) {
         // --- Header ---
-        worksheet.mergeCells('A1:J1');
+        worksheet.mergeCells('A1:L1');
         const companyCell = worksheet.getCell('A1');
         companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
         companyCell.font = { bold: true, size: 10 };
         companyCell.alignment = { horizontal: 'right' };
 
-        worksheet.mergeCells('A2:J2');
+        worksheet.mergeCells('A2:L2');
         const titleCell = worksheet.getCell('A2');
         titleCell.value = 'DAILY PRODUCTION REPORT';
         titleCell.font = { bold: true, size: 16 };
         titleCell.alignment = { horizontal: 'center' };
 
         // --- Info Section ---
-        worksheet.addRow(['Date:', formData.date || '', 'Department:', formData.department || '', 'Shift:', formData.shift || '', 'Supervisor:', formData.supervisor || '']);
+        worksheet.addRow(['Date:', formData.date || '', 'Department:', formData.departmentName || formData.department || '', 'Shift:', formData.shift || '', 'Supervisor:', formData.leaderName || '']);
         worksheet.getRow(worksheet.lastRow.number).font = { bold: true };
 
-        // --- Production Table ---
+        // --- 1. Delivery Section ---
         worksheet.addRow([]);
-        const headerRow = worksheet.addRow(['S.No', 'Line', 'Model', 'Machine', 'Target', 'Actual', 'Rejection', 'Down Time', 'Efficiency (%)', 'Remarks']);
-        headerRow.eachCell(cell => this._applyHeaderStyle(cell));
+        const deliveryTitle = worksheet.addRow(['DELIVERY PERFORMANCE']);
+        deliveryTitle.font = { bold: true, size: 12 };
+        worksheet.mergeCells(deliveryTitle.number, 1, deliveryTitle.number, 12);
 
-        worksheet.columns = [
-            { key: 'sn', width: 5 },
-            { key: 'line', width: 20 },
-            { key: 'model', width: 20 },
-            { key: 'machine', width: 20 },
-            { key: 'target', width: 12 },
-            { key: 'actual', width: 12 },
-            { key: 'rejection', width: 12 },
-            { key: 'downtime', width: 15 },
-            { key: 'efficiency', width: 15 },
-            { key: 'remarks', width: 25 }
+        const deliveryHeader = worksheet.addRow(['S.No', 'W/H Code', 'Plan Qty', 'Lot No', 'Start Time', '1st Hr', '2nd Hr', '3rd Hr', '4th Hr', '5th Hr', 'Total', 'Gap']);
+        deliveryHeader.eachCell(cell => this._applyHeaderStyle(cell));
+
+        if (formData.delivery && Array.isArray(formData.delivery)) {
+            formData.delivery.forEach((item, index) => {
+                if (!item.wHCode && !item.plan) return; // Skip empty rows
+                const total = Number(item.total || 0);
+                const gap = Number(item.plan || 0) - total;
+                const row = worksheet.addRow([index + 1, item.wHCode || '', item.plan || 0, item.lotNo || '', item.startTime || '', item.hr1 || 0, item.hr2 || 0, item.hr3 || 0, item.hr4 || 0, item.hr5 || 0, total, gap]);
+                row.eachCell(cell => this._applyBorderStyle(cell));
+            });
+        }
+
+        // --- 2. Quality Section ---
+        worksheet.addRow([]);
+        const qualityTitle = worksheet.addRow(['QUALITY PERFORMANCE']);
+        qualityTitle.font = { bold: true, size: 12 };
+        worksheet.mergeCells(qualityTitle.number, 1, qualityTitle.number, 12);
+
+        const qualityHeader = worksheet.addRow(['Type', 'Production Qty', 'Defect Qty', 'PPM', '', '', '', '', '', '', '', '']);
+        worksheet.mergeCells(qualityHeader.number, 2, qualityHeader.number, 2);
+        qualityHeader.eachCell(cell => this._applyHeaderStyle(cell));
+
+        const q = formData.quality || {};
+        const qRows = [
+            ['Customer End', q.customerEndDefect?.productionQty || 0, q.customerEndDefect?.defectQty || 0, q.customerEndDefect?.ppm || 0],
+            ['Internal Defect', q.internalDefect?.productionQty || 0, q.internalDefect?.defectQty || 0, q.internalDefect?.ppm || 0]
         ];
-
-        const prodData = formData.productionData || [];
-        prodData.forEach((item, index) => {
-            const row = worksheet.addRow([index + 1, item.line || '', item.model || '', item.machine || '', item.target || '', item.actual || '', item.rejection || '', item.downtime || '', item.efficiency || '', item.remarks || '']);
+        qRows.forEach(qr => {
+            const row = worksheet.addRow(qr);
             row.eachCell(cell => this._applyBorderStyle(cell));
         });
 
+        // --- 3. Down Time Section ---
+        worksheet.addRow([]);
+        const dtTitle = worksheet.addRow(['DOWN TIME DETAILS']);
+        dtTitle.font = { bold: true, size: 12 };
+        worksheet.mergeCells(dtTitle.number, 1, dtTitle.number, 12);
+
+        const dtHeader = worksheet.addRow(['Description', '1st Hr', '2nd Hr', '3rd Hr', '4th Hr', 'Total', '', '', '', '', '', '']);
+        dtHeader.eachCell(cell => this._applyHeaderStyle(cell));
+
+        const dt = formData.downTime || {};
+        Object.entries(dt).forEach(([key, val]) => {
+            if (typeof val !== 'object') return;
+            const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+            const row = worksheet.addRow([label, val.hr1 || 0, val.hr2 || 0, val.hr3 || 0, val.hr4 || 0, val.total || 0]);
+            row.eachCell(cell => this._applyBorderStyle(cell));
+        });
+
+        // --- 4. Moral (Manpower) Section ---
+        worksheet.addRow([]);
+        const moralTitle = worksheet.addRow(['MORAL / MANPOWER STATUS']);
+        moralTitle.font = { bold: true, size: 12 };
+        worksheet.mergeCells(moralTitle.number, 1, moralTitle.number, 12);
+
+        const moralHeader = worksheet.addRow(['Process', 'Handover', 'Present', 'Absent', 'Present (Actual)', '', '', '', '', '', '', '']);
+        moralHeader.eachCell(cell => this._applyHeaderStyle(cell));
+
+        if (formData.moral && Array.isArray(formData.moral)) {
+            formData.moral.forEach(m => {
+                const row = worksheet.addRow([m.process || '', m.handover || 0, m.present || 0, m.absent || 0, m.present2 || 0]);
+                row.eachCell(cell => this._applyBorderStyle(cell));
+            });
+        }
+
+        // --- 5. Kaizen Section ---
+        worksheet.addRow([]);
+        const kaizenTitle = worksheet.addRow(['KAIZEN DETAILS']);
+        kaizenTitle.font = { bold: true, size: 12 };
+        worksheet.mergeCells(kaizenTitle.number, 1, kaizenTitle.number, 12);
+
+        const kaizenHeader = worksheet.addRow(['S.No', 'Details', 'Benefit', 'Status', 'Resp', '', '', '', '', '', '', '']);
+        kaizenHeader.eachCell(cell => this._applyHeaderStyle(cell));
+
+        if (formData.kaizenDetails && Array.isArray(formData.kaizenDetails)) {
+            formData.kaizenDetails.forEach((k, idx) => {
+                if (!k.details) return;
+                const row = worksheet.addRow([idx + 1, k.details || '', k.benefit || '', k.status || '', k.resp || '']);
+                row.eachCell(cell => this._applyBorderStyle(cell));
+            });
+        }
+
         // --- Footer ---
         const lastRowNumber = worksheet.lastRow.number + 2;
-        worksheet.mergeCells(`A${lastRowNumber}:J${lastRowNumber}`);
+        worksheet.mergeCells(`A${lastRowNumber}:L${lastRowNumber}`);
         const footerCell = worksheet.getCell(`A${lastRowNumber}`);
-        footerCell.value = 'FRM-PR-DPR-100 | REV: 01 | REV DATE: 01.01.2024';
+        footerCell.value = 'FRM-PR-274 | REV: 03 | REV DATE: 09.02.2026';
         footerCell.alignment = { horizontal: 'center' };
     }
 

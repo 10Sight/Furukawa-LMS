@@ -17,16 +17,16 @@ import checkAccountStatus from "../middlewares/accountStatus.middleware.js";
 
 const router = Router();
 
-router.post("/", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), createAssignment);
-router.get("/", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), checkAccountStatus(false), getAllAssignments);
-router.get("/accessible/:courseId/:moduleId", verifyJWT, authorizeRoles("isEmployee"), checkAccountStatus(false), getAccessibleAssignments);
-router.get("/course/:courseId", verifyJWT, authorizeRoles("isEmployee"), checkAccountStatus(false), getCourseAssignments);
+router.post("/", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "assignment:create"), createAssignment);
+router.get("/", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "assignment:read"), checkAccountStatus(false), getAllAssignments);
+router.get("/accessible/:courseId/:moduleId", verifyJWT, authorizeRoles("isEmployee", "assignment:read"), checkAccountStatus(false), getAccessibleAssignments);
+router.get("/course/:courseId", verifyJWT, authorizeRoles("isEmployee", "assignment:read"), checkAccountStatus(false), getCourseAssignments);
 // New scoped endpoints
-router.get("/by-course/:courseId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), checkAccountStatus(false), getAssignmentsByCourse);
-router.get("/by-module/:moduleId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), checkAccountStatus(false), getAssignmentsByModule);
-router.get("/by-lesson/:lessonId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), checkAccountStatus(false), getAssignmentsByLesson);
-router.get("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee"), checkAccountStatus(false), getAssigmentById);
-router.put("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), updatedAssignment);
-router.delete("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin"), deleteAssignment);
+router.get("/by-course/:courseId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "assignment:read"), checkAccountStatus(false), getAssignmentsByCourse);
+router.get("/by-module/:moduleId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "assignment:read"), checkAccountStatus(false), getAssignmentsByModule);
+router.get("/by-lesson/:lessonId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "assignment:read"), checkAccountStatus(false), getAssignmentsByLesson);
+router.get("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "assignment:read"), checkAccountStatus(false), getAssigmentById);
+router.put("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "assignment:update"), updatedAssignment);
+router.delete("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "assignment:delete"), deleteAssignment);
 
 export default router;

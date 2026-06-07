@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { IconMail, IconDeviceFloppy, IconLoader2, IconSettings, IconFilter, IconUserCheck } from "@tabler/icons-react";
+import { IconMail, IconDeviceFloppy, IconLoader2, IconSettings, IconFilter, IconUserCheck, IconClock } from "@tabler/icons-react";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
 
@@ -19,11 +19,13 @@ const AVAILABLE_FORMS = [
     "Operator Observance Check Sheet",
     "3-Day Monitoring Sheet",
     "16-Day Monitoring Sheet",
+    "Mentee Feedback Monitoring Sheet",
     "10-Cycle Check Sheet",
     "Skill Matrix Sheet",
     "Daily Production Report Sheet",
     "Daily 5M Recording Sheet",
-    "Associates Headcount Report"
+    "Associates Headcount Report",
+    "Abnormal Condition Sheet"
 ];
 
 export default function EmailConfiguration() {
@@ -54,7 +56,8 @@ export default function EmailConfiguration() {
                 initialEdits[form] = {
                     toEmails: config?.toEmails || "",
                     ccEmails: config?.ccEmails || "",
-                    includeTrainer: config?.includeTrainer || false
+                    includeTrainer: config?.includeTrainer || false,
+                    scheduledTime: config?.scheduledTime || ""
                 };
             });
             setEditState(initialEdits);
@@ -134,6 +137,7 @@ export default function EmailConfiguration() {
                 toEmails: data.toEmails,
                 ccEmails: data.ccEmails,
                 includeTrainer: data.includeTrainer,
+                scheduledTime: data.scheduledTime || null,
                 isActive: true
             };
 
@@ -268,6 +272,16 @@ export default function EmailConfiguration() {
                                 </div>
                             </CardHeader>
                             <CardContent className="pt-4 pb-4">
+                                {(formName === "Handover Sheet" || formName === "16-Day Monitoring Sheet") && selectedDeptId === "all" && (
+                                    <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+                                        <span className="mt-0.5 shrink-0 font-bold">⚠</span>
+                                        <span>
+                                            Scheduled emails for <strong>{formName}</strong> require a specific department to be selected above.
+                                            The scheduler cannot determine which records to check without a department.
+                                            Please select a department, fill in the emails & time, then save.
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                                     <div className="space-y-1.5 md:col-span-1">
                                         <Label className="text-xs font-semibold text-gray-600">To: Recipients (comma separated)</Label>
@@ -286,6 +300,44 @@ export default function EmailConfiguration() {
                                             onChange={(e) => handleInputChange(formName, "ccEmails", e.target.value)}
                                             className="h-9 focus-visible:ring-blue-400"
                                         />
+                                    </div>
+
+                                    <div className="md:col-span-2 space-y-1.5">
+                                        <Label className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+                                            <IconClock className="w-3.5 h-3.5 text-blue-500" />
+                                            Auto-Send Time (24hr)
+                                        </Label>
+                                        <div className="flex items-center gap-3">
+                                            <Input
+                                                type="time"
+                                                value={currentEdit.scheduledTime || ""}
+                                                onChange={(e) => handleInputChange(formName, "scheduledTime", e.target.value)}
+                                                className="h-9 w-36 focus-visible:ring-blue-400"
+                                            />
+                                            {currentEdit.scheduledTime ? (
+                                                <span className="text-xs text-green-600 font-medium">
+                                                    Emails will send daily at {currentEdit.scheduledTime}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-gray-400">
+                                                    No schedule set — leave blank to disable
+                                                </span>
+                                            )}
+                                            {currentEdit.scheduledTime && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleInputChange(formName, "scheduledTime", "")}
+                                                    className="text-xs text-red-400 hover:text-red-600 underline"
+                                                >
+                                                    Clear
+                                                </button>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-gray-400">
+                                            {formName === "Handover Sheet" ? "For Handover Sheet: sends one email per pending (unapproved) entry at this time daily." :
+                                             formName === "16-Day Monitoring Sheet" ? "For 16-Day Monitoring Sheet: sends email report for each pending (unapproved/unverified) monitoring sheet at this time daily." :
+                                             "No scheduler action defined for this form yet."}
+                                        </p>
                                     </div>
 
                                     <div className="md:col-span-2 flex items-center justify-between p-3 bg-blue-50/50 rounded-lg border border-blue-100 mt-2">

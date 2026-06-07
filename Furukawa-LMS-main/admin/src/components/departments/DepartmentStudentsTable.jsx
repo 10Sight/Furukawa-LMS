@@ -70,16 +70,20 @@ import {
   IconLoader,
   IconCheck,
   IconUserMinus,
+  IconChevronLeft,
+  IconChevronRight
 } from "@tabler/icons-react";
 import { useNavigate } from "react-router-dom";
 import { useGetDepartmentProgressQuery, useAddStudentToDepartmentMutation, useRemoveStudentFromDepartmentMutation } from "@/Redux/AllApi/DepartmentApi";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
 import { toast } from "sonner";
 
-const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRefetch }) => {
+const DepartmentStudentsTable = ({ departmentId, departmentName, onRefetch }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [progressFilter, setProgressFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [addStudentDialogOpen, setAddStudentDialogOpen] = useState(false);
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
@@ -89,13 +93,19 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
   const [addStudentToDepartment, { isLoading: isAddingStudent }] = useAddStudentToDepartmentMutation();
   const [removeStudentFromDepartment, { isLoading: isRemovingStudent }] = useRemoveStudentFromDepartmentMutation();
 
-  // Fetch department progress data
+  // Fetch department progress data with pagination
   const {
     data: progressData,
     isLoading: progressLoading,
+    isFetching: progressFetching,
     error: progressError,
     refetch: refetchProgress,
-  } = useGetDepartmentProgressQuery(departmentId, {
+  } = useGetDepartmentProgressQuery({
+    departmentId,
+    page,
+    limit,
+    search: searchTerm
+  }, {
     refetchOnMountOrArgChange: true,
   });
 
@@ -116,38 +126,53 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
   );
 
   const departmentProgress = progressData?.data?.departmentProgress || [];
+  const totalTrainees = progressData?.data?.total || 0;
+  const totalPages = progressData?.data?.totalPages || 0;
+  
+  const students = departmentProgress.map(p => ({
+    ...p.student,
+    status: p.student.status || 'ACTIVE' // Fallback
+  }));
+
+  const currentStudentIds = departmentProgress.map(p => String(p.student._id));
+
   const availableStudents = usersData?.data?.users || [];
-  const currentStudentIds = students.map(s => String(s._id || s.id));
+  
+  // Use the count from the department object or a separate query if needed, 
+  // but for now we'll just check against the current page of students 
+  // (which is slightly limited but better than nothing). 
+  // Better: The backend could return the list of ALL student IDs in the department.
   const studentsNotInDepartment = availableStudents.filter(
     student => {
       const sId = student._id || student.id;
-      if (!sId) return false; // Skip users without IDs
-      return !currentStudentIds.includes(sId);
+      if (!sId) return false;
+      return !currentStudentIds.includes(String(sId));
     }
   );
-
-  // Enhanced filtering
+  
+  // Filtering is now mostly handled server-side via searchTerm, 
+  // but we still apply local filters for status/progress if they are not yet server-side
   const filteredStudents = students.filter((student) => {
-    // Text search filter
-    const matchesSearch =
-      student.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase());
-
-    // Status filter
+    // Status filter (local for now, could be server-side)
     const matchesStatus = statusFilter === "all" || student.status === statusFilter;
 
-    // Progress filter
+    // Progress filter (local)
     if (progressFilter !== "all") {
-      const studentProgress = departmentProgress.find(p => p.student._id === student._id);
-      const progressPercentage = studentProgress?.progressPercentage || 0;
+      const studentProg = departmentProgress.find(p => p.student._id === student._id);
+      const progressPercentage = studentProg?.progressPercentage || 0;
 
       if (progressFilter === "not-started" && progressPercentage > 0) return false;
       if (progressFilter === "in-progress" && (progressPercentage === 0 || progressPercentage >= 100)) return false;
       if (progressFilter === "completed" && progressPercentage < 100) return false;
     }
 
-    return matchesSearch && matchesStatus;
+    return matchesStatus;
   });
+
+  // Reset page when search or filters change
+  React.useEffect(() => {
+    setPage(1);
+  }, [searchTerm, statusFilter, progressFilter]);
 
   // Get student status badge
   const getStatusBadge = (status) => {
@@ -187,6 +212,7 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
       // Take the message from the last response or a generic one
       const lastMsg = responses[responses.length - 1]?.message || "Trainees added successfully";
       toast.success(lastMsg);
+      refetchProgress();
 
       setAddStudentDialogOpen(false);
       setSelectedStudents([]);
@@ -207,6 +233,7 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
       toast.success(`${studentName} removed from department successfully`);
 
       // Refetch department data
+      refetchProgress();
       if (onRefetch) {
         onRefetch();
       }
@@ -229,7 +256,7 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
     );
   };
 
-  if (!students || students.length === 0) {
+  if (!progressLoading && (!students || students.length === 0) && !searchTerm && statusFilter === "all" && progressFilter === "all") {
     return (
       <Card>
         <CardHeader>
@@ -584,7 +611,7 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
                       </Avatar>
                       <div>
                         <p className="font-medium">{student.fullName}</p>
-                        <p className="text-sm text-muted-foreground">@{student.userName || student.email.split('@')[0]}</p>
+                        <p className="text-sm text-muted-foreground">@{student.userName || (student.email ? student.email.split('@')[0] : 'user')}</p>
                       </div>
                     </div>
                   </TableCell>
@@ -711,7 +738,35 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
           </TableBody>
         </Table>
 
-        {filteredStudents.length === 0 && (
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6">
+            <p className="text-sm text-muted-foreground">
+              Showing page {page} of {totalPages} ({totalTrainees} total trainees)
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || progressFetching}
+              >
+                <IconChevronLeft className="h-4 w-4 mr-1" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages || progressFetching}
+              >
+                Next
+                <IconChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {filteredStudents.length === 0 && !progressLoading && (
           <div className="text-center py-8 space-y-2">
             <IconUser className="h-12 w-12 text-muted-foreground mx-auto" />
             <div className="text-muted-foreground">
@@ -739,10 +794,10 @@ const DepartmentStudentsTable = ({ students, departmentId, departmentName, onRef
         )}
 
         {/* Summary Stats */}
-        {!progressLoading && departmentProgress.length > 0 && (
+        {!progressLoading && totalTrainees > 0 && (
           <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
             <div className="text-center">
-              <div className="text-lg font-bold text-blue-600">{students.length}</div>
+              <div className="text-lg font-bold text-blue-600">{totalTrainees}</div>
               <div className="text-xs text-muted-foreground">Total Trainees</div>
             </div>
             <div className="text-center">

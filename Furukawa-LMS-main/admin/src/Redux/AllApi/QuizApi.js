@@ -7,7 +7,7 @@ export const quizApi = createApi({
     tagTypes: ['Quiz', 'Course', 'Module', 'Lesson'], // Add Module and Lesson to tagTypes
     endpoints: (builder) => ({
         createQuiz: builder.mutation({
-            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation }) => ({
+            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling }) => ({
                 url: "/api/quizzes",
                 method: "POST",
                 data: {
@@ -18,19 +18,40 @@ export const quizApi = createApi({
                     title,
                     questions,
                     passingScore,
+                    departmentId,
+                    sectionId,
+                    ...(lineId !== undefined ? { lineId } : {}),
+                    ...(subSectionId !== undefined ? { subSectionId } : {}),
+                    ...(level !== undefined ? { level } : {}),
                     ...(timeLimit !== undefined ? { timeLimit } : {}),
                     ...(attemptsAllowed !== undefined ? { attemptsAllowed } : {}),
-                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {})
+                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
+                    ...(issueCertificate !== undefined ? { issueCertificate } : {}),
+                    ...(isDojo !== undefined ? { isDojo } : {}),
+                    ...(isHandover !== undefined ? { isHandover } : {}),
+                    ...(isTheoretical !== undefined ? { isTheoretical } : {}),
+                    ...(conductedBy !== undefined ? { conductedBy } : {}),
+                    ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {})
                 }
             }),
             invalidatesTags: ['Quiz', 'Course', 'Module', 'Lesson'], // Invalidate all relevant caches
         }),
 
         getAllQuizzes: builder.query({
-            query: ({ page = 1, limit = 20, search = "", courseId } = {}) => ({
+            query: ({ page = 1, limit = 20, search = "", courseId, departmentId, sectionId, isDojo, isMultiSkilling, skillUpgradation } = {}) => ({
                 url: "/api/quizzes",
                 method: "GET",
-                params: { page, limit, search, ...(courseId && { courseId }) }
+                params: {
+                    page,
+                    limit,
+                    search,
+                    ...(courseId && { courseId }),
+                    ...(departmentId && { departmentId }),
+                    ...(sectionId && { sectionId }),
+                    ...(isDojo !== undefined && { isDojo }),
+                    ...(isMultiSkilling !== undefined && { isMultiSkilling }),
+                    ...(skillUpgradation !== undefined && { skillUpgradation })
+                }
             }),
             providesTags: (result, error, arg) => {
                 // Handle different response structures
@@ -51,7 +72,7 @@ export const quizApi = createApi({
         }),
 
         updateQuiz: builder.mutation({
-            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation }) => ({
+            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling }) => ({
                 url: `/api/quizzes/${id}`,
                 method: "PUT",
                 data: {
@@ -61,7 +82,18 @@ export const quizApi = createApi({
                     ...(description !== undefined ? { description } : {}),
                     ...(timeLimit !== undefined ? { timeLimit } : {}),
                     ...(attemptsAllowed !== undefined ? { attemptsAllowed } : {}),
-                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {})
+                    ...(skillUpgradation !== undefined ? { skillUpgradation } : {}),
+                    ...(departmentId !== undefined ? { departmentId } : {}),
+                    ...(sectionId !== undefined ? { sectionId } : {}),
+                    ...(lineId !== undefined ? { lineId } : {}),
+                    ...(subSectionId !== undefined ? { subSectionId } : {}),
+                    ...(level !== undefined ? { level } : {}),
+                    ...(issueCertificate !== undefined ? { issueCertificate } : {}),
+                    ...(isDojo !== undefined ? { isDojo } : {}),
+                    ...(isHandover !== undefined ? { isHandover } : {}),
+                    ...(isTheoretical !== undefined ? { isTheoretical } : {}),
+                    ...(conductedBy !== undefined ? { conductedBy } : {}),
+                    ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {})
                 }
             }),
             invalidatesTags: (result, error, arg) => [

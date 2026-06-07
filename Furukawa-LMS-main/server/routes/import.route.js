@@ -7,7 +7,9 @@ import {
     importInstructors, 
     downloadInstructorTemplate,
     getImportLogs,
-    getImportLogDetails
+    getImportLogDetails,
+    importDojoUsers,
+    downloadDojoImportTemplate
 } from "../controllers/import.controller.js";
 
 const router = express.Router();
@@ -46,5 +48,11 @@ router.post("/instructors", verifyJWT, upload.single("file"), importInstructors)
 
 // Download instructor template
 router.get("/instructors/template", verifyJWT, downloadInstructorTemplate);
+
+// Import DOJO candidates
+router.post("/dojo-candidates", verifyJWT, upload.single("file"), importDojoUsers);
+
+// Download DOJO import template
+router.get("/dojo-candidates/template", verifyJWT, downloadDojoImportTemplate);
 
 export default router;

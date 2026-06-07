@@ -89,7 +89,9 @@ export function HomeLayout() {
         console.error("Failed to fetch custom roles for navigation", e);
       }
     };
-    const isAuthorizedAdmin = user?.isAdmin || user?.role === 'SUPERADMIN' || (user?.role === 'CUSTOM' && user?.customRole?.targetLayout?.toLowerCase() === 'admin');
+    const allowed = user?.customRole?.allowedPages;
+    const allowedPages = typeof allowed === 'string' ? JSON.parse(allowed || '[]') : (allowed || []);
+    const isAuthorizedAdmin = user?.role === 'SUPERADMIN' || user?.isAdmin || (user?.role === 'CUSTOM' && allowedPages.includes('role-manager'));
     if (isAuthorizedAdmin) fetchCustomRoles();
   }, [user]);
 
@@ -144,7 +146,15 @@ export function HomeLayout() {
   const isPathAllowed = useMemo(() => isPathAllowedForUser(pathname, "admin", user), [pathname, user]);
 
   useEffect(() => {
-    if (isPathAllowed) return;
+    if (isPathAllowed) {
+      // Special case: If we are at the layout root but don't have dashboard permission, 
+      // treat it as an unauthorized path for the sake of landing page selection.
+      const isDashboardAllowed = tabs.some(tab => tab.link === "/admin");
+      if (pathname === "/admin" && !isDashboardAllowed && tabs.length > 0) {
+        navigate(tabs[0].link, { replace: true });
+      }
+      return;
+    }
 
     const fallback = tabs[0]?.link;
     const currentPath = pathname.replace(/\/$/, '');
@@ -256,7 +266,7 @@ export function HomeLayout() {
 
       {/* Sidebar */}
       <nav
-        className={`fixed top-0 left-0 h-screen ${theme.card} backdrop-blur-xl ${theme.border} border-r ${theme.textMain} shadow-2xl transition-all duration-300 z-20
+        className={`fixed top-0 left-0 h-screen ${theme.card} backdrop-blur-xl ${theme.border} border-r ${theme.textMain} shadow-2xl transition-all duration-300 z-20 flex flex-col
                 ${collapsed ? "w-16" : "w-64"} 
                 ${isMobile && !collapsed ? "shadow-3xl border-r-2" : ""}`}
       >
@@ -277,8 +287,26 @@ export function HomeLayout() {
           )}
         </div>
 
+        {/* Back to Menu Link (Fixed at top) */}
+        {(user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM') && (
+          <div className="px-3 pt-4 border-b border-gray-100/50 pb-2">
+            <div
+              className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-600 hover:bg-gray-100
+                          ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
+              onClick={() => navigate("/")}
+            >
+              <IconUser
+                className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"}`}
+              />
+              {!collapsed && (
+                <span className="ml-3 text-sm font-medium">Back to Main Menu</span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Sidebar Tabs */}
-        <div className="px-3 flex flex-col w-full py-6 space-y-1 overflow-y-auto max-h-[calc(100vh-12rem)] scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+        <div className="px-3 flex-1 py-6 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
           {tabs.map((item) => {
             const isActive =
               pathname === item.link ||
@@ -287,7 +315,7 @@ export function HomeLayout() {
 
             return (
               <div
-                className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02]
+                className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] shrink-0
                 ${isActive
                     ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-200"
                     : "text-gray-600 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:text-blue-700 hover:shadow-md"
@@ -335,25 +363,11 @@ export function HomeLayout() {
               </div>
             );
           })}
-          {/* Back to Admin Link */}
-          {user?.role !== 'CUSTOM' && (
-            <div
-              className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-600 hover:bg-gray-100
-                          ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
-              onClick={() => navigate("/")}
-            >
-              <IconUser
-                className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"}`}
-              />
-              {!collapsed && (
-                <span className="ml-3 text-sm font-medium">Back to Main Menu</span>
-              )}
-            </div>
-          )}
+
         </div>
 
         {/* Logout */}
-        <div className="absolute bottom-6 w-full px-3">
+        <div className="w-full px-3 pb-6 pt-2 border-t border-gray-100 shrink-0">
           <div
             className={`group p-3 flex items-center rounded-xl w-full transition-all duration-300 ${isLoading
               ? "opacity-50 cursor-not-allowed bg-gray-100"
@@ -566,7 +580,14 @@ export function HomeLayout() {
           <div
             className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-all duration-300 hover:shadow-md`}
           >
-            <Outlet />
+            {/* Prevent flash of dashboard if root access is not permitted */}
+            {pathname === "/admin" && !tabs.some(t => t.link === "/admin") && tabs.length > 0 ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <Outlet />
+            )}
           </div>
         </div>
       </div>

@@ -11,6 +11,12 @@ import HandoverSheetConfig from "../models/handoverSheetConfig.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import sendMail from "../utils/mail.util.js";
+
+const normalizeParam = (val) => {
+    if (!val || val === 'undefined' || val === 'null' || val === '' || val === '0' || val === 'all' || val === 'All') return null;
+    return val;
+};
 
 // Helper to resolve department by ID or Slug
 async function resolveDepartmentId(idOrSlug) {
@@ -54,17 +60,49 @@ const populateDepartment = async (dept, fields = []) => {
         if (c.length > 0) dept.course = { ...c[0], _id: c[0].id };
     }
 
-    if (fields.includes('students')) {
-        const [students] = await executeQuery(`
-            SELECT id, fullName, email, slug, createdAt, avatar, username, empId, currentLevel 
+    if (fields.includes('studentCount')) {
+        const [countRows] = await executeQuery(`
+            SELECT COUNT(*) as count 
             FROM users 
             WHERE (departmentId = ? OR department = ? OR department = ?)
             AND (isDeleted = 0 OR isDeleted IS NULL)
             AND (isEmployee = 1)
             AND (isTrainer = 0 OR isTrainer IS NULL)
             AND (customRoleId IS NULL)
+            AND (status IS NULL OR status != 'LEFT')
+        `, [dept.id, String(dept.id), dept.name]);
+        dept.studentCount = countRows[0].count;
+    }
+
+    if (fields.includes('students')) {
+        // Load limited students for preview; use getDepartmentTrainees for full paginated list
+        const [students] = await executeQuery(`
+            SELECT TOP 50 id, fullName, email, slug, createdAt, avatar, userName, empId, currentLevel, status
+            FROM users 
+            WHERE (departmentId = ? OR department = ? OR department = ?)
+            AND (isDeleted = 0 OR isDeleted IS NULL)
+            AND (isEmployee = 1)
+            AND (isTrainer = 0 OR isTrainer IS NULL)
+            AND (customRoleId IS NULL)
+            AND (status IS NULL OR status != 'LEFT')
+            ORDER BY fullName ASC
         `, [dept.id, String(dept.id), dept.name]);
         dept.students = students.map(s => ({ ...s, _id: s.id }));
+
+        // Always ensure we have an accurate studentCount if we're showing the students list
+        if (!dept.studentCount) {
+            const [countRows] = await executeQuery(`
+                SELECT COUNT(*) as count 
+                FROM users 
+                WHERE (departmentId = ? OR department = ? OR department = ?)
+                AND (isDeleted = 0 OR isDeleted IS NULL)
+                AND (isEmployee = 1)
+                AND (isTrainer = 0 OR isTrainer IS NULL)
+                AND (customRoleId IS NULL)
+                AND (status IS NULL OR status != 'LEFT')
+            `, [dept.id, String(dept.id), dept.name]);
+            dept.studentCount = countRows[0].count;
+        }
     }
     return dept;
 };
@@ -151,6 +189,7 @@ export const assignInstructor = asyncHandler(async (req, res) => {
     if (!department) throw new ApiError("Department not found", 404);
     const instructor = await User.findById(instructorId);
     if (!instructor || instructor.role !== "INSTRUCTOR") throw new ApiError("Invalid instructor", 400);
+    if (['LEFT', 'SUSPENDED', 'BANNED'].includes(instructor.status)) throw new ApiError("Cannot assign a deactivated user", 400);
     if (department.instructor && String(department.instructor) === String(instructorId)) throw new ApiError("Instructor is already assigned", 400);
     department.instructor = instructorId;
     await department.save();
@@ -199,44 +238,39 @@ export const addStudentToDepartment = asyncHandler(async (req, res) => {
     const department = await Department.findById(departmentId);
     if (!department) throw new ApiError("Department not found", 404);
 
-    // Validate capacity
-    if (department.capacity) {
-        const currentCount = department.students.length;
-        if (currentCount + idsToAdd.length > department.capacity) {
-            throw new ApiError(`Cannot add ${idsToAdd.length} students. Department capacity is ${department.capacity} and current count is ${currentCount}`, 400);
-        }
-    }
-
-    // Filter out already existing students
-    const existingStudentIds = department.students.map(String);
-    const newStudentIds = idsToAdd.filter(id => !existingStudentIds.includes(String(id)));
-
-    if (newStudentIds.length === 0) {
-        // If all students are already in the department, just return success
-        return res.json(new ApiResponse(200, department, "All students already in department"));
-    }
-
-    // Validate students exist and are employees/operators
-    // We'll be more flexible with isTrainer and customRoleId to match how operators are actually stored
+    // Validate students exist
     const users = await User.find({
-        _id: { $in: newStudentIds },
-        isEmployee: 1,
-        isDeleted: 0
+        _id: { $in: idsToAdd }
     });
 
-    if (users.length !== newStudentIds.length) {
-        // Some IDs might be invalid, not employees, trainers, or have custom roles
-        // For robustness, we'll only add the valid ones found
-        console.warn("Some provided student IDs were invalid, not employees, trainers, or had custom roles");
+    if (users.length === 0) {
+        throw new ApiError("None of the provided student IDs were found", 404);
+    }
+
+    if (users.length !== idsToAdd.length) {
+        console.warn("Some provided student IDs were not found");
     }
 
     const validIdsToAdd = users.map(u => u._id);
 
-    // Add to department
-    department.students.push(...validIdsToAdd);
-    await department.save();
+    // Filter out already existing students for the department's student list
+    const existingStudentIds = department.students.map(String);
+    const newStudentIds = validIdsToAdd.filter(id => !existingStudentIds.includes(String(id)));
 
-    // Update users: Set BOTH department (name) for legacy and departmentId (INT) for hierarchy
+    // Validate capacity if there are new students to add
+    if (newStudentIds.length > 0 && department.capacity) {
+        const currentCount = department.students.length;
+        if (currentCount + newStudentIds.length > department.capacity) {
+            throw new ApiError(`Cannot add ${newStudentIds.length} students. Department capacity is ${department.capacity} and current count is ${currentCount}`, 400);
+        }
+    }
+
+    if (newStudentIds.length > 0) {
+        department.students.push(...newStudentIds);
+        await department.save();
+    }
+
+    // ALWAYS update the user records to keep them synchronized with this department
     await User.updateMany(
         { _id: { $in: validIdsToAdd } },
         {
@@ -248,7 +282,7 @@ export const addStudentToDepartment = asyncHandler(async (req, res) => {
         }
     );
 
-    res.json(new ApiResponse(200, department, `${validIdsToAdd.length} students added successfully`));
+    res.json(new ApiResponse(200, department, `${validIdsToAdd.length} students synced with department successfully`));
 });
 
 export const removeStudentFromDepartment = asyncHandler(async (req, res) => {
@@ -297,7 +331,7 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
     const [rows] = await executeQuery(`SELECT * FROM departments ${whereSql} ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`, [...params, offset, limit]);
     const departments = await Promise.all(rows.map(d => {
         const dept = new Department(d);
-        return populateDepartment(dept, ['instructor', 'courses', 'course']);
+        return populateDepartment(dept, ['instructor', 'courses', 'course', 'students', 'studentCount']);
     }));
     res.json(new ApiResponse(200, { departments, totalDepartments: total, totalPages: Math.ceil(total / limit), currentPage: page, limit }, "Departments fetched successfully"));
 });
@@ -307,8 +341,63 @@ export const getDepartmentById = asyncHandler(async (req, res) => {
     if (!id) throw new ApiError("Invalid ID", 400);
     let department = await Department.findById(id);
     if (!department) throw new ApiError("Department not found", 404);
-    department = await populateDepartment(department, ['instructor', 'students', 'courses', 'course']);
+    department = await populateDepartment(department, ['instructor', 'students', 'courses', 'course', 'studentCount']);
     res.json(new ApiResponse(200, department, "Fetched"));
+});
+
+export const getDepartmentTrainees = asyncHandler(async (req, res) => {
+    const id = await resolveDepartmentId(req.params.id);
+    if (!id) throw new ApiError("Department not found", 404);
+
+    const department = await Department.findById(id);
+    if (!department) throw new ApiError("Department not found", 404);
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+    const status = req.query.status || "";
+
+    let whereSql = `
+        WHERE (u.departmentId = ? OR u.department = ? OR u.department = ? 
+               OR (u.isTemporary = 1 AND u.targetDeptId = ? AND u.currentLevel != 'L1' AND ? = 'true'))
+        AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+        AND (u.isEmployee = 1)
+        AND (u.isTrainer = 0 OR u.isTrainer IS NULL)
+        AND (u.customRoleId IS NULL)
+        AND (u.status IS NULL OR u.status != 'LEFT')
+    `;
+    let params = [department.id, String(department.id), department.name, department.id, req.query.includeTemporary || 'false'];
+
+    if (search) {
+        whereSql += " AND (u.fullName LIKE ? OR u.email LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)";
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    if (status && status !== "all") {
+        whereSql += " AND u.status = ?";
+        params.push(status);
+    }
+
+    const [countRows] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${whereSql}`, params);
+    const total = countRows[0].total;
+
+    const [trainees] = await executeQuery(`
+        SELECT u.id, u.fullName, u.email, u.slug, u.createdAt, u.avatar, u.username, u.empId, u.currentLevel, u.status, u.phoneNumber
+        FROM users u
+        ${whereSql}
+        ORDER BY u.fullName ASC
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...params, offset, limit]);
+
+    res.json(new ApiResponse(200, {
+        trainees: trainees.map(t => ({ ...t, _id: t.id })),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+    }, "Trainees fetched successfully"));
 });
 
 export const updateDepartment = asyncHandler(async (req, res) => {
@@ -397,66 +486,233 @@ export const getDepartmentProgress = asyncHandler(async (req, res) => {
     const id = await resolveDepartmentId(req.params.id);
     const department = await Department.findById(id);
     if (!department) throw new ApiError("Not found", 404);
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
     const courses = [];
-    if (department.courses && department.courses.length > 0) {
-        const [cRows] = await executeQuery("SELECT id, title FROM courses WHERE id IN (?)", [department.courses]);
+    const courseIdsToFetch = [...(department.courses || [])];
+    if (courseIdsToFetch.length === 0 && department.course) {
+        courseIdsToFetch.push(department.course);
+    }
+
+    if (courseIdsToFetch.length > 0) {
+        const [cRows] = await executeQuery("SELECT id, title FROM courses WHERE id IN (?)", [courseIdsToFetch]);
         for (let c of cRows) {
             const [mRows] = await executeQuery("SELECT COUNT(*) as count FROM modules WHERE course = ?", [c.id]);
             c.totalModules = mRows[0].count;
             courses.push(c);
         }
     }
-    if (courses.length === 0) return res.json(new ApiResponse(200, { departmentProgress: [], overallStats: {} }, "No courses"));
-    const [students] = await executeQuery(`
-        SELECT id, fullName, email, avatar, currentLevel
-        FROM users 
+
+    // If no courses, we still want to see students (with 0 progress)
+    // if (courses.length === 0) return res.json(new ApiResponse(200, { departmentProgress: [], overallStats: {}, total: 0 }, "No courses"));
+
+    const sectionId = normalizeParam(req.query.sectionId);
+    const lineId = normalizeParam(req.query.lineId);
+    const subSectionId = normalizeParam(req.query.subSectionId);
+    const stationId = normalizeParam(req.query.stationId);
+
+    let whereSql = `
         WHERE (departmentId = ? OR department = ? OR department = ?)
         AND (isDeleted = 0 OR isDeleted IS NULL)
         AND (isEmployee = 1)
         AND (isTrainer = 0 OR isTrainer IS NULL)
         AND (customRoleId IS NULL)
-    `, [department.id, String(department.id), department.name]);
+        AND (status IS NULL OR status != 'LEFT')
+    `;
+    let params = [department.id, String(department.id), department.name];
+
+    if (sectionId) { whereSql += " AND sectionId = ?"; params.push(sectionId); }
+    if (lineId) { whereSql += " AND lineId = ?"; params.push(lineId); }
+    if (subSectionId) { whereSql += " AND subSectionId = ?"; params.push(subSectionId); }
+    if (stationId) { whereSql += " AND stationId = ?"; params.push(stationId); }
+
+    if (search) {
+        whereSql += " AND (fullName LIKE ? OR email LIKE ? OR userName LIKE ? OR empId LIKE ?)";
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const [countRows] = await executeQuery(`SELECT COUNT(*) as total FROM users ${whereSql}`, params);
+    const total = countRows[0].total;
+
+    const [students] = await executeQuery(`
+        SELECT u.id, u.fullName, u.email, u.avatar, u.currentLevel, u.status, u.empId, u.currentSkill, u.stationId,
+               s.name as stationName
+        FROM users u
+        LEFT JOIN machines s ON u.stationId = s.id
+        ${whereSql}
+        ORDER BY u.fullName ASC
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...params, offset, limit]);
 
     const studentIds = students.map(s => s.id);
-    if (studentIds.length === 0) return res.json(new ApiResponse(200, { departmentProgress: [], overallStats: {} }, "No students"));
     let departmentProgress = [];
     const courseIds = courses.map(c => c.id);
-    if (courseIds.length > 0 && studentIds.length > 0) {
-        const [progressRows] = await executeQuery("SELECT * FROM progress WHERE student IN (?) AND course IN (?)", [studentIds, courseIds]);
+
+    // Fetch machineId -> subSectionId mapping
+    const [machineRows] = await executeQuery("SELECT id, subSectionId FROM [machines]");
+    const machineSubSectionMap = {};
+    machineRows.forEach(m => {
+        machineSubSectionMap[String(m.id)] = String(m.subSectionId);
+    });
+
+    const [progressRows] = (courseIds.length > 0 && studentIds.length > 0)
+        ? await executeQuery("SELECT * FROM progress WHERE student IN (?) AND course IN (?)", [studentIds, courseIds])
+        : [[], {}];
+
+    if (courses.length > 0) {
         for (const course of courses) {
             for (const student of students) {
                 const prog = progressRows.find(p => p.student == student.id && p.course == course.id);
                 const completedModules = prog?.completedModules ? JSON.parse(prog.completedModules).length : 0;
                 const pct = course.totalModules > 0 ? Math.round((completedModules / course.totalModules) * 100) : 0;
+                let currentLevel = prog?.currentLevel || student.currentLevel || 'L1';
+                let levelLockEnabled = prog?.levelLockEnabled || false;
+                let lockedLevel = prog?.lockedLevel || null;
+
+                // Override with sub-section specific data if station filter is active
+                if (stationId && stationId !== "undefined") {
+                    const subSecId = machineSubSectionMap[String(stationId)];
+                    let currentSkill = student.currentSkill || "{}";
+                    if (typeof currentSkill === 'string') {
+                        try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+                    }
+                    if (subSecId && currentSkill[subSecId]) {
+                        currentLevel = currentSkill[subSecId];
+                        levelLockEnabled = !!currentSkill[`${subSecId}_locked`];
+                        lockedLevel = currentSkill[`${subSecId}_lockedLevel`];
+                    }
+                }
+
+                // Resolve TRUE primary level: Strict check against primary station's subSectionId
+                let resolvedPrimaryLevel = "L1";
+                let studentSkill = student.currentSkill || "{}";
+                if (typeof studentSkill === 'string') {
+                    try { studentSkill = JSON.parse(studentSkill); } catch (e) { studentSkill = {}; }
+                }
+
+                if (student.stationId) {
+                    const subSecId = machineSubSectionMap[String(student.stationId)];
+                    resolvedPrimaryLevel = (subSecId && studentSkill[subSecId]) || "L1";
+                } else {
+                    // Fallback to global level only if no primary station is assigned
+                    resolvedPrimaryLevel = student.currentLevel || "L1";
+                }
+
                 departmentProgress.push({
                     student: {
                         _id: student.id,
                         fullName: student.fullName,
                         email: student.email,
-                        avatar: student.avatar
+                        avatar: student.avatar,
+                        status: student.status,
+                        empId: student.empId,
+                        primaryLevel: resolvedPrimaryLevel,
+                        primaryStation: student.stationName
                     },
                     completedModules,
                     totalModules: course.totalModules,
                     progressPercentage: pct,
                     courseTitle: course.title,
                     courseId: course.id,
-                    currentLevel: prog?.currentLevel || 'L1',
-                    levelLockEnabled: prog?.levelLockEnabled || false,
-                    lockedLevel: prog?.lockedLevel || null
+                    currentLevel,
+                    levelLockEnabled,
+                    lockedLevel
                 });
             }
         }
+    } else {
+        // No courses assigned, just return students
+        for (const student of students) {
+            let currentLevel = student.currentLevel || 'L1';
+            let levelLockEnabled = false;
+            let lockedLevel = null;
+
+            // Override with sub-section specific data if station filter is active
+            if (stationId && stationId !== "undefined") {
+                const subSecId = machineSubSectionMap[String(stationId)];
+                let currentSkill = student.currentSkill || "{}";
+                if (typeof currentSkill === 'string') {
+                    try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+                }
+                if (subSecId && currentSkill[subSecId]) {
+                    currentLevel = currentSkill[subSecId];
+                    levelLockEnabled = !!currentSkill[`${subSecId}_locked`];
+                    lockedLevel = currentSkill[`${subSecId}_lockedLevel`];
+                }
+            }
+
+            // Resolve TRUE primary level: Strict check against primary station's subSectionId
+            let resolvedPrimaryLevel = "L1";
+            let studentSkill = student.currentSkill || "{}";
+            if (typeof studentSkill === 'string') {
+                try { studentSkill = JSON.parse(studentSkill); } catch (e) { studentSkill = {}; }
+            }
+
+            if (student.stationId) {
+                const subSecId = machineSubSectionMap[String(student.stationId)];
+                resolvedPrimaryLevel = (subSecId && studentSkill[subSecId]) || "L1";
+            } else {
+                resolvedPrimaryLevel = student.currentLevel || "L1";
+            }
+
+            departmentProgress.push({
+                student: {
+                    _id: student.id,
+                    fullName: student.fullName,
+                    email: student.email,
+                    avatar: student.avatar,
+                    status: student.status,
+                    empId: student.empId,
+                    primaryLevel: resolvedPrimaryLevel,
+                    primaryStation: student.stationName
+                },
+                completedModules: 0,
+                totalModules: 0,
+                progressPercentage: 0,
+                courseTitle: "No Course Assigned",
+                courseId: null,
+                currentLevel,
+                levelLockEnabled,
+                lockedLevel
+            });
+        }
     }
-    const studentsWithProgress = departmentProgress.filter(p => p.completedModules > 0).length;
-    const avg = departmentProgress.length > 0 ? Math.round(departmentProgress.reduce((s, p) => s + p.progressPercentage, 0) / departmentProgress.length) : 0;
-    const totalModules = courses.reduce((sum, c) => sum + (c.totalModules || 0), 0);
-    res.json(new ApiResponse(200, { departmentProgress, overallStats: { totalStudents: students.length, studentsWithProgress, averageProgress: avg, totalModules } }, "Fetched"));
+
+    // Calculate overall stats (This remains based on the paginated sample for speed, 
+    // or we could do a separate query for global averages if needed)
+    const overallStats = {
+        totalStudents: total,
+        studentsWithProgress: departmentProgress.filter(p => p.completedModules > 0).length,
+        averageProgress: departmentProgress.length > 0 ? Math.round(departmentProgress.reduce((acc, curr) => acc + curr.progressPercentage, 0) / departmentProgress.length) : 0,
+        totalModules: courses.reduce((acc, curr) => acc + curr.totalModules, 0)
+    };
+
+    res.json(new ApiResponse(200, {
+        departmentProgress,
+        overallStats,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+    }, "Progress fetched successfully"));
 });
+
 
 export const getDepartmentSubmissions = asyncHandler(async (req, res) => {
     const id = await resolveDepartmentId(req.params.id);
     const department = await Department.findById(id);
     if (!department) throw new ApiError("Not found", 404);
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
     const [students] = await executeQuery(`
         SELECT id FROM users 
         WHERE (departmentId = ? OR department = ? OR department = ?)
@@ -464,23 +720,74 @@ export const getDepartmentSubmissions = asyncHandler(async (req, res) => {
         AND (isEmployee = 1)
         AND (isTrainer = 0 OR isTrainer IS NULL)
         AND (customRoleId IS NULL)
+        AND (status IS NULL OR status != 'LEFT')
     `, [department.id, String(department.id), department.name]);
 
     const studentIds = students.map(s => s.id);
-    if (studentIds.length === 0) return res.json(new ApiResponse(200, { submissions: [], stats: {} }, "Empty"));
-    const [rows] = await executeQuery(`SELECT s.*, u.fullName, u.email, u.avatar, a.title as aTitle, a.dueDate, a.maxScore, c.title as cTitle FROM submissions s JOIN users u ON s.student = u.id JOIN assignments a ON s.assignment = a.id JOIN courses c ON a.courseId = c.id WHERE s.student IN (?) ORDER BY s.submittedAt DESC`, [studentIds]);
-    const submissions = rows.map(r => ({ _id: r.id, grade: r.grade, isLate: r.isLate, submittedAt: r.submittedAt, student: { fullName: r.fullName, email: r.email, avatar: r.avatar }, assignment: { title: r.aTitle, dueDate: r.dueDate, maxScore: r.maxScore, course: { title: r.cTitle } } }));
-    const total = submissions.length;
+    if (studentIds.length === 0) return res.json(new ApiResponse(200, { submissions: [], stats: {}, total: 0 }, "Empty"));
+
+    let whereSql = "WHERE s.student IN (?)";
+    let params = [studentIds];
+
+    if (search) {
+        whereSql += " AND (u.fullName LIKE ? OR a.title LIKE ?)";
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm);
+    }
+
+    const [countRows] = await executeQuery(`
+        SELECT COUNT(*) as total 
+        FROM submissions s 
+        JOIN users u ON s.student = u.id 
+        JOIN assignments a ON s.assignment = a.id 
+        ${whereSql}
+    `, params);
+    const totalCount = countRows[0].total;
+
+    const [rows] = await executeQuery(`
+        SELECT s.*, u.fullName, u.email, u.avatar, a.title as aTitle, a.dueDate, a.maxScore, c.title as cTitle 
+        FROM submissions s 
+        JOIN users u ON s.student = u.id 
+        JOIN assignments a ON s.assignment = a.id 
+        JOIN courses c ON a.courseId = c.id 
+        ${whereSql} 
+        ORDER BY s.submittedAt DESC 
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...params, offset, limit]);
+
+    const submissions = rows.map(r => ({
+        _id: r.id,
+        grade: r.grade,
+        isLate: r.isLate,
+        submittedAt: r.submittedAt,
+        student: { fullName: r.fullName, email: r.email, avatar: r.avatar },
+        assignment: { title: r.aTitle, dueDate: r.dueDate, maxScore: r.maxScore, course: { title: r.cTitle } }
+    }));
+
     const graded = submissions.filter(s => s.grade != null).length;
     const late = submissions.filter(s => s.isLate).length;
     const avg = graded > 0 ? Math.round(submissions.reduce((sum, s) => sum + (s.grade || 0), 0) / graded) : 0;
-    res.json(new ApiResponse(200, { submissions, stats: { totalSubmissions: total, gradedSubmissions: graded, averageGrade: avg, lateSubmissions: late } }, "Fetched"));
+
+    res.json(new ApiResponse(200, {
+        submissions,
+        stats: { totalSubmissions: totalCount, gradedSubmissions: graded, averageGrade: avg, lateSubmissions: late },
+        total: totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit)
+    }, "Fetched"));
 });
 
 export const getDepartmentAttempts = asyncHandler(async (req, res) => {
     const id = await resolveDepartmentId(req.params.id);
     const department = await Department.findById(id);
     if (!department) throw new ApiError("Not found", 404);
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
     const [students] = await executeQuery(`
         SELECT id FROM users 
         WHERE (departmentId = ? OR department = ? OR department = ?)
@@ -488,41 +795,61 @@ export const getDepartmentAttempts = asyncHandler(async (req, res) => {
         AND (isEmployee = 1)
         AND (isTrainer = 0 OR isTrainer IS NULL)
         AND (customRoleId IS NULL)
+        AND (status IS NULL OR status != 'LEFT')
     `, [department.id, String(department.id), department.name]);
 
     const studentIds = students.map(s => s.id);
-    if (studentIds.length === 0) return res.json(new ApiResponse(200, { attempts: [], stats: {} }, "Empty"));
-    const [rows] = await executeQuery(`SELECT aq.*, u.fullName, u.email, u.avatar, q.title as qTitle, q.passingScore, q.questions, c.title as cTitle FROM attempted_quizzes aq JOIN users u ON aq.student = u.id JOIN quizzes q ON aq.quiz = q.id JOIN courses c ON q.courseId = c.id WHERE aq.student IN (?) ORDER BY aq.createdAt DESC`, [studentIds]);
-    const attempts = rows.map(r => {
-        let maxScore = 0;
-        let questions = [];
-        try { questions = typeof r.questions === 'string' ? JSON.parse(r.questions) : (r.questions || []); } catch (e) { }
-        questions.forEach(q => maxScore += (parseInt(q.marks) || 1));
-        const scorePercent = maxScore > 0 ? Math.round((r.score / maxScore) * 100) : 0;
-        return {
-            _id: r.id,
-            score: r.score,
-            scorePercent,
-            status: r.status,
-            passed: r.status === 'PASSED',
-            createdAt: r.createdAt,
-            attemptedAt: r.createdAt,
-            student: { _id: r.student, fullName: r.fullName, email: r.email, avatar: r.avatar },
-            quiz: { _id: r.quiz, title: r.qTitle, passingScore: r.passingScore, course: { title: r.cTitle } }
-        };
-    });
-    const total = attempts.length;
-    const passed = attempts.filter(a => a.passed).length;
-    const avg = total > 0 ? Math.round(attempts.reduce((sum, a) => sum + a.scorePercent, 0) / total) : 0;
-    const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+    if (studentIds.length === 0) return res.json(new ApiResponse(200, { attempts: [], stats: {}, total: 0 }, "Empty"));
+
+    let whereSql = "WHERE aq.student IN (?)";
+    let params = [studentIds];
+
+    if (search) {
+        whereSql += " AND (u.fullName LIKE ? OR q.title LIKE ?)";
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm);
+    }
+
+    const [countRows] = await executeQuery(`
+        SELECT COUNT(*) as total 
+        FROM attempted_quizzes aq 
+        JOIN users u ON aq.student = u.id 
+        JOIN quizzes q ON aq.quiz = q.id 
+        ${whereSql}
+    `, params);
+    const totalCount = countRows[0].total;
+
+    const [rows] = await executeQuery(`
+        SELECT aq.*, u.fullName, u.email, u.avatar, q.title as qTitle 
+        FROM attempted_quizzes aq 
+        JOIN users u ON aq.student = u.id 
+        JOIN quizzes q ON aq.quiz = q.id 
+        ${whereSql} 
+        ORDER BY aq.createdAt DESC 
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...params, offset, limit]);
+
+    const attempts = rows.map(r => ({
+        _id: r.id,
+        score: r.score,
+        scorePercent: r.scorePercent,
+        passed: r.passed,
+        attemptedAt: r.createdAt,
+        student: { fullName: r.fullName, email: r.email, avatar: r.avatar },
+        quiz: { title: r.qTitle }
+    }));
+
+    const totalPassed = attempts.filter(a => a.passed).length;
+    const avgScore = attempts.length > 0 ? Math.round(attempts.reduce((sum, a) => sum + (a.scorePercent || 0), 0) / attempts.length) : 0;
+    const passRate = attempts.length > 0 ? Math.round((totalPassed / attempts.length) * 100) : 0;
+
     res.json(new ApiResponse(200, {
         attempts,
-        stats: {
-            totalAttempts: total,
-            passedAttempts: passed,
-            averageScore: avg,
-            passRate
-        }
+        stats: { totalAttempts: totalCount, passedAttempts: totalPassed, averageScore: avgScore, passRate },
+        total: totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit)
     }, "Fetched"));
 });
 
@@ -683,11 +1010,65 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     const departmentId = await resolveDepartmentId(req.params.id);
     if (!departmentId) throw new ApiError("Invalid Department ID", 400);
 
-    let sheet = await HandoverSheet.findByDepartmentId(departmentId);
+    const sectionId = req.query.sectionId || null;
+    const date = req.query.date || null;
+    let sheet = await HandoverSheet.findSpecific(departmentId, sectionId, date);
 
     if (!sheet) {
+        // Automatically find users who passed a handover quiz on this date for this department
+        let suggestedEntries = [];
+        if (date) {
+            const [passedUsers] = await executeQuery(`
+                SELECT DISTINCT 
+                    u.id as studentId, 
+                    u.fullName as employeeName, 
+                    u.userName as employeeCode, -- Manual Employee Code (DOJO ID)
+                    u.targetDeptId,
+                    u.targetSectionId as sectionId,
+                    u.targetLineId as lineId,
+                    u.targetSubSectionId as subSectionId,
+                    u.targetStationId as stationId,
+                    aq.score,
+                    q.questions as quizQuestions
+                FROM users u
+                JOIN attempted_quizzes aq ON CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student
+                JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+                WHERE u.isTemporary = 1 
+                  AND u.targetDeptId = ?
+                  AND q.isHandover = 1
+                  AND q.isDojo = 1
+                  AND (aq.status = 'PASSED' OR aq.status = 'PASS')
+                  AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
+                  AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                  AND (u.status IS NULL OR u.status != 'LEFT')
+            `, [departmentId, date]);
+
+            suggestedEntries = passedUsers.map(user => {
+                // Calculate percentage marks
+                let marksPercent = "0%";
+                try {
+                    const questions = JSON.parse(user.quizQuestions || "[]");
+                    const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
+                    marksPercent = `${Math.round((user.score / totalMarks) * 100)}%`;
+                } catch (e) {
+                    console.error("Error calculating marks:", e);
+                }
+
+                return {
+                    ...user,
+                    marks: marksPercent,
+                    passedQuizDate: date,
+                    isAutoSuggested: true
+                };
+            });
+        }
+
         return res.status(200).json(
-            new ApiResponse(200, { isNew: true }, "No record found")
+            new ApiResponse(200, {
+                isNew: true,
+                entries: suggestedEntries,
+                date: date
+            }, suggestedEntries.length > 0 ? "Found suggested entries from quizzes" : "No record found")
         );
     }
 
@@ -700,59 +1081,114 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
     const departmentId = await resolveDepartmentId(req.params.id);
     if (!departmentId) throw new ApiError("Invalid Department ID", 400);
 
-    const { date, entries, signatures, metadata } = req.body;
+    const { date, entries, signatures, metadata, sectionId, isSubmitted } = req.body;
 
-    let sheet = await HandoverSheet.findByDepartmentId(departmentId);
+    let sheet = await HandoverSheet.findSpecific(departmentId, sectionId || null, date);
     let newStudents = [];
 
-    // Identify new students
+    // Identify new students (kept for potential audit/logging if needed)
     if (sheet) {
-        // Compare with existing entries
         const existingStudentIds = new Set((sheet.entries || []).map(e => String(e.studentId)));
         newStudents = (entries || []).filter(e => e.studentId && !existingStudentIds.has(String(e.studentId)));
     } else {
-        // New sheet, all entries are new
         newStudents = entries || [];
     }
 
     if (sheet) {
-        // ... update existing logic
         sheet.date = date;
         sheet.entries = entries;
         sheet.signatures = signatures;
         sheet.metadata = metadata;
-        sheet.updatedBy = req.user?.name;
+        sheet.updatedBy = req.user?.fullName || req.user?.name || "System";
+
         await sheet.save();
     } else {
         sheet = await HandoverSheet.create({
             departmentId,
+            sectionId: sectionId || null,
             date,
             entries,
             signatures,
             metadata,
-            createdBy: req.user?.name
+            createdBy: req.user?.fullName || req.user?.name || "System",
+            isSubmitted: !!isSubmitted,
+            submittedAt: isSubmitted ? new Date() : null
         });
     }
 
+    // --- SYNC ASSIGNMENTS & AUTO-ASSIGN ON APPROVAL ---
+    if (entries && Array.isArray(entries)) {
+        for (const entry of entries) {
+            if (entry.studentId) {
+                const [uRows] = await executeQuery("SELECT isTemporary, departmentId, targetDeptId FROM users WHERE id = ?", [entry.studentId]);
+                if (uRows.length) {
+                    const user = uRows[0];
 
-    // --- EMAIL HANDOVER SHEET ---
-    NotificationService.sendFormReport("Handover Sheet", departmentId, { date, entries, signatures, metadata })
-        .catch(err => console.error("[Handover] Notification failed:", err));
+                    // 1. Update Target Dept if changed (for temporary users)
+                    if (user.isTemporary && entry.departmentId && String(entry.departmentId) !== String(user.targetDeptId)) {
+                        await executeQuery("UPDATE users SET targetDeptId = ? WHERE id = ?", [entry.departmentId, entry.studentId]);
+                    }
+
+                    // 2. Auto-Assign Department on Approval (Transition to regular employee)
+                    const targetDept = entry.departmentId || user.targetDeptId || departmentId;
+                    const targetSect = entry.sectionId || user.targetSectionId || sectionId || null;
+                    const targetLine = entry.lineId || user.targetLineId || null;
+                    const targetSubSect = entry.subSectionId || user.targetSubSectionId || null;
+                    const targetStn = entry.stationId || user.targetStationId || null;
+
+                    if (entry.interviewStatus === 'APPROVE' && targetDept) {
+                        // We always update to ensure they are assigned to the chosen dept/section/line/sub-section/station, clear target columns, and set isTemporary to 0
+                        await executeQuery(
+                            `UPDATE users 
+                             SET departmentId = ?, 
+                                 targetDeptId = NULL, 
+                                 sectionId = ?, 
+                                 lineId = ?, 
+                                 subSectionId = ?, 
+                                 stationId = ?,
+                                 targetSectionId = NULL,
+                                 targetLineId = NULL,
+                                 targetSubSectionId = NULL,
+                                 targetStationId = NULL,
+                                 isTemporary = 0 
+                             WHERE id = ?`,
+                            [targetDept, targetSect, targetLine, targetSubSect, targetStn, entry.studentId]
+                        );
+                        console.log(`[Handover] User ${entry.studentId} assigned to dept ${targetDept}, sect ${targetSect}, line ${targetLine} and cleared temporary status upon approval.`);
+                    }
+                }
+            }
+        }
+    }
+    // --------------------------------------------------
+
+    // --- EMAIL HANDOVER SHEET (Only if submitted) ---
+    if (isSubmitted) {
+        console.log(`[Handover] Triggering email report for department ${departmentId}`);
+        NotificationService.sendFormReport("Handover Sheet", departmentId, {
+            date,
+            entries,
+            signatures,
+            metadata,
+            sectionId
+        }).catch(err => console.error("[Handover] Notification failed:", err));
+    }
     // ----------------------------------
 
     return res.status(200).json(
-        new ApiResponse(200, sheet, "Handover Sheet saved successfully")
+        new ApiResponse(200, sheet, isSubmitted ? "Handover Sheet submitted and emailed successfully" : "Handover Sheet progress saved successfully")
     );
 });
 
 export const getHandoverSheetConfig = asyncHandler(async (req, res) => {
     const departmentId = await resolveDepartmentId(req.params.id);
     if (!departmentId) throw new ApiError("Department ID is required", 400);
+    const sectionId = req.query.sectionId || null;
 
-    const config = await HandoverSheetConfig.findByDepartmentId(departmentId);
+    const config = await HandoverSheetConfig.findSpecific(departmentId, sectionId);
     if (!config) {
         return res.status(200).json(
-            new ApiResponse(200, { isNew: true, departmentId }, "No configuration found")
+            new ApiResponse(200, { isNew: true, departmentId, sectionId }, "No configuration found")
         );
     }
 
@@ -762,12 +1198,12 @@ export const getHandoverSheetConfig = asyncHandler(async (req, res) => {
 });
 
 export const saveHandoverSheetConfig = asyncHandler(async (req, res) => {
-    const { departmentId, config, remark } = req.body;
+    const { departmentId, config, remark, sectionId } = req.body;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
     if (!config) throw new ApiError("Configuration data is required", 400);
 
     const updatedBy = req.user?.fullName || req.user?.name || "System";
-    const saved = await HandoverSheetConfig.upsert(departmentId, config, remark, updatedBy);
+    const saved = await HandoverSheetConfig.upsert(departmentId, config, remark, updatedBy, sectionId || null);
 
     return res.status(200).json(
         new ApiResponse(200, saved, "Configuration saved successfully")
@@ -777,9 +1213,42 @@ export const saveHandoverSheetConfig = asyncHandler(async (req, res) => {
 export const getHandoverSheetHistory = asyncHandler(async (req, res) => {
     const departmentId = await resolveDepartmentId(req.params.id);
     if (!departmentId) throw new ApiError("Department ID is required", 400);
+    const sectionId = req.query.sectionId || null;
 
-    const history = await HandoverSheetConfig.getHistory(departmentId);
+    const history = await HandoverSheetConfig.getHistory(departmentId, 20, sectionId);
     return res.status(200).json(
         new ApiResponse(200, history, "History fetched successfully")
     );
+});
+
+export const sendHandoverPDF = asyncHandler(async (req, res) => {
+    const { email, pdfBase64, departmentName, date } = req.body;
+
+    if (!email || !pdfBase64) {
+        throw new ApiError("Email and PDF data are required", 400);
+    }
+
+    // Convert base64 to buffer
+    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const subject = `Handover Sheet - ${departmentName} (${date})`;
+    const message = `
+        <div style="font-family: sans-serif; line-height: 1.5;">
+            <h2>Handover Sheet</h2>
+            <p>Please find the attached Handover Sheet for <b>${departmentName}</b> on <b>${date}</b>.</p>
+            <hr />
+            <p style="font-size: 12px; color: #666;">This is an automated email from Furukawa Minda LMS.</p>
+        </div>
+    `;
+
+    const attachments = [{
+        filename: `Handover_Sheet_${departmentName.replace(/\s+/g, '_')}_${date}.pdf`,
+        content: buffer,
+        contentType: 'application/pdf'
+    }];
+
+    await sendMail(email, subject, message, attachments);
+
+    res.json(new ApiResponse(200, null, "Email sent successfully with PDF attachment"));
 });

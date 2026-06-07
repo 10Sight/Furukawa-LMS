@@ -71,12 +71,19 @@ export const get5MRecords = async (req, res, next) => {
         // Visibility restriction removed: All users can now see history for their departments
         // Previously: filters.submittedBy = userId; for regular users
 
-        const records = await Daily5MRecord.findAll(filters);
+        const { records, totalCount } = await Daily5MRecord.findAll(filters);
+        const limitInt = parseInt(limit) || 50;
 
         res.status(200).json({
             success: true,
             message: "Records fetched successfully",
-            data: records
+            data: records,
+            pagination: {
+                total: totalCount,
+                pages: Math.ceil(totalCount / limitInt),
+                currentPage: Math.floor((parseInt(offset) || 0) / limitInt) + 1,
+                pageSize: limitInt
+            }
         });
     } catch (error) {
         return next(new ApiError(error.message, 500));
@@ -159,8 +166,30 @@ export const delete5MRecord = async (req, res, next) => {
     }
 };
 
-// Submit record (trigger final email notification)
+// Submit record (Update status to SUBMITTED)
 export const submit5MRecord = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const record = await Daily5MRecord.findById(id);
+
+        if (!record) {
+            return next(new ApiError("Record not found", 404));
+        }
+
+        // Update record status to 'SUBMITTED' in database
+        await Daily5MRecord.updateStatus(id, 'SUBMITTED', req.user.id);
+
+        res.status(200).json({
+            success: true,
+            message: "Record submitted successfully"
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+
+// Send 5M Record Email notification
+export const send5MEmail = async (req, res, next) => {
     try {
         const { id } = req.params;
         const record = await Daily5MRecord.findById(id);
@@ -183,9 +212,115 @@ export const submit5MRecord = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: "Record submitted and email notification sent successfully"
+            message: "Email notification sent successfully"
         });
     } catch (error) {
         return next(new ApiError(error.message, 500));
     }
 };
+
+// Approve a record
+export const approve5MRecord = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id;
+
+        const success = await Daily5MRecord.updateStatus(id, 'APPROVED', userId);
+
+        if (!success) {
+            return next(new ApiError("Record not found", 404));
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Record approved successfully"
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+
+// Decline a record
+export const decline5MRecord = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id;
+
+        const success = await Daily5MRecord.updateStatus(id, 'REJECTED', userId);
+
+        if (!success) {
+            return next(new ApiError("Record not found", 404));
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Record declined successfully"
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+
+// Get Approval status summary
+export const getApprovalStatus = async (req, res, next) => {
+    try {
+        const query = `
+            SELECT status, COUNT(*) as count 
+            FROM daily_5m_records 
+            GROUP BY status
+        `;
+        const [rows] = await executeQuery(query);
+        
+        res.status(200).json({
+            success: true,
+            data: rows
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};// Get daily stats for bar chart
+export const getDaily5MStats = async (req, res, next) => {
+    try {
+        const { departmentId } = req.params;
+        const { sectionId, startDate, endDate, formType } = req.query;
+
+        const stats = await Daily5MRecord.getStats({
+            departmentId,
+            sectionId,
+            startDate,
+            endDate,
+            formType
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Stats fetched successfully",
+            data: stats
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+
+export const getDaily5MRowStats = async (req, res, next) => {
+    try {
+        const { departmentId } = req.params;
+        const { sectionId, startDate, endDate } = req.query;
+
+        const rowStats = await Daily5MRecord.getRowStats({
+            departmentId,
+            sectionId,
+            startDate,
+            endDate
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Row stats fetched successfully",
+            data: rowStats
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+

@@ -30,7 +30,7 @@ const resolveSectionId = async (sectionId) => {
 // @route   POST /api/lines
 // @access  Private
 export const createLine = asyncHandler(async (req, res) => {
-    let { name, uniCode, lineLeader, mentor, requirement, departmentId, sectionId, description } = req.body;
+    let { name, uniCode, lineLeader, mentor, requirement, departmentId, sectionId, description, tenCycleFormType } = req.body;
 
     if (!name || !departmentId || !sectionId) {
         throw new ApiError(400, "Name, Department ID, and Section ID are required");
@@ -53,7 +53,7 @@ export const createLine = asyncHandler(async (req, res) => {
 
     // Insert
     const [result] = await executeQuery(
-        "INSERT INTO [lines] (name, uniCode, lineLeader, mentor, requirement, department, sectionId, description, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())",
+        "INSERT INTO [lines] (name, uniCode, lineLeader, mentor, requirement, department, sectionId, description, isActive, tenCycleFormType, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())",
         [
             name,
             uniCode && uniCode.trim() !== "" ? uniCode.trim() : null,
@@ -63,13 +63,14 @@ export const createLine = asyncHandler(async (req, res) => {
             departmentId,
             sectionId,
             description,
-            true
+            true,
+            tenCycleFormType || "form1"
         ]
     );
 
     const [newLine] = await executeQuery(`
         SELECT l.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l WHERE l.id = ?`, [result[0].id]);
 
     res.status(201).json(
@@ -82,14 +83,28 @@ export const createLine = asyncHandler(async (req, res) => {
 // @access  Private
 export const getLinesBySection = asyncHandler(async (req, res) => {
     const { sectionId } = req.params;
-    const sid = await resolveSectionId(sectionId);
-    if (!sid) throw new ApiError(404, "Section not found");
+    let sectionIds = [];
+    
+    if (typeof sectionId === 'string' && sectionId.includes(',')) {
+        const parts = sectionId.split(',');
+        for (const part of parts) {
+            const resolved = await resolveSectionId(part.trim());
+            if (resolved) sectionIds.push(resolved);
+        }
+    } else {
+        const resolved = await resolveSectionId(sectionId);
+        if (resolved) sectionIds.push(resolved);
+    }
 
+    if (sectionIds.length === 0) {
+        throw new ApiError(404, "Section not found");
+    }
+
+    const idsString = sectionIds.join(',');
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
-        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId = ? OR l.department = ?) ORDER BY l.createdAt DESC`,
-        [sid, sid]
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
+        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId IN (${idsString}) OR l.department IN (${idsString})) ORDER BY l.createdAt DESC`
     );
 
     res.status(200).json(
@@ -102,14 +117,28 @@ export const getLinesBySection = asyncHandler(async (req, res) => {
 // @access  Private
 export const getLinesByDepartment = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
-    const did = await resolveDepartmentId(departmentId);
-    if (!did) throw new ApiError(404, "Department not found");
+    let departmentIds = [];
+    
+    if (typeof departmentId === 'string' && departmentId.includes(',')) {
+        const parts = departmentId.split(',');
+        for (const part of parts) {
+            const resolved = await resolveDepartmentId(part.trim());
+            if (resolved) departmentIds.push(resolved);
+        }
+    } else {
+        const resolved = await resolveDepartmentId(departmentId);
+        if (resolved) departmentIds.push(resolved);
+    }
 
+    if (departmentIds.length === 0) {
+        throw new ApiError(404, "Department not found");
+    }
+
+    const idsString = departmentIds.join(',');
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
-        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department = ? ORDER BY l.createdAt DESC`,
-        [did]
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
+        FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department IN (${idsString}) ORDER BY l.createdAt DESC`
     );
 
     res.status(200).json(
@@ -122,7 +151,7 @@ export const getLinesByDepartment = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateLine = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, uniCode, lineLeader, mentor, requirement, description, isActive } = req.body;
+    const { name, uniCode, lineLeader, mentor, requirement, description, tenCycleFormType, isActive } = req.body;
 
     const [existing] = await executeQuery("SELECT * FROM [lines] WHERE id = ?", [id]);
     if (existing.length === 0) {
@@ -162,6 +191,7 @@ export const updateLine = asyncHandler(async (req, res) => {
     if (typeof mentor !== 'undefined') { updateFields.push("mentor = ?"); updateValues.push(mentor); }
     if (typeof requirement !== 'undefined') { updateFields.push("requirement = ?"); updateValues.push(requirement); }
     if (typeof description !== 'undefined') { updateFields.push("description = ?"); updateValues.push(description); }
+    if (typeof tenCycleFormType !== 'undefined') { updateFields.push("tenCycleFormType = ?"); updateValues.push(tenCycleFormType); }
     if (typeof isActive !== 'undefined') { updateFields.push("isActive = ?"); updateValues.push(isActive); }
 
     if (updateFields.length > 0) {
@@ -174,7 +204,7 @@ export const updateLine = asyncHandler(async (req, res) => {
                 const LineRequirement = (await import("../models/lineRequirement.model.js")).default;
                 const LineRequirementHistory = (await import("../models/lineRequirementHistory.model.js")).default;
                 const now = new Date();
-                
+
                 // We default to MONTHLY update for the current month when using the legacy UI
                 await LineRequirement.createOrUpdate({
                     lineId: id,
@@ -201,7 +231,7 @@ export const updateLine = asyncHandler(async (req, res) => {
 
     const [updatedLine] = await executeQuery(`
         SELECT l.*,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l WHERE l.id = ?`, [id]);
 
     res.status(200).json(
@@ -228,7 +258,7 @@ export const deleteLine = asyncHandler(async (req, res) => {
     if (subSectionIds.length > 0) {
         // 2. Delete all machines for these sub-sections
         await executeQuery(`DELETE FROM machines WHERE subSectionId IN (${subSectionIds.join(",")})`);
-        
+
         // 3. Delete all sub-sections for this line
         await executeQuery("DELETE FROM [sub_sections] WHERE lineId = ?", [id]);
     }
@@ -258,25 +288,43 @@ export const getAllLines = asyncHandler(async (req, res) => {
 
     let querySQL = `
         SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN sub_sections ss ON m.subSectionId = ss.id WHERE ss.lineId = l.id) as lineCount
+        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id`;
     let params = [];
     let conditions = [];
 
     if (sectionId && sectionId !== "undefined" && sectionId !== "null") {
-        const sid = await resolveSectionId(sectionId);
-        if (sid) {
-            conditions.push("(l.sectionId = ? OR l.department = ?)");
-            params.push(sid);
-            params.push(sid);
+        let sectionIds = [];
+        if (typeof sectionId === 'string' && sectionId.includes(',')) {
+            const parts = sectionId.split(',');
+            for (const part of parts) {
+                const resolved = await resolveSectionId(part.trim());
+                if (resolved) sectionIds.push(resolved);
+            }
+        } else {
+            const resolved = await resolveSectionId(sectionId);
+            if (resolved) sectionIds.push(resolved);
+        }
+        if (sectionIds.length > 0) {
+            const idsStr = sectionIds.join(',');
+            conditions.push(`(l.sectionId IN (${idsStr}) OR l.department IN (${idsStr}))`);
         }
     }
 
     if (departmentId && departmentId !== "undefined" && departmentId !== "null") {
-        const did = await resolveDepartmentId(departmentId);
-        if (did) {
-            conditions.push("l.department = ?");
-            params.push(did);
+        let departmentIds = [];
+        if (typeof departmentId === 'string' && departmentId.includes(',')) {
+            const parts = departmentId.split(',');
+            for (const part of parts) {
+                const resolved = await resolveDepartmentId(part.trim());
+                if (resolved) departmentIds.push(resolved);
+            }
+        } else {
+            const resolved = await resolveDepartmentId(departmentId);
+            if (resolved) departmentIds.push(resolved);
+        }
+        if (departmentIds.length > 0) {
+            conditions.push(`l.department IN (${departmentIds.join(',')})`);
         }
     }
 

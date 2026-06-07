@@ -18,6 +18,7 @@ class QuizAttempt {
         this.completedAt = data.completedAt ? new Date(data.completedAt) : null;
         this.attemptNumber = data.attemptNumber !== undefined ? data.attemptNumber : 1;
         this.timeTaken = data.timeTaken !== undefined ? data.timeTaken : 0;
+        this.conductedBy = data.conductedBy !== undefined && data.conductedBy !== null ? data.conductedBy : "";
 
         // Admin adjustment metadata
         this.manuallyAdjusted = !!data.manuallyAdjusted;
@@ -48,6 +49,7 @@ class QuizAttempt {
                 adjustedBy NVARCHAR(255),
                 adjustedAt DATETIME,
                 adjustmentNotes NVARCHAR(MAX),
+                conductedBy NVARCHAR(255) DEFAULT '',
                 createdAt DATETIME DEFAULT GETDATE(),
                 updatedAt DATETIME DEFAULT GETDATE()
             );
@@ -56,6 +58,17 @@ class QuizAttempt {
         `;
         try {
             await executeQuery(query);
+            // Automated migration to add conductedBy column if the table already exists but lacks it
+            const checkColQuery = `
+                IF NOT EXISTS (
+                    SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_NAME = 'attempted_quizzes' AND COLUMN_NAME = 'conductedBy'
+                )
+                BEGIN
+                    ALTER TABLE [attempted_quizzes] ADD [conductedBy] NVARCHAR(255) DEFAULT ''
+                END
+            `;
+            await executeQuery(checkColQuery);
         } catch (error) {
             logger.error("Failed to initialize QuizAttempt table", error);
         }
@@ -67,7 +80,7 @@ class QuizAttempt {
         const fields = [
             "quiz", "student", "answer", "score", "status",
             "startedAt", "completedAt", "attemptNumber", "timeTaken",
-            "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes", "createdAt"
+            "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes", "conductedBy", "createdAt"
         ];
 
         if (!attempt.createdAt) attempt.createdAt = new Date();
@@ -75,6 +88,15 @@ class QuizAttempt {
         const values = fields.map(field => {
             let val = attempt[field];
             if (field === 'answer') return JSON.stringify(val);
+            if (field === 'quiz' && val && typeof val === 'object') {
+                return val.id || val._id || val;
+            }
+            if (field === 'student' && val && typeof val === 'object') {
+                return val.id || val._id || val;
+            }
+            if (field === 'adjustedBy' && val && typeof val === 'object') {
+                return val.id || val._id || val;
+            }
             if (val === undefined) return null;
             return val;
         });
@@ -138,13 +160,23 @@ class QuizAttempt {
         const fields = [
             "quiz", "student", "answer", "score", "status",
             "startedAt", "completedAt", "attemptNumber", "timeTaken",
-            "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes"
+            "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes", "conductedBy"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => {
-            const val = this[field];
+            let val = this[field];
             if (field === 'answer') return JSON.stringify(val);
+            if (field === 'quiz' && val && typeof val === 'object') {
+                return val.id || val._id || val;
+            }
+            if (field === 'student' && val && typeof val === 'object') {
+                return val.id || val._id || val;
+            }
+            if (field === 'adjustedBy' && val && typeof val === 'object') {
+                return val.id || val._id || val;
+            }
+            if (val === undefined) return null;
             return val;
         });
         values.push(this.id);

@@ -39,6 +39,7 @@ const ENV = {
     DB_USER: process.env.DB_USER || "sql12814316",
     DB_PASSWORD: process.env.DB_PASSWORD || "kqZTqdmkn2",
     DB_NAME: process.env.DB_NAME || "sql12814316",
+    DB_PORT: process.env.DB_PORT || 1433,
 
     FRONTEND_URL: process.env.FRONTEND_URL || "http://192.168.90.19:5174",
     ADMIN_URL: process.env.ADMIN_URL || "http://localhost:5174",

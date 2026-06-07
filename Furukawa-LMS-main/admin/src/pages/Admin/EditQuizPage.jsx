@@ -13,6 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useGetCourseByIdQuery } from "@/Redux/AllApi/CourseApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { Badge } from "@/components/ui/badge";
 import { IconArrowLeft, IconPlus, IconTrash, IconLoader, IconCheck, IconX, IconPhoto } from "@tabler/icons-react";
 import {
   Select,
@@ -47,8 +51,15 @@ const EditQuizPage = () => {
     title: "",
     description: "",
     passingScore: 70,
+    timeLimit: 30,
+    attemptsAllowed: 1,
     skillUpgradation: false,
     issueCertificate: true,
+    departmentId: [],
+    sectionId: [],
+    isDojo: false,
+    isHandover: false,
+    isTheoretical: false,
     questions: [
       {
         questionText: "",
@@ -61,14 +72,70 @@ const EditQuizPage = () => {
     ],
   });
 
+  const { data: courseData } = useGetCourseByIdQuery(quiz?.course?.id || quiz?.courseId || quiz?.course?._id, {
+    skip: !quiz
+  });
+
+  const { data: allDepartmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
+  const selectedDeptIds = (formData.departmentId || []).join(',');
+  const { data: allSectionsData } = useGetSectionsByDepartmentQuery(selectedDeptIds, {
+    skip: !selectedDeptIds || !selectedDeptIds.length
+  });
+
+  const departmentOptions = React.useMemo(() => {
+    const courseDeptIds = new Set((courseData?.data?.departmentId || []).map(String));
+    return (allDepartmentsData?.data?.departments || [])
+      .filter(d => courseDeptIds.has(String(d.id)))
+      .map(d => ({ value: String(d.id), label: d.name }));
+  }, [allDepartmentsData, courseData]);
+
+  const sectionOptions = React.useMemo(() => {
+    const courseSectionIds = new Set((courseData?.data?.sectionId || []).map(String));
+    return (allSectionsData?.data || [])
+      .filter(s => courseSectionIds.has(String(s.id)))
+      .map(s => ({ value: String(s.id), label: s.name }));
+  }, [allSectionsData, courseData]);
+
+  const toggleItem = (field, id) => {
+    setFormData(prev => {
+      const current = prev[field] || [];
+      const updated = current.includes(id)
+        ? current.filter(item => item !== id)
+        : [...current, id];
+      return { ...prev, [field]: updated };
+    });
+  };
+
+  const removeItem = (field, id) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: (prev[field] || []).filter(item => item !== id)
+    }));
+  };
+
   useEffect(() => {
     if (quiz) {
+      const initialDeptId = (Array.isArray(quiz.departmentId) && quiz.departmentId.length > 0)
+        ? quiz.departmentId.map(String)
+        : (courseData?.data?.departmentId ? courseData.data.departmentId.map(String) : []);
+      
+      const initialSectionId = (Array.isArray(quiz.sectionId) && quiz.sectionId.length > 0)
+        ? quiz.sectionId.map(String)
+        : (courseData?.data?.sectionId ? courseData.data.sectionId.map(String) : []);
+
       setFormData({
         title: quiz.title || "",
         description: quiz.description || "",
         passingScore: quiz.passingScore ?? 70,
-        skillUpgradation: quiz.skillUpgradation || false,
+        timeLimit: quiz.timeLimit ?? 30,
+        attemptsAllowed: quiz.attemptsAllowed ?? 1,
+        skillUpgradation: !!quiz.skillUpgradation,
         issueCertificate: quiz.issueCertificate !== undefined ? !!quiz.issueCertificate : true,
+        departmentId: initialDeptId,
+        sectionId: initialSectionId,
+        isDojo: !!quiz.isDojo,
+        isHandover: !!quiz.isHandover,
+        isTheoretical: !!quiz.isTheoretical,
         questions: Array.isArray(quiz.questions) && quiz.questions.length > 0
           ? quiz.questions.map((q) => ({
             questionText: q.questionText || q.text || "",
@@ -91,7 +158,7 @@ const EditQuizPage = () => {
           ],
       });
     }
-  }, [quiz]);
+  }, [quiz, courseData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -220,9 +287,15 @@ const EditQuizPage = () => {
         description: formData.description,
         questions: formData.questions,
         passingScore: parseInt(formData.passingScore),
-        // timeLimit and attemptsAllowed are not in state currently but should be if we want full editing
+        timeLimit: parseInt(formData.timeLimit),
+        attemptsAllowed: parseInt(formData.attemptsAllowed),
         skillUpgradation: formData.skillUpgradation,
         issueCertificate: formData.issueCertificate,
+        departmentId: formData.departmentId,
+        sectionId: formData.sectionId,
+        isDojo: formData.isDojo,
+        isHandover: formData.isHandover,
+        isTheoretical: formData.isTheoretical,
       }).unwrap();
 
       toast.success("Test updated successfully!");
@@ -278,6 +351,106 @@ const EditQuizPage = () => {
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} rows={3} />
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="passingScore">Passing Score (%) *</Label>
+                <Input
+                  id="passingScore"
+                  name="passingScore"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={formData.passingScore}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="timeLimit">Time Limit (mins) *</Label>
+                <Input
+                  id="timeLimit"
+                  name="timeLimit"
+                  type="number"
+                  min="1"
+                  value={formData.timeLimit}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="attemptsAllowed">Attempts Allowed *</Label>
+                <Input
+                  id="attemptsAllowed"
+                  name="attemptsAllowed"
+                  type="number"
+                  min="1"
+                  value={formData.attemptsAllowed}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Departments (Optional)</Label>
+                <Select onValueChange={(val) => toggleItem('departmentId', val)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.departmentId?.length > 0 
+                      ? `${formData.departmentId.length} departments selected` 
+                      : "Select departments"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label} {formData.departmentId?.includes(opt.value) ? "✓" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {formData.departmentId?.map(id => (
+                    <Badge key={id} variant="secondary" className="gap-1 bg-blue-50 text-blue-700 hover:bg-blue-100">
+                      {departmentOptions && departmentOptions.length > 0 
+                        ? (departmentOptions.find(o => o.value === id)?.label || id)
+                        : id}
+                      <IconX className="h-3 w-3 cursor-pointer" onClick={() => removeItem('departmentId', id)} />
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Only departments assigned to the course are shown.</p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Sections (Optional)</Label>
+                <Select onValueChange={(val) => toggleItem('sectionId', val)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.sectionId?.length > 0 
+                      ? `${formData.sectionId.length} sections selected` 
+                      : "Select sections"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sectionOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label} {formData.sectionId?.includes(opt.value) ? "✓" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {formData.sectionId?.map(id => (
+                    <Badge key={id} variant="secondary" className="gap-1 bg-gray-100 hover:bg-gray-200">
+                      {sectionOptions && sectionOptions.length > 0
+                        ? (sectionOptions.find(o => o.value === id)?.label || id)
+                        : id}
+                      <IconX className="h-3 w-3 cursor-pointer" onClick={() => removeItem('sectionId', id)} />
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Only sections assigned to the course are shown.</p>
+              </div>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="skillUpgradation">Skill Upgradation</Label>
               <Select
@@ -328,6 +501,81 @@ const EditQuizPage = () => {
                 If Yes, a certificate will be issued upon passing this test (if skill upgradation applies).
               </p>
             </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="isDojo">Is DOJO Quiz? *</Label>
+              <Select
+                key={formData.isDojo ? "yes" : "no"}
+                value={formData.isDojo ? "yes" : "no"}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    isDojo: value === "yes",
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select option" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no">No</SelectItem>
+                  <SelectItem value="yes">Yes</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                If Yes, this quiz will be visible to temporary DOJO candidates in their portal.
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+                <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
+                <Select
+                  key={formData.isHandover ? "yes" : "no"}
+                  value={formData.isHandover ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isHandover: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, passing this quiz will automatically add the student to the Handover Sheet on the date of passing.
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isTheoretical">Is Theoretical Quiz? *</Label>
+                <Select
+                  key={formData.isTheoretical ? "yes" : "no"}
+                  value={formData.isTheoretical ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isTheoretical: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, this quiz will be marked as a theoretical assessment.
+                </p>
+              </div>
           </CardContent>
         </Card>
 

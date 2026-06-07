@@ -138,7 +138,12 @@ const StudentDetail = () => {
     const machines = machinesData?.data || [];
 
     // Loading state
-    const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading;
+    const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading || isOjtLoading;
+
+    const passedOjts = useMemo(() => {
+        const ojts = ojtData?.data || [];
+        return ojts.filter(o => o.result === "Pass" || o.result === "Approved");
+    }, [ojtData]);
 
     // Calculate overall statistics
     const stats = useMemo(() => {
@@ -952,119 +957,140 @@ const StudentDetail = () => {
                         </CardContent>
                     </Card>
                 </TabsContent>
-
                 <TabsContent value="ojt">
-                    {/* Check if we are in detail view (selectedOjt is set) */}
-                    {selectedOjt ? (
-                        <Tabs defaultValue="record" className="w-full">
-                            <TabsList className="grid w-full grid-cols-2 mb-4">
-                                <TabsTrigger value="record">Training Record Sheet</TabsTrigger>
-                                <TabsTrigger value="evaluation">Evaluation Form</TabsTrigger>
-                            </TabsList>
+                  {selectedOjt ? (
+                    <Tabs defaultValue="record" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2 mb-4">
+                        <TabsTrigger value="record">Training Record Sheet</TabsTrigger>
+                        <TabsTrigger value="evaluation">Evaluation Form</TabsTrigger>
+                      </TabsList>
 
-                            <TabsContent value="record">
-                                <Card>
-                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-xl font-bold">OJT Training Record Sheet</CardTitle>
-                                        <Button variant="outline" size="sm" onClick={() => setSelectedOjt(null)}>
-                                            <IconArrowLeft className="h-4 w-4 mr-2" />
-                                            Back to List
-                                        </Button>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <OJTTrainingRecordSheet
-                                            ojtId={selectedOjt._id}
-                                            studentName={student?.fullName}
-                                            readOnly={false}
-                                            onBack={() => setSelectedOjt(null)}
-                                        />
-                                    </CardContent>
-                                </Card>
-                            </TabsContent>
-
-                            <TabsContent value="evaluation">
-                                <Card>
-                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-xl font-bold">On Job Training Evaluation Form</CardTitle>
-                                        <Button variant="outline" size="sm" onClick={() => setSelectedOjt(null)}>
-                                            <IconArrowLeft className="h-4 w-4 mr-2" />
-                                            Back to List
-                                        </Button>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <OnJobTrainingTable
-                                            ojtId={selectedOjt._id}
-                                            studentName={student?.fullName}
-                                            model={student?.department?.name || "N/A"}
-                                            readOnly={false}
-                                            onBack={() => setSelectedOjt(null)}
-                                        />
-                                    </CardContent>
-                                </Card>
-                            </TabsContent>
-                        </Tabs>
-                    ) : (
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between">
-                                <div>
-                                    <CardTitle>On Job Training Records</CardTitle>
-                                    <CardDescription>
-                                        Manage On Job Training records for this operator
-                                    </CardDescription>
-                                </div>
-                                <Button onClick={() => setCreateOJTDialog(true)}>
-                                    <IconClipboardList className="h-4 w-4 mr-2" />
-                                    Start New OJT
-                                </Button>
-                            </CardHeader>
-                            <CardContent>
-                                {isOjtLoading ? (
-                                    <div className="text-center py-4">Loading OJT Data...</div>
-                                ) : ojtData?.data?.length > 0 ? (
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Training Topic</TableHead>
-                                                <TableHead>Area/Line</TableHead>
-                                                <TableHead>Trainer</TableHead>
-                                                <TableHead>Created Date</TableHead>
-                                                <TableHead className="text-right">Actions</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {ojtData.data.map((ojtItem) => (
-                                                <TableRow key={ojtItem._id}>
-                                                    <TableCell className="font-medium">{ojtItem.trainingTopic || ojtItem.name || "-"}</TableCell>
-                                                    <TableCell>{ojtItem.areaLine || "-"}</TableCell>
-                                                    <TableCell>{ojtItem.trainingGivenBy || "-"}</TableCell>
-                                                    <TableCell>
-                                                        {new Date(ojtItem.createdAt).toLocaleDateString()}
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        <Button variant="outline" size="sm" onClick={() => setSelectedOjt(ojtItem)}>
-                                                            <IconEye className="h-4 w-4 mr-2" />
-                                                            View/Edit
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                ) : (
-                                    <div className="text-center py-12">
-                                        <IconClipboardList className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                                        <h3 className="text-lg font-medium mb-2">No On Job Training Record</h3>
-                                        <p className="text-muted-foreground mb-6">
-                                            There is no ongoing On Job Training evaluation for this operator.
-                                        </p>
-                                        <Button onClick={() => setCreateOJTDialog(true)}>
-                                            Start On Job Training
-                                        </Button>
-                                    </div>
-                                )}
-                            </CardContent>
+                      <TabsContent value="record">
+                        <Card className="border border-slate-200 shadow-sm">
+                          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
+                            <CardTitle className="text-xl font-bold text-slate-800">OJT Training Record Sheet</CardTitle>
+                            <Button variant="outline" size="sm" onClick={() => setSelectedOjt(null)}>
+                              <IconArrowLeft className="h-4 w-4 mr-2" />
+                              Back to List
+                            </Button>
+                          </CardHeader>
+                          <CardContent className="pt-6">
+                            <OJTTrainingRecordSheet
+                              ojtId={selectedOjt._id || selectedOjt.id}
+                              studentName={student?.fullName}
+                              readOnly={true}
+                              onBack={() => setSelectedOjt(null)}
+                            />
+                          </CardContent>
                         </Card>
-                    )}
+                      </TabsContent>
+
+                      <TabsContent value="evaluation">
+                        <Card className="border border-slate-200 shadow-sm">
+                          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
+                            <CardTitle className="text-xl font-bold text-slate-800">On Job Training Evaluation Form</CardTitle>
+                            <Button variant="outline" size="sm" onClick={() => setSelectedOjt(null)}>
+                              <IconArrowLeft className="h-4 w-4 mr-2" />
+                              Back to List
+                            </Button>
+                          </CardHeader>
+                          <CardContent className="pt-6">
+                            <OnJobTrainingTable
+                              ojtId={selectedOjt._id || selectedOjt.id}
+                              studentName={student?.fullName}
+                              model={student?.department?.name || "N/A"}
+                              readOnly={true}
+                              onBack={() => setSelectedOjt(null)}
+                            />
+                          </CardContent>
+                        </Card>
+                      </TabsContent>
+                    </Tabs>
+                  ) : (
+                    <Card className="border-slate-200 shadow-md">
+                      <CardHeader className="pb-3 border-b bg-slate-50/50">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                              <IconTrophy className="h-5 w-5 text-amber-500" />
+                              On Job Training Portfolio
+                            </CardTitle>
+                            <CardDescription>
+                              Approved and passed Level-1 Practical Evaluations for this operator
+                            </CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-6">
+                        {passedOjts.length === 0 ? (
+                          <div className="text-center py-16 border border-dashed border-slate-200 rounded-xl bg-slate-50/30 text-slate-500">
+                            <IconTrophy className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                            <h3 className="text-base font-semibold text-slate-700">No Passed OJT Records</h3>
+                            <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
+                              This operator has not passed any On Job Training assessments yet.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                            <Table>
+                              <TableHeader className="bg-slate-50">
+                                <TableRow>
+                                  <TableHead className="font-bold text-slate-700">Training Topic</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Department</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Section & Line</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Sub-Section & Machine</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Approved Date</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Status</TableHead>
+                                  <TableHead className="font-bold text-slate-700 text-right">Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {passedOjts.map((ojtItem) => (
+                                  <TableRow key={ojtItem.id || ojtItem._id} className="hover:bg-slate-50/40 transition-colors">
+                                    <TableCell className="font-semibold text-slate-900">
+                                      {ojtItem.trainingTopic || ojtItem.name || "Practical Evaluation"}
+                                    </TableCell>
+                                    <TableCell className="text-slate-600">
+                                      {ojtItem.department?.name || ojtItem.department || "-"}
+                                    </TableCell>
+                                    <TableCell className="text-slate-600">
+                                      <span className="font-medium">{ojtItem.section?.name || ojtItem.section || "-"}</span>
+                                      <span className="text-slate-400 mx-1">/</span>
+                                      <span className="text-xs">{ojtItem.line?.name || ojtItem.line || "-"}</span>
+                                    </TableCell>
+                                    <TableCell className="text-slate-600">
+                                      <span className="font-medium">{ojtItem.subSection?.name || ojtItem.subSection || "-"}</span>
+                                      <span className="text-slate-400 mx-1">/</span>
+                                      <span className="text-xs font-mono bg-slate-100 px-1 rounded">{ojtItem.machine?.name || ojtItem.machine || "-"}</span>
+                                    </TableCell>
+                                    <TableCell className="text-slate-600">
+                                      {new Date(ojtItem.updatedAt || ojtItem.createdAt).toLocaleDateString()}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 font-bold hover:bg-emerald-100">
+                                        Approved
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="border-indigo-100 text-indigo-700 hover:bg-indigo-50/50 hover:text-indigo-800 gap-1.5"
+                                        onClick={() => setSelectedOjt(ojtItem)}
+                                      >
+                                        <IconEye className="h-4 w-4" />
+                                        View Portfolio
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                 </TabsContent>
             </Tabs>
             {/* Attempt Review Modal (admin editable) */}
@@ -1075,50 +1101,7 @@ const StudentDetail = () => {
                 canEdit={true}
             />
 
-            {/* Create OJT Dialog */}
-            <Dialog open={createOJTDialog} onOpenChange={setCreateOJTDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Start On Job Training</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                            <Label>Line</Label>
-                            <Select value={selectedLine} onValueChange={setSelectedLine}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select Line" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {lines.map((line) => (
-                                        <SelectItem key={line._id} value={line._id}>
-                                            {line.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Machine</Label>
-                            <Select value={selectedMachine} onValueChange={setSelectedMachine} disabled={!selectedLine}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select Machine" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {machines.map((machine) => (
-                                        <SelectItem key={machine._id} value={machine._id}>
-                                            {machine.name} {machine.machineName ? `(${machine.machineName})` : ""}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setCreateOJTDialog(false)}>Cancel</Button>
-                        <Button onClick={handleCreateOJT} disabled={!selectedLine || !selectedMachine}>Create</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+
         </div>
     );
 };

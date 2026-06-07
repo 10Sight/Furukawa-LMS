@@ -15,164 +15,196 @@ class Line {
         this.description = data.description;
         this.requirement = data.requirement || 0;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
-        this.lineCount = data.lineCount || 0;
+        this.tenCycleFormType = data.tenCycleFormType || "form1";
+        this.users = typeof data.users === 'string' ? JSON.parse(data.users) : (data.users || []);
+        this.lineCount = data.lineCount || this.users.length || 0;
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'lines')
-            BEGIN
-                CREATE TABLE [lines] (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    name NVARCHAR(255) NOT NULL,
-                    uniCode NVARCHAR(255) UNIQUE,
-                    lineLeader NVARCHAR(MAX),
-                    department INT NOT NULL,
-                    sectionId INT NOT NULL,
-                    description NVARCHAR(MAX),
-                    isActive BIT DEFAULT 1,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT unique_section_line UNIQUE (name, sectionId),
-                    FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE
-                );
-                CREATE INDEX idx_section ON [lines](sectionId);
-                CREATE INDEX idx_department ON [lines](department);
-            END
-        `;
-        try {
-            await executeQuery(query);
+        let attempts = 0;
+        const maxAttempts = 3;
 
-            // 1. Data Migration: Remap orphaned sectionId (department IDs) to actual section IDs
-            // We do this carefully to avoid UNIQUE KEY constraint violations
-            const remappings = [
-                { old: 2, new: 11 }, { old: 3, new: 13 }, { old: 4, new: 14 },
-                { old: 5, new: 15 }, { old: 6, new: 16 }, { old: 9, new: 20 },
-                { old: 12, new: 23 }
-            ];
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                const query = `
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'lines')
+                    BEGIN
+                        CREATE TABLE [lines] (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            name NVARCHAR(255) NOT NULL,
+                            uniCode NVARCHAR(255) UNIQUE,
+                            lineLeader NVARCHAR(MAX),
+                            department INT NOT NULL,
+                            sectionId INT NOT NULL,
+                            description NVARCHAR(MAX),
+                            isActive BIT DEFAULT 1,
+                            tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
+                            createdAt DATETIME DEFAULT GETDATE(),
+                            updatedAt DATETIME DEFAULT GETDATE(),
+                            CONSTRAINT unique_section_line UNIQUE (name, sectionId),
+                            FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE
+                        );
+                        CREATE INDEX idx_section ON [lines](sectionId);
+                        CREATE INDEX idx_department ON [lines](department);
+                    END
+                `;
+                await executeQuery(query);
 
-            for (const map of remappings) {
-                // Only perform remap if oldId exists and newId exists in sections
-                const [targetExists] = await executeQuery("SELECT id FROM sections WHERE id = ?", [map.new]);
-                if (targetExists.length > 0) {
-                    // Remove duplicates that would collide
-                    await executeQuery(`
-                        DELETE FROM [lines] 
-                        WHERE sectionId = ? 
-                        AND sectionId != ?
-                        AND name IN (SELECT name FROM [lines] WHERE sectionId = ?)
-                    `, [map.old, map.new, map.new]);
+                // 1. Data Migration: Remap orphaned sectionId (department IDs) to actual section IDs
+                const remappings = [
+                    { old: 2, new: 11 }, { old: 3, new: 13 }, { old: 4, new: 14 },
+                    { old: 5, new: 15 }, { old: 6, new: 16 }, { old: 9, new: 20 },
+                    { old: 12, new: 23 }
+                ];
 
-                    // Then perform the remap
-                    await executeQuery(`UPDATE [lines] SET sectionId = ? WHERE sectionId = ? AND sectionId != ?`, [map.new, map.old, map.new]);
+                for (const map of remappings) {
+                    const [targetExists] = await executeQuery("SELECT id FROM sections WHERE id = ?", [map.new]);
+                    if (targetExists.length > 0) {
+                        await executeQuery(`
+                            DELETE FROM [lines] 
+                            WHERE sectionId = ? 
+                            AND sectionId != ?
+                            AND name IN (SELECT name FROM [lines] WHERE sectionId = ?)
+                        `, [map.old, map.new, map.new]);
+                        await executeQuery(`UPDATE [lines] SET sectionId = ? WHERE sectionId = ? AND sectionId != ?`, [map.new, map.old, map.new]);
+                    }
+                }
+
+                await executeQuery(`
+                    IF COL_LENGTH('lines', 'lineLeader') IS NULL
+                    BEGIN
+                        ALTER TABLE [lines] ADD lineLeader NVARCHAR(MAX);
+                    END
+                    ELSE
+                    BEGIN
+                        ALTER TABLE [lines] ALTER COLUMN lineLeader NVARCHAR(MAX);
+                    END
+                    IF COL_LENGTH('lines', 'mentor') IS NULL
+                    BEGIN
+                        ALTER TABLE [lines] ADD mentor NVARCHAR(255);
+                    END
+                    IF COL_LENGTH('lines', 'requirement') IS NULL
+                    BEGIN
+                        ALTER TABLE [lines] ADD requirement INT DEFAULT 0;
+                    END
+                    IF COL_LENGTH('lines', 'tenCycleFormType') IS NULL
+                    BEGIN
+                        ALTER TABLE [lines] ADD tenCycleFormType NVARCHAR(255) DEFAULT 'form1';
+                    END
+                    ELSE
+                    BEGIN
+                        ALTER TABLE [lines] ALTER COLUMN tenCycleFormType NVARCHAR(255);
+                    END
+
+                    DECLARE @ConstraintName NVARCHAR(MAX);
+                    DECLARE @DropQuery NVARCHAR(MAX);
+                    DECLARE constraint_cursor CURSOR FOR
+                    SELECT fk.name
+                    FROM sys.foreign_keys AS fk
+                    INNER JOIN sys.foreign_key_columns AS fkc ON fk.object_id = fkc.constraint_object_id
+                    INNER JOIN sys.columns AS fkc_col ON fkc.parent_object_id = fkc_col.object_id AND fkc.parent_column_id = fkc_col.column_id
+                    INNER JOIN sys.tables AS t_ref ON fk.referenced_object_id = t_ref.object_id
+                    WHERE fk.parent_object_id = OBJECT_ID('lines')
+                      AND fkc_col.name = 'sectionId'
+                      AND t_ref.name = 'departments';
+
+                    OPEN constraint_cursor;
+                    FETCH NEXT FROM constraint_cursor INTO @ConstraintName;
+                    WHILE @@FETCH_STATUS = 0
+                    BEGIN
+                        SET @DropQuery = 'ALTER TABLE [lines] DROP CONSTRAINT ' + QUOTENAME(@ConstraintName);
+                        EXEC sp_executesql @DropQuery;
+                        FETCH NEXT FROM constraint_cursor INTO @ConstraintName;
+                    END
+                    CLOSE constraint_cursor;
+                    DEALLOCATE constraint_cursor;
+
+                    IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Lines_Sections' AND parent_object_id = OBJECT_ID('lines'))
+                    BEGIN
+                        BEGIN TRY
+                            ALTER TABLE [lines]
+                            ADD CONSTRAINT FK_Lines_Sections FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE;
+                        END TRY
+                        BEGIN CATCH
+                            -- Ignore if failed
+                        END CATCH
+                    END
+
+                    IF EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_dept_line' AND parent_object_id = OBJECT_ID('lines') AND type = 'UQ')
+                    BEGIN
+                        ALTER TABLE [lines] DROP CONSTRAINT unique_dept_line;
+                    END
+                    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'unique_dept_line' AND object_id = OBJECT_ID('lines'))
+                    BEGIN
+                        DROP INDEX unique_dept_line ON [lines];
+                    END
+
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_section_line' AND parent_object_id = OBJECT_ID('lines') AND type = 'UQ')
+                       AND NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'unique_section_line' AND object_id = OBJECT_ID('lines'))
+                    BEGIN
+                        ;WITH CTE AS (
+                            SELECT name, sectionId, 
+                                   ROW_NUMBER() OVER (PARTITION BY name, sectionId ORDER BY id DESC) as rn
+                            FROM [lines]
+                        )
+                        DELETE FROM CTE WHERE rn > 1;
+                        ALTER TABLE [lines] ADD CONSTRAINT unique_section_line UNIQUE (name, sectionId);
+                    END
+
+                    IF COL_LENGTH('lines', 'users') IS NULL
+                    BEGIN
+                        ALTER TABLE [lines] ADD [users] NVARCHAR(MAX) DEFAULT '[]';
+                    END
+                `);
+                logger.info("Line table initialized successfully");
+
+                // Trigger an initial sync for all lines to populate the new 'users' column
+                const [lines] = await executeQuery("SELECT id FROM [lines]");
+                for (const line of lines) {
+                    await Line.syncUserList(line.id);
+                }
+                break; // Success, exit loop
+            } catch (error) {
+                if (error.message.toLowerCase().includes('deadlock') && attempts < maxAttempts) {
+                    logger.warn(`Line table initialization deadlock (attempt ${attempts}), retrying in 500ms...`);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } else {
+                    logger.error(`Failed to initialize Line table: ${error.message}`);
+                    break;
                 }
             }
+        }
+    }
 
-            await executeQuery(`
-                IF COL_LENGTH('lines', 'lineLeader') IS NULL
-                BEGIN
-                    ALTER TABLE [lines] ADD lineLeader NVARCHAR(MAX);
-                END
-                ELSE
-                BEGIN
-                    ALTER TABLE [lines] ALTER COLUMN lineLeader NVARCHAR(MAX);
-                END
-                IF COL_LENGTH('lines', 'mentor') IS NULL
-                BEGIN
-                    ALTER TABLE [lines] ADD mentor NVARCHAR(255);
-                    PRINT 'Column mentor added to lines table.';
-                END
-                IF COL_LENGTH('lines', 'requirement') IS NULL
-                BEGIN
-                    ALTER TABLE [lines] ADD requirement INT DEFAULT 0;
-                    PRINT 'Column requirement added to lines table.';
-                END
+    static async syncUserList(lineId) {
+        try {
+            // Aggregate all users from sub-sections belonging to this line
+            const query = `
+                SELECT DISTINCT u.[value] as userId
+                FROM [sub_sections] ss
+                CROSS APPLY OPENJSON(ISNULL(ss.users, '[]')) AS u
+                WHERE ss.lineId = ?
+            `;
+            const [rows] = await executeQuery(query, [lineId]);
 
-                -- Dynamic fix for incorrect foreign key constraints
-                DECLARE @ConstraintName NVARCHAR(MAX);
-                DECLARE @DropQuery NVARCHAR(MAX);
+            const userIds = rows.map(r => r.userId).filter(id => id !== null);
+            const jsonUsers = JSON.stringify(userIds);
 
-                DECLARE constraint_cursor CURSOR FOR
-                SELECT fk.name
-                FROM sys.foreign_keys AS fk
-                INNER JOIN sys.foreign_key_columns AS fkc ON fk.object_id = fkc.constraint_object_id
-                INNER JOIN sys.columns AS fkc_col ON fkc.parent_object_id = fkc_col.object_id AND fkc.parent_column_id = fkc_col.column_id
-                INNER JOIN sys.tables AS t_ref ON fk.referenced_object_id = t_ref.object_id
-                WHERE fk.parent_object_id = OBJECT_ID('lines')
-                  AND fkc_col.name = 'sectionId'
-                  AND t_ref.name = 'departments';
-
-                OPEN constraint_cursor;
-                FETCH NEXT FROM constraint_cursor INTO @ConstraintName;
-
-                WHILE @@FETCH_STATUS = 0
-                BEGIN
-                    SET @DropQuery = 'ALTER TABLE [lines] DROP CONSTRAINT ' + QUOTENAME(@ConstraintName);
-                    EXEC sp_executesql @DropQuery;
-                    PRINT 'Dropped incorrect foreign key constraint: ' + @ConstraintName;
-                    FETCH NEXT FROM constraint_cursor INTO @ConstraintName;
-                END
-
-                CLOSE constraint_cursor;
-                DEALLOCATE constraint_cursor;
-
-                -- Also drop ANY foreign key named FK_Lines_Sections if it exists but is invalid (though unlikely)
-                -- But more importantly, ensure we can add the one we want.
-                
-                -- Before adding FK, clear any orphans that remain (just in case)
-                -- This is a safety measure to prevent the whole init from failing.
-                -- We'll just set them to a valid section if possible, or leave them.
-                -- Actually, we've remapped the main ones. If others remain, we'll let it fail or log it.
-
-                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Lines_Sections' AND parent_object_id = OBJECT_ID('lines'))
-                BEGIN
-                    BEGIN TRY
-                        -- Instead of deleting orphans, we just try to add the FK. 
-                        -- If it fails, the catch block handles it gracefully. 
-                        ALTER TABLE [lines]
-                        ADD CONSTRAINT FK_Lines_Sections FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE;
-                        PRINT 'Added foreign key constraint FK_Lines_Sections.';
-                    END TRY
-                    BEGIN CATCH
-                        PRINT 'WARNING: Failed to add FK_Lines_Sections. Data might be inconsistent or section IDs are missing.';
-                    END CATCH
-                END
-
-                -- Fix unique constraints
-                -- Check for and drop unique_dept_line if it exists as a constraint
-                IF EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_dept_line' AND parent_object_id = OBJECT_ID('lines') AND type = 'UQ')
-                BEGIN
-                    ALTER TABLE [lines] DROP CONSTRAINT unique_dept_line;
-                    PRINT 'Dropped unique constraint unique_dept_line.';
-                END
-                -- Check for and drop unique_dept_line if it exists as an index
-                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'unique_dept_line' AND object_id = OBJECT_ID('lines'))
-                BEGIN
-                    DROP INDEX unique_dept_line ON [lines];
-                    PRINT 'Dropped index unique_dept_line.';
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_section_line' AND parent_object_id = OBJECT_ID('lines') AND type = 'UQ')
-                   AND NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'unique_section_line' AND object_id = OBJECT_ID('lines'))
-                BEGIN
-                    -- Handle existing duplicates before adding unique constraint
-                    ;WITH CTE AS (
-                        SELECT name, sectionId, 
-                               ROW_NUMBER() OVER (PARTITION BY name, sectionId ORDER BY id DESC) as rn
-                        FROM [lines]
-                    )
-                    DELETE FROM CTE WHERE rn > 1;
-
-                    ALTER TABLE [lines] ADD CONSTRAINT unique_section_line UNIQUE (name, sectionId);
-                    PRINT 'Added unique constraint unique_section_line.';
-                END
-            `);
-            logger.info("Line table initialized successfully");
+            await executeQuery("UPDATE [lines] SET users = ?, updatedAt = GETDATE() WHERE id = ?", [jsonUsers, lineId]);
+            logger.info(`Synced user list for line ${lineId}. Total users: ${userIds.length}`);
+            
+            // Trigger Section Sync
+            const [lineData] = await executeQuery("SELECT sectionId FROM [lines] WHERE id = ?", [lineId]);
+            if (lineData.length > 0 && lineData[0].sectionId) {
+                const Section = (await import("./section.model.js")).default;
+                await Section.syncUserList(lineData[0].sectionId);
+            }
         } catch (error) {
-            logger.error(`Failed to initialize Line table: ${error.message}`);
+            logger.error(`Error syncing user list for line ${lineId}: ${error.message}`);
         }
     }
 
@@ -180,7 +212,7 @@ class Line {
         const line = new Line(data);
 
         const fields = [
-            "name", "uniCode", "lineLeader", "mentor", "requirement", "department", "sectionId", "description", "isActive", "createdAt"
+            "name", "uniCode", "lineLeader", "mentor", "requirement", "tenCycleFormType", "department", "sectionId", "description", "isActive", "createdAt"
         ];
 
         if (!line.createdAt) line.createdAt = new Date();
@@ -203,21 +235,7 @@ class Line {
     static async findById(id) {
         const query = `
             SELECT l.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.lineId = l.id 
-                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = l.id)
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    JOIN sub_sections ss ON m.subSectionId = ss.id 
-                    WHERE ss.lineId = l.id
-                )
-             )
-            ) as lineCount
+            (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
             FROM [lines] l 
             WHERE l.id = ?`;
         const [rows] = await executeQuery(query, [id]);
@@ -226,27 +244,31 @@ class Line {
     }
 
     static async findBySection(sectionId) {
-        const query = `
-            SELECT l.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.lineId = l.id 
-                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = l.id)
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    JOIN sub_sections ss ON m.subSectionId = ss.id 
-                    WHERE ss.lineId = l.id
-                )
-             )
-            ) as lineCount
-            FROM [lines] l 
-            WHERE l.sectionId = ? 
-            ORDER BY l.createdAt DESC`;
-        const [rows] = await executeQuery(query, [sectionId]);
+        let query;
+        let params = [];
+
+        if (typeof sectionId === 'string' && sectionId.includes(',')) {
+            const ids = sectionId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+            if (ids.length === 0) return [];
+            query = `
+                SELECT l.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
+                FROM [lines] l 
+                WHERE l.sectionId IN (${ids.join(',')}) 
+                ORDER BY l.createdAt DESC`;
+        } else {
+            const parsedId = parseInt(sectionId);
+            if (isNaN(parsedId)) return [];
+            query = `
+                SELECT l.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
+                FROM [lines] l 
+                WHERE l.sectionId = ? 
+                ORDER BY l.createdAt DESC`;
+            params = [parsedId];
+        }
+
+        const [rows] = await executeQuery(query, params);
         return rows.map(row => new Line(row));
     }
 
@@ -294,7 +316,7 @@ class Line {
 
     async save() {
         const fields = [
-            "name", "uniCode", "lineLeader", "mentor", "requirement", "department", "sectionId", "description", "isActive"
+            "name", "uniCode", "lineLeader", "mentor", "requirement", "tenCycleFormType", "department", "sectionId", "description", "isActive"
         ];
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => this[field]);

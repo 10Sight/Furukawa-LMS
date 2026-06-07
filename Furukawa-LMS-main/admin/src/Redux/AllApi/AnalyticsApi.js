@@ -84,10 +84,10 @@ export const analyticsApi = createApi({
         }),
 
         getDepartmentQuizStats: builder.query({
-            query: ({ startDate = '', endDate = '' } = {}) => ({
+            query: ({ startDate = '', endDate = '', departmentId = '', sectionId = '', lineId = '', subSectionId = '' } = {}) => ({
                 url: "/api/analytics/department-quiz-stats",
                 method: "GET",
-                params: { startDate, endDate }
+                params: { startDate, endDate, departmentId, sectionId, lineId, subSectionId }
             }),
             providesTags: ['Analytics'],
         }),

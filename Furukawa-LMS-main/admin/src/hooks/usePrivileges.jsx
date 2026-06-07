@@ -12,12 +12,12 @@ export const usePrivileges = () => {
         const fetchPrivileges = async () => {
             try {
                 // Check if already cached in session storage to avoid spamming API
-                // const cached = sessionStorage.getItem('privilegeMap');
-                // if (cached) {
-                //     setPrivilegeMap(JSON.parse(cached));
-                //     setLoading(false);
-                //     return;
-                // }
+                const cached = sessionStorage.getItem('privilegeMap');
+                if (cached) {
+                    setPrivilegeMap(JSON.parse(cached));
+                    setLoading(false);
+                    return;
+                }
 
                 const res = await axiosInstance.get('/api/privileges');
                 if (res.data?.success) {

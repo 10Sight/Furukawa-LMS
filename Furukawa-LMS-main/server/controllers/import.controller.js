@@ -6,34 +6,125 @@ import bcrypt from "bcryptjs";
 import User from "../models/auth.model.js";
 
 /**
+ * Robust date normalization to YYYY-MM-DD
+ */
+const normalizeDate = (val) => {
+    if (!val) return null;
+    
+    let d;
+    if (val instanceof Date) {
+        d = val;
+    } else {
+        d = new Date(val);
+    }
+
+    if (isNaN(d.getTime())) return null;
+    
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+/**
  * Helper to sync user ID to department's students array
+ * Ensures the operator is removed from old departments if they are reassigned
  */
 const syncDepartmentStudents = async (userId, departmentId) => {
-    if (!userId || !departmentId) return;
+    if (!userId) return;
+    
     try {
-        const [deptRows] = await executeQuery("SELECT id, students FROM departments WHERE id = ?", [departmentId]);
-        if (deptRows.length === 0) return;
+        // 1. Remove user from all other departments first to ensure consistency
+        // (Current requirement is one department per operator)
+        const [allDeptsWithUser] = await executeQuery(
+            "SELECT id, students FROM departments WHERE students IS NOT NULL AND students != '[]'"
+        );
 
-        let students = [];
-        try {
-            students = JSON.parse(deptRows[0].students || "[]");
-        } catch (e) {
-            students = [];
+        for (const dept of allDeptsWithUser) {
+            let students = [];
+            try {
+                students = JSON.parse(dept.students || "[]");
+            } catch (e) { students = []; }
+
+            if (Array.isArray(students) && (students.includes(userId) || students.includes(String(userId)))) {
+                // If it's not the current target department, remove the user
+                if (String(dept.id) !== String(departmentId)) {
+                    const updatedStudents = students.filter(id => String(id) !== String(userId));
+                    await executeQuery(
+                        "UPDATE departments SET students = ? WHERE id = ?",
+                        [JSON.stringify(updatedStudents), dept.id]
+                    );
+                }
+            }
         }
 
-        if (!Array.isArray(students)) students = [];
+        // 2. Add user to the new department if provided
+        if (departmentId) {
+            const [deptRows] = await executeQuery("SELECT id, students FROM departments WHERE id = ?", [departmentId]);
+            if (deptRows.length > 0) {
+                let students = [];
+                try {
+                    students = JSON.parse(deptRows[0].students || "[]");
+                } catch (e) { students = []; }
 
-        // Add user if not already present
-        if (!students.includes(userId) && !students.includes(String(userId))) {
-            students.push(userId);
-            await executeQuery(
-                "UPDATE departments SET students = ? WHERE id = ?",
-                [JSON.stringify(students), departmentId]
-            );
+                if (!Array.isArray(students)) students = [];
+
+                if (!students.includes(userId) && !students.includes(String(userId))) {
+                    students.push(userId);
+                    await executeQuery(
+                        "UPDATE departments SET students = ? WHERE id = ?",
+                        [JSON.stringify(students), departmentId]
+                    );
+                }
+            }
         }
     } catch (error) {
         console.error(`Error syncing user ${userId} to department ${departmentId}:`, error);
     }
+};
+
+/**
+ * Internal helper to generate next temporary ID for DOJO candidates
+ */
+const generateNextTempId = async (prefix) => {
+    const cleanPrefix = prefix.replace(/-/g, '').replace(/\s/g, '');
+    const [rows] = await executeQuery(`
+        SELECT TOP 1 empId FROM users 
+        WHERE empId LIKE ? AND isTemporary = 1
+        ORDER BY createdAt DESC
+    `, [`${cleanPrefix}%`]);
+
+    let nextSeq = 1;
+    let randomPart = Math.floor(100 + Math.random() * 900); // 3-digit random
+
+    if (rows && rows.length > 0) {
+        const lastId = rows[0].empId;
+        // Try to extract existing sequence (last 3 digits)
+        const seqMatch = lastId.match(/(\d{3})$/);
+        if (seqMatch) {
+            nextSeq = parseInt(seqMatch[1]) + 1;
+        }
+        
+        // Try to keep the same random part for same prefix to maintain structure
+        const randMatch = lastId.match(/(\d{3})\d{3}$/);
+        if (randMatch) {
+            randomPart = randMatch[1];
+        }
+    }
+
+    const formattedSeq = String(nextSeq).padStart(3, '0');
+    return `${cleanPrefix}${randomPart}${formattedSeq}`;
+};
+
+/**
+ * Normalize status values from Excel to canonical DB values (PRESENT / LEFT / ON-LEAVE)
+ */
+const normalizeStatus = (val) => {
+    if (!val) return "PRESENT";
+    const v = val.toString().trim().toUpperCase().replace(/[\s\-_]+/g, '');
+    if (v === "LEFT" || v === "LEAVING" || v === "RESIGNED" || v === "TERMINATED") return "LEFT";
+    if (v === "ONLEAVE" || v === "LEAVE") return "ON-LEAVE";
+    return "PRESENT";
 };
 
 /**
@@ -46,11 +137,11 @@ export const importEmployees = async (req, res) => {
             throw new ApiError(400, "No file uploaded");
         }
 
-        // Read the Excel file
-        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        // Read the worksheet as a 2D array to find the header row
+        // Use cellDates: true to handle Excel date objects properly
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        // Read the worksheet as a 2D array to find the header row
         const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
         let hRowIndex = -1;
         
@@ -90,18 +181,45 @@ export const importEmployees = async (req, res) => {
 
         const headerRowIndex = hRowIndex; // For rowNumber calculation compatibility
 
-        // Fetch all hierarchy mappings for lookup
-        const [allDepts] = await executeQuery("SELECT id, name FROM departments");
-        const [allSections] = await executeQuery("SELECT id, name FROM sections");
-        const [allLines] = await executeQuery("SELECT id, name FROM [lines]");
-        const [allSubSections] = await executeQuery("SELECT id, name FROM sub_sections");
-        const [allStations] = await executeQuery("SELECT id, name FROM machines");
+        // Fetch all hierarchy mappings for lookup (Pre-fetch for matching as explained to user)
+        const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
+        const [allSections] = await executeQuery("SELECT id, name, departmentId, category FROM sections WHERE isActive = 1");
+        const [allLines] = await executeQuery("SELECT id, name, sectionId FROM [lines] WHERE isActive = 1");
+        const [allSubSections] = await executeQuery("SELECT id, name, lineId FROM sub_sections WHERE isActive = 1");
+        const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
 
-        const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase(), d.id]));
-        const sectionMap = new Map(allSections.map(s => [s.name.toLowerCase(), s.id]));
-        const lineMap = new Map(allLines.map(l => [l.name.toLowerCase(), l.id]));
-        const subSectionMap = new Map(allSubSections.map(ss => [ss.name.toLowerCase(), ss.id]));
-        const stationMap = new Map(allStations.map(st => [st.name.toLowerCase(), st.id]));
+        const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
+        
+        const sectionMap = new Map();
+        allSections.forEach(s => {
+            const name = s.name.toLowerCase().trim();
+            const deptId = s.departmentId;
+            const category = (s.category || "").toLowerCase().trim();
+            // Store standard name
+            sectionMap.set(`${deptId}|${name}`, s.id);
+            // Store name with category suffix if applicable (e.g. "Assembly - Direct")
+            if (category && category !== "not applicable") {
+                sectionMap.set(`${deptId}|${name} - ${category}`, s.id);
+            }
+        });
+
+        // New Hierarchical Station Map: sectionId|stationName -> { stationId, subSectionId, lineId }
+        const sectionStationMap = new Map();
+        allStations.forEach(st => {
+            const subSection = allSubSections.find(ss => ss.id === st.subSectionId);
+            if (subSection) {
+                const line = allLines.find(l => l.id === subSection.lineId);
+                if (line) {
+                    const sectionId = line.sectionId;
+                    const key = `${sectionId}|${st.name.toLowerCase().trim()}`;
+                    sectionStationMap.set(key, {
+                        stationId: st.id,
+                        subSectionId: st.subSectionId,
+                        lineId: line.id
+                    });
+                }
+            }
+        });
 
         const results = {
             success: [],
@@ -138,8 +256,8 @@ export const importEmployees = async (req, res) => {
                     stationNo: (row["Station No."] || row["Station No"])?.toString().trim(),
                     mentor: (row["Mentor"])?.toString().trim(),
                     designation: (row["Designation"])?.toString().trim(),
-                    dob: (row["D.O.B."] || row["DOB"] || row["D.O.B"]) || null,
-                    joiningDate: (row["D.O.J."] || row["DOJ"] || row["D.O.J"]) || null,
+                    dob: normalizeDate(row["D.O.B."] || row["DOB"] || row["D.O.B"]),
+                    joiningDate: normalizeDate(row["D.O.J."] || row["DOJ"] || row["D.O.J"]),
                     education: (row["Education"])?.toString().trim(),
                     district: (row["District"] || row["Distt"] || row["Dist"])?.toString().trim(),
                     state: (row["State"])?.toString().trim(),
@@ -148,17 +266,26 @@ export const importEmployees = async (req, res) => {
                     email: (row["E-Mail ID"] || row["Email"])?.toString().trim(),
                     phoneNumber: (row["Mobile No."] || row["Mobile No"] || row["Mobile Number"])?.toString().trim(),
                     currentLevel: (row["L"] || row["Lavel"] || row["Level"])?.toString().trim(),
-                    leavingDate: (row["Date of Leaving"]) || null,
+                    leavingDate: normalizeDate(row["Date of Leaving"]),
                     reasonOfLeaving: (row["Reason of Leaving"])?.toString().trim(),
-                    status: (row["Status"])?.toString().trim() || "PRESENT",
+                    contractor: (row["Contractor"])?.toString().trim() || null,
+                    status: normalizeStatus(row["Status"]),
                 };
 
                 // Resolve hierarchy IDs
-                const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase()) : null;
-                const sectionId = normalizedRow.section ? sectionMap.get(normalizedRow.section.toLowerCase()) : null;
-                const lineId = normalizedRow.line ? lineMap.get(normalizedRow.line.toLowerCase()) : null;
-                const subSectionId = normalizedRow.sub_section ? subSectionMap.get(normalizedRow.sub_section.toLowerCase()) : null;
-                const stationId = normalizedRow.stationNo ? stationMap.get(normalizedRow.stationNo.toLowerCase()) : null;
+                const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
+                const sectionId = (departmentId && normalizedRow.section) 
+                    ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`) 
+                    : null;
+                
+                // Derive Line, Sub-Section, and Station from Station No. + Section
+                const hierarchyMatch = (sectionId && normalizedRow.stationNo)
+                    ? sectionStationMap.get(`${sectionId}|${normalizedRow.stationNo.toLowerCase().trim()}`)
+                    : null;
+
+                const stationId = hierarchyMatch?.stationId || null;
+                const subSectionId = hierarchyMatch?.subSectionId || null;
+                const lineId = hierarchyMatch?.lineId || null;
 
                 // Validate required fields (phoneNumber is now optional)
                 if (!normalizedRow.empId || !normalizedRow.idCard || !normalizedRow.fullName) {
@@ -188,16 +315,7 @@ export const importEmployees = async (req, res) => {
                 }
 
                 // Helper for date comparison
-                const safeDate = (val) => {
-                    if (!val) return null;
-                    const d = new Date(val);
-                    if (isNaN(d.getTime())) return null;
-                    try {
-                        return d.toISOString().split('T')[0];
-                    } catch (e) {
-                        return null;
-                    }
-                };
+                const safeDate = (val) => normalizeDate(val);
 
                 // Check for duplicate phone number if provided
                 if (normalizedRow.phoneNumber) {
@@ -216,7 +334,7 @@ export const importEmployees = async (req, res) => {
                     }
                 }
 
-                // Prepare user data
+                // Prepare user data (Prioritize isEmployee for tracking)
                 const userData = {
                     ...normalizedRow,
                     departmentId,
@@ -231,7 +349,7 @@ export const importEmployees = async (req, res) => {
                     isEmployee: true,
                     isAdmin: false,
                     isTrainer: false,
-                    email: normalizedRow.email || `${normalizedRow.empId.toLowerCase()}@example.com`,
+                    email: normalizedRow.email || null,
                     status: normalizedRow.status || "PRESENT",
                     departments: departmentId ? [departmentId] : []
                 };
@@ -260,15 +378,14 @@ export const importEmployees = async (req, res) => {
                         { key: 'gender', label: 'Gender' },
                         { key: 'departmentId', label: 'Department' },
                         { key: 'sectionId', label: 'Section' },
-                        { key: 'lineId', label: 'Line' },
-                        { key: 'subSectionId', label: 'Sub Section' },
-                        { key: 'stationId', label: 'Station/Machine' },
+                        // Line, Sub-Section, and Station are EXCLUDED from updates as per requirement
                         { key: 'mentor', label: 'Mentor' },
                         { key: 'designation', label: 'Designation' },
                         { key: 'dob', label: 'DOB' },
                         { key: 'joiningDate', label: 'Joining Date' },
                         { key: 'leavingDate', label: 'Date of Leaving' },
                         { key: 'reasonOfLeaving', label: 'Reason of Leaving' },
+                        { key: 'contractor', label: 'Contractor' },
                         { key: 'education', label: 'Education' },
                         { key: 'district', label: 'District' },
                         { key: 'state', label: 'State' },
@@ -331,7 +448,22 @@ export const importEmployees = async (req, res) => {
                         const updateFields = Object.keys(updatedData).map(k => `${k} = ?`).join(', ');
                         const values = [...Object.values(updatedData), existingUser.id];
                         
-                        await executeQuery(`UPDATE users SET ${updateFields}, isDeleted = 0 WHERE id = ?`, values);
+                        await executeQuery(`UPDATE users SET ${updateFields}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
+
+                        // Sync stationId to machine_assignments if it was updated or already exists
+                        const targetStationId = userData.stationId || existingUser.stationId;
+                        if (targetStationId) {
+                            const [hasAssign] = await executeQuery(
+                                "SELECT id FROM machine_assignments WHERE user_id = ? AND machine_id = ?",
+                                [existingUser.id, targetStationId]
+                            );
+                            if (hasAssign.length === 0) {
+                                await executeQuery(
+                                    "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
+                                    [existingUser.id, targetStationId, req.user?.id || null]
+                                );
+                            }
+                        }
 
                         const status = Object.keys(changes).length > 0 ? "UPDATED" : "SUCCESS";
                         results.success.push({
@@ -348,9 +480,8 @@ export const importEmployees = async (req, res) => {
                         );
 
                         // Always ensure department students list is synced for any processed operator
-                        if (userData.departmentId) {
-                            await syncDepartmentStudents(existingUser.id, userData.departmentId);
-                        }
+                        // This helper now handles moving from one department to another correctly
+                        await syncDepartmentStudents(existingUser.id, userData.departmentId);
                     } else {
                         // This case should theoretically not happen now as departments is always synced if departmentId exists
                         results.success.push({
@@ -370,6 +501,14 @@ export const importEmployees = async (req, res) => {
 
                 // Insert user
                 const newUser = await User.create(userData);
+
+                // Sync station assignment to machine_assignments
+                if (userData.stationId) {
+                    await executeQuery(
+                        "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
+                        [newUser.id, userData.stationId, req.user?.id || null]
+                    );
+                }
 
                 // Sync department students list for new user
                 if (departmentId) {
@@ -429,10 +568,10 @@ export const importInstructors = async (req, res) => {
             throw new ApiError(400, "No file uploaded");
         }
 
-        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(worksheet);
+        const data = XLSX.utils.sheet_to_json(worksheet, { raw: false });
 
         if (!data || data.length === 0) {
             throw new ApiError(400, "Excel file is empty");
@@ -445,11 +584,11 @@ export const importInstructors = async (req, res) => {
             const rowNumber = i + 2;
 
             try {
-                if (!row.fullName || !row.userName || !row.email || !row.phoneNumber) {
+                if (!row.fullName || !row.userName || !row.phoneNumber) {
                     results.failed.push({
                         row: rowNumber,
                         data: row,
-                        error: "Missing required fields (fullName, userName, email, phoneNumber)",
+                        error: "Missing required fields (fullName, userName, phoneNumber)",
                     });
                     continue;
                 }
@@ -458,7 +597,7 @@ export const importInstructors = async (req, res) => {
                 const userData = {
                     fullName: row.fullName.trim(),
                     userName: row.userName.trim().toLowerCase(),
-                    email: row.email.trim().toLowerCase(),
+                    email: row.email ? row.email.trim().toLowerCase() : null,
                     phoneNumber: row.phoneNumber.toString().trim(),
                     password: row.password || "trainer123", // User.create will hash this
                     role: "INSTRUCTOR",
@@ -467,7 +606,7 @@ export const importInstructors = async (req, res) => {
                     isEmployee: false,
                     isAdmin: false,
                     isTrainer: true,
-                    joiningDate: row.joiningDate || null,
+                    joiningDate: normalizeDate(row.joiningDate),
                     status: "PRESENT",
                 };
 
@@ -532,6 +671,7 @@ export const downloadImportTemplate = async (req, res) => {
                 "Lavel": "L1",
                 "Date of Leaving": "",
                 "Reason of Leaving": "",
+                "Contractor": "",
                 "Status": "PRESENT",
             },
         ];
@@ -562,6 +702,219 @@ export const downloadImportTemplate = async (req, res) => {
         res.send(buffer);
     } catch (error) {
         console.error("Download template error:", error);
+        throw new ApiError(500, "Failed to generate template");
+    }
+};
+
+/**
+ * Import DOJO candidates from Excel file
+ */
+export const importDojoUsers = async (req, res) => {
+    try {
+        if (!req.file) {
+            throw new ApiError(400, "No file uploaded");
+        }
+
+        // Read the Excel file
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+        
+        let hRowIndex = -1;
+        for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+            const row = allRows[i];
+            if (row && Array.isArray(row) && row.some(cell => {
+                if (!cell) return false;
+                const c = cell.toString().trim().toLowerCase();
+                return c === "employeeid" || c === "employee code" || c === "employee id";
+            })) {
+                hRowIndex = i;
+                break;
+            }
+        }
+
+        if (hRowIndex === -1) hRowIndex = 0;
+
+        const headers = allRows[hRowIndex].map(h => h?.toString().trim() || "");
+        const rawData = allRows.slice(hRowIndex + 1);
+
+        const data = rawData.map(r => {
+            const obj = {};
+            headers.forEach((h, idx) => {
+                const key = h || `__EMPTY_${idx}`;
+                obj[key] = r[idx];
+            });
+            return obj;
+        });
+
+        if (!data || data.length === 0) {
+            throw new ApiError(400, "No data found in Excel file");
+        }
+
+        const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
+        const [allSections] = await executeQuery("SELECT id, name, departmentId FROM sections WHERE isActive = 1");
+        const [allLines] = await executeQuery("SELECT id, name, sectionId FROM [lines] WHERE isActive = 1");
+        const [allSubSections] = await executeQuery("SELECT id, name, lineId FROM sub_sections WHERE isActive = 1");
+        const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
+
+        const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
+        const sectionMap = new Map(allSections.map(s => [`${s.departmentId}|${s.name.toLowerCase().trim()}`, s.id]));
+
+        const results = { success: [], failed: [], total: data.length, updatedCount: 0 };
+
+        const [logResult] = await executeQuery(
+            "INSERT INTO import_logs (fileName, importType, totalRows, importedBy) OUTPUT INSERTED.id VALUES (?, ?, ?, ?)",
+            [req.file.originalname, "DOJO_CANDIDATE", data.length, req.user?.id || null]
+        );
+        const logId = logResult[0].id;
+
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const rowNumber = hRowIndex + i + 2;
+
+            try {
+                const normalizedRow = {
+                    empId: (row["Employee Code"] || row["EmployeeID"] || row["Employee ID"])?.toString().trim(),
+                    fullName: (row["Name"] || row["Full Name"])?.toString().trim(),
+                    gender: (row["Gender"])?.toString().trim() || "MALE",
+                    department: (row["Department"])?.toString().trim(),
+                    section: (row["Section"])?.toString().trim(),
+                    line: (row["Line"])?.toString().trim(),
+                    sub_section: (row["Sub Section"])?.toString().trim(),
+                    stationNo: (row["Station No."])?.toString().trim(),
+                    phoneNumber: (row["Mobile No"] || row["Mobile No."] || row["Mobile Number"])?.toString().trim(),
+                    email: (row["E-Mail ID"] || row["Email"])?.toString().trim(),
+                    designation: (row["Designation"])?.toString().trim(),
+                    dob: normalizeDate(row["DOB"] || row["D.O.B."]),
+                    joiningDate: normalizeDate(row["D.O.J."] || row["DOJ"]),
+                    fatherHusbandName: row["Father / Husband Name"] || row["Father/HusbandName"] || null,
+                    education: row["Education"] || null,
+                    district: row["Distt"] || row["District"] || null,
+                    state: row["State"] || null,
+                    pin: row["PIN"] || null,
+                    busRoute: row["Bus Route"] || null,
+                };
+
+                if (!normalizedRow.empId || !normalizedRow.fullName) {
+                    if (!normalizedRow.empId && !normalizedRow.fullName) continue;
+                    throw new Error("Missing required fields: Employee Code and Name are mandatory.");
+                }
+
+                // Check for duplicate username (Employee Code)
+                const [existing] = await executeQuery("SELECT id FROM users WHERE userName = ?", [normalizedRow.empId.toLowerCase()]);
+                if (existing.length > 0) {
+                    throw new Error(`Candidate with Employee Code ${normalizedRow.empId} already exists.`);
+                }
+
+                // Resolve hierarchy
+                const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
+                const sectionId = (departmentId && normalizedRow.section) ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`) : null;
+
+                // Generate Temporary ID
+                const namePart = normalizedRow.fullName.substring(0, 3).toUpperCase();
+                const empPart = normalizedRow.empId.toUpperCase();
+                const prefix = `TEMP${namePart}${empPart}`;
+                const tempId = await generateNextTempId(prefix);
+
+                const userData = {
+                    fullName: normalizedRow.fullName,
+                    userName: normalizedRow.empId.toLowerCase(), // Manual code as login
+                    empId: tempId, // Generated TEMP ID
+                    password: tempId, // TEMP ID as password
+                    role: "STUDENT",
+                    isEmployee: true,
+                    isTemporary: true,
+                    status: "PRESENT",
+                    gender: normalizedRow.gender.toUpperCase().startsWith('F') ? "FEMALE" : "MALE",
+                    email: normalizedRow.email || null,
+                    phoneNumber: normalizedRow.phoneNumber || null,
+                    departmentId: departmentId,
+                    sectionId: sectionId,
+                    targetDeptId: departmentId,
+                    targetSectionId: sectionId,
+                    designation: normalizedRow.designation,
+                    dob: normalizedRow.dob,
+                    joiningDate: normalizedRow.joiningDate || new Date().toISOString().split('T')[0],
+                    fatherHusbandName: normalizedRow.fatherHusbandName,
+                    education: normalizedRow.education,
+                    district: normalizedRow.district,
+                    state: normalizedRow.state,
+                    pin: normalizedRow.pin,
+                    busRoute: normalizedRow.busRoute,
+                    unit: "UNIT_1"
+                };
+
+                const newUser = await User.create(userData);
+
+                results.success.push({ row: rowNumber, userName: userData.userName, tempId });
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), "CREATED", newUser.id]
+                );
+
+            } catch (error) {
+                results.failed.push({ row: rowNumber, error: error.message });
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), "FAILED", error.message]
+                );
+            }
+        }
+
+        await executeQuery(
+            "UPDATE import_logs SET successCount = ?, failCount = ? WHERE id = ?",
+            [results.success.length, results.failed.length, logId]
+        );
+
+        res.json(new ApiResponse(200, results, `Import: ${results.success.length} ok, ${results.failed.length} failed`));
+    } catch (error) {
+        console.error("Import DOJO candidates error:", error);
+        throw new ApiError(500, error.message || "Failed to import DOJO candidates");
+    }
+};
+
+/**
+ * Download DOJO import template
+ */
+export const downloadDojoImportTemplate = async (req, res) => {
+    try {
+        const templateData = [
+            {
+                "Employee Code": "AS000233",
+                "Card No.": "00C0233",
+                "Name": "SUBHASH SINGH",
+                "Father / Husband Name": "RAM SHARAN",
+                "Gender": "M",
+                "Department": "C&C - Indirect",
+                "Section": "Assembly - Direct",
+                "Line": "AIRBAG",
+                "Sub Section": "YHB FL 1",
+                "Station No.": "LEADER",
+                "Mentor": "",
+                "Designation": "Operator",
+                "DOB": "1990-11-23",
+                "D.O.J.": "2013-03-01",
+                "Education": "10th",
+                "Distt": "REVARI",
+                "State": "Haryana",
+                "PIN": "123101",
+                "Bus Route": "Route 1",
+                "E-Mail ID": "subhash@example.com",
+                "Mobile No": "9876543210",
+                "Status": "PRESENT",
+            },
+        ];
+
+        const worksheet = XLSX.utils.json_to_sheet(templateData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Candidates");
+        const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+        res.setHeader("Content-Disposition", "attachment; filename=dojo_import_template.xlsx");
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.send(buffer);
+    } catch (error) {
         throw new ApiError(500, "Failed to generate template");
     }
 };

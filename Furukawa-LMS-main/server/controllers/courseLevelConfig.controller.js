@@ -104,6 +104,26 @@ export const createConfig = asyncHandler(async (req, res) => {
     if (level.completionTimeframe.minDays > level.completionTimeframe.maxDays) {
       throw new ApiError(`Level at index ${i}: minDays cannot be greater than maxDays`, 400);
     }
+    if (level.minEfficiency !== undefined && level.minEfficiency !== null && level.minEfficiency !== "") {
+      const minEff = parseFloat(level.minEfficiency);
+      if (isNaN(minEff) || minEff < 0 || minEff > 100) {
+        throw new ApiError(`Level at index ${i}: Min Efficiency must be between 0 and 100`, 400);
+      }
+    }
+    if (level.maxEfficiency !== undefined && level.maxEfficiency !== null && level.maxEfficiency !== "") {
+      const maxEff = parseFloat(level.maxEfficiency);
+      if (isNaN(maxEff) || maxEff < 0 || maxEff > 100) {
+        throw new ApiError(`Level at index ${i}: Max Efficiency must be between 0 and 100`, 400);
+      }
+    }
+    if (level.minEfficiency !== undefined && level.minEfficiency !== null && level.minEfficiency !== "" &&
+        level.maxEfficiency !== undefined && level.maxEfficiency !== null && level.maxEfficiency !== "") {
+      const minEff = parseFloat(level.minEfficiency);
+      const maxEff = parseFloat(level.maxEfficiency);
+      if (minEff > maxEff) {
+        throw new ApiError(`Level at index ${i}: Min Efficiency cannot be greater than Max Efficiency`, 400);
+      }
+    }
   }
 
   const config = await CourseLevelConfig.create({
@@ -155,6 +175,26 @@ export const updateConfig = asyncHandler(async (req, res) => {
       }
       if (level.completionTimeframe.minDays > level.completionTimeframe.maxDays) {
         throw new ApiError(`Level at index ${i}: minDays cannot be greater than maxDays`, 400);
+      }
+      if (level.minEfficiency !== undefined && level.minEfficiency !== null && level.minEfficiency !== "") {
+        const minEff = parseFloat(level.minEfficiency);
+        if (isNaN(minEff) || minEff < 0 || minEff > 100) {
+          throw new ApiError(`Level at index ${i}: Min Efficiency must be between 0 and 100`, 400);
+        }
+      }
+      if (level.maxEfficiency !== undefined && level.maxEfficiency !== null && level.maxEfficiency !== "") {
+        const maxEff = parseFloat(level.maxEfficiency);
+        if (isNaN(maxEff) || maxEff < 0 || maxEff > 100) {
+          throw new ApiError(`Level at index ${i}: Max Efficiency must be between 0 and 100`, 400);
+        }
+      }
+      if (level.minEfficiency !== undefined && level.minEfficiency !== null && level.minEfficiency !== "" &&
+          level.maxEfficiency !== undefined && level.maxEfficiency !== null && level.maxEfficiency !== "") {
+        const minEff = parseFloat(level.minEfficiency);
+        const maxEff = parseFloat(level.maxEfficiency);
+        if (minEff > maxEff) {
+          throw new ApiError(`Level at index ${i}: Min Efficiency cannot be greater than Max Efficiency`, 400);
+        }
       }
     }
 

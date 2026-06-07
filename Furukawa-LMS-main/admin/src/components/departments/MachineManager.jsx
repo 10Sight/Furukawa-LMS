@@ -21,6 +21,15 @@ import {
 import { IconPlus, IconEdit, IconLoader, IconCheck, IconX, IconTrash } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 
 const MachineManager = ({ subSectionId, lineId }) => {
     const { data: machinesData, isLoading, error } = useGetMachinesBySubSectionQuery(subSectionId, {
@@ -29,14 +38,18 @@ const MachineManager = ({ subSectionId, lineId }) => {
     const [createMachine, { isLoading: isCreating }] = useCreateMachineMutation();
     const [updateMachine, { isLoading: isUpdating }] = useUpdateMachineMutation();
     const [deleteMachine, { isLoading: isDeleting }] = useDeleteMachineMutation();
+    const { data: activeConfigData } = useGetActiveConfigQuery();
+    const activeLevels = activeConfigData?.data?.levels || [];
 
     const [newMachineName, setNewMachineName] = useState("");
     const [newMachineDescription, setNewMachineDescription] = useState("");
+    const [newMachineCriticality, setNewMachineCriticality] = useState("Non-Critical");
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingMachine, setEditingMachine] = useState(null);
     const [editName, setEditName] = useState("");
     const [editDescription, setEditDescription] = useState("");
+    const [editCriticality, setEditCriticality] = useState("Non-Critical");
 
     const handleCreateMachine = async () => {
         if (!newMachineName.trim()) {
@@ -49,7 +62,8 @@ const MachineManager = ({ subSectionId, lineId }) => {
                 name: newMachineName,
                 lineId,
                 subSectionId,
-                description: newMachineDescription
+                description: newMachineDescription,
+                criticality: newMachineCriticality
             }).unwrap();
             toast.success("Station created successfully");
             setNewMachineName("");
@@ -83,6 +97,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
         setEditingMachine(machine);
         setEditName(machine.name || "");
         setEditDescription(machine.description || "");
+        setEditCriticality(machine.criticality || "Non-Critical");
         setIsEditDialogOpen(true);
     };
 
@@ -97,7 +112,8 @@ const MachineManager = ({ subSectionId, lineId }) => {
             await updateMachine({
                 id: editingMachine.id || editingMachine._id,
                 name: editName,
-                description: editDescription
+                description: editDescription,
+                criticality: editCriticality
             }).unwrap();
             toast.success("Machine updated successfully");
             setIsEditDialogOpen(false);
@@ -161,6 +177,21 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                         onChange={(e) => setNewMachineDescription(e.target.value)}
                                     />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="criticality">Criticality</Label>
+                                    <Select 
+                                        value={newMachineCriticality} 
+                                        onValueChange={setNewMachineCriticality}
+                                    >
+                                        <SelectTrigger id="criticality">
+                                            <SelectValue placeholder="Select criticality" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Critical">Critical</SelectItem>
+                                            <SelectItem value="Non-Critical">Non-Critical</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
@@ -196,6 +227,21 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                         onChange={(e) => setEditDescription(e.target.value)}
                                     />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="editCriticality">Criticality</Label>
+                                    <Select 
+                                        value={editCriticality} 
+                                        onValueChange={setEditCriticality}
+                                    >
+                                        <SelectTrigger id="editCriticality">
+                                            <SelectValue placeholder="Select criticality" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Critical">Critical</SelectItem>
+                                            <SelectItem value="Non-Critical">Non-Critical</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
@@ -222,6 +268,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
                             <TableRow>
                                 <TableHead>Station Name</TableHead>
                                 <TableHead>Description</TableHead>
+                                <TableHead>Criticality</TableHead>
                                 <TableHead>Operators</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
@@ -239,6 +286,11 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                         </div>
                                     </TableCell>
                                     <TableCell>{machine.description || "-"}</TableCell>
+                                    <TableCell>
+                                        <Badge variant={machine.criticality === "Critical" ? "destructive" : "secondary"} className="text-[10px] uppercase font-bold">
+                                            {machine.criticality || "Non-Critical"}
+                                        </Badge>
+                                    </TableCell>
                                     <TableCell className="text-sm font-medium">{machine.machineCount || 0}</TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>

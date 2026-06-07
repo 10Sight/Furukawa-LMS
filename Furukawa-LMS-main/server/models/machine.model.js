@@ -10,6 +10,7 @@ class Machine {
         this.line = data.line;
         this.subSectionId = data.subSectionId || null;
         this.description = data.description;
+        this.criticality = data.criticality || 'Non-Critical';
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
         this.machineCount = data.machineCount || 0;
 
@@ -72,6 +73,8 @@ class Machine {
                         line INT NOT NULL,
                         subSectionId INT NOT NULL,
                         description NVARCHAR(MAX),
+                        minimumRequiredLevel NVARCHAR(50),
+                        criticality NVARCHAR(50) DEFAULT 'Non-Critical',
                         isActive BIT DEFAULT 1,
                         createdAt DATETIME DEFAULT GETDATE(),
                         updatedAt DATETIME DEFAULT GETDATE(),
@@ -82,6 +85,18 @@ class Machine {
                 END
                 ELSE
                 BEGIN
+                    -- Migration: Add minimumRequiredLevel if it doesn't exist
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('machines') AND name = 'minimumRequiredLevel')
+                    BEGIN
+                        ALTER TABLE machines ADD minimumRequiredLevel NVARCHAR(50);
+                    END
+
+                    -- Migration: Add criticality if it doesn't exist
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('machines') AND name = 'criticality')
+                    BEGIN
+                        ALTER TABLE machines ADD criticality NVARCHAR(50) DEFAULT 'Non-Critical';
+                    END
+
                     -- Migration: Check if subSectionId points to lines instead of sub_sections
                     IF EXISTS (
                         SELECT * 
@@ -151,7 +166,7 @@ class Machine {
         const machine = new Machine(data);
 
         const fields = [
-            "name", "line", "subSectionId", "description", "isActive", "createdAt"
+            "name", "line", "subSectionId", "description", "criticality", "isActive", "createdAt"
         ];
 
         if (!machine.createdAt) machine.createdAt = new Date();
@@ -243,7 +258,7 @@ class Machine {
 
     async save() {
         const fields = [
-            "name", "line", "subSectionId", "description", "isActive"
+            "name", "line", "subSectionId", "description", "criticality", "isActive"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

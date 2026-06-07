@@ -57,11 +57,43 @@ const populateCourse = async (course) => {
         course.assignments = as;
     }
 
+    // Populate Department Names
+    if (course.departmentId && Array.isArray(course.departmentId) && course.departmentId.length > 0) {
+        const deptIds = course.departmentId.filter(id => id && !isNaN(id));
+        if (deptIds.length > 0) {
+            const [depts] = await executeQuery(`SELECT id, name FROM departments WHERE id IN (${deptIds.join(",")})`);
+            course.departments = depts.map(d => d.name);
+            course.department = depts.length > 0 ? depts[0].name : "N/A";
+        } else {
+            course.departments = [];
+            course.department = "N/A";
+        }
+    } else {
+        course.departments = [];
+        course.department = "N/A";
+    }
+
+    // Populate Section Names
+    if (course.sectionId && Array.isArray(course.sectionId) && course.sectionId.length > 0) {
+        const secIds = course.sectionId.filter(id => id && !isNaN(id));
+        if (secIds.length > 0) {
+            const [sections] = await executeQuery(`SELECT id, name FROM [sections] WHERE id IN (${secIds.join(",")})`);
+            course.sections = sections.map(s => s.name);
+            course.section = sections.length > 0 ? sections[0].name : "N/A";
+        } else {
+            course.sections = [];
+            course.section = "N/A";
+        }
+    } else {
+        course.sections = [];
+        course.section = "N/A";
+    }
+
     return course;
 };
 
 export const createCourse = asyncHandler(async (req, res) => {
-    const { title, description, category, level, difficulty, modules, instructor, quizzes, assignments } = req.body;
+    const { title, description, category, level, difficulty, modules, instructor, quizzes, assignments, departmentId, sectionId } = req.body;
 
     if (!title || !description || !instructor) {
         throw new ApiError("Title and description are required", 400);
@@ -78,7 +110,9 @@ export const createCourse = asyncHandler(async (req, res) => {
         assignments: assignments || [],
         createdBy: req.user.id,
         status: 'DRAFT', // Default
-        students: []
+        students: [],
+        departmentId: departmentId || null,
+        sectionId: sectionId || null
     };
 
     const course = await Course.create(courseData);
@@ -169,7 +203,7 @@ export const updatedCourse = asyncHandler(async (req, res) => {
     // Update using model wrapper or raw SQL
     // req.body contains fields.
     // Filter allowed fields?
-    const allowed = ['title', 'description', 'category', 'difficulty', 'level', 'modules', 'instructor', 'quizzes', 'assignments', 'status'];
+    const allowed = ['title', 'description', 'category', 'difficulty', 'level', 'modules', 'instructor', 'quizzes', 'assignments', 'status', 'departmentId', 'sectionId'];
     Object.keys(req.body).forEach(k => {
         if (allowed.includes(k)) {
             if (k === 'level') {
@@ -203,26 +237,14 @@ export const deleteCourse = asyncHandler(async (req, res) => {
     const course = await Course.findById(id);
     if (!course) throw new ApiError("Course not found", 404);
 
-    if (req.user.role === "SUPERADMIN" || req.user.isAdmin === true) {
-        // Perm delete
-        // await executeQuery("DELETE FROM courses WHERE id = ?", [id]);
-        // await Audit.create({
-        //     user: req.user.id,
-        //     action: "DELETE_COURSE_PERMANENT",
-        //     details: { courseId: course.id, title: course.title },
-        // });
-        return res.status(200).json(new ApiResponse(200, {}, "Permanently deleted"));
-    } else {
-        // Soft delete
-        course.isDeleted = 1;
-        await course.save();
-        await Audit.create({
-            user: req.user.id,
-            action: "DELETE_COURSE_SOFT",
-            details: { courseId: course.id, title: course.title },
-        });
-        return res.status(200).json(new ApiResponse(200, {}, "Deleted"));
-    }
+    // Perm delete for all users
+    await executeQuery("DELETE FROM courses WHERE id = ?", [id]);
+    await Audit.create({
+        user: req.user.id,
+        action: "DELETE_COURSE_PERMANENT",
+        details: { courseId: course.id, title: course.title },
+    });
+    return res.status(200).json(new ApiResponse(200, {}, "Course permanently deleted"));
 });
 
 export const togglePublishCourse = asyncHandler(async (req, res) => {

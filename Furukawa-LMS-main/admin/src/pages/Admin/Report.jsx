@@ -226,7 +226,7 @@ const Report = () => {
                 bg: "bg-blue-50"
             })),
             { type: "spacer" },
-            { label: "Net Available Headcount (Total)", bold: true },
+            { label: "Net Available Headcount Total", bold: true },
             { type: "spacer" },
             { label: "Net Available Headcount Above 3 Months", bold: true },
             // Add dynamic club 3-month headcount rows
@@ -248,23 +248,24 @@ const Report = () => {
             { label: "Attrition % Cumulative", bold: true },
             { label: "Weekly Attrition %", align: "right" },
             { type: "spacer" },
-            { label: "Shift-wise Breakdown of Available Manpower", bold: true },
-            { label: "A-Shift", align: "right" },
-            { label: "G-Shift", align: "right" },
-            { label: "B-Shift", align: "right" },
-            { label: "C-Shift", align: "right" },
             { type: "spacer" },
-            { label: "Shift-wise Breakdown of Assigned Manpower", bold: true },
-            { label: "A-Shift", align: "right" },
-            { label: "G-Shift", align: "right" },
-            { label: "B-Shift", align: "right" },
-            { label: "C-Shift", align: "right" },
+            { label: "Shift-wise Breakdown of Available Manpower", bold: true, dataKey: "Available_Total" },
+            { label: "A-Shift", align: "right", dataKey: "Available_A-Shift" },
+            { label: "G-Shift", align: "right", dataKey: "Available_G-Shift" },
+            { label: "B-Shift", align: "right", dataKey: "Available_B-Shift" },
+            { label: "C-Shift", align: "right", dataKey: "Available_C-Shift" },
             { type: "spacer" },
-            { label: "Shift-wise Attendance", bold: true },
-            { label: "A-Shift", align: "right" },
-            { label: "G-Shift", align: "right" },
-            { label: "B-Shift", align: "right" },
-            { label: "C-Shift", align: "right" },
+            { label: "Shift-wise Breakdown of Assigned Manpower", bold: true, dataKey: "Assigned_Total" },
+            { label: "A-Shift", align: "right", dataKey: "Assigned_A-Shift" },
+            { label: "G-Shift", align: "right", dataKey: "Assigned_G-Shift" },
+            { label: "B-Shift", align: "right", dataKey: "Assigned_B-Shift" },
+            { label: "C-Shift", align: "right", dataKey: "Assigned_C-Shift" },
+            { type: "spacer" },
+            { label: "Shift-wise Attendance", bold: true, dataKey: "Attendance_Total" },
+            { label: "A-Shift", align: "right", dataKey: "Attendance_A-Shift" },
+            { label: "G-Shift", align: "right", dataKey: "Attendance_G-Shift" },
+            { label: "B-Shift", align: "right", dataKey: "Attendance_B-Shift" },
+            { label: "C-Shift", align: "right", dataKey: "Attendance_C-Shift" },
             { type: "spacer" }
         );
 
@@ -387,7 +388,8 @@ const Report = () => {
 
                                     {headerDates.map((dateObj, colIndex) => {
                                         const cellKey = dateObj.fullDate;
-                                        const value = tableData[`${row.label}_${cellKey}`] || '';
+                                        const key = `${row.dataKey || row.label}_${cellKey}`;
+                                        const value = tableData[key] ?? '';
                                         const isPrevMonthCol = colIndex === 0;
 
                                         return (

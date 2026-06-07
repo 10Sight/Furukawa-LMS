@@ -13,7 +13,8 @@ const RequireAccess = ({ children, allow }) => {
     }
 
     // Check if the user has the required permission
-    const hasRoleFlag = !!user[allow];
+    const isAdmin = !!user.isAdmin;
+    const hasRoleFlag = !!user[allow] || isAdmin;
     const hasGranularPermission = user.customRole?.permissions?.includes(allow);
 
     // Layout-based permission fallback

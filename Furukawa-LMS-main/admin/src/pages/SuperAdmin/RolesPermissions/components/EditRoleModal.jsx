@@ -194,7 +194,8 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
     name: '',
     description: '',
     permissions: [],
-    color: '#3B82F6'
+    color: '#3B82F6',
+    targetLayout: 'custom'
   });
   const [originalData, setOriginalData] = useState(null);
   const [errors, setErrors] = useState({});
@@ -208,7 +209,8 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
         name: role.name || '',
         description: role.description || '',
         permissions: role.permissions || [],
-        color: role.color || '#3B82F6'
+        color: role.color || '#3B82F6',
+        targetLayout: role.targetLayout || 'custom'
       };
       setFormData(initialData);
       setOriginalData(initialData);
@@ -226,6 +228,7 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
       formData.name !== originalData.name ||
       formData.description !== originalData.description ||
       formData.color !== originalData.color ||
+      formData.targetLayout !== originalData.targetLayout ||
       JSON.stringify(formData.permissions.sort()) !== JSON.stringify(originalData.permissions.sort())
     );
   }, [formData, originalData]);
@@ -299,7 +302,8 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
       name: '',
       description: '',
       permissions: [],
-      color: '#3B82F6'
+      color: '#3B82F6',
+      targetLayout: 'custom'
     });
     setOriginalData(null);
     setErrors({});
@@ -410,6 +414,39 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
                   selectedColor={formData.color}
                   onColorChange={handleColorChange}
                 />
+              )}
+
+              {!role.isSystemRole && (
+                <Box sx={{ mt: 3 }}>
+                  <FormLabel sx={{ mb: 1, fontSize: '0.875rem', fontWeight: 600, display: 'block' }}>
+                    Target Layout
+                  </FormLabel>
+                  <select
+                    value={formData.targetLayout}
+                    onChange={handleInputChange('targetLayout')}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '0.875rem',
+                      backgroundColor: '#F8FAFC',
+                      outline: 'none',
+                      transition: 'border-color 0.2s'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = formData.color}
+                    onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
+                  >
+                    <option value="custom">Custom Portal (Default)</option>
+                    <option value="admin">Admin Portal</option>
+                    <option value="trainer">Trainer Portal</option>
+                    <option value="student">Student Portal</option>
+                    <option value="cms">CMS Portal</option>
+                  </select>
+                  <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                    Determines the sidebar structure for this role.
+                  </Typography>
+                </Box>
               )}
 
               {/* Changes Summary */}

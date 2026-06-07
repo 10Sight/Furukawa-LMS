@@ -9,7 +9,9 @@ class OnJobTraining {
         this.student = data.student;
         this.name = data.name || "Level-1 Practical Evaluation of On the Job Training";
         this.department = data.department;
+        this.section = data.section;
         this.line = data.line;
+        this.subSection = data.subSection;
         this.machine = data.machine;
         this.entries = typeof data.entries === 'string' ? JSON.parse(data.entries) : (data.entries || []);
         this.scoring = typeof data.scoring === 'string' ? JSON.parse(data.scoring) : (data.scoring || {});
@@ -44,11 +46,13 @@ class OnJobTraining {
             BEGIN
             CREATE TABLE on_job_trainings (
                 id INT IDENTITY(1,1) PRIMARY KEY,
-                student VARCHAR(255) NOT NULL,
+                student VARCHAR(255) NULL,
                 name VARCHAR(255) DEFAULT 'Level-1 Practical Evaluation of On the Job Training',
                 department VARCHAR(255) NOT NULL,
-                line VARCHAR(255) NOT NULL,
-                machine VARCHAR(255) NOT NULL,
+                section VARCHAR(255),
+                line VARCHAR(255) NULL,
+                subSection VARCHAR(255),
+                machine VARCHAR(255) NULL,
                 entries NVARCHAR(MAX),
                 scoring NVARCHAR(MAX),
                 totalMarks DECIMAL(10, 2) DEFAULT 36,
@@ -78,6 +82,22 @@ class OnJobTraining {
             CREATE INDEX idx_student ON on_job_trainings(student);
             CREATE INDEX idx_department ON on_job_trainings(department);
             END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('on_job_trainings', 'section') IS NULL
+                BEGIN
+                    ALTER TABLE on_job_trainings ADD section VARCHAR(255);
+                END
+                IF COL_LENGTH('on_job_trainings', 'subSection') IS NULL
+                BEGIN
+                    ALTER TABLE on_job_trainings ADD subSection VARCHAR(255);
+                END
+                
+                -- Ensure student, line, and machine columns are nullable
+                ALTER TABLE on_job_trainings ALTER COLUMN student VARCHAR(255) NULL;
+                ALTER TABLE on_job_trainings ALTER COLUMN [line] VARCHAR(255) NULL;
+                ALTER TABLE on_job_trainings ALTER COLUMN machine VARCHAR(255) NULL;
+            END
         `;
         try {
             await executeQuery(query);
@@ -91,7 +111,7 @@ class OnJobTraining {
         const ojt = new OnJobTraining(data);
 
         const fields = [
-            "student", "name", "department", "line", "machine",
+            "student", "name", "department", "section", "line", "subSection", "machine",
             "entries", "scoring", "totalMarks", "totalMarksObtained",
             "totalPercentage", "result", "guidelines", "remarks", "remarkImage",
             "areaLine", "trainingDate", "trainingGivenBy", "trainingTopic",
@@ -167,7 +187,7 @@ class OnJobTraining {
 
     async save() {
         const fields = [
-            "student", "name", "department", "line", "machine",
+            "student", "name", "department", "section", "line", "subSection", "machine",
             "entries", "scoring", "totalMarks", "totalMarksObtained",
             "totalPercentage", "result", "guidelines", "remarks", "remarkImage",
             "areaLine", "trainingDate", "trainingGivenBy", "trainingTopic",

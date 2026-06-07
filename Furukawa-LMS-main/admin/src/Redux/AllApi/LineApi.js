@@ -34,6 +34,15 @@ export const LineApi = createApi({
             providesTags: (result, error, departmentId) => [{ type: 'Line', id: `dept-${departmentId}` }],
         }),
 
+        // Get All Lines
+        getLines: builder.query({
+            query: () => ({
+                url: "/api/lines",
+                method: "GET",
+            }),
+            providesTags: ["Line"],
+        }),
+
         // Update Line
         updateLine: builder.mutation({
             query: ({ id, ...data }) => ({
@@ -59,6 +68,7 @@ export const {
     useCreateLineMutation,
     useGetLinesBySectionQuery,
     useGetLinesByDepartmentQuery,
+    useGetLinesQuery,
     useUpdateLineMutation,
     useDeleteLineMutation,
 } = LineApi;

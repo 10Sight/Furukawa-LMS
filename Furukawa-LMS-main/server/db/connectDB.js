@@ -16,10 +16,11 @@ const dbConfig = {
     options: {
         encrypt: false,
         trustServerCertificate: true,
-        requestTimeout: 120000, // 120 seconds
-        connectionTimeout: 60000 // 60 seconds
+        requestTimeout: 300000, // 300 seconds
+        connectionTimeout: 120000 // 120 seconds
     }
 };
+
 
 // We create a global pool promise so it can be exported and used globally.
 const poolPromise = new sql.ConnectionPool(dbConfig)

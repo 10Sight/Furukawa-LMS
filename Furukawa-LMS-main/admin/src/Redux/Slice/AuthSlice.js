@@ -174,15 +174,20 @@ const authSlice = createSlice({
                     duration: 3000,
                 })
             })
+            .addCase(profile.pending, (state) => {
+                state.isLoading = true;
+            })
             .addCase(profile.fulfilled, (state, action) => {
-                state.user = action?.payload?.data || null
-                state.isLoggedIn = !!state.user
-                localStorage.setItem("isLoggedIn", state.isLoggedIn ? "true" : "false")
+                state.isLoading = false;
+                state.user = action?.payload?.data || null;
+                state.isLoggedIn = !!state.user;
+                localStorage.setItem("isLoggedIn", state.isLoggedIn ? "true" : "false");
             })
             .addCase(profile.rejected, (state) => {
-                state.user = null
-                state.isLoggedIn = false
-                localStorage.setItem("isLoggedIn", "false")
+                state.isLoading = false;
+                state.user = null;
+                state.isLoggedIn = false;
+                localStorage.setItem("isLoggedIn", "false");
             })
     },
 })

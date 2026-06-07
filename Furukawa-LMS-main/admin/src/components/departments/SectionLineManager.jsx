@@ -24,9 +24,21 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import UserAutocomplete from '../common/UserAutocomplete';
 
-const SectionLineManager = ({ sectionId, departmentId }) => {
+const TEN_CYCLE_FORM_TYPES = [
+    { id: 'form1', label: 'Logical (Form 1)' },
+    { id: 'form2', label: 'Complete (Form 2)' },
+    { id: 'form3', label: 'Numerical (Form 3)' }
+];
+
+const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) => {
     const navigate = useNavigate();
     const { data: linesData, isLoading, error } = useGetLinesBySectionQuery(sectionId);
+
+    const totalInLines = React.useMemo(() => {
+        if (!linesData?.data) return 0;
+        return linesData.data.reduce((sum, line) => sum + (line.lineCount || 0), 0);
+    }, [linesData]);
+    const unassignedCount = sectionUserCount - totalInLines;
     const [createLine, { isLoading: isCreating }] = useCreateLineMutation();
     const [updateLine, { isLoading: isUpdating }] = useUpdateLineMutation();
     const [deleteLine, { isLoading: isDeleting }] = useDeleteLineMutation();
@@ -38,6 +50,7 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
     const [isMentorNA, setIsMentorNA] = useState(false);
     const [newLineDescription, setNewLineDescription] = useState("");
     const [newLineRequirement, setNewLineRequirement] = useState("");
+    const [newLineTenCycleFormTypes, setNewLineTenCycleFormTypes] = useState(["form1"]);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingLine, setEditingLine] = useState(null);
@@ -50,6 +63,18 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
     const [editIsMentorNA, setEditIsMentorNA] = useState(false);
     const [editRequirement, setEditRequirement] = useState("");
     const [editDescription, setEditDescription] = useState("");
+    const [editTenCycleFormTypes, setEditTenCycleFormTypes] = useState([]);
+
+    const toggleFormType = (type, mode = 'create') => {
+        const currentTypes = mode === 'create' ? newLineTenCycleFormTypes : editTenCycleFormTypes;
+        const setTypes = mode === 'create' ? setNewLineTenCycleFormTypes : setEditTenCycleFormTypes;
+
+        if (currentTypes.includes(type)) {
+            setTypes(currentTypes.filter(t => t !== type));
+        } else {
+            setTypes([...currentTypes, type]);
+        }
+    };
 
     const handleCreateLine = async () => {
         if (!newLineName.trim()) {
@@ -66,7 +91,8 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                 requirement: parseInt(newLineRequirement) || 0,
                 departmentId,
                 sectionId,
-                description: newLineDescription
+                description: newLineDescription,
+                tenCycleFormType: newLineTenCycleFormTypes.join(",")
             }).unwrap();
             toast.success("Line created successfully");
             setNewLineName("");
@@ -76,6 +102,7 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
             setIsMentorNA(false);
             setNewLineDescription("");
             setNewLineRequirement("");
+            setNewLineTenCycleFormTypes(["form1"]);
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create line");
@@ -104,6 +131,7 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
         setEditIsMentorNA(line.mentor === "N/A");
         setEditRequirement(line.requirement?.toString() || "0");
         setEditDescription(line.description || "");
+        setEditTenCycleFormTypes(line.tenCycleFormType ? line.tenCycleFormType.split(",") : ["form1"]);
         setIsEditDialogOpen(true);
     };
 
@@ -121,7 +149,8 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                 lineLeader: editLineLeaders.join(", "),
                 mentor: editIsMentorNA ? "N/A" : editLineMentor,
                 requirement: parseInt(editRequirement) || 0,
-                description: editDescription
+                description: editDescription,
+                tenCycleFormType: editTenCycleFormTypes.join(",")
             }).unwrap();
             toast.success("Line updated successfully");
             setIsEditDialogOpen(false);
@@ -247,6 +276,26 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                                     onChange={(e) => setNewLineDescription(e.target.value)}
                                 />
                             </div>
+                            <div className="space-y-4 pt-2 border-t">
+                                <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {TEN_CYCLE_FORM_TYPES.map(type => (
+                                        <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                            <Checkbox 
+                                                id={`new-line-10c-${type.id}`} 
+                                                checked={newLineTenCycleFormTypes.includes(type.id)}
+                                                onCheckedChange={() => toggleFormType(type.id, 'create')}
+                                            />
+                                            <Label htmlFor={`new-line-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                {type.label}
+                                            </Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                {newLineTenCycleFormTypes.length === 0 && (
+                                    <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
+                                )}
+                            </div>
                         </div>
                         <DialogFooter>
                             <Button variant="outline" size="sm" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
@@ -343,6 +392,26 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                                     onChange={(e) => setEditDescription(e.target.value)}
                                 />
                             </div>
+                            <div className="space-y-4 pt-2 border-t">
+                                <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {TEN_CYCLE_FORM_TYPES.map(type => (
+                                        <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                            <Checkbox 
+                                                id={`edit-line-10c-${type.id}`} 
+                                                checked={editTenCycleFormTypes.includes(type.id)}
+                                                onCheckedChange={() => toggleFormType(type.id, 'edit')}
+                                            />
+                                            <Label htmlFor={`edit-line-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                {type.label}
+                                            </Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                {editTenCycleFormTypes.length === 0 && (
+                                    <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
+                                )}
+                            </div>
                         </div>
                         <DialogFooter>
                             <Button variant="outline" size="sm" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
@@ -381,12 +450,24 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                                     <TableCell className="py-2">
                                             <div 
                                                 className="cursor-pointer hover:text-blue-600 transition-colors"
-                                                onClick={() => navigate(`/admin/departments/${departmentId}/lines/${line.id || line._id}`)}
+                                                onClick={() => {
+                                                    const baseLayout = window.location.pathname.split('/')[1] || 'admin';
+                                                    navigate(`/${baseLayout}/departments/${departmentId}/lines/${line.id || line._id}`);
+                                                }}
                                             >
                                                 <p className="font-medium text-sm">{line.name}</p>
                                                 {line.uniCode && (
                                                     <p className="text-[10px] text-muted-foreground">{line.uniCode}</p>
                                                 )}
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {line.tenCycleFormType ? line.tenCycleFormType.split(",").map(type => (
+                                                        <Badge key={type} variant="outline" className="text-[9px] bg-purple-50 text-purple-700 border-purple-200 uppercase font-bold py-0 h-4">
+                                                            10C: {TEN_CYCLE_FORM_TYPES.find(t => t.id === type)?.label.split(" ")[0] || type}
+                                                        </Badge>
+                                                    )) : (
+                                                        <span className="text-xs text-slate-400">None</span>
+                                                    )}
+                                                </div>
                                             </div>
                                     </TableCell>
                                     <TableCell className="py-2 text-sm">{line.lineLeader || "-"}</TableCell>
@@ -411,6 +492,20 @@ const SectionLineManager = ({ sectionId, departmentId }) => {
                             ))}
                         </TableBody>
                     </Table>
+                </div>
+            )}
+
+            {linesData?.data && linesData.data.length > 0 && (
+                <div className="flex items-center justify-between px-3 py-2 mt-2 rounded-md bg-slate-50 border text-xs text-slate-600">
+                    <span>Lines total: <span className="font-semibold">{totalInLines}</span> operators</span>
+                    {unassignedCount > 0 && (
+                        <span className="text-amber-600 font-medium">
+                            ⚠ {unassignedCount} assigned to section but not to any line
+                        </span>
+                    )}
+                    {unassignedCount === 0 && sectionUserCount > 0 && (
+                        <span className="text-green-600 font-medium">All section users assigned to a line</span>
+                    )}
                 </div>
             )}
         </div>

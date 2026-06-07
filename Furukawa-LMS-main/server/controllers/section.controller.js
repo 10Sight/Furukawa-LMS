@@ -8,7 +8,7 @@ import Section from "../models/section.model.js";
 // @route   POST /api/sections
 // @access  Private
 export const createSection = asyncHandler(async (req, res) => {
-    const { name, uniCode, description, category, daily5mFormType, departmentId } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, departmentId } = req.body;
 
     if (!name || !departmentId) {
         throw new ApiError(400, "Name and Department ID are required");
@@ -20,6 +20,7 @@ export const createSection = asyncHandler(async (req, res) => {
         description,
         category,
         daily5mFormType,
+        tenCycleFormType,
         departmentId
     });
 
@@ -59,7 +60,7 @@ export const getAllSections = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateSection = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, uniCode, description, category, daily5mFormType, isActive } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive } = req.body;
 
     const updatedSection = await Section.update(id, {
         name,
@@ -67,6 +68,7 @@ export const updateSection = asyncHandler(async (req, res) => {
         description,
         category,
         daily5mFormType,
+        tenCycleFormType,
         isActive
     });
 

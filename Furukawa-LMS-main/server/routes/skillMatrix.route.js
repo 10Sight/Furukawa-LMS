@@ -10,7 +10,9 @@ import {
     saveSkillMatrixEvaluation,
     getSkillMatrixDashboardConfig,
     saveSkillMatrixDashboardConfig,
-    getSkillMatrixDashboardHistory
+    getSkillMatrixDashboardHistory,
+    getSkillMatrixEfficiencyStats,
+    getSkillMatrixEfficiencySummary
 } from "../controllers/skillMatrix.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 
@@ -19,6 +21,8 @@ const router = Router();
 // Protect all routes
 router.use(verifyJWT);
 
+router.route("/evaluations/efficiency").get(getSkillMatrixEfficiencyStats);
+router.route("/evaluations/summary").get(getSkillMatrixEfficiencySummary);
 router.route("/save").post(saveSkillMatrix);
 router.route("/list").get(listSkillMatrices);
 router.route("/fetch").get(getSkillMatrix);

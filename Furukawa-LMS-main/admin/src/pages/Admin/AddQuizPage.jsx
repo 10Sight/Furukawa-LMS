@@ -4,6 +4,8 @@ import { useCreateQuizMutation } from "@/Redux/AllApi/QuizApi";
 import { useGetCourseByIdQuery } from "@/Redux/AllApi/CourseApi";
 import { useGetModulesByCourseQuery } from "@/Redux/AllApi/moduleApi";
 import { useGetLessonsByModuleQuery } from "@/Redux/AllApi/LessonApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import {
   Card,
   CardContent,
@@ -11,6 +13,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import useFileUpload from "@/hooks/useFileUpload";
+import { getMediaUrl } from "@/utils/mediaUtils";
 
 const AddQuizPage = () => {
   const { courseId } = useParams();
@@ -74,6 +78,11 @@ const AddQuizPage = () => {
     attemptsAllowed: 1,
     skillUpgradation: false,
     issueCertificate: true,
+    departmentId: [],
+    sectionId: [],
+    isDojo: false,
+    isHandover: false,
+    isTheoretical: false,
     questions: [
       {
         questionText: "",
@@ -98,6 +107,57 @@ const AddQuizPage = () => {
   });
 
   const lessons = lessonsData?.data || [];
+
+  // Pre-populate departments and sections from course
+  React.useEffect(() => {
+    if (courseData?.data) {
+      setFormData(prev => ({
+        ...prev,
+        departmentId: (courseData.data.departmentId || []).map(String),
+        sectionId: (courseData.data.sectionId || []).map(String)
+      }));
+    }
+  }, [courseData]);
+
+  // Fetch all departments and sections to show options (filtered by course selection)
+  const { data: allDepartmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
+  
+  // Create comma separated string for section query
+  const selectedDeptIds = formData.departmentId.join(',');
+  const { data: allSectionsData } = useGetSectionsByDepartmentQuery(selectedDeptIds, {
+    skip: !selectedDeptIds
+  });
+
+  const departmentOptions = React.useMemo(() => {
+    const courseDeptIds = new Set((courseData?.data?.departmentId || []).map(String));
+    return (allDepartmentsData?.data?.departments || [])
+      .filter(d => courseDeptIds.has(String(d.id)))
+      .map(d => ({ value: String(d.id), label: d.name }));
+  }, [allDepartmentsData, courseData]);
+
+  const sectionOptions = React.useMemo(() => {
+    const courseSectionIds = new Set((courseData?.data?.sectionId || []).map(String));
+    return (allSectionsData?.data || [])
+      .filter(s => courseSectionIds.has(String(s.id)))
+      .map(s => ({ value: String(s.id), label: s.name }));
+  }, [allSectionsData, courseData]);
+
+  const toggleItem = (field, id) => {
+    setFormData(prev => {
+      const current = prev[field] || [];
+      const updated = current.includes(id)
+        ? current.filter(item => item !== id)
+        : [...current, id];
+      return { ...prev, [field]: updated };
+    });
+  };
+
+  const removeItem = (field, id) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: (prev[field] || []).filter(item => item !== id)
+    }));
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -318,6 +378,11 @@ const AddQuizPage = () => {
         attemptsAllowed: parseInt(formData.attemptsAllowed),
         skillUpgradation: formData.skillUpgradation,
         issueCertificate: formData.issueCertificate,
+        departmentId: formData.departmentId,
+        sectionId: formData.sectionId,
+        isDojo: formData.isDojo,
+        isHandover: formData.isHandover,
+        isTheoretical: formData.isTheoretical,
       };
 
       // Include moduleId for module and lesson scopes
@@ -516,6 +581,105 @@ const AddQuizPage = () => {
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <Label>Departments *</Label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {formData.departmentId.map(id => {
+                    const dept = departmentOptions.find(opt => opt.value === id);
+                    return (
+                      <Badge key={id} variant="secondary" className="gap-1 pr-1 py-1">
+                        {dept?.label || id}
+                        <button
+                          type="button"
+                          onClick={() => removeItem('departmentId', id)}
+                          className="hover:bg-muted rounded-full p-0.5"
+                        >
+                          <IconX className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+                <Select
+                  onValueChange={(val) => toggleItem('departmentId', val)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.departmentId.length > 0 
+                      ? `${formData.departmentId.length} departments selected` 
+                      : "Select departments"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentOptions.length === 0 ? (
+                      <SelectItem value="none" disabled>No departments assigned to course</SelectItem>
+                    ) : (
+                      departmentOptions.map(opt => (
+                        <SelectItem 
+                          key={opt.value} 
+                          value={opt.value}
+                          disabled={formData.departmentId.includes(opt.value)}
+                        >
+                          {opt.label}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Pick from departments assigned to this course
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <Label>Sections (Optional)</Label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {formData.sectionId.map(id => {
+                    const sec = sectionOptions.find(opt => opt.value === id);
+                    return (
+                      <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-blue-50/50">
+                        {sec?.label || id}
+                        <button
+                          type="button"
+                          onClick={() => removeItem('sectionId', id)}
+                          className="hover:bg-blue-100 rounded-full p-0.5"
+                        >
+                          <IconX className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+                <Select
+                  onValueChange={(val) => toggleItem('sectionId', val)}
+                  disabled={formData.departmentId.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.sectionId.length > 0 
+                      ? `${formData.sectionId.length} sections selected` 
+                      : (formData.departmentId.length === 0 ? "Select departments first" : "Select sections")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sectionOptions.length === 0 ? (
+                      <SelectItem value="none" disabled>No sections available for selected departments</SelectItem>
+                    ) : (
+                      sectionOptions.map(opt => (
+                        <SelectItem 
+                          key={opt.value} 
+                          value={opt.value}
+                          disabled={formData.sectionId.includes(opt.value)}
+                        >
+                          {opt.label}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Available sections based on selected departments
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="passingScore">Passing Score (%) *</Label>
@@ -614,6 +778,78 @@ const AddQuizPage = () => {
                   If Yes, a certificate will be issued upon passing this test (if skill upgradation applies).
                 </p>
               </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isDojo">Is DOJO Quiz? *</Label>
+                <Select
+                  value={formData.isDojo ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isDojo: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, this quiz will be visible to temporary DOJO candidates in their portal.
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
+                <Select
+                  value={formData.isHandover ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isHandover: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, passing this quiz will automatically add the student to the Handover Sheet on the date of passing.
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="isTheoretical">Is Theoretical Quiz? *</Label>
+                <Select
+                  value={formData.isTheoretical ? "yes" : "no"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isTheoretical: value === "yes",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  If Yes, this quiz will be marked as a theoretical assessment.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -671,7 +907,7 @@ const AddQuizPage = () => {
                   <div className="mt-2">
                     {question.image ? (
                       <div className="relative w-full max-w-xs border rounded p-2">
-                        <img src={question.image.url} alt="Question" className="w-full h-auto rounded" />
+                        <img src={getMediaUrl(question.image.url)} alt="Question" className="w-full h-auto rounded" />
                         <Button
                           type="button"
                           variant="destructive"

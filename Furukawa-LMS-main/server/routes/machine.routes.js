@@ -29,8 +29,8 @@ router.put("/:id", authorizeRoles("isAdmin", "SUPERADMIN"), updateMachine);
 router.delete("/:id", authorizeRoles("isAdmin", "SUPERADMIN"), deleteMachine);
 
 // User assignment routes
-router.post("/:id/employees", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"), assignEmployee);
-router.delete("/:id/employees/:userId", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"), removeEmployee);
+router.post("/:id/employees", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "department:manage_students", "multi_skilling:manage"), assignEmployee);
+router.delete("/:id/employees/:userId", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "department:manage_students", "multi_skilling:manage"), removeEmployee);
 router.get("/:id/employees", getMachineEmployees);
 
 export default router;

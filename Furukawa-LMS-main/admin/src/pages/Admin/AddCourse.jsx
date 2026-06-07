@@ -6,6 +6,8 @@ import { useCreateQuizMutation } from "@/Redux/AllApi/QuizApi";
 import { useCreateAssignmentMutation } from "@/Redux/AllApi/AssignmentApi";
 import { useCreateResourceMutation } from "@/Redux/AllApi/resourceApi"; // Added resource API import
 import { useGetAllInstructorsQuery } from "@/Redux/AllApi/InstructorApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import { Button } from "@/components/ui/button";
 import { FormCard, FormInput, FormTextarea, FormSelect } from "@/components/form";
@@ -39,6 +41,8 @@ const AddCourse = () => {
     category: "",
     level: "BEGINNER",
     instructor: "",
+    departmentId: [], // Now an array
+    sectionId: [],    // Now an array
   });
 
   const [modules, setModules] = useState([]);
@@ -55,10 +59,39 @@ const AddCourse = () => {
   };
 
   const handleSelectChange = (name, value) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const newData = { ...prev };
+      
+      if (name === 'departmentId' || name === 'sectionId') {
+        // Multi-select logic: Toggle value in array
+        const currentValues = Array.isArray(prev[name]) ? prev[name] : [];
+        if (currentValues.includes(value)) {
+          newData[name] = currentValues.filter(v => v !== value);
+        } else {
+          newData[name] = [...currentValues, value];
+        }
+
+        // If department changes, we might want to filter sections
+        // For simplicity, we'll keep existing sections but they might belong to removed depts.
+        // Better: reset sections if a dept is removed? 
+        // Actually, the API will fetch sections for all selected depts.
+      } else {
+        newData[name] = value;
+      }
+
+      return newData;
+    });
+    
     if (formErrors[name]) {
       setFormErrors(prev => ({ ...prev, [name]: "" }));
     }
+  };
+
+  const removeItem = (name, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [name]: (prev[name] || []).filter(v => v !== value)
+    }));
   };
 
   // Module Functions
@@ -335,6 +368,7 @@ const AddCourse = () => {
     if (!formData.description.trim()) errors.description = "Description is required";
     if (!formData.category.trim()) errors.category = "Category is required";
     if (!formData.instructor) errors.instructor = "Instructor is required";
+    if (!formData.departmentId) errors.departmentId = "Department is required";
 
     modules.forEach((module, index) => {
       if (!module.title.trim()) errors[`module-${module.id}-title`] = `Module ${index + 1} title is required`;
@@ -408,7 +442,9 @@ const AddCourse = () => {
         description: formData.description,
         category: formData.category,
         level: formData.level,
-        instructor: formData.instructor
+        instructor: formData.instructor,
+        departmentId: formData.departmentId,
+        sectionId: formData.sectionId || null
       }).unwrap();
 
       const courseId = courseResponse.data.id || courseResponse.data._id;
@@ -518,6 +554,24 @@ const AddCourse = () => {
     label: instructor.fullName
   }));
 
+  // Fetch Departments
+  const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
+  const departments = departmentsData?.data?.departments || [];
+  const departmentOptions = departments.map(dept => ({
+    value: String(dept.id || dept._id),
+    label: dept.name
+  }));
+
+  // Fetch Sections based on selected Department
+  const { data: sectionsData } = useGetSectionsByDepartmentQuery(formData.departmentId, {
+    skip: !formData.departmentId
+  });
+  const sections = sectionsData?.data || [];
+  const sectionOptions = sections.map(section => ({
+    value: String(section.id || section._id),
+    label: section.name
+  }));
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-8">
       {/* Header Section */}
@@ -614,6 +668,59 @@ const AddCourse = () => {
               placeholder="Select instructor"
               error={formErrors.instructor}
             />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <FormSelect
+                label="Departments *"
+                name="departmentId"
+                value=""
+                onValueChange={(val) => handleSelectChange("departmentId", val)}
+                options={departmentOptions.filter(opt => !formData.departmentId.includes(opt.value))}
+                placeholder={formData.departmentId.length > 0 ? `${formData.departmentId.length} departments selected` : "Add Department"}
+                error={formErrors.departmentId}
+              />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {formData.departmentId.map(id => {
+                  const dept = departmentOptions.find(opt => opt.value === id);
+                  return (
+                    <div key={id} className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-1 rounded-md text-sm border border-primary/20">
+                      {dept?.label || id}
+                      <button type="button" onClick={() => removeItem("departmentId", id)}>
+                        <IconX size={14} className="hover:text-destructive" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <FormSelect
+                label="Sections (Optional)"
+                name="sectionId"
+                value=""
+                onValueChange={(val) => handleSelectChange("sectionId", val)}
+                options={sectionOptions.filter(opt => !formData.sectionId.includes(opt.value))}
+                placeholder={formData.sectionId.length > 0 ? `${formData.sectionId.length} sections selected` : (formData.departmentId.length ? "Add Section" : "Select departments first")}
+                error={formErrors.sectionId}
+                disabled={!formData.departmentId.length}
+              />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {formData.sectionId.map(id => {
+                  const sec = sectionOptions.find(opt => opt.value === id);
+                  return (
+                    <div key={id} className="flex items-center gap-1 bg-secondary/10 text-secondary-foreground px-2 py-1 rounded-md text-sm border border-secondary/20">
+                      {sec?.label || id}
+                      <button type="button" onClick={() => removeItem("sectionId", id)}>
+                        <IconX size={14} className="hover:text-destructive" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </FormCard>
 

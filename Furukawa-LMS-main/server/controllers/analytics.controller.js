@@ -816,15 +816,8 @@ export const generateCustomReport = asyncHandler(async (req, res) => {
 });
 
 export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
-    // Get Pass/Fail counts for quizzes grouped by department
-    // Logic:
-    // 1. We need to link AttemptedQuiz -> Student (User) -> Department
-    // 2. Aggregate counts by Department Name
-
-    // User table has 'department' column which stores Department ID (VARCHAR or INT)
-    // AttemptedQuiz has 'student' column which stores User ID
-
-    const { startDate, endDate } = req.query;
+    // Get Pass/Fail counts for quizzes grouped by department or section (if departmentId is provided)
+    const { startDate, endDate, departmentId } = req.query;
     let dateFilter = "";
     let params = [];
 
@@ -833,25 +826,43 @@ export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
         params.push(new Date(startDate), new Date(endDate));
     }
 
-    const query = `
-        SELECT 
-            d.name as departmentName,
-            SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END) as passedCount,
-            SUM(CASE WHEN aq.status = 'FAILED' THEN 1 ELSE 0 END) as failedCount,
-            COUNT(aq.id) as totalAttempts
-        FROM departments d
-        LEFT JOIN users u ON u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name
-        LEFT JOIN attempted_quizzes aq ON aq.student = u.id
-        WHERE d.isDeleted = 0 
-        ${dateFilter}
-        GROUP BY d.id, d.name
-        HAVING COUNT(aq.id) > 0
-        ORDER BY passedCount DESC
-    `;
+    let query = "";
+    if (departmentId) {
+        // Fetch stats grouped by sections under this department
+        query = `
+            SELECT 
+                s.name as departmentName,
+                COALESCE(SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END), 0) as passedCount,
+                COALESCE(SUM(CASE WHEN aq.status = 'FAILED' THEN 1 ELSE 0 END), 0) as failedCount,
+                COUNT(aq.id) as totalAttempts
+            FROM [sections] s
+            LEFT JOIN users u ON u.sectionId = s.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+            LEFT JOIN attempted_quizzes aq ON aq.student = u.id ${dateFilter}
+            WHERE s.departmentId = ?
+            GROUP BY s.id, s.name, s.category
+            ORDER BY passedCount DESC
+        `;
+        params.push(parseInt(departmentId));
+    } else {
+        // Global departments view
+        query = `
+            SELECT 
+                d.name as departmentName,
+                COALESCE(SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END), 0) as passedCount,
+                COALESCE(SUM(CASE WHEN aq.status = 'FAILED' THEN 1 ELSE 0 END), 0) as failedCount,
+                COUNT(aq.id) as totalAttempts
+            FROM departments d
+            LEFT JOIN users u ON (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name) AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+            LEFT JOIN attempted_quizzes aq ON aq.student = u.id ${dateFilter}
+            WHERE d.isDeleted = 0 
+            GROUP BY d.id, d.name
+            ORDER BY passedCount DESC
+        `;
+    }
 
     const [rows] = await executeQuery(query, params);
 
-    res.json(new ApiResponse(200, rows, "Department quiz stats fetched successfully"));
+    res.json(new ApiResponse(200, rows, "Quiz statistics fetched successfully"));
 });
 
 

@@ -44,7 +44,33 @@ export const skillMatrixApi = createApi({
             }),
             providesTags: ["SkillMatrix"],
         }),
+        getSkillMatrixEfficiency: builder.query({
+            query: ({ departmentId, sectionId, lineId, subSectionId } = {}) => ({
+                url: "/api/skill-matrix/evaluations/efficiency",
+                method: "GET",
+                params: {
+                    ...(departmentId ? { departmentId } : {}),
+                    ...(sectionId ? { sectionId } : {}),
+                    ...(lineId ? { lineId } : {}),
+                    ...(subSectionId ? { subSectionId } : {}),
+                },
+            }),
+            providesTags: ["SkillMatrix"],
+        }),
+        getSkillMatrixEfficiencySummary: builder.query({
+            query: () => ({
+                url: "/api/skill-matrix/evaluations/summary",
+                method: "GET",
+            }),
+            providesTags: ["SkillMatrix"],
+        }),
     }),
 });
 
-export const { useSaveSkillMatrixMutation, useGetSkillMatrixQuery, useGetSkillMatrixListQuery } = skillMatrixApi;
+export const { 
+    useSaveSkillMatrixMutation, 
+    useGetSkillMatrixQuery, 
+    useGetSkillMatrixListQuery, 
+    useGetSkillMatrixEfficiencyQuery,
+    useGetSkillMatrixEfficiencySummaryQuery
+} = skillMatrixApi;

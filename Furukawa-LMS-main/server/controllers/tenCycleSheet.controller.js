@@ -3,15 +3,21 @@ import TenCycleSheet from "../models/tenCycleSheet.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import EmailConfiguration from "../models/emailConfiguration.model.js";
+import sendMail from "../utils/mail.util.js";
+import emailTemplates from "../utils/emailTemplates.js";
+import ENV from "../configs/env.config.js";
 
 export const listTenCycleSheets = asyncHandler(async (req, res) => {
-    const { departmentId } = req.query;
+    const { departmentId, sectionId, lineId, subSectionId } = req.query;
 
     if (!departmentId) {
         return res.status(200).json(new ApiResponse(200, [], "No department selected"));
     }
 
-    const sheets = await TenCycleSheet.findByDepartmentId(departmentId);
+    const sheets = await TenCycleSheet.findByFilters({ departmentId, sectionId, lineId, subSectionId });
+    
+    // Fetch names for contextual info
     const [deps] = await executeQuery("SELECT id, name FROM departments WHERE id = ?", [departmentId]);
     const deptName = deps[0]?.name || "";
 
@@ -19,7 +25,15 @@ export const listTenCycleSheets = asyncHandler(async (req, res) => {
         id: s.id,
         departmentId: s.departmentId,
         departmentName: deptName,
+        sectionId: s.sectionId,
+        lineId: s.lineId,
+        subSectionId: s.subSectionId,
         formType: s.formType,
+        status: s.status,
+        verifiedStatus: s.verifiedStatus,
+        verifiedBy: s.verifiedBy,
+        reviewedStatus: s.reviewedStatus,
+        reviewedBy: s.reviewedBy,
         createdDate: s.createdDate,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
@@ -29,22 +43,26 @@ export const listTenCycleSheets = asyncHandler(async (req, res) => {
 });
 
 export const createTenCycleSheet = asyncHandler(async (req, res) => {
-    const { departmentId, formType } = req.body || {};
+    const { departmentId, sectionId, lineId, subSectionId, formType } = req.body || {};
 
     if (!departmentId) throw new ApiError("Department is required", 400);
-    if (!["form1", "form2"].includes(formType)) throw new ApiError("Invalid form type", 400);
+    if (!["form1", "form2", "form3"].includes(formType)) throw new ApiError("Invalid form type", 400);
 
     const [deps] = await executeQuery("SELECT id FROM departments WHERE id = ?", [departmentId]);
     if (deps.length === 0) throw new ApiError("Department not found", 404);
 
     const sheet = await TenCycleSheet.create({
         departmentId,
+        sectionId,
+        lineId,
+        subSectionId,
         formType,
         qualityEngineer: "",
         qualityEngineerSign: "",
         dojoEngineer: "",
         dojoEngineerSign: "",
         entries: [],
+        status: "Draft",
         createdBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
     });
 
@@ -66,12 +84,12 @@ export const getTenCycleSheetById = asyncHandler(async (req, res) => {
 
 export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries } = req.body || {};
+    const { formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, isSubmit } = req.body || {};
 
     const existing = await TenCycleSheet.findById(id);
     if (!existing) throw new ApiError("10 cycle sheet not found", 404);
 
-    if (!["form1", "form2"].includes(formType)) throw new ApiError("Invalid form type", 400);
+    if (!["form1", "form2", "form3"].includes(formType)) throw new ApiError("Invalid form type", 400);
 
     const updated = await TenCycleSheet.updateById(id, {
         formType,
@@ -80,8 +98,102 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
         dojoEngineer,
         dojoEngineerSign,
         entries: Array.isArray(entries) ? entries : [],
+        status: isSubmit ? "Submitted" : existing.status,
+        checkedBy: existing.checkedBy || req.user?.fullName || req.user?.name || "",
+        verifiedBy: existing.verifiedBy,
+        verifiedStatus: existing.verifiedStatus,
+        verifiedAt: existing.verifiedAt,
+        reviewedBy: existing.reviewedBy,
+        reviewedStatus: existing.reviewedStatus,
+        reviewedAt: existing.reviewedAt,
         updatedBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
     });
 
-    return res.status(200).json(new ApiResponse(200, updated, "10 cycle sheet updated successfully"));
+    if (isSubmit) {
+        // ... (existing email logic remains same)
+        try {
+            // Fetch metadata for email
+            const [deptRows] = await executeQuery("SELECT name FROM departments WHERE id = ?", [existing.departmentId]);
+            const [sectionRows] = await executeQuery("SELECT name FROM sections WHERE id = ?", [existing.sectionId]);
+            const [lineRows] = await executeQuery("SELECT name FROM lines WHERE id = ?", [existing.lineId]);
+            const [subSectionRows] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [existing.subSectionId]);
+
+            const departmentName = deptRows[0]?.name || "N/A";
+            const sectionName = sectionRows[0]?.name || "N/A";
+            const lineName = lineRows[0]?.name || "N/A";
+            const subSectionName = subSectionRows[0]?.name || "N/A";
+
+            // Get email configuration
+            const config = await EmailConfiguration.findByFormDeptAndSection(
+                "10-Cycle Check Sheet",
+                existing.departmentId,
+                existing.sectionId
+            );
+
+            if (config) {
+                let to = config.toEmails || "";
+                let cc = config.ccEmails || "";
+
+                if (config.includeTrainer) {
+                    const [trainers] = await executeQuery(
+                        "SELECT email FROM users WHERE departmentId = ? AND (isTrainer = 1 OR role = 'INSTRUCTOR')",
+                        [existing.departmentId]
+                    );
+                    const trainerEmails = trainers.map(t => t.email).filter(e => e).join(", ");
+                    if (trainerEmails) to = to ? `${to}, ${trainerEmails}` : trainerEmails;
+                }
+
+                if (to) {
+                    const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/10-cycle-sheet?id=${id}`;
+                    const html = emailTemplates.generateTenCycleSheetEmail({
+                        departmentName,
+                        sectionName,
+                        lineName,
+                        subSectionName,
+                        formType,
+                        date: new Date().toISOString().split('T')[0],
+                        entries: updated.entries,
+                        portalUrl
+                    });
+
+                    await sendMail(to, `10-Cycle Sheet Submitted: ${departmentName} - ${lineName}`, html, [], cc);
+                }
+            }
+        } catch (emailError) {
+            console.error("Failed to send 10-Cycle email:", emailError);
+            // Don't fail the request if email fails
+        }
+    }
+
+    return res.status(200).json(new ApiResponse(200, updated, isSubmit ? "10 cycle sheet submitted successfully" : "10 cycle sheet updated successfully"));
+});
+
+export const approveTenCycleSheet = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { action, role } = req.body; // action: 'APPROVE' or 'REJECT', role: 'VERIFY' or 'APPROVE'
+
+    const existing = await TenCycleSheet.findById(id);
+    if (!existing) throw new ApiError("10 cycle sheet not found", 404);
+
+    const userName = req.user?.fullName || req.user?.name || "";
+    const updateData = { ...existing };
+
+    if (role === 'VERIFY') {
+        updateData.verifiedBy = userName;
+        updateData.verifiedStatus = action;
+        updateData.verifiedAt = new Date();
+    } else if (role === 'APPROVE') {
+        updateData.reviewedBy = userName;
+        updateData.reviewedStatus = action;
+        updateData.reviewedAt = new Date();
+    } else {
+        throw new ApiError("Invalid role for approval", 400);
+    }
+
+    const updated = await TenCycleSheet.updateById(id, {
+        ...updateData,
+        updatedBy: userName
+    });
+
+    return res.status(200).json(new ApiResponse(200, updated, `10-Cycle sheet ${action.toLowerCase()}ed successfully`));
 });

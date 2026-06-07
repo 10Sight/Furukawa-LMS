@@ -7,10 +7,10 @@ export const courseApi = createApi({
     tagTypes: ['Course', 'Quiz', 'Assignment'], // Add Assignment to tagTypes
     endpoints: (builder) => ({
         createCourse: builder.mutation({
-            query: ({ title, description, category, level, modules, instructor, quizzes, assignments }) => ({
+            query: ({ title, description, category, level, modules, instructor, quizzes, assignments, departmentId, sectionId }) => ({
                 url: "/api/courses",
                 method: "POST",
-                data: { title, description, category, level, modules, instructor, quizzes, assignments }
+                data: { title, description, category, level, modules, instructor, quizzes, assignments, departmentId, sectionId }
             }),
             invalidatesTags: ['Course'],
         }),

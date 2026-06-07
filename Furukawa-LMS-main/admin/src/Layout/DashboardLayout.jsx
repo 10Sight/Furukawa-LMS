@@ -42,7 +42,8 @@ import { useUpdateAvatarMutation } from "@/Redux/AllApi/UserApi";
 import { profile as fetchProfile } from "@/Redux/Slice/AuthSlice";
 import useTranslate from "@/hooks/useTranslate";
 import { usePrivileges } from "@/hooks/usePrivileges";
-import { getSidebarTabs, hasRestrictions } from "@/constants/pageRegistry";
+import { getSidebarTabs, hasRestrictions, isPathAllowedForUser } from "@/constants/pageRegistry";
+import axiosInstance from "@/Helper/axiosInstance";
 
 
 const DashboardLayout = () => {
@@ -64,7 +65,36 @@ const DashboardLayout = () => {
     const avatarFileRef = React.useRef(null);
 
     const pickAvatar = () => avatarFileRef.current?.click();
-    const tabs = useMemo(() => getSidebarTabs("dashboard", user, t, hasPrivilege), [user, t, hasPrivilege]);
+
+    const [customRoleTabs, setCustomRoleTabs] = useState([]);
+
+    useEffect(() => {
+        const fetchCustomRoles = async () => {
+            try {
+                const res = await axiosInstance.get("/api/roles-permissions");
+                const dynamicTabs = res.data.data.roles
+                    .filter(r => r.generateManagementPage && r.targetLayout === "dashboard")
+                    .map(r => ({
+                        link: `/dashboard/manage-role/${r.id}`,
+                        label: `Manage ${r.name}`,
+                        icon: IconUsers,
+                        key: `manage-role-${r.id}`
+                    }));
+                setCustomRoleTabs(dynamicTabs);
+            } catch (e) {
+                console.error("Failed to fetch custom roles for navigation", e);
+            }
+        };
+        const allowed = user?.customRole?.allowedPages;
+        const allowedPages = typeof allowed === 'string' ? JSON.parse(allowed || '[]') : (allowed || []);
+        const isAuthorizedDashboardAdmin = user?.role === 'SUPERADMIN' || user?.isAdmin || (user?.role === 'CUSTOM' && allowedPages.includes('dashboard-role-manager'));
+        if (isAuthorizedDashboardAdmin) fetchCustomRoles();
+    }, [user]);
+
+    const registryTabs = useMemo(() => getSidebarTabs("dashboard", user, t, hasPrivilege), [user, t, hasPrivilege]);
+    const tabs = useMemo(() => {
+        return [...registryTabs, ...customRoleTabs];
+    }, [registryTabs, customRoleTabs]);
 
     const onAvatarChange = async (e) => {
         const file = e.target.files?.[0];
@@ -77,11 +107,8 @@ const DashboardLayout = () => {
     };
 
     const isPathAllowed = useMemo(() => {
-        // hasRestrictions returns true if the user is a CUSTOM role or similar restricted role.
-        if (!hasRestrictions(user)) return true;
-        // Check if current path is allowed in the sidebar tabs
-        return tabs.some(tab => pathname === tab.link || (tab.link !== "/dashboard" && pathname.startsWith(tab.link)));
-    }, [pathname, tabs, user]);
+        return isPathAllowedForUser(pathname, "dashboard", user);
+    }, [pathname, user]);
 
     useEffect(() => {
         if (isPathAllowed) {
@@ -101,7 +128,7 @@ const DashboardLayout = () => {
         } else {
             // Redirect to first allowed tab if on forbidden path
             const fallback = tabs[0]?.link;
-            
+
             // normalize paths for comparison to avoid trival mismatches
             const currentPath = pathname.replace(/\/$/, '');
             const normalizedFallback = fallback?.replace(/\/$/, '');
@@ -203,10 +230,6 @@ const DashboardLayout = () => {
                 {/* Sidebar Tabs */}
                 <div className="px-3 flex flex-col w-full py-6 space-y-1 overflow-y-auto max-h-[calc(100vh-12rem)] scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
                     {tabs.map((item) => {
-                        // Show all pages only to admins
-                        const isAuthorized = user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN' || (user?.role === 'CUSTOM' && user?.customRole?.targetLayout?.toLowerCase() === 'admin');
-                        if (!isAuthorized) return null;
-
                         // Check privilege
                         if (item.privilege && !hasPrivilege(item.privilege)) return null;
 
@@ -254,8 +277,8 @@ const DashboardLayout = () => {
                         );
                     })}
 
-                    {/* Back to LMS Button */}
-                    {user?.role !== 'CUSTOM' && (
+                    {/* Back to Menu Link */}
+                    {(user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM') && (
                         <div
                             className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-600 hover:bg-gray-100
                             ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}

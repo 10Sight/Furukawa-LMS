@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -38,18 +38,26 @@ import {
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { useGetAllDepartmentsQuery, useGetDepartmentProgressQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
+import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetMachinesBySubSectionQuery } from "@/Redux/AllApi/MachineApi";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 
 const StudentLevelManager = () => {
   const [students, setStudents] = useState([]);
   const [selectedDepartment, setSelectedDepartment] = useState(() => {
-    // Restore last selected department from localStorage if available
     try {
       return localStorage.getItem("selectedDepartmentId") || "";
     } catch {
       return "";
     }
   });
+  const [selectedSection, setSelectedSection] = useState("");
+  const [selectedLine, setSelectedLine] = useState("");
+  const [selectedSubSection, setSelectedSubSection] = useState("");
+  const [selectedStation, setSelectedStation] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState({});
 
@@ -64,25 +72,56 @@ const StudentLevelManager = () => {
   const availableLevels = levelConfig?.levels || [];
 
   // Get course ID from selected department
-  const selectedDepartmentData = departments.find(dept => dept._id === selectedDepartment);
-  const courseId = selectedDepartmentData?.course?._id || selectedDepartmentData?.courseId;
+  const selectedDepartmentData = useMemo(() => {
+    return departments.find(dept => 
+      String(dept?._id || dept?.id) === String(selectedDepartment)
+    );
+  }, [departments, selectedDepartment]);
+
+  const courseId = useMemo(() => {
+    if (!selectedDepartmentData) return null;
+    return (
+      selectedDepartmentData.course?._id || 
+      selectedDepartmentData.course?.id || 
+      selectedDepartmentData.courseId || 
+      selectedDepartmentData.course
+    );
+  }, [selectedDepartmentData]);
 
   // Auto-select first department if none selected or invalid selection
   useEffect(() => {
     if (!departmentsLoading && departments.length > 0) {
-      const isValidSelection = departments.some(dept => dept._id === selectedDepartment);
+      const isValidSelection = departments.some(dept => String(dept?._id || dept?.id) === String(selectedDepartment));
 
       if (!selectedDepartment || !isValidSelection) {
         const firstDepartment = departments[0];
-        setSelectedDepartment(firstDepartment._id);
-        try { localStorage.setItem("selectedDepartmentId", firstDepartment._id); } catch { }
+        const firstId = String(firstDepartment?._id || firstDepartment?.id || "");
+        setSelectedDepartment(firstId);
+        try { localStorage.setItem("selectedDepartmentId", firstId); } catch { }
       }
     }
   }, [departments, selectedDepartment, departmentsLoading]);
 
-  // Fetch department progress using RTK Query
+  // Hierarchy data fetching
+  const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
+  const { data: linesData, isLoading: linesLoading } = useGetLinesBySectionQuery(selectedSection, { skip: !selectedSection });
+  const { data: subSectionsData, isLoading: subSectionsLoading } = useGetSubSectionsByLineQuery(selectedLine, { skip: !selectedLine });
+  const { data: stationsData, isLoading: stationsLoading } = useGetMachinesBySubSectionQuery(selectedSubSection, { skip: !selectedSubSection });
+
+  const sections = sectionsData?.data || [];
+  const lines = linesData?.data || [];
+  const subSections = subSectionsData?.data || [];
+  const stations = stationsData?.data || [];
+
+  // Fetch department progress using RTK Query with all hierarchy filters
   const { data: departmentProgressData, isLoading: progressLoading, refetch: refetchProgress } = useGetDepartmentProgressQuery(
-    selectedDepartment,
+    { 
+      departmentId: selectedDepartment,
+      sectionId: selectedSection && selectedSection !== "all_sections" ? selectedSection : undefined,
+      lineId: selectedLine && selectedLine !== "all_lines" ? selectedLine : undefined,
+      subSectionId: selectedSubSection && selectedSubSection !== "all_subsections" ? selectedSubSection : undefined,
+      stationId: selectedStation && selectedStation !== "all_stations" ? selectedStation : undefined
+    },
     { skip: !selectedDepartment }
   );
 
@@ -103,7 +142,9 @@ const StudentLevelManager = () => {
         completedModules: progress.completedModules || 0,
         lastAccessed: progress.lastActivity,
         courseId: progress.courseId,
-        courseTitle: progress.courseTitle
+        courseTitle: progress.courseTitle,
+        primaryLevel: progress.student?.primaryLevel,
+        primaryStation: progress.student?.primaryStation
       }));
 
       setStudents(studentsWithProgress);
@@ -112,13 +153,36 @@ const StudentLevelManager = () => {
     }
   }, [departmentProgressData, selectedDepartment, progressLoading, selectedDepartmentData]);
 
-  // Handle department selection
+  // Handle hierarchy changes
   const handleDepartmentChange = (departmentId) => {
     setSelectedDepartment(departmentId);
+    setSelectedSection("");
+    setSelectedLine("");
+    setSelectedSubSection("");
+    setSelectedStation("");
     try { localStorage.setItem("selectedDepartmentId", departmentId || ""); } catch { }
-    if (!departmentId) {
-      setStudents([]);
-    }
+  };
+
+  const handleSectionChange = (sectionId) => {
+    setSelectedSection(sectionId);
+    setSelectedLine("");
+    setSelectedSubSection("");
+    setSelectedStation("");
+  };
+
+  const handleLineChange = (lineId) => {
+    setSelectedLine(lineId);
+    setSelectedSubSection("");
+    setSelectedStation("");
+  };
+
+  const handleSubSectionChange = (subSectionId) => {
+    setSelectedSubSection(subSectionId);
+    setSelectedStation("");
+  };
+
+  const handleStationChange = (stationId) => {
+    setSelectedStation(stationId);
   };
 
   // Set student level and lock status
@@ -126,10 +190,13 @@ const StudentLevelManager = () => {
     const updateKey = `${studentId}-${level}-${lock}`;
     setUpdating(prev => ({ ...prev, [updateKey]: true }));
 
+    const finalCourseId = targetCourseId || courseId;
+    
     try {
       const response = await axiosInstance.patch("/api/progress/admin/set-level", {
         studentId,
-        courseId: targetCourseId || courseId,
+        courseId: finalCourseId,
+        stationId: selectedStation && selectedStation !== "all_stations" ? selectedStation : undefined,
         level,
         lock
       });
@@ -224,31 +291,118 @@ const StudentLevelManager = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4">
-            <Label htmlFor="department-select">Select Section:</Label>
-            <Select value={selectedDepartment} onValueChange={handleDepartmentChange} disabled={departmentsLoading}>
-              <SelectTrigger className="w-72">
-                <SelectValue placeholder={departmentsLoading ? "Loading sections..." : "Choose a section to manage"} />
-              </SelectTrigger>
-              <SelectContent>
-                {departments.map((dept) => (
-                  <SelectItem key={dept._id} value={dept._id}>
-                    {dept.name} - {dept.course?.title || 'No Course'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedDepartment && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="department-select">Department:</Label>
+              <Select value={selectedDepartment} onValueChange={handleDepartmentChange} disabled={departmentsLoading}>
+                <SelectTrigger id="department-select">
+                  <SelectValue placeholder={departmentsLoading ? "Loading..." : "Choose Department"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((dept) => (
+                    <SelectItem key={String(dept?._id || dept?.id)} value={String(dept?._id || dept?.id)}>
+                      {dept.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="section-select">Section:</Label>
+              <Select 
+                value={selectedSection} 
+                onValueChange={handleSectionChange} 
+                disabled={!selectedDepartment || sectionsLoading}
+              >
+                <SelectTrigger id="section-select">
+                  <SelectValue placeholder={!selectedDepartment ? "Select Department first" : sectionsLoading ? "Loading..." : "All Sections"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_sections">All Sections</SelectItem>
+                  {sections.map((section) => (
+                    <SelectItem key={section.id} value={section.id}>
+                      {section.sectionName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="line-select">Line:</Label>
+              <Select 
+                value={selectedLine} 
+                onValueChange={handleLineChange} 
+                disabled={!selectedSection || selectedSection === "all_sections" || linesLoading}
+              >
+                <SelectTrigger id="line-select">
+                  <SelectValue placeholder={!selectedSection ? "Select Section first" : linesLoading ? "Loading..." : "All Lines"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_lines">All Lines</SelectItem>
+                  {lines.map((line) => (
+                    <SelectItem key={line.id} value={line.id}>
+                      {line.lineName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="sub-section-select">Sub-Section:</Label>
+              <Select 
+                value={selectedSubSection} 
+                onValueChange={handleSubSectionChange} 
+                disabled={!selectedLine || selectedLine === "all_lines" || subSectionsLoading}
+              >
+                <SelectTrigger id="sub-section-select">
+                  <SelectValue placeholder={!selectedLine ? "Select Line first" : subSectionsLoading ? "Loading..." : "All Sub-Sections"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_subsections">All Sub-Sections</SelectItem>
+                  {subSections.map((ss) => (
+                    <SelectItem key={ss.id} value={ss.id}>
+                      {ss.subSectionName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="station-select">Station:</Label>
+              <Select 
+                value={selectedStation} 
+                onValueChange={handleStationChange} 
+                disabled={!selectedSubSection || selectedSubSection === "all_subsections" || stationsLoading}
+              >
+                <SelectTrigger id="station-select">
+                  <SelectValue placeholder={!selectedSubSection ? "Select Sub-Section first" : stationsLoading ? "Loading..." : "All Stations"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_stations">All Stations</SelectItem>
+                  {stations.map((st) => (
+                    <SelectItem key={st.id} value={st.id}>
+                      {st.stationName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-end gap-2">
               <Button
                 variant="outline"
-                size="sm"
+                className="w-full"
                 onClick={() => refetchProgress()}
-                disabled={progressLoading}
+                disabled={!selectedDepartment || progressLoading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${progressLoading ? 'animate-spin' : ''}`} />
-                Refresh
+                Refresh Progress
               </Button>
-            )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -291,7 +445,8 @@ const StudentLevelManager = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Operator</TableHead>
-                    <TableHead>Current Level</TableHead>
+                    <TableHead>Primary Level</TableHead>
+                    <TableHead>Station Skill</TableHead>
                     <TableHead>Progress</TableHead>
                     <TableHead>Lock Status</TableHead>
                     <TableHead>Last Accessed</TableHead>
@@ -306,6 +461,21 @@ const StudentLevelManager = () => {
                           <div className="font-medium text-blue-600">{student.courseTitle}</div>
                           <div className="font-medium">{student.name}</div>
                           <div className="text-xs text-muted-foreground">{student.email}</div>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <Badge
+                            className="border w-fit"
+                            style={getLevelStyle(student.primaryLevel)}
+                            variant="outline"
+                          >
+                            {student.primaryLevel || "L1"}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+                            {student.primaryStation || "No Station"}
+                          </span>
                         </div>
                       </TableCell>
 

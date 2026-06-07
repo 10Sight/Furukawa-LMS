@@ -265,6 +265,7 @@ export {
     onJobTrainingApi,
     useGetStudentOJTsQuery,
     useGetOnJobTrainingByIdQuery,
+    useGetAllOnJobTrainingsQuery,
     useCreateOnJobTrainingMutation,
     useUpdateOnJobTrainingMutation,
 } from './OnJobTrainingApi';
@@ -298,6 +299,8 @@ export {
     skillMatrixApi,
     useSaveSkillMatrixMutation,
     useGetSkillMatrixQuery,
+    useGetSkillMatrixEfficiencyQuery,
+    useGetSkillMatrixEfficiencySummaryQuery,
 } from './SkillMatrixApi';
 
 // CourseLevelConfig API exports
@@ -312,3 +315,24 @@ export {
     useValidateCompatibilityMutation,
     useMigrateLevelsMutation,
 } from './CourseLevelConfigApi';
+
+// MultiSkilling API exports
+export {
+    multiSkillingApi,
+    useGetMultiSkillingPlanQuery,
+    useSaveMultiSkillingPlanMutation,
+    useGetMultiSkillingConfigQuery,
+    useSaveMultiSkillingConfigMutation,
+    useGetMultiSkillingHistoryQuery,
+} from './MultiSkillingApi';
+
+// AbnormalCondition API exports
+export {
+    AbnormalConditionApi,
+    useGetAbnormalConditionSheetQuery,
+    useLazyGetAbnormalConditionSheetQuery,
+    useCreateAbnormalConditionSheetMutation,
+    useUpdateAbnormalConditionSheetMutation,
+    useApproveAbnormalConditionEntryMutation,
+    useDeleteAbnormalConditionSheetMutation,
+} from './AbnormalConditionApi';

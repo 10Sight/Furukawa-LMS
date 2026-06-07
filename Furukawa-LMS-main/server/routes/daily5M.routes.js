@@ -2,13 +2,17 @@ import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 import { get5MConfig, save5MConfig, getConfigHistory, getAllConfigHistory, send5MPDF } from "../controllers/daily5M.controller.js";
-import { create5MRecord, get5MRecords, get5MRecordById, delete5MRecord, get5MRecordByDate, submit5MRecord } from "../controllers/daily5MRecord.controller.js";
+import { create5MRecord, get5MRecords, get5MRecordById, delete5MRecord, get5MRecordByDate, submit5MRecord, send5MEmail, approve5MRecord, decline5MRecord, getApprovalStatus, getDaily5MStats, getDaily5MRowStats } from "../controllers/daily5MRecord.controller.js";
 import { getAssignments, addAssignment, removeAssignment } from "../controllers/daily5MAssignment.controller.js";
 
 const router = Router();
 
 // PDF & Email Routes
 router.post("/pdf/send", verifyJWT, send5MPDF);
+
+// Stats Routes
+router.get("/stats/daily/:departmentId", verifyJWT, getDaily5MStats);
+router.get("/stats/rows/:departmentId", verifyJWT, getDaily5MRowStats);
 
 // Config Routes
 router.get("/config/:departmentId", verifyJWT, get5MConfig); // Changed path to disambiguate
@@ -23,10 +27,14 @@ router.delete("/assignments/:id", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN
 
 // Record Routes
 router.post("/record/create", verifyJWT, create5MRecord);
+router.post("/record/:id/submit", verifyJWT, submit5MRecord);
+router.post("/record/:id/send-email", verifyJWT, send5MEmail);
 router.get("/record/date", verifyJWT, get5MRecordByDate);
 router.get("/records/:departmentId", verifyJWT, get5MRecords);
 router.get("/record/:id", verifyJWT, get5MRecordById);
-router.post("/record/:id/submit", verifyJWT, submit5MRecord);
+router.post("/record/:id/approve", verifyJWT, approve5MRecord);
+router.post("/record/:id/decline", verifyJWT, decline5MRecord);
+router.get("/approvals/status", verifyJWT, getApprovalStatus);
 router.delete("/record/:id", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN"), delete5MRecord);
 
 // Legacy/Compatibility: The previous fetchConfig was "GET /:departmentId". 

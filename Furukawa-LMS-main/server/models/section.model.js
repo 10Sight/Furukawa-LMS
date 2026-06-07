@@ -11,9 +11,11 @@ class Section {
         this.description = data.description;
         this.category = data.category || "Not Applicable";
         this.daily5mFormType = data.daily5mFormType || "standard";
+        this.tenCycleFormType = data.tenCycleFormType || "form1";
         this.departmentId = data.departmentId;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
-        this.sectionCount = data.sectionCount || 0;
+        this.users = typeof data.users === 'string' ? JSON.parse(data.users) : (data.users || []);
+        this.sectionCount = data.sectionCount || this.users.length || 0;
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -31,6 +33,7 @@ class Section {
                     description NVARCHAR(MAX),
                     category NVARCHAR(50) DEFAULT 'Not Applicable',
                     daily5mFormType NVARCHAR(255) DEFAULT 'standard',
+                    tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
                     departmentId INT NOT NULL,
                     isActive BIT DEFAULT 1,
                     createdAt DATETIME DEFAULT GETDATE(),
@@ -62,8 +65,25 @@ class Section {
                 END
                 ELSE
                 BEGIN
-                    -- Increase size if it exists
                     ALTER TABLE [sections] ALTER COLUMN daily5mFormType NVARCHAR(255);
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns 
+                             WHERE object_id = OBJECT_ID('sections') 
+                             AND name = 'tenCycleFormType')
+                BEGIN
+                    ALTER TABLE [sections] ADD tenCycleFormType NVARCHAR(255) DEFAULT 'form1';
+                END
+                ELSE
+                BEGIN
+                    ALTER TABLE [sections] ALTER COLUMN tenCycleFormType NVARCHAR(255);
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns 
+                             WHERE object_id = OBJECT_ID('sections') 
+                             AND name = 'users')
+                BEGIN
+                    ALTER TABLE [sections] ADD users NVARCHAR(MAX) DEFAULT '[]';
                 END
 
                 -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
@@ -113,14 +133,45 @@ class Section {
             await executeQuery(createQuery);
             await executeQuery(migrationQuery);
             logger.info("Checked/Created sections table and migrated columns in MSSQL");
+
+            // Initial sync for all sections
+            const [sections] = await executeQuery("SELECT id FROM [sections]");
+            for (const s of sections) {
+                await Section.syncUserList(s.id);
+            }
         } catch (error) {
             logger.error("Failed to initialize Section table", error);
         }
     }
 
+    static async syncUserList(sectionId) {
+        try {
+            // Aggregate users from all child lines
+            const query = `
+                SELECT DISTINCT u.[value] as userId
+                FROM [lines] l
+                CROSS APPLY OPENJSON(ISNULL(l.users, '[]')) u
+                WHERE l.sectionId = ?
+            `;
+            const [rows] = await executeQuery(query, [sectionId]);
+            const userList = rows.map(r => r.userId);
+            
+            await executeQuery(
+                "UPDATE [sections] SET users = ? WHERE id = ?",
+                [JSON.stringify(userList), sectionId]
+            );
+            
+            logger.info(`Synced user list for section ${sectionId}. Total users: ${userList.length}`);
+            return userList;
+        } catch (error) {
+            logger.error(`Error syncing user list for section ${sectionId}:`, error);
+            throw error;
+        }
+    }
+
     static async create(data) {
         const fields = [
-            "name", "uniCode", "description", "category", "daily5mFormType", "departmentId", "isActive", "createdAt", "updatedAt"
+            "name", "uniCode", "description", "category", "daily5mFormType", "tenCycleFormType", "departmentId", "isActive", "users", "createdAt", "updatedAt"
         ];
 
         const now = new Date();
@@ -130,8 +181,10 @@ class Section {
             data.description || null,
             data.category || "Not Applicable",
             data.daily5mFormType || "standard",
+            data.tenCycleFormType || "form1",
             data.departmentId,
             data.isActive !== undefined ? data.isActive : true,
+            '[]',
             now,
             now
         ];
@@ -148,23 +201,7 @@ class Section {
     static async findById(id) {
         const query = `
             SELECT s.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.sectionId = s.id 
-                OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id)
-                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id))
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    JOIN sub_sections ss ON m.subSectionId = ss.id 
-                    JOIN [lines] l ON ss.lineId = l.id 
-                    WHERE l.sectionId = s.id
-                )
-             )
-            ) as sectionCount
+            (SELECT COUNT(*) FROM OPENJSON(ISNULL(s.users, '[]'))) as sectionCount
             FROM [sections] s 
             WHERE s.id = ?`;
         const [rows] = await executeQuery(query, [id]);
@@ -173,29 +210,31 @@ class Section {
     }
 
     static async findByDepartment(departmentId) {
-        const query = `
-            SELECT s.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.sectionId = s.id 
-                OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id)
-                OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = s.id))
-                OR u.id IN (
-                    SELECT ma.user_id 
-                    FROM machine_assignments ma 
-                    JOIN machines m ON ma.machine_id = m.id 
-                    JOIN sub_sections ss ON m.subSectionId = ss.id 
-                    JOIN [lines] l ON ss.lineId = l.id 
-                    WHERE l.sectionId = s.id
-                )
-             )
-            ) as sectionCount
-            FROM [sections] s 
-            WHERE s.departmentId = ? 
-            ORDER BY s.createdAt DESC`;
-        const [rows] = await executeQuery(query, [departmentId]);
+        let query;
+        let params = [];
+
+        if (typeof departmentId === 'string' && departmentId.includes(',')) {
+            // Handle multiple IDs
+            const ids = departmentId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+            if (ids.length === 0) return [];
+            query = `
+                SELECT s.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(s.users, '[]'))) as sectionCount
+                FROM [sections] s 
+                WHERE s.departmentId IN (${ids.join(',')}) 
+                ORDER BY s.createdAt DESC`;
+        } else {
+            // Handle single ID
+            query = `
+                SELECT s.*, 
+                (SELECT COUNT(*) FROM OPENJSON(ISNULL(s.users, '[]'))) as sectionCount
+                FROM [sections] s 
+                WHERE s.departmentId = ? 
+                ORDER BY s.createdAt DESC`;
+            params = [departmentId];
+        }
+
+        const [rows] = await executeQuery(query, params);
         return rows.map(row => new Section(row));
     }
 
@@ -213,6 +252,7 @@ class Section {
         if (data.description !== undefined) { updateFields.push("description = ?"); values.push(data.description); }
         if (data.category !== undefined) { updateFields.push("category = ?"); values.push(data.category); }
         if (data.daily5mFormType !== undefined) { updateFields.push("daily5mFormType = ?"); values.push(data.daily5mFormType); }
+        if (data.tenCycleFormType !== undefined) { updateFields.push("tenCycleFormType = ?"); values.push(data.tenCycleFormType); }
         if (data.isActive !== undefined) { updateFields.push("isActive = ?"); values.push(data.isActive); }
 
         if (updateFields.length === 0) return null;
@@ -226,6 +266,6 @@ class Section {
 }
 
 // Initialize table
-Section.init();
+// Section.init();
 
 export default Section;

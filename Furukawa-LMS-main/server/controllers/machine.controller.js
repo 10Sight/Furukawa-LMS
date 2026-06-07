@@ -7,7 +7,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 // @route   POST /api/machines
 // @access  Private
 export const createMachine = asyncHandler(async (req, res) => {
-    const { name, lineId, subSectionId, description } = req.body;
+    const { name, lineId, subSectionId, description, criticality } = req.body;
 
     if (!name || !lineId || !subSectionId) {
         throw new ApiError(400, "Name, Line ID, and Sub-Section ID are required");
@@ -31,13 +31,13 @@ export const createMachine = asyncHandler(async (req, res) => {
 
     // Insert
     const [result] = await executeQuery(
-        "INSERT INTO machines (name, line, subSectionId, description, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, GETDATE(), GETDATE())",
-        [name, lineId, subSectionId, description, true]
+        "INSERT INTO machines (name, line, subSectionId, description, criticality, isActive, createdAt, updatedAt) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())",
+        [name, lineId, subSectionId, description, criticality || 'Non-Critical', true]
     );
 
     const [newMachine] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m WHERE m.id = ?`, [result[0].id]);
 
     res.status(201).json(
@@ -50,15 +50,32 @@ export const createMachine = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesBySubSection = asyncHandler(async (req, res) => {
     const { subSectionId } = req.params;
+    let machines = [];
 
-    if (isNaN(subSectionId)) {
-        throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
+    if (typeof subSectionId === 'string' && subSectionId.includes(',')) {
+        const ids = subSectionId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+        if (ids.length > 0) {
+            const [rows] = await executeQuery(`
+                SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+                (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+                FROM machines m 
+                LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+                WHERE m.subSectionId IN (${ids.join(',')}) ORDER BY m.createdAt DESC`);
+            machines = rows;
+        }
+    } else {
+        const parsedId = parseInt(subSectionId);
+        if (isNaN(parsedId)) {
+            throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
+        }
+        const [rows] = await executeQuery(`
+            SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+            (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+            FROM machines m 
+            LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+            WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [parsedId]);
+        machines = rows;
     }
-
-    const [machines] = await executeQuery(`
-        SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
-        FROM machines m WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [subSectionId]);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Stations fetched successfully")
@@ -70,19 +87,27 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesByLine = asyncHandler(async (req, res) => {
     const { lineId } = req.params;
+    let lineIds = [];
+    if (typeof lineId === 'string' && lineId.includes(',')) {
+        lineIds = lineId.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    } else {
+        const parsed = parseInt(lineId);
+        if (!isNaN(parsed)) lineIds.push(parsed);
+    }
 
-    if (isNaN(lineId)) {
+    if (lineIds.length === 0) {
         throw new ApiError(400, "Invalid Line ID parameter. Must be numeric.");
     }
 
+    const idsString = lineIds.join(',');
     const [machines] = await executeQuery(`
-        SELECT m.*, ss.name as subSectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE m.line = ? 
+        WHERE m.line IN (${idsString}) 
         ORDER BY m.createdAt DESC
-    `, [lineId]);
+    `);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Machines fetched successfully")
@@ -94,20 +119,28 @@ export const getMachinesByLine = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesBySection = asyncHandler(async (req, res) => {
     const { sectionId } = req.params;
+    let sectionIds = [];
+    if (typeof sectionId === 'string' && sectionId.includes(',')) {
+        sectionIds = sectionId.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    } else {
+        const parsed = parseInt(sectionId);
+        if (!isNaN(parsed)) sectionIds.push(parsed);
+    }
 
-    if (isNaN(sectionId)) {
+    if (sectionIds.length === 0) {
         throw new ApiError(400, "Invalid Section ID parameter. Must be numeric.");
     }
 
+    const idsString = sectionIds.join(',');
     const [machines] = await executeQuery(`
-        SELECT m.*, l.name as lineName, ss.name as subSectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE l.sectionId = ? 
+        WHERE l.sectionId IN (${idsString}) 
         ORDER BY l.name ASC, ss.name ASC, m.name ASC
-    `, [sectionId]);
+    `);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Section machines fetched successfully")
@@ -119,20 +152,28 @@ export const getMachinesBySection = asyncHandler(async (req, res) => {
 // @access  Private
 export const getMachinesByDepartment = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
+    let departmentIds = [];
+    if (typeof departmentId === 'string' && departmentId.includes(',')) {
+        departmentIds = departmentId.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    } else {
+        const parsed = parseInt(departmentId);
+        if (!isNaN(parsed)) departmentIds.push(parsed);
+    }
 
-    if (isNaN(departmentId)) {
+    if (departmentIds.length === 0) {
         throw new ApiError(400, "Invalid Department ID parameter. Must be numeric.");
     }
 
+    const idsString = departmentIds.join(',');
     const [machines] = await executeQuery(`
-        SELECT m.*, l.name as lineName, ss.name as subSectionName,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE l.department = ? 
+        WHERE l.department IN (${idsString}) 
         ORDER BY l.name ASC, ss.name ASC, m.name ASC
-    `, [departmentId]);
+    `);
 
     res.status(200).json(
         new ApiResponse(200, machines, "Department machines fetched successfully")
@@ -144,7 +185,7 @@ export const getMachinesByDepartment = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateMachine = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, description, isActive } = req.body;
+    const { name, description, isActive, criticality } = req.body;
 
     if (isNaN(id)) {
         throw new ApiError(400, "Invalid Machine ID parameter. Must be numeric.");
@@ -162,6 +203,7 @@ export const updateMachine = asyncHandler(async (req, res) => {
     if (typeof name !== 'undefined') { updateFields.push("name = ?"); updateValues.push(name); }
 
     if (typeof description !== 'undefined') { updateFields.push("description = ?"); updateValues.push(description); }
+    if (typeof criticality !== 'undefined') { updateFields.push("criticality = ?"); updateValues.push(criticality); }
     if (typeof isActive !== 'undefined') { updateFields.push("isActive = ?"); updateValues.push(isActive); }
 
     if (updateFields.length > 0) {
@@ -171,7 +213,7 @@ export const updateMachine = asyncHandler(async (req, res) => {
 
     const [updatedMachine] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m WHERE m.id = ?`, [id]);
 
     res.status(200).json(
@@ -212,7 +254,7 @@ export const getMachineById = asyncHandler(async (req, res) => {
 
     const [machines] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma WHERE ma.machine_id = m.id) as machineCount
+        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
         FROM machines m WHERE m.id = ?`, [id]);
 
     if (machines.length === 0) {
@@ -314,7 +356,7 @@ export const assignEmployee = asyncHandler(async (req, res) => {
 
     // 5. Assign and Sync Hierarchy
     try {
-        // First, check if assignment already exists to avoid PK violation (though we have a catch below, check is cleaner)
+        // First, check if assignment already exists to avoid PK violation
         const [existingAssign] = await executeQuery(
             "SELECT id FROM machine_assignments WHERE machine_id = ? AND user_id = ?",
             [machineId, userId]
@@ -327,6 +369,10 @@ export const assignEmployee = asyncHandler(async (req, res) => {
             );
         }
 
+        // Sync Hierarchical Users List (New performance optimization)
+        const SubSection = (await import("../models/subSection.model.js")).default;
+        await SubSection.syncUserList(machine.subSectionId);
+
         // Now Sync Hierarchy back to User record so "Operator Flow" works
         // We need department name
         const [depts] = await executeQuery("SELECT name FROM departments WHERE id = ?", [line.department]);
@@ -338,7 +384,7 @@ export const assignEmployee = asyncHandler(async (req, res) => {
 
         console.log(`[MachineAssignment] SYNCING User=${userId} -> Dept=${line.department}(${departmentName}), Sect=${line.sectionId}, Line=${line.id}, SubSect=${machine.subSectionId}(${subSectionName}), Station=${machine.id}`);
 
-        const updateResult = await executeQuery(`
+        await executeQuery(`
             UPDATE users 
             SET departmentId = ?, 
                 department = ?, 
@@ -349,16 +395,15 @@ export const assignEmployee = asyncHandler(async (req, res) => {
                 sub_section = ?
             WHERE id = ?
         `, [
-            line.department, 
-            departmentName || null, 
-            line.sectionId, 
-            line.id, 
-            machine.subSectionId, 
-            machine.id, 
+            line.department,
+            departmentName || null,
+            line.sectionId,
+            line.id,
+            machine.subSectionId,
+            machine.id,
             subSectionName || null,
             userId
         ]);
-        console.log(`[MachineAssignment] Update result:`, updateResult);
 
     } catch (error) {
         if (error.number === 2627 || error.number === 2601) {
@@ -382,6 +427,13 @@ export const removeEmployee = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid Machine or User ID parameter. Must be numeric.");
     }
 
+    // Get machine info first for sync
+    const [machines] = await executeQuery("SELECT subSectionId FROM machines WHERE id = ?", [machineId]);
+    if (machines.length === 0) {
+        throw new ApiError("Machine not found", 404);
+    }
+    const subSectionId = machines[0].subSectionId;
+
     const [result, metadata] = await executeQuery(
         "DELETE FROM machine_assignments WHERE machine_id = ? AND user_id = ?",
         [machineId, userId]
@@ -391,14 +443,41 @@ export const removeEmployee = asyncHandler(async (req, res) => {
         throw new ApiError("Assignment not found", 404);
     }
 
-    // Sync back to User record - clear stationId
+    // Sync Hierarchical Users List
+    const SubSection = (await import("../models/subSection.model.js")).default;
+    await SubSection.syncUserList(subSectionId);
+
+    // Sync back to User record - if we removed the primary station, promote another one
     try {
-        await executeQuery(
-            "UPDATE users SET stationId = NULL WHERE id = ? AND stationId = ?",
-            [userId, machineId]
-        );
+        const [userCheck] = await executeQuery("SELECT stationId FROM users WHERE id = ?", [userId]);
+        if (userCheck.length > 0 && String(userCheck[0].stationId) === String(machineId)) {
+            // Find another assignment
+            const [otherAssign] = await executeQuery(`
+                SELECT TOP 1 ma.machine_id, m.line, m.subSectionId, l.sectionId, l.department, d.name as deptName, ss.name as subSectionName
+                FROM machine_assignments ma
+                JOIN machines m ON ma.machine_id = m.id
+                JOIN [lines] l ON m.line = l.id
+                JOIN [sections] s ON l.sectionId = s.id
+                JOIN departments d ON s.departmentId = d.id
+                LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+                WHERE ma.user_id = ?
+                ORDER BY ma.assigned_at DESC
+            `, [userId]);
+
+            if (otherAssign.length > 0) {
+                const oa = otherAssign[0];
+                await executeQuery(`
+                    UPDATE users 
+                    SET departmentId = ?, department = ?, sectionId = ?, lineId = ?, subSectionId = ?, stationId = ?, sub_section = ?
+                    WHERE id = ?
+                `, [oa.department, oa.deptName, oa.sectionId, oa.line, oa.subSectionId, oa.machine_id, oa.subSectionName, userId]);
+            } else {
+                // No more assignments, clear it
+                await executeQuery("UPDATE users SET stationId = NULL WHERE id = ?", [userId]);
+            }
+        }
     } catch (error) {
-        console.error("Error clearing user stationId:", error);
+        console.error("Error syncing user hierarchy on removal:", error);
     }
 
     res.status(200).json(
@@ -422,6 +501,8 @@ export const getMachineEmployees = asyncHandler(async (req, res) => {
         FROM machine_assignments ma
         JOIN users u ON ma.user_id = u.id
         WHERE ma.machine_id = ?
+        AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+        AND (u.status IS NULL OR u.status != 'LEFT')
     `;
 
     const [employees] = await executeQuery(query, [machineId]);

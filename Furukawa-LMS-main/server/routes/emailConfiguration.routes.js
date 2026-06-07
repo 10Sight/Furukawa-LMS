@@ -4,7 +4,9 @@ import {
     getConfigurationById,
     createConfiguration,
     updateConfiguration,
-    deleteConfiguration
+    deleteConfiguration,
+    testHandoverScheduler,
+    testSixteenDayScheduler
 } from "../controllers/emailConfiguration.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
@@ -17,6 +19,9 @@ router.use(verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"));
 router.route("/")
     .get(getAllConfigurations)
     .post(createConfiguration);
+
+router.post("/test-handover-scheduler", testHandoverScheduler);
+router.post("/test-sixteenday-scheduler", testSixteenDayScheduler);
 
 router.route("/:id")
     .get(getConfigurationById)

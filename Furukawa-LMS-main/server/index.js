@@ -47,6 +47,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import privilegeRoutes from "./routes/privilegeroutes.js";
 import reportRoutes from "./routes/report.routes.js";
 import sectionHeadRoutes from "./routes/sectionHead.routes.js";
+import departmentCCConfigRoutes from "./routes/departmentCCConfig.routes.js";
 import sectionRoutes from "./routes/section.routes.js";
 import subSectionRoutes from "./routes/subSection.routes.js";
 import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
@@ -96,6 +97,7 @@ import SkillMatrixDashboardConfig from "./models/skillMatrixDashboardConfig.mode
 import Requirement from "./models/requirement.model.js";
 import SubSection from "./models/subSection.model.js";
 import SectionHead from "./models/sectionHead.model.js";
+import DepartmentCCConfig from "./models/departmentCCConfig.model.js";
 import LineRequirement from "./models/lineRequirement.model.js";
 import LineRequirementHistory from "./models/lineRequirementHistory.model.js";
 import ReportClub from "./models/reportClub.model.js";
@@ -161,7 +163,7 @@ if (!fs.existsSync(uploadPath)) {
 app.use("/uploads", express.static(uploadPath, {
     setHeaders: (res, filePath) => {
         const ext = path.extname(filePath).toLowerCase();
-        
+
         // Map extensions to content types
         const typeMap = {
             '.pdf': 'application/pdf',
@@ -281,6 +283,7 @@ app.use("/api/sixteen-day-monitoring", sixteenDayMonitoringRoutes);
 app.use("/api/three-day-monitoring", threeDayMonitoringRoutes);
 app.use("/api/ten-cycle-sheets", tenCycleSheetRoutes);
 app.use("/api/section-heads", sectionHeadRoutes);
+app.use("/api/department-cc-configs", departmentCCConfigRoutes);
 app.use("/api/sections", sectionRoutes);
 app.use("/api/sub-sections", subSectionRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
@@ -443,7 +446,7 @@ const startServer = async () => {
     try {
         // Validate DB Connection
         await connectDB();
-        
+
         // Initialize Schedulers
         timelineScheduler.init();
         departmentStatusScheduler.init();
@@ -455,6 +458,7 @@ const startServer = async () => {
         await HandoverSheet.init();
         await Requirement.init();
         await SectionHead.init();
+        await DepartmentCCConfig.init();
         await HeadcountReport.init();
         await import("./models/skillMatrixConfig.model.js").then(m => m.SkillMatrixConfig.init());
         await import("./models/skillMatrixEvaluation.model.js").then(m => m.SkillMatrixEvaluation.init());

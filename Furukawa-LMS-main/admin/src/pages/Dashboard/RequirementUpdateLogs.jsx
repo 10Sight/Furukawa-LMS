@@ -169,6 +169,8 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
                 let displayField = key;
                 if (key === "salesPlan") displayField = "Sales Plan";
                 else if (key === "prodPlan") displayField = "Production Plan";
+                else if (key === "prodPlanFN01") displayField = "Production Plan FN01";
+                else if (key === "prodPlanFN02") displayField = "Production Plan FN02";
                 else if (key === "count") displayField = "Count";
                 else if (key === "lineArea" || key === "lineId" || key === "line_area" || key === "lineName") displayField = "Line / Area";
                 else if (isMentorOrSupervisor) displayField = (key === "mentor" || key === "mentorName") ? "Mentor" : "Supervisor";

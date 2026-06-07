@@ -41,7 +41,6 @@ import { cn } from "@/lib/utils";
 import axiosInstance from '@/Helper/axiosInstance';
 
 const EMPTY_ARRAY = [];
-
 const ThreeDayMonitoring = () => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';

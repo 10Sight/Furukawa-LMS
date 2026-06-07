@@ -34,6 +34,7 @@ import {
     IconUserShield,
     IconUserCheck,
     IconFileText,
+    IconArrowLeft,
 } from "@tabler/icons-react";
 
 export const ICON_REGISTRY = {
@@ -72,6 +73,7 @@ export const ICON_REGISTRY = {
     IconUserShield,
     IconUserCheck,
     IconFileText,
+    IconArrowLeft,
 };
 
 export const getIcon = (name) => {

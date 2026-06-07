@@ -245,6 +245,9 @@ const Daily5MDashboard = () => {
                     rangeStart = new Date(year, month - 1, day);
                 } else {
                     rangeStart = new Date();
+                }
+
+                if (!chartStartDate) {
                     rangeStart.setDate(rangeStart.getDate() - 29); // Default to last 30 days
                 }
 

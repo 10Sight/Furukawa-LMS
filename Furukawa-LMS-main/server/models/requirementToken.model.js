@@ -8,7 +8,10 @@ class RequirementToken {
             BEGIN
                 CREATE TABLE [dbo].[requirement_tokens] (
                     token            NVARCHAR(64)  PRIMARY KEY,
-                    requirement_id   INT           NOT NULL,
+                    requirement_id   INT           NULL,
+                    upload_batch_id  NVARCHAR(50)  NULL,
+                    section_code     NVARCHAR(100) NULL,
+                    section_name     NVARCHAR(255) NULL,
                     recipient_email  NVARCHAR(255) NOT NULL,
                     sender_email     NVARCHAR(255),
                     expires_at       DATETIME      NOT NULL,

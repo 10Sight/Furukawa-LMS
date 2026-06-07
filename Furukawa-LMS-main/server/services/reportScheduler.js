@@ -5,57 +5,33 @@ import reportService from "./report.service.js";
 const init = () => {
     console.log("Initializing Report Scheduler...");
 
-    // ================= DAILY REPORT (8:00 PM) =================
-    // Cron: 0 20 * * * (At 20:00)
-    cron.schedule('0 20 * * *', async () => {
-        console.log("Running Daily Report Job...");
+    // ================= COMBINED DAILY REPORTS (8:30 AM) =================
+    // Cron: 30 8 * * * (Every morning at 8:30 AM)
+    cron.schedule('30 8 * * *', async () => {
+        console.log("Running Scheduled Combined Daily Reports Job at 8:30 AM...");
         try {
-            // Find users who want daily reports
-            const mails = await Mail.findAll({ isDailyReport: 1 });
-            const emails = mails.map(m => m.email);
+            const mails = await Mail.findAll();
+
+            // Get all unique emails of recipients subscribed to either or both daily reports
+            const emails = Array.from(new Set(
+                mails.filter(m => m.isDailyReport || m.isManagementDailyReport).map(m => m.email)
+            ));
 
             if (emails.length === 0) {
-                console.log("Daily Report: No recipients found.");
+                console.log("Combined Daily Reports: No recipients found.");
                 return;
             }
 
-            console.log(`Sending Daily Report to ${emails.length} recipients...`);
-            await reportService.generateAndSend(emails, "Daily");
-            console.log("Daily Report Sent Successfully.");
+            console.log(`Sending Combined Daily Reports to ${emails.length} recipients...`);
+            await reportService.sendBothReports(emails);
+            console.log("Combined Daily Reports Sent Successfully.");
 
         } catch (error) {
-            console.error("Failed to run Daily Report Job:", error);
+            console.error("Failed to run Combined Daily Reports Job:", error);
         }
-    });
-
-    // ================= MONTHLY REPORT (Last Day of Month at 8:00 PM) =================
-    // Cron: 0 20 * * * (Check every day at 8 PM if it is the last day)
-    cron.schedule('0 20 * * *', async () => {
-        const today = new Date();
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-
-        // If tomorrow is the 1st, then today is the last day of the month
-        if (tomorrow.getDate() === 1) {
-            console.log("It is the last day of the month. Running Monthly Report Job...");
-            try {
-                // Find users who want monthly reports
-                const mails = await Mail.findAll({ isMonthlyReport: 1 });
-                const emails = mails.map(m => m.email);
-
-                if (emails.length === 0) {
-                    console.log("Monthly Report: No recipients found.");
-                    return;
-                }
-
-                console.log(`Sending Monthly Report to ${emails.length} recipients...`);
-                await reportService.generateAndSend(emails, "Monthly");
-                console.log("Monthly Report Sent Successfully.");
-
-            } catch (error) {
-                console.error("Failed to run Monthly Report Job:", error);
-            }
-        }
+    }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata"
     });
 };
 

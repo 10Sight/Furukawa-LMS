@@ -73,6 +73,8 @@
     "monthNumber",
     "salesPlan",
     "prodPlan",
+    "prodPlanFN01",
+    "prodPlanFN02",
     "year",
     "createdAt",
     "sales_plan",

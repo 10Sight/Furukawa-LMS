@@ -140,7 +140,7 @@ class HandoverNotificationScheduler {
 
             const pendingEntries = entries.filter(e =>
                 e.employeeName &&
-                (!e.interviewStatus || e.interviewStatus === '')
+                (!e.interviewStatus || e.interviewStatus === 'pending')
             );
 
             report.pendingEntries = pendingEntries.length;

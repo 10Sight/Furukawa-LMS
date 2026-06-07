@@ -46,7 +46,6 @@ class MultiSkillingPlan {
                 BEGIN
                     ALTER TABLE multi_skilling_plans ADD sectionId INT NULL;
                 END
-
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('multi_skilling_plans') AND name = 'year')
                 BEGIN
                     ALTER TABLE multi_skilling_plans ADD year INT NULL;
@@ -83,11 +82,9 @@ class MultiSkillingPlan {
         await executeQuery(query);
     }
 
-    // Find multi skilling plan by department
     static async findByHierarchy(departmentId, sectionId = null, year = null) {
         let query = "SELECT TOP 1 * FROM multi_skilling_plans WHERE departmentId = ?";
         let params = [departmentId];
-
         if (sectionId) {
             query += " AND sectionId = ?";
             params.push(sectionId);
@@ -101,13 +98,11 @@ class MultiSkillingPlan {
         } else {
             query += " AND year IS NULL";
         }
-
         const [rows] = await executeQuery(query, params);
         if (rows.length === 0) return null;
         return new MultiSkillingPlan(rows[0]);
     }
 
-    // Upsert multi skilling plan by department and section
     static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName }) {
         const existing = await this.findByHierarchy(departmentId, sectionId, year);
 

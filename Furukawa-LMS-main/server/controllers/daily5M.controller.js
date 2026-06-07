@@ -48,7 +48,7 @@ const DEFAULT_CONFIG = {
             { text: "Leader Name", rowSpan: 2 },
             { text: "Part No.", rowSpan: 2, width: "w-12" },
             { text: "Lot No.", rowSpan: 2, width: "w-12" },
-            { text: "Sr. No.", rowSpan: 2, width: "w-10" },
+            { text: "Sr. No.", rowSpan: 2, width: "w-12" },
             { text: "First part Approval Verification (5 Parts)", rowSpan: 2 },
             { text: "Result (After Change)", colSpan: 5 },
             { text: "QA Shift In-charge name", rowSpan: 2 },

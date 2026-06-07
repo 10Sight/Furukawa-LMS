@@ -6,7 +6,7 @@ const authorizeRoles = (...roles) => {
     // Check if user has at least one of the required roles or permissions
     const hasPermission = roles.some((role) => {
       const normalizedReqRole = role.toLowerCase();
-      
+
       // Get all permissions currently available to the user (System level + Custom Role level)
       const userRole = req.user.role;
       const defaultPermissions = (userRole !== 'CUSTOM' && DEFAULT_ROLES[userRole]) ? (DEFAULT_ROLES[userRole].permissions || []) : [];
@@ -25,7 +25,7 @@ const authorizeRoles = (...roles) => {
       if (userRole === 'CUSTOM' && req.user.customRole?.targetLayout) {
         const layout = req.user.customRole.targetLayout.toLowerCase();
         if (normalizedReqRole === layout || (normalizedReqRole === 'admin' && layout === 'superadmin')) return true;
-        
+
         // Also support checks like authorizeRoles("isTrainer") matching targetLayout "trainer" or "instructor"
         const target = normalizedReqRole.startsWith('is') ? normalizedReqRole.slice(2) : normalizedReqRole;
         if (target === layout) return true;
@@ -33,6 +33,9 @@ const authorizeRoles = (...roles) => {
         if (target === 'instructor' && layout === 'trainer') return true;
         if (target === 'student' && layout === 'employee') return true;
         if (target === 'employee' && layout === 'student') return true;
+
+        // Custom Dashboard roles get admin/superadmin equivalence for Dashboard API endpoints
+        if (layout === 'dashboard' && (target === 'admin' || target === 'superadmin')) return true;
       }
 
       // 4. Fallback: strict role string match

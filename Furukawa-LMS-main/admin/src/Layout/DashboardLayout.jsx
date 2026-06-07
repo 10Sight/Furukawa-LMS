@@ -229,6 +229,21 @@ const DashboardLayout = () => {
 
                 {/* Sidebar Tabs */}
                 <div className="px-3 flex flex-col w-full py-6 space-y-1 overflow-y-auto max-h-[calc(100vh-12rem)] scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+                    {/* Back to Menu Link (Moved to TOP) */}
+                    {(user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM') && (
+                        <div
+                            className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-600 hover:bg-gray-100 mb-2
+                            ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
+                            onClick={() => navigate("/")}
+                        >
+                            <IconArrowLeft
+                                className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"}`}
+                            />
+                            {!collapsed && (
+                                <span className="ml-3 text-sm font-medium">Back to Menu</span>
+                            )}
+                        </div>
+                    )}
                     {tabs.map((item) => {
                         // Check privilege
                         if (item.privilege && !hasPrivilege(item.privilege)) return null;
@@ -277,21 +292,6 @@ const DashboardLayout = () => {
                         );
                     })}
 
-                    {/* Back to Menu Link */}
-                    {(user?.isAdmin || user?.role === 'SUPERADMIN' || user?.role === 'CUSTOM') && (
-                        <div
-                            className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] text-gray-600 hover:bg-gray-100
-                            ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
-                            onClick={() => navigate("/")}
-                        >
-                            <IconArrowLeft
-                                className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"}`}
-                            />
-                            {!collapsed && (
-                                <span className="ml-3 text-sm font-medium">Back to Menu</span>
-                            )}
-                        </div>
-                    )}
                 </div>
 
                 {/* Logout */}

@@ -42,16 +42,25 @@ export const getSectionsByDepartment = asyncHandler(async (req, res) => {
     );
 });
 
-// @desc    Get all sections globally
+// @desc    Get all sections globally (optional: filter by department)
 // @route   GET /api/sections
 // @access  Private
 export const getAllSections = asyncHandler(async (req, res) => {
-    const [sections] = await executeQuery(
-        "SELECT id, name, uniCode, description, category, departmentId, isActive FROM [sections] ORDER BY name ASC"
-    );
+    const { departmentId } = req.query;
+    let querySQL = "SELECT id, name, uniCode, description, category, departmentId, isActive FROM [sections]";
+    let params = [];
+
+    if (departmentId && departmentId !== "ALL" && departmentId !== "undefined" && departmentId !== "null") {
+        querySQL += " WHERE departmentId = ?";
+        params.push(departmentId);
+    }
+
+    querySQL += " ORDER BY name ASC";
+
+    const [sections] = await executeQuery(querySQL, params);
 
     res.status(200).json(
-        new ApiResponse(200, sections, "All sections fetched successfully")
+        new ApiResponse(200, sections, "Sections fetched successfully")
     );
 });
 

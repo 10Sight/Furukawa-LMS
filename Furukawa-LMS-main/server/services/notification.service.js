@@ -68,7 +68,7 @@ class NotificationService {
             // 6. Send Email
             const buffer = await workbook.xlsx.writeBuffer();
             const subject = `${formName} Update - ${deptName} (${new Date().toLocaleDateString()})`;
-            
+
             // Quick Actions template removed as we move to row-wise approval within the form
 
             let htmlMessage = `
@@ -83,7 +83,7 @@ class NotificationService {
 
             if (formName === "Daily 5M Recording Sheet") {
                 const date = formData?.date || new Date().toLocaleDateString();
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const reviewUrl = `${adminUrl}/cms/daily-5m-recording?recordId=${formData.recordId}`;
 
                 htmlMessage = `
@@ -104,150 +104,6 @@ class NotificationService {
                         <p>Regards,<br/><strong>FME Digital Portal</strong></p>
                     </div>
                 `;
-            } else if (formName === "On Job Training Evaluation Sheet" || formName === "On Job Training Record Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
-                const ojtId = formData.ojtId || "";
-                const reviewUrl = `${adminUrl}/admin/on-job-training?ojtId=${ojtId}`;
-
-                htmlMessage = `
-                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                        <p>Dear All,</p>
-                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
-                        <p><strong>Sub:</strong> (${formName} Update - ${deptName})</p>
-                        <p>The <strong>${formName}</strong> for department <strong>${deptName}</strong> has been successfully filled and submitted.</p>
-                        <p>Please find the attached Excel report for your reference.</p>
-                        
-                        <div style="margin: 25px 0;">
-                            <a href="${reviewUrl}" 
-                               style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-                                View & Review OJT Sheet
-                            </a>
-                        </div>
-
-                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
-                    </div>
-                `;
-            } else if (formName === "16-Day Monitoring Sheet" || formName === "3-Day Monitoring Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
-                const is16Day = formName === "16-Day Monitoring Sheet";
-                const resolvedStudentId = formData.studentId || studentId; // Fallback to arg
-                const reviewUrl = is16Day 
-                    ? `${adminUrl}/admin/16-day-monitoring/${resolvedStudentId}`
-                    : `${adminUrl}/admin/3-day-monitoring/${resolvedStudentId}`;
-
-                htmlMessage = `
-                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                        <p>Dear All,</p>
-                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
-                        <p><strong>Sub:</strong> (${formName} Update - ${deptName})</p>
-                        <p>The <strong>${formName}</strong> for <strong>${formData.employeeName || 'Operator'}</strong> in department <strong>${deptName}</strong> has been updated.</p>
-                        <p>Please find the attached report for your reference.</p>
-                        
-                        <div style="margin: 25px 0;">
-                            <a href="${reviewUrl}" 
-                               style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-                                Review & Approve Monitoring
-                            </a>
-                        </div>
-
-                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
-                    </div>
-                `;
-            } else if (formName === "Handover Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
-                const reviewUrl = `${adminUrl}/admin/handover-sheet?dept=${departmentId}&section=${sectionId || formData.sectionId || ''}`;
-                
-                // Get Section Name if possible
-                let sectionName = "All Sections";
-                if (sectionId || formData.sectionId) {
-                    const [secRows] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [sectionId || formData.sectionId]);
-                    if (secRows.length > 0) sectionName = secRows[0].name;
-                }
-
-                htmlMessage = emailTemplates.generateHandoverSheetEmail({
-                    departmentName: deptName,
-                    sectionName: sectionName,
-                    date: formData.date,
-                    entries: formData.entries || [],
-                    portalUrl: reviewUrl
-                });
-            } else if (formName === "Abnormal Condition Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
-                const deptId = departmentId || "";
-                const sectionIdVal = sectionId || formData.sectionId || "";
-                const lineIdVal = formData.lineId || "";
-                const subSectionIdVal = formData.subSectionId || "";
-                const dateVal = formData.date ? formData.date.split("T")[0] : "";
-
-                const reviewUrl = `${adminUrl}/cms/abnormal-condition?deptId=${deptId}&sectionId=${sectionIdVal}&lineId=${lineIdVal}&subSectionId=${subSectionIdVal}&date=${dateVal}&isSheetOpen=true`;
-
-                htmlMessage = `
-                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px;">
-                        <h2 style="color: #ef4444; border-bottom: 2px solid #ef4444; padding-bottom: 8px; margin-top: 0;">Abnormal Condition Countermeasure Sheet</h2>
-                        <p>Dear Reviewer,</p>
-                        <p>An Abnormal Condition countermeasure sheet has been submitted for review.</p>
-                        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-                            <tr>
-                                <td style="padding: 8px 0; font-weight: bold; color: #64748b; width: 120px;">Department:</td>
-                                <td style="padding: 8px 0; color: #1e293b;">${deptName}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Date:</td>
-                                <td style="padding: 8px 0; color: #1e293b;">${dateVal}</td>
-                            </tr>
-                        </table>
-                        <p>Please review and sign off on the process countermeasure entries using the link below:</p>
-                        
-                        <div style="margin: 30px 0; text-align: center;">
-                            <a href="${reviewUrl}" 
-                               style="background-color: #ef4444; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.2); display: inline-block;">
-                                Review and approve
-                            </a>
-                        </div>
-                        
-                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-                        <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">This is an automated notification from the FME Digital Portal.</p>
-                    </div>
-                `;
-            } else if (formName === "Skill Matrix Sheet") {
-                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
-                const month = formData.month || new Date().toISOString().slice(0, 7);
-                const sectionId = formData.section || "";
-                const lineId = formData.line || "";
-                const subSectionId = formData.subSection || "";
-                const stationId = formData.station || "";
-                
-                const reviewUrl = `${adminUrl}/admin/skill-matrix?dept=${departmentId}&section=${sectionId}&line=${lineId}&subSection=${subSectionId}&station=${stationId}&month=${month}`;
-
-                // Resolve hierarchy names
-                let sectionName = "-";
-                if (sectionId) {
-                    const [secRows] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [sectionId]);
-                    if (secRows.length > 0) sectionName = secRows[0].name;
-                }
-                let lineName = "-";
-                if (lineId) {
-                    const [lineRows] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [lineId]);
-                    if (lineRows.length > 0) lineName = lineRows[0].name;
-                }
-                let subSectionName = "-";
-                if (subSectionId) {
-                    const [subSecRows] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [subSectionId]);
-                    if (subSecRows.length > 0) subSectionName = subSecRows[0].name;
-                }
-
-                htmlMessage = emailTemplates.generateSkillMatrixEmail({
-                    departmentName: deptName,
-                    sectionName: sectionName,
-                    lineName: lineName,
-                    subSectionName: subSectionName,
-                    month: month,
-                    entries: formData.entries || [],
-                    portalUrl: reviewUrl,
-                    config: formData.footerInfo?.config || {}
-                });
             }
 
 
@@ -353,6 +209,48 @@ class NotificationService {
             logger.error(`[NotificationService] Error fetching students: ${error.message}`);
         }
 
+        // 2. Fetch Machines and Lines for selected lines to build columns
+        const machineColumns = [];
+        const linesMap = {};
+        for (let i = 0; i < selectedLines.length; i++) {
+            const lineId = selectedLines[i];
+            if (!lineId) {
+                machineColumns.push({
+                    key: `slot-${i}-empty`,
+                    machineName: "-",
+                    lineName: "-",
+                    slotIdx: i
+                });
+                continue;
+            }
+
+            if (!linesMap[lineId]) {
+                const line = await Line.findById(lineId);
+                linesMap[lineId] = line ? line.name : "Unknown Line";
+            }
+
+            const machines = await Machine.find({ line: lineId, isActive: 1 });
+            if (machines.length === 0) {
+                machineColumns.push({
+                    key: `slot-${i}-no-machine`,
+                    machineName: "-",
+                    lineName: linesMap[lineId],
+                    slotIdx: i
+                });
+            } else {
+                machines.forEach(m => {
+                    machineColumns.push({
+                        key: `slot-${i}-machine-${m.id}`,
+                        machineName: m.name,
+                        lineName: linesMap[lineId],
+                        slotIdx: i
+                    });
+                });
+            }
+        }
+
+        const totalProcessCols = machineColumns.length || 1;
+
         // --- Header Section ---
         worksheet.mergeCells(1, 1, 1, 18);
         const companyCell = worksheet.getCell(1, 1);
@@ -383,14 +281,9 @@ class NotificationService {
         ];
         const row4 = worksheet.addRow(row4Values);
 
-        // Row 5: Static Headers placeholders + Sub-section names
-        const row5Values = [
-            '', '', '', '', '', '',
-            'Skill Level', 'Updation Date', 'Status',
-            'Skill Level', 'Updation Date', 'Status',
-            'Skill Level', 'Updation Date', 'Status',
-            'Skill Level', 'Updation Date', 'Status'
-        ];
+        // Row 5: Static Headers + Machine names
+        const row5Values = ['', '', '', ''];
+        machineColumns.forEach(col => row5Values.push(col.machineName));
         const row5 = worksheet.addRow(row5Values);
 
         // Merging static headers across Row 4 & 5
@@ -640,7 +533,7 @@ class NotificationService {
         worksheet.mergeCells(signRow.number, 2, signRow.number, 5);
         worksheet.mergeCells(signRow.number, 6, signRow.number, 6);
         worksheet.mergeCells(signRow.number, 7, signRow.number, 10);
-        
+
         for (let c = 1; c <= 10; c++) {
             const cell = signRow.getCell(c);
             cell.alignment = { vertical: 'middle', horizontal: c === 2 ? 'left' : 'center' };
@@ -954,11 +847,11 @@ class NotificationService {
         let currentRow = 10;
         config.forEach((cat, catIdx) => {
             const catId = cat.id || `cat${catIdx + 1}`;
-            
+
             cat.rows.forEach((row, rowIdx) => {
                 const isCycleDetailed = row.type === 'cycle_detailed';
                 const hasCT = !!row.hasCT;
-                
+
                 // Detailed cycle rows create two Excel rows if hasCT is true
                 const subRows = hasCT ? [
                     { id: 'ct', label: row.label, mark: 'C/T', bg: 'FFF8F8F8' },
@@ -967,7 +860,7 @@ class NotificationService {
 
                 subRows.forEach((sub, sIdx) => {
                     const excelRow = worksheet.getRow(currentRow);
-                    
+
                     // Merges for Category Labels
                     if (rowIdx === 0 && sIdx === 0) {
                         const rowCount = cat.rows.reduce((acc, r) => acc + (r.hasCT ? 2 : 1), 0);
@@ -1178,7 +1071,7 @@ class NotificationService {
         let currentRow = 10;
         config.forEach((cat, catIdx) => {
             const totalRowsInCat = cat.rows.reduce((acc, row) => acc + (row.type === 'cycle_detailed' ? 4 : 1), 0);
-            
+
             // Render rows for category
             cat.rows.forEach((row, rowIdx) => {
                 const isCycleDetailed = row.type === 'cycle_detailed';
@@ -1191,7 +1084,7 @@ class NotificationService {
 
                 subRows.forEach((sub, sIdx) => {
                     const excelRow = worksheet.getRow(currentRow);
-                    
+
                     // Merges for Category Labels
                     if (rowIdx === 0 && sIdx === 0) {
                         worksheet.mergeCells(currentRow, 1, currentRow + totalRowsInCat - 1, 1);
@@ -1530,8 +1423,8 @@ class NotificationService {
         const fieldOrder = [];
         // Prioritize these fields in this specific order
         const orderedFields = [
-            "Date", "Shift", "Line", "StationMC", "Process Name", "Problem", 
-            "OperatorId", "OperatorName", "CSL", "ReqSkill", 
+            "Date", "Shift", "Line", "StationMC", "Process Name", "Problem",
+            "OperatorId", "OperatorName", "CSL", "ReqSkill",
             "DeputedPerson", "EmpCode", "ActSkill", "DeputedOnPlan", "OJT",
             "InspectorName", "PartNo", "LotNo", "CircuitNo", "Result_Status",
             "QA_Incharge", "Process_Owner", "Approved_By", "Remarks"
@@ -1581,7 +1474,7 @@ class NotificationService {
             .sort((a, b) => a - b)
             .forEach((idx, rowIndex) => {
                 const rowValues = [
-                    rowIndex + 1, 
+                    rowIndex + 1,
                     ...headers.slice(1).map((f) => {
                         const val = rowMap[idx][f];
                         if (val === undefined || val === null) return "";
@@ -1590,7 +1483,7 @@ class NotificationService {
                 ];
                 const row = worksheet.addRow(rowValues);
                 row.eachCell((cell) => this._applyBorderStyle(cell));
-                
+
                 // Color coding for status/judgment if present
                 const statusIdx = headers.indexOf("Result_Status");
                 if (statusIdx !== -1) {

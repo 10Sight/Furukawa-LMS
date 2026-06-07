@@ -20,29 +20,26 @@ import {
     Trash2,
     Plus,
     Loader2,
-    Mail,
+    Building2,
     Pencil,
     RefreshCw,
     X,
+    UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 
-/**
- * AddMailRequirementChanges.jsx
- * Light-themed modal — matches the project's white/slate design system.
- * Form has exactly two fields: Section (dropdown) + Section Unicode (auto-filled).
- */
-export default function MailManagementModal({ isOpen, onClose }) {
+export default function DepartmentCCModal({ isOpen, onClose }) {
     const [loading, setLoading] = useState(false);
-    const [sections, setSections] = useState([]);
-    const [heads, setHeads] = useState([]);
+    const [departments, setDepartments] = useState([]);
+    const [ccConfigs, setCcConfigs] = useState([]);
 
-    // Form State — only section + email needed
-    const [selectedSection, setSelectedSection] = useState("");
-    const [sectionUnicode, setSectionUnicode] = useState("");
-    const [email, setEmail] = useState("");
-    const [name, setName] = useState("");
+    // Form State
+    const [selectedDeptId, setSelectedDeptId] = useState("");
+    const [deptUnicode, setDeptUnicode] = useState("");
+    const [deptHeadName, setDeptHeadName] = useState("");
+    const [deptHeadEmail, setDeptHeadEmail] = useState("");
+    const [isActive, setIsActive] = useState(true);
     const [processing, setProcessing] = useState(false);
 
     // Edit State
@@ -53,71 +50,103 @@ export default function MailManagementModal({ isOpen, onClose }) {
 
     useEffect(() => {
         if (isOpen) {
-            fetchSections();
-            fetchHeads();
+            fetchDepartments();
+            fetchCcConfigs();
             resetForm();
             setSearch("");
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
-    // Auto-fill unicode when section changes
-    useEffect(() => {
-        const sec = sections.find((s) => s.id.toString() === selectedSection);
-        setSectionUnicode(sec?.uniCode || "");
-    }, [selectedSection, sections]);
-
-    const fetchSections = async () => {
+    // Fetch active departments from server
+    const fetchDepartments = async () => {
         try {
-            const res = await axiosInstance.get("/api/sections");
-            if (res.data?.success) setSections(res.data.data || []);
+            const res = await axiosInstance.get("/api/departments?limit=100");
+            if (res.data?.success) {
+                setDepartments(res.data.data.departments || []);
+            }
         } catch (e) {
             console.error(e);
-            toast.error("Failed to load sections");
+            toast.error("Failed to load departments");
         }
     };
 
-    const fetchHeads = async () => {
+    // Fetch CC configs from server
+    const fetchCcConfigs = async () => {
         setLoading(true);
         try {
-            const res = await axiosInstance.get("/api/section-heads");
-            if (res.data?.success) setHeads(res.data.data || []);
+            const res = await axiosInstance.get("/api/department-cc-configs");
+            if (res.data?.success) {
+                setCcConfigs(res.data.data || []);
+            }
         } catch (e) {
             console.error(e);
-            toast.error("Failed to load recipients");
+            toast.error("Failed to load active CC configurations");
         } finally {
             setLoading(false);
         }
     };
 
-    const canSubmit = Boolean(selectedSection && email);
+    // Filter to display departments existing in the database (non-deleted)
+    const activeDepts = useMemo(() => {
+        return departments.filter(
+            (d) => !d.isDeleted || d.isDeleted === 0 || d.isDeleted === false
+        );
+    }, [departments]);
+
+    // Auto-populate when selected department changes
+    useEffect(() => {
+        if (!selectedDeptId) {
+            setDeptUnicode("");
+            setDeptHeadName("");
+            setDeptHeadEmail("");
+            return;
+        }
+
+        const dept = departments.find((d) => d.id.toString() === selectedDeptId);
+        if (dept) {
+            setDeptUnicode(dept.uniCode || "");
+            setDeptHeadName(dept.instructor?.fullName || "");
+            setDeptHeadEmail(dept.instructor?.email || "");
+        } else {
+            setDeptUnicode("");
+            setDeptHeadName("");
+            setDeptHeadEmail("");
+        }
+    }, [selectedDeptId, departments]);
+
+    const canSubmit = Boolean(selectedDeptId && deptHeadEmail);
 
     const handleSubmit = async () => {
         if (!canSubmit) return toast.error("Please fill all required fields");
 
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        const emails = email.split(",").map((e) => e.trim());
-        if (emails.some((e) => !emailRegex.test(e)))
-            return toast.error("Invalid email format");
-
-        const sec = sections.find((s) => s.id.toString() === selectedSection);
-
         setProcessing(true);
         try {
             const payload = {
-                sectionId: selectedSection,
-                sectionUnicode: sec?.uniCode || "",
-                email: emails.join(", "),
-                name,
+                deptId: parseInt(selectedDeptId),
+                departmentHeadName: deptHeadName || null,
+                departmentHeadEmail: deptHeadEmail,
+                isActive: isActive ? 1 : 0,
             };
+
             if (editingId) {
-                await axiosInstance.put(`/api/section-heads/${editingId}`, payload);
+                await axiosInstance.put(`/api/department-cc-configs/${editingId}`, payload);
+                toast.success("CC recipient updated successfully");
             } else {
-                await axiosInstance.post("/api/section-heads", payload);
+                // Check if this department CC configuration already exists
+                const alreadyExists = ccConfigs.some(
+                    (c) => c.DeptID.toString() === selectedDeptId
+                );
+                if (alreadyExists) {
+                    toast.error("A configuration already exists for this department.");
+                    setProcessing(false);
+                    return;
+                }
+                await axiosInstance.post("/api/department-cc-configs", payload);
+                toast.success("CC recipient added successfully");
             }
-            toast.success(editingId ? "Updated successfully" : "Recipient added");
             resetForm();
-            fetchHeads();
+            fetchCcConfigs();
         } catch (e) {
             toast.error(e?.response?.data?.message || "Operation failed");
         } finally {
@@ -126,42 +155,49 @@ export default function MailManagementModal({ isOpen, onClose }) {
     };
 
     const handleDelete = async (id) => {
-        if (!id || !confirm("Delete this recipient?")) return;
+        if (!id || !confirm("Delete this CC configuration?")) return;
         setProcessing(true);
         try {
-            await axiosInstance.delete(`/api/section-heads/${id}`);
-            toast.success("Deleted");
+            await axiosInstance.delete(`/api/department-cc-configs/${id}`);
+            toast.success("Configuration deleted");
             if (editingId === id) resetForm();
-            fetchHeads();
+            fetchCcConfigs();
         } catch {
-            toast.error("Failed to delete");
+            toast.error("Failed to delete CC configuration");
         } finally {
             setProcessing(false);
         }
     };
 
-    const handleEdit = (head) => {
-        setEditingId(head.id);
-        setSelectedSection(head.sectionId?.toString?.() || "");
-        setEmail(head.email || "");
-        setName(head.name || "");
+    const handleEdit = (config) => {
+        setEditingId(config.ConfigID);
+        setSelectedDeptId(config.DeptID?.toString() || "");
+        setDeptUnicode(config.departmentUnicode || "");
+        setDeptHeadName(config.DepartmentHeadName || "");
+        setDeptHeadEmail(config.DepartmentHeadEmail || "");
+        setIsActive(!!config.IsActive);
     };
 
     const resetForm = () => {
         setEditingId(null);
-        setSelectedSection("");
-        setSectionUnicode("");
-        setEmail("");
-        setName("");
+        setSelectedDeptId("");
+        setDeptUnicode("");
+        setDeptHeadName("");
+        setDeptHeadEmail("");
+        setIsActive(true);
     };
 
-    const filteredHeads = useMemo(() => {
+    const filteredConfigs = useMemo(() => {
         const q = search.trim().toLowerCase();
-        if (!q) return heads;
-        return heads.filter((h) =>
-            [h.sectionName, h.email, h.name].filter(Boolean).join(" ").toLowerCase().includes(q)
+        if (!q) return ccConfigs;
+        return ccConfigs.filter((c) =>
+            [c.departmentName, c.departmentUnicode, c.DepartmentHeadName, c.DepartmentHeadEmail]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase()
+                .includes(q)
         );
-    }, [heads, search]);
+    }, [ccConfigs, search]);
 
     return (
         <Dialog
@@ -172,24 +208,23 @@ export default function MailManagementModal({ isOpen, onClose }) {
             }}
         >
             <DialogContent className="w-[96vw] max-w-[1200px] p-0 bg-white text-slate-900 border border-slate-200 shadow-xl overflow-hidden rounded-2xl">
-
                 {/* Header */}
                 <DialogHeader className="px-6 py-5 border-b border-slate-100">
                     <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-                            <Mail className="w-5 h-5" />
+                            <UserCheck className="w-5 h-5" />
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-3">
                                 <DialogTitle className="text-lg font-bold text-slate-900">
-                                    Email Notifications Manager
+                                    CC Department Head Configuration
                                 </DialogTitle>
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
                                     className="border-slate-200 text-slate-600 h-8"
-                                    onClick={fetchHeads}
+                                    onClick={fetchCcConfigs}
                                     disabled={loading || processing}
                                 >
                                     <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
@@ -197,7 +232,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                 </Button>
                             </div>
                             <DialogDescription className="text-slate-500 text-sm mt-0.5">
-                                Add section heads who will receive requirement update notifications.
+                                Select active departments to automatically CC their Head on manpower requirement approvals.
                             </DialogDescription>
                         </div>
                     </div>
@@ -206,19 +241,19 @@ export default function MailManagementModal({ isOpen, onClose }) {
                 {/* Body */}
                 <div className="px-6 py-6">
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
                         {/* ── LEFT: Form ── */}
                         <div className="lg:col-span-5">
                             <div className="rounded-xl border border-slate-200 overflow-hidden">
                                 {/* Form header bar */}
                                 <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        {editingId
-                                            ? <Pencil className="w-4 h-4 text-orange-500" />
-                                            : <Plus className="w-4 h-4 text-blue-600" />
-                                        }
+                                        {editingId ? (
+                                            <Pencil className="w-4 h-4 text-orange-500" />
+                                        ) : (
+                                            <Plus className="w-4 h-4 text-blue-600" />
+                                        )}
                                         <span className="text-sm font-semibold text-slate-800">
-                                            {editingId ? "Edit Recipient" : "Add Recipient"}
+                                            {editingId ? "Edit CC Details" : "Add CC Department Head"}
                                         </span>
                                     </div>
                                     {editingId && (
@@ -233,68 +268,83 @@ export default function MailManagementModal({ isOpen, onClose }) {
 
                                 {/* Fields */}
                                 <div className="p-5 space-y-4 bg-white">
-
-                                    {/* Field 1: Section */}
+                                    {/* Field 1: Department selection */}
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                            Section <span className="text-red-500">*</span>
+                                            Department <span className="text-red-500">*</span>
                                         </Label>
                                         <Select
-                                            value={selectedSection}
-                                            onValueChange={setSelectedSection}
+                                            value={selectedDeptId}
+                                            onValueChange={setSelectedDeptId}
+                                            disabled={!!editingId}
                                         >
                                             <SelectTrigger className="h-10 border-slate-200 bg-white focus:ring-blue-500">
-                                                <SelectValue placeholder="Select a section…" />
+                                                <SelectValue placeholder="Select active department…" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {sections.map((s) => (
-                                                    <SelectItem key={s.id} value={s.id.toString()}>
-                                                        {s.name}
+                                                {activeDepts.map((d) => (
+                                                    <SelectItem key={d.id} value={d.id.toString()}>
+                                                        {d.name}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>
                                         </Select>
+                                        {activeDepts.length === 0 && (
+                                            <p className="text-[10px] text-amber-600">No active departments found.</p>
+                                        )}
                                     </div>
 
-                                    {/* Field 2: Section Unicode — auto-filled */}
+                                    {/* Field 2: Department Unicode — auto-filled */}
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                                            Section Unicode
-                                            <span className="text-[10px] normal-case font-normal text-slate-400">(auto-filled)</span>
+                                            Department Unicode
+                                            <span className="text-[10px] normal-case font-normal text-slate-400">
+                                                (auto-populated)
+                                            </span>
                                         </Label>
                                         <Input
                                             readOnly
-                                            value={sectionUnicode}
-                                            placeholder="Select a section above…"
+                                            value={deptUnicode}
+                                            placeholder="Unicode will appear here…"
                                             className="bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed h-10"
                                         />
                                     </div>
 
-                                    {/* Field 3: Name (optional) */}
+                                    {/* Field 3: Department Head Name — auto-filled */}
                                     <div className="space-y-1.5">
-                                        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                            Recipient Name <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                                        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                            Department Head Name
+                                            <span className="text-[10px] normal-case font-normal text-slate-400">
+                                                (auto-populated)
+                                            </span>
                                         </Label>
                                         <Input
-                                            placeholder="e.g. John Doe"
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            className="border-slate-200 h-10"
+                                            value={deptHeadName}
+                                            onChange={(e) => setDeptHeadName(e.target.value)}
+                                            placeholder="Head Name will appear here…"
+                                            className="border-slate-200 h-10 focus-visible:ring-blue-500"
                                         />
                                     </div>
 
-                                    {/* Field 4: Email */}
+                                    {/* Field 4: Department Head Email — auto-filled */}
                                     <div className="space-y-1.5">
-                                        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                            Email Address <span className="text-red-500">*</span>
+                                        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                            Department Head Email
+                                            <span className="text-[10px] normal-case font-normal text-slate-400">
+                                                (auto-populated)
+                                            </span>
                                         </Label>
                                         <Input
-                                            placeholder="user@example.com"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            className="border-slate-200 h-10"
+                                            value={deptHeadEmail}
+                                            onChange={(e) => setDeptHeadEmail(e.target.value)}
+                                            placeholder="Head Email will appear here…"
+                                            className="border-slate-200 h-10 focus-visible:ring-blue-500"
                                         />
-                                        <p className="text-[11px] text-slate-400">Separate multiple emails with commas.</p>
+                                        {selectedDeptId && !deptHeadEmail && (
+                                            <p className="text-[11px] text-red-500">
+                                                Warning: Selected department has no instructor (head email).
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
 
@@ -329,35 +379,41 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                         size="sm"
                                         onClick={handleSubmit}
                                         disabled={processing || !canSubmit}
-                                        className={`ml-auto ${editingId
-                                            ? "bg-orange-500 hover:bg-orange-600 text-white"
-                                            : "bg-blue-600 hover:bg-blue-700 text-white"
+                                        className={`ml-auto ${
+                                            editingId
+                                                ? "bg-orange-500 hover:bg-orange-600 text-white"
+                                                : "bg-blue-600 hover:bg-blue-700 text-white"
                                         }`}
                                     >
-                                        {processing
-                                            ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
-                                            : editingId
-                                                ? <><Pencil className="w-3.5 h-3.5 mr-1.5" /> Update</>
-                                                : <><Plus className="w-3.5 h-3.5 mr-1.5" /> Add</>
-                                        }
+                                        {processing ? (
+                                            <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                                        ) : editingId ? (
+                                            <>
+                                                <Pencil className="w-3.5 h-3.5 mr-1.5" /> Update
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Plus className="w-3.5 h-3.5 mr-1.5" /> Add
+                                            </>
+                                        )}
                                     </Button>
                                 </div>
                             </div>
                         </div>
 
-                        {/* ── RIGHT: Recipients list ── */}
+                        {/* ── RIGHT: Configurations list ── */}
                         <div className="lg:col-span-7">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-semibold text-slate-800">Active Recipients</h3>
+                                    <h3 className="text-sm font-semibold text-slate-800">Active CC Recipients</h3>
                                     <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                                        {filteredHeads.length}
+                                        {filteredConfigs.length}
                                     </span>
                                 </div>
                                 <Input
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="Search…"
+                                    placeholder="Search configs…"
                                     className="h-8 w-[200px] border-slate-200 text-sm"
                                 />
                             </div>
@@ -367,8 +423,8 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase border-b border-slate-100 sticky top-0">
                                             <tr>
-                                                <th className="px-4 py-3 w-[35%]">Section</th>
-                                                <th className="px-4 py-3 w-[47%]">Recipient</th>
+                                                <th className="px-4 py-3 w-[40%]">Department</th>
+                                                <th className="px-4 py-3 w-[42%]">Department Head</th>
                                                 <th className="px-4 py-3 w-[18%] text-right">Actions</th>
                                             </tr>
                                         </thead>
@@ -382,40 +438,54 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ) : filteredHeads.length === 0 ? (
+                                            ) : filteredConfigs.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={3} className="py-16 text-center">
                                                         <div className="flex flex-col items-center gap-2 text-slate-400">
-                                                            <Mail className="w-8 h-8 opacity-30" />
+                                                            <Building2 className="w-8 h-8 opacity-30" />
                                                             <p className="text-sm font-medium text-slate-500">
-                                                                {search ? "No matching recipients" : "No recipients yet"}
+                                                                {search ? "No matching configurations" : "No CC department heads set"}
                                                             </p>
-                                                            <p className="text-xs max-w-[220px] text-slate-400">
-                                                                {search ? "Try a different term." : "Add a recipient using the form."}
+                                                            <p className="text-xs max-w-[240px] text-slate-400">
+                                                                {search
+                                                                    ? "Try a different search term."
+                                                                    : "Add CC configurations using the form."}
                                                             </p>
                                                         </div>
                                                     </td>
                                                 </tr>
                                             ) : (
-                                                filteredHeads.map((head) => (
+                                                filteredConfigs.map((config) => (
                                                     <tr
-                                                        key={head.id}
-                                                        className={`group transition-colors ${editingId === head.id
-                                                            ? "bg-orange-50"
-                                                            : "hover:bg-slate-50"
+                                                        key={config.ConfigID}
+                                                        className={`group transition-colors ${
+                                                            editingId === config.ConfigID
+                                                                ? "bg-orange-50"
+                                                                : "hover:bg-slate-50"
                                                         }`}
                                                     >
                                                         <td className="px-4 py-3 align-top">
-                                                            <div className="font-medium text-slate-800 text-sm truncate">{head.sectionName || "—"}</div>
-                                                            {head.subSectionName && (
-                                                                <div className="text-[11px] text-slate-400 mt-0.5">{head.subSectionName}</div>
+                                                            <div className="font-medium text-slate-800 text-sm truncate">
+                                                                {config.departmentName || "—"}
+                                                            </div>
+                                                            {config.departmentUnicode && (
+                                                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                                                    Unicode: {config.departmentUnicode}
+                                                                </div>
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-3 align-top">
-                                                            <div className="text-slate-800 font-medium text-sm">{head.name || <span className="text-slate-400 italic text-xs">No name</span>}</div>
+                                                            <div className="text-slate-800 font-medium text-sm">
+                                                                {config.DepartmentHeadName || (
+                                                                    <span className="text-slate-400 italic text-xs">
+                                                                        No name
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <div className="flex items-center gap-1 mt-0.5 text-slate-500 text-xs font-mono">
-                                                                <Mail className="w-3 h-3 opacity-40 shrink-0" />
-                                                                <span className="break-all">{head.email}</span>
+                                                                <span className="break-all">
+                                                                    {config.DepartmentHeadEmail}
+                                                                </span>
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-3 align-top text-right">
@@ -424,7 +494,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     className="h-7 w-7 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded"
-                                                                    onClick={() => handleEdit(head)}
+                                                                    onClick={() => handleEdit(config)}
                                                                     disabled={processing}
                                                                 >
                                                                     <Pencil className="w-3.5 h-3.5" />
@@ -433,7 +503,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                                                    onClick={() => handleDelete(head.id)}
+                                                                    onClick={() => handleDelete(config.ConfigID)}
                                                                     disabled={processing}
                                                                 >
                                                                     <Trash2 className="w-3.5 h-3.5" />
@@ -447,11 +517,12 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                     </table>
                                 </div>
                                 <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-center text-xs text-slate-400">
-                                    {filteredHeads.length > 0 ? `${filteredHeads.length} configured` : " "}
+                                    {filteredConfigs.length > 0
+                                        ? `${filteredConfigs.length} configured`
+                                        : " "}
                                 </div>
                             </div>
                         </div>
-
                     </div>
                 </div>
             </DialogContent>

@@ -14,12 +14,12 @@ const router = Router();
 router.use(verifyJWT);
 
 // Get requirements with filters
-router.get("/", authorizeRoles("isAdmin", "SUPERADMIN"), getLineRequirements);
+router.get("/", authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"), getLineRequirements);
 
 // Update/Create requirement
-router.post("/update", authorizeRoles("isAdmin", "SUPERADMIN"), checkPrivilege("setrequirement"), updateLineRequirement);
+router.post("/update", authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"), checkPrivilege("setrequirement"), updateLineRequirement);
 
 // Get history for a line
-router.get("/history/:lineId", authorizeRoles("isAdmin", "SUPERADMIN"), getHistoryByLine);
+router.get("/history/:lineId", authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"), getHistoryByLine);
 
 export default router;

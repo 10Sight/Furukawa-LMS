@@ -727,16 +727,16 @@ export const triggerManualReport = asyncHandler(async (req, res) => {
     try {
         const emailList = mails.map(m => m.email);
         
-        // Import generateAndSend dynamically to avoid circular dependencies if any
-        const { generateAndSend } = await import('../services/report.service.js');
+        // Import sendBothReports dynamically to avoid circular dependencies if any
+        const { sendBothReports } = await import('../services/report.service.js');
         
-        // Send the complete Excel report
-        await generateAndSend(emailList, "(Manual Trigger)");
+        // Send both Excel reports in a single mail
+        await sendBothReports(emailList);
 
         res.status(200).json({
             success: true,
             data: { recipientCount: mails.length, sent: mails.length, failed: 0 },
-            message: `Report Excel sent to ${mails.length} recipients successfully.`
+            message: `Combined Excel reports sent to ${mails.length} recipients successfully.`
         });
     } catch (err) {
         console.error("[Report Controller] Failed to trigger manual report:", err);

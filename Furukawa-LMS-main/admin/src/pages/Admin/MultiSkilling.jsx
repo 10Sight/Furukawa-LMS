@@ -101,7 +101,6 @@ const MultiSkilling = () => {
             toast.error(error?.response?.data?.message || "Failed to create plan.");
         }
     };
-
     const departments = deptsData?.data?.departments || [];
     const sections = sectionsData?.data || [];
     const students = studentsData?.data?.users || [];
@@ -228,7 +227,6 @@ const MultiSkilling = () => {
                                         </SelectContent>
                                     </Select>
                                 </div>
-
                                 <div className="space-y-2">
                                     <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Year</Label>
                                     <Select

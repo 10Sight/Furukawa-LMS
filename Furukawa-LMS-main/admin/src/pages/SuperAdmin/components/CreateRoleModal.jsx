@@ -1,278 +1,524 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  IconX,
-  IconShield,
-  IconCheck,
-  IconLoader,
-  IconAlertTriangle
-} from '@tabler/icons-react';
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Typography,
+  Box,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  FormControlLabel,
+  Checkbox,
+  Chip,
+  Alert,
+  CircularProgress,
+  Paper,
+  Divider,
+  IconButton,
+  FormGroup,
+  FormControl,
+  FormLabel,
+  Grid,
+  Card,
+  CardContent,
+  Avatar
+} from '@mui/material';
+import {
+  ExpandMore,
+  Close,
+  Shield,
+  Plus,
+  Palette,
+  Check,
+  Info,
+  AlertCircle,
+  Users,
+  Settings,
+  Lock,
+  Key
+} from 'lucide-react';
+import { useTheme } from '@mui/material/styles';
 import { toast } from 'react-toastify';
 import { useCreateRoleMutation } from '@/Redux/AllApi/SuperAdminApi';
 
+const ColorPicker = ({ selectedColor, onColorChange }) => {
+  const colors = [
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Yellow
+    '#EF4444', // Red
+    '#8B5CF6', // Purple
+    '#EC4899', // Pink
+    '#06B6D4', // Cyan
+    '#84CC16', // Lime
+    '#F97316', // Orange
+    '#6B7280'  // Gray
+  ];
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <FormLabel component="legend" sx={{ mb: 1, fontSize: '0.875rem', fontWeight: 600 }}>
+        Role Color
+      </FormLabel>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {colors.map((color) => (
+          <IconButton
+            key={color}
+            onClick={() => onColorChange(color)}
+            sx={{
+              width: 32,
+              height: 32,
+              bgcolor: color,
+              border: selectedColor === color ? `3px solid ${color}` : '2px solid transparent',
+              boxShadow: selectedColor === color ? '0 0 0 2px white' : 'none',
+              '&:hover': {
+                transform: 'scale(1.1)'
+              }
+            }}
+          >
+            {selectedColor === color && <Check size={16} color="white" />}
+          </IconButton>
+        ))}
+      </Box>
+    </Box>
+  );
+};
+
+const PermissionCategory = ({ category, permissions, selectedPermissions, onPermissionToggle, roleColor }) => {
+  const theme = useTheme();
+  const categoryPermissions = permissions.map(p => p.id);
+  const selectedInCategory = selectedPermissions.filter(p => categoryPermissions.includes(p));
+  const allSelected = selectedInCategory.length === categoryPermissions.length;
+  const someSelected = selectedInCategory.length > 0 && selectedInCategory.length < categoryPermissions.length;
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      // Deselect all in category
+      const newSelected = selectedPermissions.filter(p => !categoryPermissions.includes(p));
+      onPermissionToggle(newSelected);
+    } else {
+      // Select all in category
+      const newSelected = [...new Set([...selectedPermissions, ...categoryPermissions])];
+      onPermissionToggle(newSelected);
+    }
+  };
+
+  return (
+    <Accordion>
+      <AccordionSummary
+        expandIcon={<ExpandMore />}
+        sx={{
+          '&.Mui-expanded': {
+            borderBottom: `1px solid ${theme.palette.divider}`
+          }
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', pr: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mr: 2 }}>
+              {category}
+            </Typography>
+            <Chip
+              size="small"
+              label={`${selectedInCategory.length}/${categoryPermissions.length}`}
+              color={allSelected ? 'primary' : someSelected ? 'warning' : 'default'}
+              variant={someSelected || allSelected ? 'filled' : 'outlined'}
+            />
+          </Box>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={handleSelectAll}
+                onClick={(e) => e.stopPropagation()}
+                sx={{
+                  color: roleColor,
+                  '&.Mui-checked': {
+                    color: roleColor,
+                  }
+                }}
+              />
+            }
+            label="Select All"
+            onClick={(e) => e.stopPropagation()}
+            sx={{ ml: 'auto', mr: 0 }}
+          />
+        </Box>
+      </AccordionSummary>
+      <AccordionDetails>
+        <FormGroup>
+          <Grid container spacing={1}>
+            {permissions.map((permission) => (
+              <Grid item xs={12} sm={6} key={permission.id}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={selectedPermissions.includes(permission.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          onPermissionToggle([...selectedPermissions, permission.id]);
+                        } else {
+                          onPermissionToggle(selectedPermissions.filter(p => p !== permission.id));
+                        }
+                      }}
+                      sx={{
+                        color: roleColor,
+                        '&.Mui-checked': {
+                          color: roleColor,
+                        }
+                      }}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {permission.name}
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary">
+                        {permission.description}
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Grid>
+            ))}
+          </Grid>
+        </FormGroup>
+      </AccordionDetails>
+    </Accordion>
+  );
+};
+
 const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
+  const theme = useTheme();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    permissions: []
+    permissions: [],
+    color: '#3B82F6',
+    targetLayout: 'custom'
   });
-  const [expandedCategories, setExpandedCategories] = useState({});
+  const [errors, setErrors] = useState({});
 
   const [createRole, { isLoading }] = useCreateRoleMutation();
 
-  const handleInputChange = (field, value) => {
+  const selectedPermissionsCount = formData.permissions.length;
+  const totalPermissionsCount = useMemo(() => {
+    return Object.values(permissions).reduce((acc, categoryPerms) => acc + categoryPerms.length, 0);
+  }, [permissions]);
+
+  const handleInputChange = (field) => (event) => {
     setFormData(prev => ({
       ...prev,
-      [field]: value
+      [field]: event.target.value
     }));
-  };
-
-  const toggleCategory = (category) => {
-    setExpandedCategories(prev => ({
-      ...prev,
-      [category]: !prev[category]
-    }));
-  };
-
-  const handlePermissionToggle = (permission) => {
-    setFormData(prev => ({
-      ...prev,
-      permissions: prev.permissions.includes(permission)
-        ? prev.permissions.filter(p => p !== permission)
-        : [...prev.permissions, permission]
-    }));
-  };
-
-  const handleCategoryToggle = (category, categoryPermissions) => {
-    const categoryIds = categoryPermissions.map(p => typeof p === 'object' ? p.id : p);
-    const allSelected = categoryIds.every(p => formData.permissions.includes(p));
-    
-    if (allSelected) {
-      // Remove all permissions from this category
-      setFormData(prev => ({
-        ...prev,
-        permissions: prev.permissions.filter(p => !categoryIds.includes(p))
-      }));
-    } else {
-      // Add all permissions from this category
-      setFormData(prev => ({
-        ...prev,
-        permissions: [...new Set([...prev.permissions, ...categoryIds])]
-      }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: null }));
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
+  const handlePermissionToggle = (newPermissions) => {
+    setFormData(prev => ({
+      ...prev,
+      permissions: newPermissions
+    }));
+  };
+
+  const handleColorChange = (color) => {
+    setFormData(prev => ({
+      ...prev,
+      color
+    }));
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+
     if (!formData.name.trim()) {
-      toast.error('Role name is required');
-      return;
+      newErrors.name = 'Role name is required';
+    } else if (formData.name.length < 2) {
+      newErrors.name = 'Role name must be at least 2 characters';
+    }
+
+    if (!formData.description.trim()) {
+      newErrors.description = 'Role description is required';
     }
 
     if (formData.permissions.length === 0) {
-      toast.error('Please select at least one permission');
+      newErrors.permissions = 'At least one permission must be selected';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateForm()) {
       return;
     }
 
     try {
-      await createRole({
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        permissions: formData.permissions
-      }).unwrap();
-
-      toast.success('Role created successfully');
-      setFormData({ name: '', description: '', permissions: [] });
-      setExpandedCategories({});
+      await createRole(formData).unwrap();
+      toast.success('Role created successfully!');
       onSuccess();
+      handleClose();
     } catch (error) {
       toast.error(error?.data?.message || 'Failed to create role');
     }
   };
 
-  const resetForm = () => {
-    setFormData({ name: '', description: '', permissions: [] });
-    setExpandedCategories({});
+  const handleClose = () => {
+    setFormData({
+      name: '',
+      description: '',
+      permissions: [],
+      color: '#3B82F6',
+      targetLayout: 'custom'
+    });
+    setErrors({});
+    onClose();
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <IconShield size={24} className="text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Create Custom Role</h2>
-              <p className="text-sm text-gray-600">Define a new role with specific permissions</p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              resetForm();
-              onClose();
-            }}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <IconX size={20} />
-          </button>
-        </div>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="lg"
+      fullWidth
+      PaperProps={{
+        sx: { borderRadius: 3, maxHeight: '90vh' }
+      }}
+    >
+      <DialogTitle sx={{ pb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Avatar
+              sx={{
+                bgcolor: formData.color + '15',
+                color: formData.color,
+                mr: 2,
+                border: `2px solid ${formData.color}20`
+              }}
+            >
+              <Plus size={20} />
+            </Avatar>
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                Create Custom Role
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                Define a new role with specific permissions
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton onClick={handleClose}>
+            <Close />
+          </IconButton>
+        </Box>
+      </DialogTitle>
 
-        <form onSubmit={handleSubmit} className="flex flex-col h-full">
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Basic Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium text-gray-900">Basic Information</h3>
+      <DialogContent sx={{ pb: 0 }}>
+        <Grid container spacing={3}>
+          {/* Basic Information */}
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 3, height: 'fit-content', borderRadius: 2 }}>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                <Settings size={20} style={{ marginRight: 8 }} />
+                Basic Information
+              </Typography>
               
-              <div>
-                <label htmlFor="roleName" className="block text-sm font-medium text-gray-700 mb-2">
-                  Role Name *
-                </label>
-                <input
-                  id="roleName"
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter role name"
-                  required
-                />
-              </div>
+              <TextField
+                fullWidth
+                label="Role Name"
+                value={formData.name}
+                onChange={handleInputChange('name')}
+                error={!!errors.name}
+                helperText={errors.name}
+                sx={{ mb: 2 }}
+                placeholder="e.g., Content Manager"
+              />
 
-              <div>
-                <label htmlFor="roleDescription" className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                </label>
-                <textarea
-                  id="roleDescription"
-                  value={formData.description}
-                  onChange={(e) => handleInputChange('description', e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Describe this role and its purpose"
-                />
-              </div>
-            </div>
+              <TextField
+                fullWidth
+                label="Description"
+                value={formData.description}
+                onChange={handleInputChange('description')}
+                error={!!errors.description}
+                helperText={errors.description}
+                multiline
+                rows={3}
+                sx={{ mb: 2 }}
+                placeholder="Describe the role and its responsibilities..."
+              />
 
-            {/* Permissions */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">Permissions</h3>
-                <span className="text-sm text-gray-600">
-                  {formData.permissions.length} selected
-                </span>
-              </div>
+              <ColorPicker
+                selectedColor={formData.color}
+                onColorChange={handleColorChange}
+              />
 
-              {Object.entries(permissions).map(([category, categoryPermissions]) => {
-                const isExpanded = expandedCategories[category];
-                const selectedCount = categoryPermissions.filter(p => formData.permissions.includes(p)).length;
-                const allSelected = selectedCount === categoryPermissions.length;
+              <Box sx={{ mt: 3 }}>
+                <FormLabel sx={{ mb: 1, fontSize: '0.875rem', fontWeight: 600, display: 'block' }}>
+                  Target Layout
+                </FormLabel>
+                <select
+                  value={formData.targetLayout}
+                  onChange={handleInputChange('targetLayout')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #E2E8F0',
+                    fontSize: '0.875rem',
+                    backgroundColor: '#F8FAFC',
+                    outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = formData.color}
+                  onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
+                >
+                  <option value="custom">Custom Portal (Default)</option>
+                  <option value="admin">Admin Portal</option>
+                  <option value="trainer">Trainer Portal</option>
+                  <option value="student">Student Portal</option>
+                  <option value="cms">CMS Portal</option>
+                  <option value="dashboard">MPS Portal</option>
+                </select>
+                <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                  Determines the default dashboard and sidebar structure for this role.
+                </Typography>
+              </Box>
 
-                return (
-                  <div key={category} className="border border-gray-200 rounded-lg overflow-hidden">
-                    {/* Category Header */}
-                    <div className="bg-gray-50 p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <label className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={allSelected}
-                              onChange={() => handleCategoryToggle(category, categoryPermissions)}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <span className="font-medium text-gray-900 capitalize">
-                              {category.replace(/([A-Z])/g, ' $1').trim()}
-                            </span>
-                          </label>
-                          <span className="text-sm text-gray-500">
-                            ({selectedCount}/{categoryPermissions.length})
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleCategory(category)}
-                          className="text-gray-400 hover:text-gray-600"
-                        >
-                          <IconCheck 
-                            size={16} 
-                            className={`transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
-                          />
-                        </button>
-                      </div>
-                    </div>
+              {/* Role Preview */}
+              <Box sx={{ mt: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                  Preview
+                </Typography>
+                <Card sx={{ border: `2px solid ${formData.color}20` }}>
+                  <CardContent sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                      <Avatar
+                        sx={{
+                          bgcolor: formData.color + '15',
+                          color: formData.color,
+                          width: 32,
+                          height: 32,
+                          mr: 1.5
+                        }}
+                      >
+                        <Shield size={16} />
+                      </Avatar>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600, color: formData.color }}>
+                        {formData.name || 'Role Name'}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
+                      {formData.description || 'Role description will appear here...'}
+                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                      <Typography variant="caption">
+                        {selectedPermissionsCount} permissions
+                      </Typography>
+                      <Chip label="Custom" size="small" variant="outlined" color="secondary" />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Box>
+            </Paper>
+          </Grid>
 
-                    {/* Category Permissions */}
-                    {isExpanded && (
-                      <div className="p-4 space-y-2">
-                        {categoryPermissions.map((permission) => {
-                          const permissionId = typeof permission === 'object' ? permission.id : permission;
-                          const permissionName = typeof permission === 'object' ? (permission.name || permissionId) : permission;
-                          
-                          return (
-                            <label key={permissionId} className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                checked={formData.permissions.includes(permissionId)}
-                                onChange={() => handlePermissionToggle(permissionId)}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                              />
-                              <span className="text-sm text-gray-700">{permissionName}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* Permissions */}
+          <Grid item xs={12} md={8}>
+            <Paper sx={{ p: 3, borderRadius: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                  <Key size={20} style={{ marginRight: 8 }} />
+                  Permissions
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Chip
+                    label={`${selectedPermissionsCount} / ${totalPermissionsCount} selected`}
+                    color={selectedPermissionsCount > 0 ? 'primary' : 'default'}
+                    variant="outlined"
+                  />
+                  <Button
+                    size="small"
+                    onClick={() => handlePermissionToggle([])}
+                    disabled={selectedPermissionsCount === 0}
+                  >
+                    Clear All
+                  </Button>
+                </Box>
+              </Box>
 
-          {/* Footer */}
-          <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50">
-            <div className="flex items-center text-sm text-gray-600">
-              <IconAlertTriangle size={16} className="mr-1" />
-              Custom roles can be modified or deleted later
-            </div>
-            <div className="flex space-x-3">
-              <button
-                type="button"
-                onClick={() => {
-                  resetForm();
-                  onClose();
-                }}
-                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                disabled={isLoading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading || !formData.name.trim() || formData.permissions.length === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
-              >
-                {isLoading ? (
-                  <>
-                    <IconLoader className="animate-spin" size={16} />
-                    <span>Creating...</span>
-                  </>
-                ) : (
-                  <>
-                    <IconShield size={16} />
-                    <span>Create Role</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
+              {errors.permissions && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {errors.permissions}
+                </Alert>
+              )}
+
+              <Alert severity="info" sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'start' }}>
+                  <Info size={16} style={{ marginRight: 8, marginTop: 2 }} />
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                      Permission Guidelines
+                    </Typography>
+                    <Typography variant="body2">
+                      Select permissions carefully. Users with this role will be able to perform all selected actions.
+                      System roles cannot be modified and have predefined permissions.
+                    </Typography>
+                  </Box>
+                </Box>
+              </Alert>
+
+              <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
+                {Object.entries(permissions).map(([category, categoryPermissions]) => (
+                  <PermissionCategory
+                    key={category}
+                    category={category}
+                    permissions={categoryPermissions}
+                    selectedPermissions={formData.permissions}
+                    onPermissionToggle={handlePermissionToggle}
+                    roleColor={formData.color}
+                  />
+                ))}
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
+        <Button
+          onClick={handleClose}
+          disabled={isLoading}
+          sx={{ textTransform: 'none' }}
+        >
+          Cancel
+        </Button>
+        <Button
+          variant="contained"
+          onClick={handleSubmit}
+          disabled={isLoading}
+          sx={{
+            bgcolor: formData.color,
+            '&:hover': {
+              bgcolor: formData.color + 'DD'
+            },
+            textTransform: 'none',
+            fontWeight: 600
+          }}
+          startIcon={isLoading ? <CircularProgress size={16} /> : <Plus size={16} />}
+        >
+          {isLoading ? 'Creating...' : 'Create Role'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 };
 

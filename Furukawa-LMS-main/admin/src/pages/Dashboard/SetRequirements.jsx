@@ -40,7 +40,6 @@ import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { usePrivileges } from "@/hooks/usePrivileges";
 import MailManagementModal from "./AddMailRequirementChanges";
-import DepartmentCCModal from "./DepartmentCCModal";
 import * as XLSX from "xlsx";
 
 const MONTHS = [
@@ -237,7 +236,6 @@ export default function SetRequirements() {
   const [uploading, setUploading] = useState(false);
 
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
-  const [isCCModalOpen, setIsCCModalOpen] = useState(false);
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState(null);
@@ -845,14 +843,6 @@ export default function SetRequirements() {
                 Emails
               </Button>
 
-              <Button
-                onClick={() => setIsCCModalOpen(true)}
-                variant="outline"
-                className="bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm"
-                title="Configure CC Department Heads"
-              >
-                CC Department Head
-              </Button>
 
               <Button
                 onClick={() => setIsUploadOpen(true)}
@@ -1416,10 +1406,7 @@ export default function SetRequirements() {
         isOpen={isMailModalOpen}
         onClose={() => setIsMailModalOpen(false)}
       />
-      <DepartmentCCModal
-        isOpen={isCCModalOpen}
-        onClose={() => setIsCCModalOpen(false)}
-      />
+
     </div>
   );
 }

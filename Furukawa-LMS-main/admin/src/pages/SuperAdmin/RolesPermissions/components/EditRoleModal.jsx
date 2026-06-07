@@ -442,6 +442,7 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
                     <option value="trainer">Trainer Portal</option>
                     <option value="student">Student Portal</option>
                     <option value="cms">CMS Portal</option>
+                    <option value="dashboard">MPS Portal</option>
                   </select>
                   <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
                     Determines the sidebar structure for this role.

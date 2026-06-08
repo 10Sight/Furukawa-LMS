@@ -46,8 +46,20 @@ const LearningComparisonDetail = () => {
     }, [id]);
 
     const copyToClipboard = async (path) => {
+        const text = `${baseUrl}${path}`;
         try {
-            await navigator.clipboard.writeText(`${baseUrl}${path}`);
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                if (!document.execCommand('copy')) throw new Error();
+                document.body.removeChild(textarea);
+            }
             toast.success("Link copied to clipboard!");
         } catch {
             toast.error("Failed to copy link — clipboard not available");

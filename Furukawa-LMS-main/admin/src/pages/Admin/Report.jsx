@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import ReportClubbing from "../Dashboard/ReportClubbing";
 import {
     ChevronLeft,
     ChevronRight,
@@ -273,6 +275,17 @@ const Report = () => {
     }, [activeClubs]);
 
     return (
+        <Tabs defaultValue="report" className="w-full space-y-6">
+            <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
+                <TabsTrigger value="report" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                    Report
+                </TabsTrigger>
+                <TabsTrigger value="report-clubbing" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                    Report Clubbing
+                </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="report">
         <div className="p-4 space-y-4">
             <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
                 <h1 className="text-xl font-bold text-red-600 uppercase">
@@ -430,6 +443,12 @@ const Report = () => {
                 </div>
             )}
         </div>
+            </TabsContent>
+
+            <TabsContent value="report-clubbing">
+                <ReportClubbing />
+            </TabsContent>
+        </Tabs>
     );
 };
 

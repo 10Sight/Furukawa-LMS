@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import DPRManage from "./DPRManage";
 import { format, startOfMonth } from "date-fns";
 import {
     Save as IconSave,
@@ -1110,6 +1112,17 @@ const DailyProductionReport = () => {
     if (!isReportOpen) {
         const reports = reportListData?.data || [];
         return (
+            <Tabs defaultValue="dpr-report" className="w-full space-y-6">
+                <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
+                    <TabsTrigger value="dpr-report" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        DPR Report
+                    </TabsTrigger>
+                    <TabsTrigger value="dpr-setup" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        DPR Setup
+                    </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="dpr-report">
             <div className="space-y-6">
                 <div className="flex items-center justify-between">
                     <div>
@@ -1431,6 +1444,12 @@ const DailyProductionReport = () => {
                     </DialogContent>
                 </Dialog>
             </div>
+                </TabsContent>
+
+                <TabsContent value="dpr-setup">
+                    <DPRManage />
+                </TabsContent>
+            </Tabs>
         );
     }
 

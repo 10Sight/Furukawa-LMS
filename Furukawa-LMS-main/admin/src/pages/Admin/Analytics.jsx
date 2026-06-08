@@ -25,7 +25,7 @@ import {
   IconClock
 } from "@tabler/icons-react";
 
-const Analytics = ({ pageName = "Analytics" }) => {
+const Analytics = ({ pageName = "Recent Activity" }) => {
   const navigate = useNavigate();
   const [auditGroupBy, setAuditGroupBy] = useState('month');
   const [triggerExportAuditStats, { isFetching: isExportingAudit }] = useLazyExportAuditStatsQuery();
@@ -77,7 +77,7 @@ const Analytics = ({ pageName = "Analytics" }) => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{pageName}</h1>
-          <p className="text-gray-600">System analytics and activity monitoring</p>
+          <p className="text-gray-600">Recent system activity and monitoring</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <select className="border rounded px-2 py-1 text-sm" value={auditGroupBy} onChange={e => setAuditGroupBy(e.target.value)}>

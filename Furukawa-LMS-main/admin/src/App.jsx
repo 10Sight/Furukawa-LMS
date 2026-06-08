@@ -260,7 +260,7 @@ const App = () => {
             <Route path="edit-test-paper/:quizId" element={<EditTestPaper />} />
             <Route path="take-test/:quizId" element={<TakeQuiz />} />
             <Route path="attempt-requests" element={<AdminAttemptRequests />} />
-            <Route path="analytics" element={<Analytics pageName="Analytics" />} />
+            <Route path="analytics" element={<Analytics pageName="Recent Activity" />} />
             <Route path="exam-history" element={<ExamHistory />} />
             <Route path="audit-logs" element={<AuditLogs />} />
             <Route path="student-levels" element={<StudentLevelManagement />} />

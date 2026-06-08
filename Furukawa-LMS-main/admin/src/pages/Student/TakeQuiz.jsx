@@ -628,9 +628,7 @@ const TakeQuiz = () => {
           </div>
 
           {/* QUARTER SUB-HEADER */}
-          <div className="border-b-[3px] border-black flex justify-end px-6 py-2 bg-white">
-            <span className="font-bold text-xs tracking-widest uppercase">{getCurrentQuarter()}</span>
-          </div>
+
 
           {/* METADATA SECTION */}
           <div className="grid grid-cols-12 border-b-[3px] border-black text-xs uppercase font-bold">

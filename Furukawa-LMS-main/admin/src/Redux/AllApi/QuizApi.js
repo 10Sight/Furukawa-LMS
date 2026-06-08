@@ -7,7 +7,7 @@ export const quizApi = createApi({
     tagTypes: ['Quiz', 'Course', 'Module', 'Lesson'], // Add Module and Lesson to tagTypes
     endpoints: (builder) => ({
         createQuiz: builder.mutation({
-            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling }) => ({
+            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle }) => ({
                 url: "/api/quizzes",
                 method: "POST",
                 data: {
@@ -31,7 +31,9 @@ export const quizApi = createApi({
                     ...(isHandover !== undefined ? { isHandover } : {}),
                     ...(isTheoretical !== undefined ? { isTheoretical } : {}),
                     ...(conductedBy !== undefined ? { conductedBy } : {}),
-                    ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {})
+                    ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {}),
+                    ...(paperTitle !== undefined ? { paperTitle } : {}),
+                    ...(paperSubTitle !== undefined ? { paperSubTitle } : {})
                 }
             }),
             invalidatesTags: ['Quiz', 'Course', 'Module', 'Lesson'], // Invalidate all relevant caches
@@ -72,7 +74,7 @@ export const quizApi = createApi({
         }),
 
         updateQuiz: builder.mutation({
-            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling }) => ({
+            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle }) => ({
                 url: `/api/quizzes/${id}`,
                 method: "PUT",
                 data: {
@@ -93,7 +95,9 @@ export const quizApi = createApi({
                     ...(isHandover !== undefined ? { isHandover } : {}),
                     ...(isTheoretical !== undefined ? { isTheoretical } : {}),
                     ...(conductedBy !== undefined ? { conductedBy } : {}),
-                    ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {})
+                    ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {}),
+                    ...(paperTitle !== undefined ? { paperTitle } : {}),
+                    ...(paperSubTitle !== undefined ? { paperSubTitle } : {})
                 }
             }),
             invalidatesTags: (result, error, arg) => [

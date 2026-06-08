@@ -40,7 +40,6 @@ import {
     Tooltip,
     ResponsiveContainer,
     Legend,
-    Cell,
     LabelList,
 } from 'recharts';
 import Highcharts from 'highcharts';
@@ -208,7 +207,7 @@ const Daily5MDashboard = () => {
             setLoading(true);
             const deptId = selectedDepartment === 'all' ? 'all' : selectedDepartment;
 
-            let query = `/api/daily-5m/records/${deptId}?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}&t=${Date.now()}`;
+            let query = `/api/daily-5m/records/${deptId}?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}&groupBySession=true&t=${Date.now()}`;
             if (selectedSection && selectedSection !== 'all') query += `&sectionId=${selectedSection}`;
             if (startDate) query += `&startDate=${startDate}`;
             if (endDate) query += `&endDate=${endDate}`;
@@ -952,7 +951,8 @@ const Daily5MDashboard = () => {
                                     <TableHead>Section</TableHead>
                                     <TableHead>Line</TableHead>
                                     <TableHead>Submitted By</TableHead>
-                                    <TableHead>Created At</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead>Last Saved</TableHead>
                                     <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -973,8 +973,17 @@ const Daily5MDashboard = () => {
                                         </TableCell>
                                         <TableCell className="font-medium text-slate-900">{record.line || "-"}</TableCell>
                                         <TableCell>{record.submittedByName || "User"}</TableCell>
-                                        <TableCell className="text-[10px] text-gray-400">
-                                            {format(new Date(record.createdAt), "PP p")}
+                                        <TableCell>
+                                            {record.status === 'APPROVED' ? (
+                                                <span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-xs font-semibold">Approved</span>
+                                            ) : record.status === 'REJECTED' || record.status === 'DECLINED' ? (
+                                                <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-xs font-semibold">Rejected</span>
+                                            ) : (
+                                                <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-xs font-semibold">Pending</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-[10px] text-gray-400 whitespace-nowrap">
+                                            {format(new Date(record.updatedAt || record.createdAt), "PP p")}
                                         </TableCell>
                                         <TableCell className="text-right space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <Button variant="ghost" size="sm" onClick={() => handleView(record)}>

@@ -67,8 +67,7 @@ const SkillUpgradationWrapper = () => {
     // Fetch students/operators specifically for the selected section (no pagination/temporary limits)
     const { data: studentsData, isFetching: isFetchingStudents } = useGetMultiSkillingStudentsQuery({
         departmentId: dept,
-        sectionId: section,
-        sixteenDayApprovedOnly: "true"
+        sectionId: section
     }, { 
         skip: !dept || !section,
         refetchOnMountOrArgChange: true 

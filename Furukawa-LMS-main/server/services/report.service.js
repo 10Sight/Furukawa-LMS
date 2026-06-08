@@ -23,8 +23,8 @@ const transporter = nodemailer.createTransport({
 // CONSTANTS / HELPERS
 // =================================================
 const MONTH_NAMES = [
-    'January','February','March','April','May','June',
-    'July','August','September','October','November','December'
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
 const getPct = (num, den) => {
@@ -35,7 +35,7 @@ const getPct = (num, den) => {
 const getNum = (obj, key) => parseFloat(Number(obj?.[key] || 0).toFixed(2));
 
 const safeMerge = (ws, range) => {
-    try { ws.mergeCells(range); } catch (_) {}
+    try { ws.mergeCells(range); } catch (_) { }
 };
 
 const applyBorder = (cell, thick = false) => {
@@ -44,16 +44,16 @@ const applyBorder = (cell, thick = false) => {
 };
 
 const styleCell = (cell, {
-    bold   = false,
-    color  = "FF000000",
-    bg     = null,
+    bold = false,
+    color = "FF000000",
+    bg = null,
     hAlign = "center",
     vAlign = "middle",
-    wrap   = false,
-    thick  = false,
-    sz     = 12
+    wrap = false,
+    thick = false,
+    sz = 12
 } = {}) => {
-    cell.font      = { bold, color: { argb: color }, size: sz, name: "Calibri" };
+    cell.font = { bold, color: { argb: color }, size: sz, name: "Calibri" };
     cell.alignment = { horizontal: hAlign, vertical: vAlign, wrapText: wrap };
     applyBorder(cell, thick);
     if (bg) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
@@ -220,10 +220,10 @@ async function fetchShiftAttendanceBySection(dbPool, todayStr) {
                 SELECT
                     s.id AS sectionId,
                     COUNT(al.payCode) AS totalPresent,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('G','GENERAL','GEN') THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'A' THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'B' THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('C','D') THEN 1 ELSE 0 END) AS shiftC,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                     CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
                 FROM attendance_logs al
@@ -253,10 +253,10 @@ async function fetchShiftAttendanceBySection(dbPool, todayStr) {
                     SELECT
                         s.id AS sectionId,
                         COUNT(al.cardNo) AS totalPresent,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('G','GENERAL','GEN') THEN 1 ELSE 0 END) AS shiftGeneral,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'A' THEN 1 ELSE 0 END) AS shiftA,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'B' THEN 1 ELSE 0 END) AS shiftB,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('C','D') THEN 1 ELSE 0 END) AS shiftC,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
                         CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                         CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
                     FROM attendance_logs al
@@ -297,10 +297,10 @@ async function fetchShiftAttendanceByLine(dbPool, todayStr) {
                 SELECT
                     l.id AS lineId,
                     COUNT(al.payCode) AS totalPresent,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('G','GENERAL','GEN') THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'A' THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'B' THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('C','D') THEN 1 ELSE 0 END) AS shiftC,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                     CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
                 FROM attendance_logs al
@@ -330,10 +330,10 @@ async function fetchShiftAttendanceByLine(dbPool, todayStr) {
                     SELECT
                         l.id AS lineId,
                         COUNT(al.cardNo) AS totalPresent,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('G','GENERAL','GEN') THEN 1 ELSE 0 END) AS shiftGeneral,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'A' THEN 1 ELSE 0 END) AS shiftA,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) = 'B' THEN 1 ELSE 0 END) AS shiftB,
-                        SUM(CASE WHEN UPPER(ISNULL(al.shift,'')) IN ('C','D') THEN 1 ELSE 0 END) AS shiftC,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
+                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
                         CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                         CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
                     FROM attendance_logs al
@@ -365,29 +365,29 @@ async function fetchShiftAttendanceByLine(dbPool, todayStr) {
 // GET REPORT DATA
 // =================================================
 export const getReportData = async () => {
-    const dbPool    = await poolPromise;
-    const today     = new Date();
-    const todayStr  = today.toISOString().slice(0, 10);
+    const dbPool = await poolPromise;
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
     const monthName = MONTH_NAMES[today.getMonth()];
-    const yearVal   = today.getFullYear();
+    const yearVal = today.getFullYear();
 
     const deptSections = await fetchDeptSections(dbPool);
-    const reqMap       = await fetchRequirements(dbPool, monthName, yearVal);
-    const actualMap    = await fetchActualMPBySection(dbPool);
-    const availMap     = await fetchAvailableMPBySection(dbPool, todayStr);
+    const reqMap = await fetchRequirements(dbPool, monthName, yearVal);
+    const actualMap = await fetchActualMPBySection(dbPool);
+    const availMap = await fetchAvailableMPBySection(dbPool, todayStr);
 
     const result = deptSections.map(row => ({
-        deptId:          row.deptId,
+        deptId: row.deptId,
         department_name: row.department_name,
         department_code: row.department_code,
-        sectionId:       row.sectionId,
-        section_name:    row.section_name,
-        section_code:    row.section_code,
-        category:        row.category,
-        totalRequired:   row.section_code ? (reqMap.get((row.section_code || "").toUpperCase().trim()) || 0) : 0,
-        totalPresent:    row.sectionId ? getNum(availMap.get(row.sectionId), "totalPresent") : 0,
-        totalAssigned:   row.sectionId ? (actualMap.get(row.sectionId) || 0) : 0,
-        totalOtHrs:      row.sectionId ? getNum(availMap.get(row.sectionId), "totalOtHrs") : 0,
+        sectionId: row.sectionId,
+        section_name: row.section_name,
+        section_code: row.section_code,
+        category: row.category,
+        totalRequired: row.section_code ? (reqMap.get((row.section_code || "").toUpperCase().trim()) || 0) : 0,
+        totalPresent: row.sectionId ? getNum(availMap.get(row.sectionId), "totalPresent") : 0,
+        totalAssigned: row.sectionId ? (actualMap.get(row.sectionId) || 0) : 0,
+        totalOtHrs: row.sectionId ? getNum(availMap.get(row.sectionId), "totalOtHrs") : 0,
     }));
 
     console.log(`[getReportData] merged rows: ${result.length}`);
@@ -416,14 +416,14 @@ async function _buildManpowerBuffer() {
         };
 
         const C = {
-            HEADER:  "FF1F3B63",
-            DEPT:    "FF2F75B5",
+            HEADER: "FF1F3B63",
+            DEPT: "FF2F75B5",
             SECTION: "FFDCE6F1",
-            SUBTOT:  "FFF2F2F2",
-            GRAND:   "FFFFC000",
-            WHITE:   "FFFFFFFF",
-            RED:     "FFFF0000",
-            BLACK:   "FF000000",
+            SUBTOT: "FFF2F2F2",
+            GRAND: "FFFFC000",
+            WHITE: "FFFFFFFF",
+            RED: "FFFF0000",
+            BLACK: "FF000000",
         };
 
         ws.columns = [
@@ -452,7 +452,7 @@ async function _buildManpowerBuffer() {
             });
         };
 
-        const now         = new Date();
+        const now = new Date();
         const currentDate = now.toLocaleDateString("en-GB").replace(/\//g, "-");
         const monthHeader = now.toLocaleString("default", { month: "short", year: "numeric" });
 
@@ -501,7 +501,7 @@ async function _buildManpowerBuffer() {
 
         hdr.height = 28;
 
-        const deptMap   = new Map();
+        const deptMap = new Map();
         const deptOrder = [];
 
         data.forEach(r => {
@@ -527,7 +527,7 @@ async function _buildManpowerBuffer() {
         let gOT = 0;
 
         for (const key of deptOrder) {
-            const dept     = deptMap.get(key);
+            const dept = deptMap.get(key);
             const sections = dept.sections;
             const startRow = rowIdx;
 
@@ -558,12 +558,12 @@ async function _buildManpowerBuffer() {
                 let iReq = 0, iAvail = 0, iAct = 0, iGap = 0, iOT = 0;
 
                 sections.forEach(item => {
-                    const isInd  = (item.category || "").toLowerCase() === "indirect";
-                    const req    = Number(item.totalRequired) || 0;
-                    const avail  = Number(item.totalPresent) || 0;
+                    const isInd = (item.category || "").toLowerCase() === "indirect";
+                    const req = Number(item.totalRequired) || 0;
+                    const avail = Number(item.totalPresent) || 0;
                     const actual = Number(item.totalAssigned) || 0;
-                    const ot     = parseFloat((Number(item.totalOtHrs) || 0).toFixed(2));
-                    const gap    = avail - (actual - avail);
+                    const ot = parseFloat((Number(item.totalOtHrs) || 0).toFixed(2));
+                    const gap = avail - (actual - avail);
 
                     if (isInd) {
                         iReq += req;
@@ -597,13 +597,13 @@ async function _buildManpowerBuffer() {
                         });
                     });
 
-                    row.getCell(3).value  = item.section_name;
-                    row.getCell(4).value  = item.section_code;
-                    row.getCell(5).value  = isInd ? "Indirect" : "Direct";
-                    row.getCell(6).value  = req;
-                    row.getCell(7).value  = avail;
-                    row.getCell(8).value  = actual;
-                    row.getCell(9).value  = gap;
+                    row.getCell(3).value = item.section_name;
+                    row.getCell(4).value = item.section_code;
+                    row.getCell(5).value = isInd ? "Indirect" : "Direct";
+                    row.getCell(6).value = req;
+                    row.getCell(7).value = avail;
+                    row.getCell(8).value = actual;
+                    row.getCell(9).value = gap;
                     row.getCell(10).value = ot;
 
                     for (let c = 3; c <= 10; c++) {
@@ -634,13 +634,13 @@ async function _buildManpowerBuffer() {
                         });
                     });
 
-                    row.getCell(3).value  = "";
-                    row.getCell(4).value  = "";
-                    row.getCell(5).value  = label;
-                    row.getCell(6).value  = req !== 0 ? req : "";
-                    row.getCell(7).value  = avail !== 0 ? avail : "";
-                    row.getCell(8).value  = actual !== 0 ? actual : "";
-                    row.getCell(9).value  = gap !== 0 ? gap : "";
+                    row.getCell(3).value = "";
+                    row.getCell(4).value = "";
+                    row.getCell(5).value = label;
+                    row.getCell(6).value = req !== 0 ? req : "";
+                    row.getCell(7).value = avail !== 0 ? avail : "";
+                    row.getCell(8).value = actual !== 0 ? actual : "";
+                    row.getCell(9).value = gap !== 0 ? gap : "";
                     row.getCell(10).value = ot !== 0 ? parseFloat(ot.toFixed(2)) : "";
 
                     for (let c = 3; c <= 10; c++) {
@@ -746,11 +746,11 @@ async function _buildManagementBuffer() {
     console.log("[_buildManagementBuffer] Starting...");
 
     try {
-        const dbPool    = await poolPromise;
-        const today     = new Date();
-        const todayStr  = today.toISOString().slice(0, 10);
+        const dbPool = await poolPromise;
+        const today = new Date();
+        const todayStr = today.toISOString().slice(0, 10);
         const monthName = MONTH_NAMES[today.getMonth()];
-        const yearVal   = today.getFullYear();
+        const yearVal = today.getFullYear();
 
         const secRows = (await dbPool.request().query(`
             SELECT
@@ -822,7 +822,7 @@ async function _buildManagementBuffer() {
         const handLineMap = new Map();
         handLineRows.forEach(r => handLineMap.set(r.lineId, Number(r.cnt) || 0));
 
-        const attSecMap  = await fetchShiftAttendanceBySection(dbPool, todayStr);
+        const attSecMap = await fetchShiftAttendanceBySection(dbPool, todayStr);
         const attLineMap = await fetchShiftAttendanceByLine(dbPool, todayStr);
 
         const wb = new ExcelJS.Workbook();
@@ -836,10 +836,10 @@ async function _buildManagementBuffer() {
         };
 
         const C = {
-            BLACK:      "FF000000",
-            WHITE:      "FFFFFFFF",
-            HEADER_BG:  "FF1F3B63",
-            TOTAL_BG:   "FFD9D9D9",
+            BLACK: "FF000000",
+            WHITE: "FFFFFFFF",
+            HEADER_BG: "FF1F3B63",
+            TOTAL_BG: "FFD9D9D9",
             SEC_HDR_BG: "FF808080",
         };
 
@@ -923,7 +923,7 @@ async function _buildManagementBuffer() {
         ws.getRow(ri).height = 58;
         ri = 3;
 
-        const deptMap   = new Map();
+        const deptMap = new Map();
         const deptOrder = [];
 
         secRows.forEach(s => {
@@ -962,18 +962,18 @@ async function _buildManagementBuffer() {
             let dHrs = 0;
 
             sections.forEach(s => {
-                const sc  = (s.section_code || "").toUpperCase().trim();
+                const sc = (s.section_code || "").toUpperCase().trim();
                 const att = attSecMap.get(s.sectionId) || {};
 
-                dReq  += reqMap.get(sc) || 0;
+                dReq += reqMap.get(sc) || 0;
                 dHand += handSecMap.get(s.sectionId) || 0;
-                dGen  += getNum(att, "shiftGeneral");
-                dA    += getNum(att, "shiftA");
-                dB    += getNum(att, "shiftB");
-                dC    += getNum(att, "shiftC");
-                dAct  += getNum(att, "totalPresent");
-                dOT   += getNum(att, "totalOtHrs");
-                dHrs  += getNum(att, "totalHrsWorked");
+                dGen += getNum(att, "shiftGeneral");
+                dA += getNum(att, "shiftA");
+                dB += getNum(att, "shiftB");
+                dC += getNum(att, "shiftC");
+                dAct += getNum(att, "totalPresent");
+                dOT += getNum(att, "totalOtHrs");
+                dHrs += getNum(att, "totalHrsWorked");
             });
 
             grReq += dReq;
@@ -1006,12 +1006,12 @@ async function _buildManagementBuffer() {
             styleCell(row.getCell(3), { sz: 11 });
             setYellow(row.getCell(3));
 
-            row.getCell(4).value  = dHand;
-            row.getCell(5).value  = dGen;
-            row.getCell(6).value  = dA;
-            row.getCell(7).value  = dB;
-            row.getCell(8).value  = dC;
-            row.getCell(9).value  = dAct;
+            row.getCell(4).value = dHand;
+            row.getCell(5).value = dGen;
+            row.getCell(6).value = dA;
+            row.getCell(7).value = dB;
+            row.getCell(8).value = dC;
+            row.getCell(9).value = dAct;
             row.getCell(10).value = parseFloat(dOT.toFixed(2));
             row.getCell(11).value = parseFloat(dHrs.toFixed(2));
             row.getCell(12).value = getPct(dAct, dReq);
@@ -1110,22 +1110,22 @@ async function _buildManagementBuffer() {
             const { sections } = deptMap.get(deptId);
 
             for (const sec of sections) {
-                const sc       = (sec.section_code || "").toUpperCase().trim();
+                const sc = (sec.section_code || "").toUpperCase().trim();
                 const secLines = linesBySection.get(sec.sectionId) || [];
-                const att      = attSecMap.get(sec.sectionId) || {};
+                const att = attSecMap.get(sec.sectionId) || {};
 
-                const secReq  = reqMap.get(sc) || 0;
+                const secReq = reqMap.get(sc) || 0;
                 const secHand = handSecMap.get(sec.sectionId) || 0;
-                const secAct  = getNum(att, "totalPresent");
-                const secOT   = getNum(att, "totalOtHrs");
-                const secHrs  = getNum(att, "totalHrsWorked");
-                const secGen  = getNum(att, "shiftGeneral");
-                const secA    = getNum(att, "shiftA");
-                const secB    = getNum(att, "shiftB");
-                const secC    = getNum(att, "shiftC");
+                const secAct = getNum(att, "totalPresent");
+                const secOT = getNum(att, "totalOtHrs");
+                const secHrs = getNum(att, "totalHrsWorked");
+                const secGen = getNum(att, "shiftGeneral");
+                const secA = getNum(att, "shiftA");
+                const secB = getNum(att, "shiftB");
+                const secC = getNum(att, "shiftC");
 
-                const catLabel      = sec.section_category || "Direct";
-                const secLabel      = `${sec.section_name}\n(${catLabel})`;
+                const catLabel = sec.section_category || "Direct";
+                const secLabel = `${sec.section_name}\n(${catLabel})`;
                 const secBlockStart = ri;
 
                 if (secLines.length === 0) {
@@ -1153,12 +1153,12 @@ async function _buildManagementBuffer() {
                     styleCell(row.getCell(3), { sz: 11 });
                     setYellow(row.getCell(3));
 
-                    row.getCell(4).value  = secHand;
-                    row.getCell(5).value  = secGen;
-                    row.getCell(6).value  = secA;
-                    row.getCell(7).value  = secB;
-                    row.getCell(8).value  = secC;
-                    row.getCell(9).value  = secAct;
+                    row.getCell(4).value = secHand;
+                    row.getCell(5).value = secGen;
+                    row.getCell(6).value = secA;
+                    row.getCell(7).value = secB;
+                    row.getCell(8).value = secC;
+                    row.getCell(9).value = secAct;
                     row.getCell(10).value = parseFloat(secOT.toFixed(2));
                     row.getCell(11).value = parseFloat(secHrs.toFixed(2));
                     row.getCell(12).value = getPct(secAct, secReq);
@@ -1182,16 +1182,16 @@ async function _buildManagementBuffer() {
                     let totHrs = 0;
 
                     secLines.forEach(ln => {
-                        const latt  = attLineMap.get(ln.lineId) || {};
-                        const lReq  = Number(ln.line_requirement) || 0;
+                        const latt = attLineMap.get(ln.lineId) || {};
+                        const lReq = Number(ln.line_requirement) || 0;
                         const lHand = handLineMap.get(ln.lineId) || 0;
-                        const lGen  = getNum(latt, "shiftGeneral");
-                        const lA    = getNum(latt, "shiftA");
-                        const lB    = getNum(latt, "shiftB");
-                        const lC    = getNum(latt, "shiftC");
-                        const lAct  = getNum(latt, "totalPresent");
-                        const lOT   = getNum(latt, "totalOtHrs");
-                        const lHrs  = getNum(latt, "totalHrsWorked");
+                        const lGen = getNum(latt, "shiftGeneral");
+                        const lA = getNum(latt, "shiftA");
+                        const lB = getNum(latt, "shiftB");
+                        const lC = getNum(latt, "shiftC");
+                        const lAct = getNum(latt, "totalPresent");
+                        const lOT = getNum(latt, "totalOtHrs");
+                        const lHrs = getNum(latt, "totalHrsWorked");
 
                         totReq += lReq;
                         totHand += lHand;
@@ -1223,12 +1223,12 @@ async function _buildManagementBuffer() {
                         styleCell(row.getCell(3), { sz: 11 });
                         setYellow(row.getCell(3));
 
-                        row.getCell(4).value  = lHand || "";
-                        row.getCell(5).value  = lGen || "";
-                        row.getCell(6).value  = lA || "";
-                        row.getCell(7).value  = lB || "";
-                        row.getCell(8).value  = lC || "";
-                        row.getCell(9).value  = lAct || "";
+                        row.getCell(4).value = lHand || "";
+                        row.getCell(5).value = lGen || "";
+                        row.getCell(6).value = lA || "";
+                        row.getCell(7).value = lB || "";
+                        row.getCell(8).value = lC || "";
+                        row.getCell(9).value = lAct || "";
                         row.getCell(10).value = lOT !== 0 ? parseFloat(lOT.toFixed(2)) : "";
                         row.getCell(11).value = lHrs !== 0 ? parseFloat(lHrs.toFixed(2)) : "";
                         row.getCell(12).value = getPct(lAct, lReq);
@@ -1411,7 +1411,7 @@ export async function sendBothReports(emails) {
 
         console.log("[sendBothReports] Building both buffers...");
 
-        const manpowerBuf   = await _buildManpowerBuffer();
+        const manpowerBuf = await _buildManpowerBuffer();
         const managementBuf = await _buildManagementBuffer();
 
         console.log(`[sendBothReports] manpowerBuf: ${manpowerBuf ? manpowerBuf.byteLength + " bytes" : "NULL"}`);

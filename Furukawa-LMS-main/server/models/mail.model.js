@@ -3,11 +3,28 @@ import logger from "../logger/winston.logger.js";
 
 class Mail {
     constructor(data) {
-        this.id = data.id;
-        this.email = data.email;
-        this.isDailyReport = !!data.isDailyReport;
-        this.isManagementDailyReport = !!data.isManagementDailyReport;
-        this.reportTypes = data.reportTypes || "";
+        if (!data) return;
+        
+        // Robust case-insensitive lookup
+        const getVal = (obj, key) => {
+            const lowerKey = key.toLowerCase();
+            const foundKey = Object.keys(obj).find(k => k.toLowerCase() === lowerKey);
+            return foundKey ? obj[foundKey] : undefined;
+        };
+
+        this.id = getVal(data, 'id');
+        this.email = getVal(data, 'email') || "";
+        
+        const dailyVal = getVal(data, 'isDailyReport');
+        this.isDailyReport = dailyVal === true || dailyVal === 1 || dailyVal === '1' || String(dailyVal).toLowerCase() === 'true';
+
+        const mgmtVal = getVal(data, 'isManagementDailyReport');
+        const monthlyVal = getVal(data, 'isMonthlyReport');
+        this.isManagementDailyReport = 
+            mgmtVal === true || mgmtVal === 1 || mgmtVal === '1' || String(mgmtVal).toLowerCase() === 'true' ||
+            monthlyVal === true || monthlyVal === 1 || monthlyVal === '1' || String(monthlyVal).toLowerCase() === 'true';
+
+        this.reportTypes = getVal(data, 'reportTypes') || "";
     }
 
     static async init() {

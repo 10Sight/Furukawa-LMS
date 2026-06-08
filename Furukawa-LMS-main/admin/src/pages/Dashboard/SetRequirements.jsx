@@ -246,6 +246,54 @@ export default function SetRequirements() {
   const [editForm, setEditForm] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const [tableMaxWidth, setTableMaxWidth] = useState("100%");
+
+  useEffect(() => {
+    const updateMaxWidth = () => {
+      const width = window.innerWidth;
+      const navEl = document.querySelector("nav");
+      
+      let sidebarW = 256; // default sidebar width
+      if (width < 768) {
+        sidebarW = 0; // mobile: overlay/hidden
+      } else if (navEl) {
+        sidebarW = navEl.offsetWidth; // actual rendered width
+      } else if (width < 1024) {
+        sidebarW = 64; // collapsed tablet
+      }
+
+      let paddingOffset = 112; // default 7rem
+      if (width < 640) {
+        paddingOffset = 32; // mobile: smaller padding (2rem)
+      } else if (width < 768) {
+        paddingOffset = 48; // sm: medium padding
+      } else if (width < 1024) {
+        paddingOffset = 80; // md: tablet padding
+      }
+
+      // Constrain max width to viewport width minus sidebar and offsets
+      setTableMaxWidth(`${width - sidebarW - paddingOffset}px`);
+    };
+
+    updateMaxWidth();
+    window.addEventListener("resize", updateMaxWidth);
+
+    // Observe the sidebar navigation classes for collapsed toggle changes
+    const navEl = document.querySelector("nav");
+    let observer;
+    if (navEl) {
+      observer = new MutationObserver(() => {
+        updateMaxWidth();
+      });
+      observer.observe(navEl, { attributes: true, attributeFilter: ["class", "className"] });
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateMaxWidth);
+      if (observer) observer.disconnect();
+    };
+  }, []);
+
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
@@ -915,8 +963,8 @@ export default function SetRequirements() {
         </div>
 
         <div
-          className="overflow-x-auto"
-          style={{ maxWidth: "calc(100vw - 16rem - 4rem - 3rem)" }}
+          className="overflow-x-auto w-full"
+          style={{ maxWidth: tableMaxWidth }}
         >
           <table className="text-left text-sm text-slate-500 w-full">
             <thead className="bg-slate-50 text-xs uppercase font-medium text-slate-500">

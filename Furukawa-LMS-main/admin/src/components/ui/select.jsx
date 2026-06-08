@@ -60,7 +60,7 @@ const SelectContent = React.forwardRef(({ className, children, position = "poppe
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        "relative z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         position === "popper" &&
           "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
         className
@@ -68,17 +68,36 @@ const SelectContent = React.forwardRef(({ className, children, position = "poppe
       position={position}
       {...props}
     >
-      <SelectScrollUpButton />
+      <style>{`
+        [data-radix-select-viewport] {
+          scrollbar-width: thin !important;
+          scrollbar-color: #cbd5e1 transparent !important;
+          -ms-overflow-style: auto !important;
+        }
+        [data-radix-select-viewport]::-webkit-scrollbar {
+          display: block !important;
+          width: 8px !important;
+        }
+        [data-radix-select-viewport]::-webkit-scrollbar-track {
+          background: transparent !important;
+        }
+        [data-radix-select-viewport]::-webkit-scrollbar-thumb {
+          background-color: #cbd5e1 !important;
+          border-radius: 4px !important;
+        }
+        [data-radix-select-viewport]::-webkit-scrollbar-thumb:hover {
+          background-color: #94a3b8 !important;
+        }
+      `}</style>
       <SelectPrimitive.Viewport
         className={cn(
-          "p-1",
+          "p-1 max-h-60 overflow-y-auto",
           position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+            "w-full min-w-[var(--radix-select-trigger-width)]"
         )}
       >
         {children}
       </SelectPrimitive.Viewport>
-      <SelectScrollDownButton />
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ))

@@ -180,11 +180,11 @@ export const saveHeadcountReport = asyncHandler(async (req, res) => {
 
     // Trigger Email Notification
     const reportDate = new Date(year, month - 1, 1);
-    NotificationService.sendFormReport("Associates Headcount Report", null, { 
-        tableData, 
-        month, 
+    NotificationService.sendFormReport("Associates Headcount Report", null, {
+        tableData,
+        month,
         year,
-        date: reportDate.toISOString().split('T')[0] 
+        date: reportDate.toISOString().split('T')[0]
     }).catch(err => console.error("[Headcount] Notification failed:", err));
 
     res.status(200).json({
@@ -304,7 +304,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         const globalAbsPercent = (totalPA > 0) ? (absent / totalPA) * 100 : 0;
         tableData[`Absenteeism %_${dKey}`] = globalAbsPercent.toFixed(2);
     }
-    
+
     // Initialize all shift keys with "0" as fallback for all days
     const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
     for (let d = 1; d <= totalDays; d++) {
@@ -342,7 +342,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             const shiftName = shiftMap[shiftKey];
             tableData[`Available_${shiftName}_${dateKey}`] = String(count || 0);
             tableData[`Attendance_${shiftName}_${dateKey}`] = String(count || 0);
-            
+
             // Accumulate totals
             tableData[`Available_Total_${dateKey}`] = String(Number(tableData[`Available_Total_${dateKey}`] || 0) + count);
             tableData[`Attendance_Total_${dateKey}`] = String(Number(tableData[`Attendance_Total_${dateKey}`] || 0) + count);
@@ -440,7 +440,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     handoverRows.forEach(row => {
         const dKey = row.dateKey;
         let dailyTotal = 0;
-        try { 
+        try {
             const entriesArr = JSON.parse(row.entries || "[]");
             entriesArr.forEach(e => {
                 if (e.interviewStatus === 'APPROVE') {
@@ -448,7 +448,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
                     // Find club for this entry
                     reportingClubs.forEach(club => {
                         let clubSectionIds = [];
-                        try { clubSectionIds = typeof club.sectionIds === 'string' ? JSON.parse(club.sectionIds || "[]") : (club.sectionIds || []); } catch (err) {}
+                        try { clubSectionIds = typeof club.sectionIds === 'string' ? JSON.parse(club.sectionIds || "[]") : (club.sectionIds || []); } catch (err) { }
                         if (clubSectionIds.map(String).includes(String(e.sectionId))) {
                             clubHandoverDailyCounts[club.id][dKey] = (clubHandoverDailyCounts[club.id][dKey] || 0) + 1;
                         }
@@ -551,8 +551,8 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         // Club-level separations
         reportingClubs.forEach(club => {
             let clubSectionIds = [];
-            try { 
-                clubSectionIds = typeof club.sectionIds === 'string' ? JSON.parse(club.sectionIds || "[]") : (club.sectionIds || []); 
+            try {
+                clubSectionIds = typeof club.sectionIds === 'string' ? JSON.parse(club.sectionIds || "[]") : (club.sectionIds || []);
                 // Convert all to strings for safe comparison
                 clubSectionIds = clubSectionIds.map(String);
             } catch (e) { clubSectionIds = []; }
@@ -589,7 +589,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             for (let d = 1; d <= totalDays; d++) {
                 const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 tableData[`Assigned_${shiftName}_${dKey}`] = String(row.count || 0);
-                
+
                 // Accumulate total assigned for each day
                 tableData[`Assigned_Total_${dKey}`] = String(Number(tableData[`Assigned_Total_${dKey}`] || 0) + row.count);
             }
@@ -636,7 +636,7 @@ export const getMails = asyncHandler(async (req, res) => {
     const mapped = mails.map(m => {
         let freqs = [];
         if (m.isDailyReport) freqs.push('Daily');
-        if (m.isMonthlyReport) freqs.push('Monthly');
+        if (m.isManagementDailyReport) freqs.push('Management Daily');
 
         const frequencyStr = freqs.join(', ') || 'Daily';
         const reportTypesArr = m.reportTypes ? m.reportTypes.split(', ') : ['Manpower'];
@@ -678,11 +678,16 @@ export const createMail = asyncHandler(async (req, res) => {
             return res.status(400).json({ success: false, message: "Email is required" });
         }
 
-        const freqStr = typeof frequency === 'string' ? frequency : (Array.isArray(frequency) ? frequency.join(', ') : 'Daily');
-        const isDailyReport = freqStr.includes('Daily');
-        const isMonthlyReport = freqStr.includes('Monthly');
+        const freqArr = Array.isArray(frequency)
+            ? frequency.map(f => String(f).trim().toLowerCase())
+            : (typeof frequency === 'string'
+                ? frequency.split(',').map(f => f.trim().toLowerCase())
+                : ['daily']);
 
-        console.log(`[DEBUG] Parsed frequency - Daily: ${isDailyReport}, Monthly: ${isMonthlyReport}`);
+        const isDailyReport = freqArr.includes('daily');
+        const isManagementDailyReport = freqArr.includes('management daily') || freqArr.includes('managementdaily') || freqArr.includes('monthly');
+
+        console.log(`[DEBUG] Parsed frequency - Daily: ${isDailyReport}, Management Daily: ${isManagementDailyReport}`);
 
         // Accept reportTypes array or formName string as the report type
         const typesStr = Array.isArray(reportTypes)
@@ -693,7 +698,7 @@ export const createMail = asyncHandler(async (req, res) => {
         const newMail = await Mail.create({
             email,
             isDailyReport,
-            isMonthlyReport,
+            isManagementDailyReport,
             reportTypes: typesStr
         });
 
@@ -726,10 +731,10 @@ export const triggerManualReport = asyncHandler(async (req, res) => {
 
     try {
         const emailList = mails.map(m => m.email);
-        
+
         // Import sendBothReports dynamically to avoid circular dependencies if any
         const { sendBothReports } = await import('../services/report.service.js');
-        
+
         // Send both Excel reports in a single mail
         await sendBothReports(emailList);
 

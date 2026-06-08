@@ -488,7 +488,14 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                                         }`}
                                                     >
                                                         <td className="px-4 py-3 align-top">
-                                                            <div className="font-medium text-slate-800 text-sm truncate">{head.sectionName || "—"}</div>
+                                                            <div className="font-medium text-slate-800 text-sm truncate">
+                                                                {head.sectionName || "—"}
+                                                                {head.sectionCategory && (
+                                                                    <span className="text-xs font-normal text-slate-400 ml-1.5">
+                                                                        ({head.sectionCategory.toLowerCase()})
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             {head.subSectionName && (
                                                                 <div className="text-[11px] text-slate-400 mt-0.5">{head.subSectionName}</div>
                                                             )}

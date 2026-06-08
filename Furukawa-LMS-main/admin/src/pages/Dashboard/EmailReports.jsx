@@ -147,12 +147,24 @@ const EmailReports = () => {
     const toggleFrequency = (freq) => {
         setForm(prev => {
             const current = prev.frequency || [];
+            let nextFreq;
             if (current.includes(freq)) {
                 if (current.length === 1) return prev; // keep at least one selected
-                return { ...prev, frequency: current.filter(f => f !== freq) };
+                nextFreq = current.filter(f => f !== freq);
             } else {
-                return { ...prev, frequency: [...current, freq] };
+                nextFreq = [...current, freq];
             }
+
+            // Sync reportTypes based on nextFreq
+            const nextReportTypes = [];
+            if (nextFreq.includes('Daily')) nextReportTypes.push('Manpower');
+            if (nextFreq.includes('Management Daily')) nextReportTypes.push('Management Daily');
+
+            return {
+                ...prev,
+                frequency: nextFreq,
+                reportTypes: nextReportTypes
+            };
         });
     };
 

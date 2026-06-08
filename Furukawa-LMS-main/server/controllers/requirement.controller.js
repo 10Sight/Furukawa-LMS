@@ -972,6 +972,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
         }
     });
 
+    const validRowsToProcess = [];
     const invalidSections = new Set();
 
     for (const row of rowsToProcess) {
@@ -980,18 +981,28 @@ export const addRequirements = asyncHandler(async (req, res) => {
         const comboKey = `${nameKey}|${uniKey}`;
         const fallbackKey = `FALLBACK|${nameKey}`;
 
-        if (!validSectionsMap.has(comboKey) && !validSectionsMap.has(fallbackKey)) {
+        if (validSectionsMap.has(comboKey) || validSectionsMap.has(fallbackKey)) {
+            validRowsToProcess.push(row);
+        } else {
             invalidSections.add(`${row.sectionName} (${row.lineCode})`);
         }
     }
 
     if (invalidSections.size > 0) {
-        const errorList = Array.from(invalidSections).slice(0, 10).join("', '");
+        const ignoredList = Array.from(invalidSections).slice(0, 10).join("', '");
+        console.log(`Skipped requirement rows for non-existent sections (unicodes): '${ignoredList}'`);
+    }
+
+    if (validRowsToProcess.length === 0) {
         throw new ApiError(
-            `Validation Failed: The following Section names (with unicodes) do not exist in the system: '${errorList}'`,
+            "Validation Failed: None of the sections in the Excel file exist in the system. No data was uploaded.",
             400
         );
     }
+
+    // Mutate rowsToProcess in-place so all downstream logic works without changes
+    rowsToProcess.length = 0;
+    rowsToProcess.push(...validRowsToProcess);
 
     const conn = await poolPromise;
     const transaction = new mssql.Transaction(conn);

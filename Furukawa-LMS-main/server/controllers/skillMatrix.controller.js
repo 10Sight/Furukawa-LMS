@@ -8,6 +8,12 @@ import { SkillMatrixEvaluation } from "../models/skillMatrixEvaluation.model.js"
 import SkillMatrixDashboardConfig from "../models/skillMatrixDashboardConfig.model.js";
 import User from "../models/auth.model.js";
 import CourseLevelConfig from "../models/courseLevelConfig.model.js";
+import { 
+    calculateUserEfficiency, 
+    computeEarnedLevel, 
+    getPeriodFromDate, 
+    DEFAULT_SKILL_CONFIG 
+} from "../utils/skillMatrix.util.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -402,49 +408,7 @@ const getSkillMatrixCertHistory = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, history, "History fetched successfully"));
 });
 
-// Helper to calculate operator efficiency from evalData
-const calculateUserEfficiency = (evalData) => {
-    if (!evalData) return 0;
-    let parsed = evalData;
-    if (typeof evalData === 'string') {
-        try {
-            parsed = JSON.parse(evalData);
-        } catch (e) {
-            return 0;
-        }
-    }
-    
-    // Rule L4: Able to teach other operators (sIdx = 3)
-    // All 5 questions ('3-0', '3-1', '3-2', '3-3', '3-4') must be OK
-    const l4Keys = ['3-0', '3-1', '3-2', '3-3', '3-4'];
-    const isL4Ok = l4Keys.every(k => parsed[k]?.standard === 'OK');
-    if (isL4Ok) {
-        return 100;
-    }
 
-    // Rule L3: Whether he can operate in the standard time? (sIdx = 2, iIdx = 0 -> '2-0')
-    const l3Data = parsed['2-0'];
-    if (l3Data?.standard === 'OK') {
-        const val = parseFloat(l3Data.okVal);
-        if (!isNaN(val)) return val;
-    }
-
-    // Rule L2: Whether his operation in charge is at least 75%? (sIdx = 1, iIdx = 1 -> '1-1')
-    const l2Data = parsed['1-1'];
-    if (l2Data?.standard === 'OK') {
-        const val = parseFloat(l2Data.okVal);
-        if (!isNaN(val)) return val;
-    }
-
-    // Rule L1: The operation method is correct with the standard or not (sIdx = 0, iIdx = 2 -> '0-2')
-    const l1Data = parsed['0-2'];
-    if (l1Data?.standard === 'OK') {
-        const val = parseFloat(l1Data.okVal);
-        if (!isNaN(val)) return val;
-    }
-
-    return 0;
-};
 
 // @desc    Get Skill Matrix Efficiency Stats for operators in a hierarchy
 // @route   GET /api/v1/skill-matrix/evaluations/efficiency
@@ -585,11 +549,11 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get Skill Matrix Certificate Evaluation for a student
+ * Get Skill Matrix Certificate Evaluation for a student (active sheet)
  */
 const getSkillMatrixEvaluation = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
-    const evaluation = await SkillMatrixEvaluation.findByStudentId(studentId);
+    const evaluation = await SkillMatrixEvaluation.findActiveByStudentId(studentId);
 
     if (!evaluation) {
         return res.json(new ApiResponse(200, { isNew: true }, "No evaluation found"));
@@ -604,254 +568,294 @@ const getSkillMatrixEvaluation = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get Skill Matrix Dashboard Configuration
+ * Get all evaluation sheets for a student
  */
-const getSkillMatrixDashboardConfig = asyncHandler(async (req, res) => {
-    const { departmentId } = req.params;
-    const config = await SkillMatrixDashboardConfig.findByDepartmentId(departmentId);
-    res.json(new ApiResponse(200, { config: config ? config.config : null, history: [] }, "Dashboard configuration fetched successfully"));
-});
-
-/**
- * Save Skill Matrix Dashboard Configuration
- */
-const saveSkillMatrixDashboardConfig = asyncHandler(async (req, res) => {
-    const { departmentId, config, remark } = req.body;
-    if (!config) {
-        throw new ApiError(400, "Configuration is required");
-    }
-    const updatedBy = req.user.id;
-    const newConfig = await SkillMatrixDashboardConfig.upsert(departmentId, config, remark, updatedBy);
-    res.json(new ApiResponse(200, newConfig, "Dashboard configuration saved successfully"));
-});
-
-/**
- * Get Skill Matrix Dashboard Configuration History
- */
-const getSkillMatrixDashboardHistory = asyncHandler(async (req, res) => {
-    const { departmentId } = req.params;
-    const history = await SkillMatrixDashboardConfig.getHistory(departmentId);
-    res.json(new ApiResponse(200, history, "Dashboard history fetched successfully"));
-});
-
-const DEFAULT_SKILL_CONFIG = {
-    headerDefaults: {
-        processInCharge: '',
-        resultPerson: ''
-    },
-    docDefaults: {
-        docNo: 'FRM-HR-007',
-        revNo: '02',
-        revDate: '06/10/17',
-        dateOfIssue: '04-02-2018'
-    },
-    levels: {
-        0: { title: "OK in education training of operation contents but speed is no more than 74%", items: [{ id: 1, text: "Learnt the basic knowledge of process or not", method: "Confirm the education record" }, { id: 2, text: "The understanding test result is satisfying the standard or not", method: "Look in the understand test result of education record" }, { id: 3, text: "The operation method is correct with the standard or not", method: "Observe his operation by each product (type)" }, { id: 4, text: "Whether the operation is as operation-steps.", method: "Observe his operation by each product." }, { id: 5, text: "Whether he knows the inspection method, name of part, equipment, system", method: "Check the method of inspection at begin of operation" }, { id: 6, text: "Whether he knows the evaluation standard in operation (OK or NG product)", method: "Make question and hear his answer" }] },
-        1: { title: "OK in education training of operation contents but speed is just 75-99%", items: [{ id: 1, text: "Whether he confirms the quality correctly?", method: "Observe the operation" }, { id: 2, text: "Whether his operation in charge is at least 75%?", method: "Measure the operation time" }, { id: 3, text: "Whether he can report the abnormality (Andon) correctly?", method: "Judge by operation observance and question" }, { id: 4, text: "Whether he changes the steps of operation or operation method by himself?", method: "Observe the operation" }] },
-        2: { title: "Able to operation by himself (Speed & operation as the standard is OK)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?", method: "Make question and fill the answer" }, { id: 3, text: "Whether he understand the operation standard and obey as it. Can he give the an idea of improvement?", method: "Observe the operation in over 2 cycles and make question to him about the improvement (Standard operation table)" }] },
-        3: { title: "Able to teach other operators", items: [{ id: 1, text: "Whether the result in understanding test was over the standard", method: "Look in the understanding test result of education record" }, { id: 2, text: "Whether he understands the method of teaching", method: "Make questions about the teaching method and confirmation when teaching" }, { id: 3, text: "Whether he is good at confirmation about the understanding after teaching or in teaching", method: "Confirm the teaching method" }, { id: 4, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?", method: "Confirm the teaching method" }, { id: 5, text: "Whether he understand the operation standard and obey as it.", method: "Confirm the teaching method and operation content (basing on the standard-operation-table)" }] }
-    }
-};
-
-const computeEarnedLevel = (evalData, skillCertConfig, activeConfigLevels) => {
-    const levels = skillCertConfig?.levels || {};
-    let consecutiveOk = 0;
-
-    for (let sIdx = 0; sIdx < activeConfigLevels.length; sIdx++) {
-        const levelDef = levels[sIdx];
-        if (!levelDef) break; // no more sections defined
-
-        const items = levelDef.items || [];
-        if (items.length === 0) break;
-
-        const allOk = items.every((_, iIdx) =>
-            evalData?.[`${sIdx}-${iIdx}`]?.standard === 'OK'
-        );
-        if (!allOk) break;
-        consecutiveOk++;
-    }
-
-    if (consecutiveOk === 0) return null;
-    return activeConfigLevels[consecutiveOk - 1]?.name || null;
-};
-
-/**
- * Save Skill Matrix Certificate Evaluation
- */
-const saveSkillMatrixEvaluation = asyncHandler(async (req, res) => {
+const getEvaluationSheets = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
-    const { departmentId, subSectionId, headerData, docData, evalData, opinion, sendEmail } = req.body;
+    const sheets = await SkillMatrixEvaluation.findAllByStudentId(studentId);
+    
+    const parsedSheets = sheets.map(s => {
+        s.headerData = parseJSON(s.headerData);
+        s.docData = parseJSON(s.docData);
+        s.evalData = parseJSON(s.evalData);
+        return s;
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, parsedSheets, "Evaluation sheets fetched successfully")
+    );
+});
+
+/**
+ * Get a specific evaluation sheet by ID
+ */
+const getEvaluationSheet = asyncHandler(async (req, res) => {
+    const { sheetId } = req.params;
+    const sheet = await SkillMatrixEvaluation.findById(sheetId);
+    if (!sheet) {
+        throw new ApiError(404, "Evaluation sheet not found");
+    }
+    sheet.headerData = parseJSON(sheet.headerData);
+    sheet.docData = parseJSON(sheet.docData);
+    sheet.evalData = parseJSON(sheet.evalData);
+
+    res.status(200).json(
+        new ApiResponse(200, sheet, "Evaluation sheet fetched successfully")
+    );
+});
+
+/**
+ * Create a new evaluation sheet for a student
+ */
+const createEvaluationSheet = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    const { departmentId } = req.body;
+    
+    // Set all existing sheets for this student to isActive = 0
+    await executeQuery(
+        "UPDATE skill_matrix_evaluations SET isActive = 0 WHERE studentId = ?",
+        [studentId]
+    );
+
+    // Get the next sheetIndex
+    const [indexRows] = await executeQuery(
+        "SELECT MAX(sheetIndex) as maxIndex FROM skill_matrix_evaluations WHERE studentId = ?",
+        [studentId]
+    );
+    const nextIndex = (indexRows[0]?.maxIndex || 0) + 1;
+
+    // Prefill from previous sheet if it exists
+    const [prevActive] = await executeQuery(
+        "SELECT TOP 1 headerData, docData FROM skill_matrix_evaluations WHERE studentId = ? ORDER BY sheetIndex DESC",
+        [studentId]
+    );
+    
+    let headerData = {};
+    let docData = {};
+    if (prevActive && prevActive.length > 0) {
+        headerData = parseJSON(prevActive[0].headerData) || {};
+        docData = parseJSON(prevActive[0].docData) || {};
+    }
+
+    // Set evaluation date
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    headerData.dateOfEvaluation = `${dd} - ${mm} - ${yyyy}`;
+
+    const newPeriod = getPeriodFromDate();
+
+    // Create the new active sheet
+    const newSheet = await SkillMatrixEvaluation.upsert({
+        studentId,
+        departmentId: departmentId || 'GLOBAL',
+        headerData,
+        docData,
+        evalData: {},
+        opinion: "",
+        updatedBy: req.user.id,
+        sheetIndex: nextIndex,
+        period: newPeriod,
+        isActive: 1,
+        earnedLevel: "L0",
+        efficiency: 0
+    });
+
+    res.status(201).json(
+        new ApiResponse(201, newSheet, "New evaluation sheet created successfully")
+    );
+});
+
+/**
+ * Save evaluation sheet by ID (updating calculations and syncing user details if active)
+ */
+const saveEvaluationSheet = asyncHandler(async (req, res) => {
+    const { sheetId } = req.params;
+    const { departmentId, subSectionId, headerData, docData, evalData, opinion, sendEmail, period } = req.body;
+
+    const existingSheet = await SkillMatrixEvaluation.findById(sheetId);
+    if (!existingSheet) {
+        throw new ApiError(404, "Evaluation sheet not found");
+    }
+
+    const studentId = existingSheet.studentId;
+    const calculatedEfficiency = calculateUserEfficiency(evalData);
+    
+    // Compute level
+    const activeConfig = await CourseLevelConfig.getActiveConfig();
+    const certConfig = await SkillMatrixConfig.findByDepartmentId(departmentId || 'GLOBAL');
+    const skillCertConfig = certConfig?.config || DEFAULT_SKILL_CONFIG;
+    const parsedEvalData = parseJSON(evalData, {});
+    const earnedLevelName = computeEarnedLevel(parsedEvalData, skillCertConfig, activeConfig.levels) || 'L0';
 
     const updatedBy = req.user.id;
     const evaluation = await SkillMatrixEvaluation.upsert({
+        id: sheetId,
         studentId,
         departmentId,
         headerData,
         docData,
         evalData,
         opinion,
-        updatedBy
+        updatedBy,
+        sheetIndex: existingSheet.sheetIndex,
+        period: period || existingSheet.period || getPeriodFromDate(),
+        isActive: existingSheet.isActive ? 1 : 0,
+        earnedLevel: earnedLevelName,
+        efficiency: calculatedEfficiency
     });
-
-    // Sync student efficiency fields
-    try {
-        const student = await User.findById(studentId);
-        if (student) {
-            const calculatedEfficiency = calculateUserEfficiency(evalData);
-            const targetSubSectionId = subSectionId || student.subSectionId || student.targetSubSectionId;
-
-            if (targetSubSectionId) {
-                const subSecKey = String(targetSubSectionId);
-                let skillEffMap = student.skillEffeciency || {};
-                if (typeof skillEffMap === 'string') {
-                    try { skillEffMap = JSON.parse(skillEffMap); } catch (e) { skillEffMap = {}; }
-                }
-
-                // Update mapping
-                skillEffMap[subSecKey] = calculatedEfficiency;
-
-                // Update fields
-                student.currentEffeciency = calculatedEfficiency;
-                student.skillEffeciency = skillEffMap;
-
-                await student.save();
-                console.log(`[SkillMatrixEvaluation] Synced operator ${studentId} efficiency for subSectionId ${subSecKey}: ${calculatedEfficiency}%`);
-            }
-        }
-    } catch (err) {
-        console.error("[SkillMatrixEvaluation] Failed to sync operator efficiency:", err);
-    }
 
     let levelUpgraded = false;
     let newLevel = null;
 
-    // Level upgrade based on skill matrix certificate evaluation
-    try {
-        const activeConfig = await CourseLevelConfig.getActiveConfig();
-        const certConfig = await SkillMatrixConfig.findByDepartmentId(departmentId || 'GLOBAL');
-        const skillCertConfig = certConfig?.config || DEFAULT_SKILL_CONFIG;
-        const parsedEvalData = parseJSON(evalData, {});
+    // Only update student stats and sync matrix if this sheet is the active one!
+    if (existingSheet.isActive) {
+        try {
+            const student = await User.findById(studentId);
+            if (student) {
+                const targetSubSectionId = subSectionId || student.subSectionId || student.targetSubSectionId;
 
-        const earnedLevelName = computeEarnedLevel(parsedEvalData, skillCertConfig, activeConfig.levels);
-
-        if (earnedLevelName) {
-            const [uRows] = await executeQuery(
-                "SELECT currentLevel, currentSkill, subSectionId, targetSubSectionId FROM users WHERE id = ?", [studentId]
-            );
-            if (uRows.length > 0) {
-                const userData = uRows[0];
-                const currentGlobal = userData.currentLevel || 'L0';
-                
-                // Find order of levels in activeConfig
-                const currentLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === currentGlobal.toUpperCase());
-                const currentLevelOrder = currentLevelObj ? currentLevelObj.order : -1;
-
-                const earnedLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === earnedLevelName.toUpperCase());
-                const earnedLevelOrder = earnedLevelObj ? earnedLevelObj.order : -1;
-
-                let skillMap = parseJSON(userData.currentSkill, {});
-                let skillMapChanged = false;
-
-                const normalizeId = (id) => {
-                    if (!id || id === 'undefined' || id === 'null' || id === '') return null;
-                    return id;
-                };
-                const targetSubSecId = normalizeId(subSectionId) || normalizeId(userData.subSectionId) || normalizeId(userData.targetSubSectionId);
-
-                if (targetSubSecId) {
-                    const subSecKey = String(targetSubSecId);
-                    const currentSubSecSkill = skillMap[subSecKey] || 'L0';
-                    const currentSubSecSkillObj = activeConfig.levels.find(l => l.name.toUpperCase() === currentSubSecSkill.toUpperCase());
-                    const currentSubSecSkillOrder = currentSubSecSkillObj ? currentSubSecSkillObj.order : -1;
-
-                    if (earnedLevelOrder > currentSubSecSkillOrder) {
-                        skillMap[subSecKey] = earnedLevelName;
-                        skillMapChanged = true;
+                if (targetSubSectionId) {
+                    const subSecKey = String(targetSubSectionId);
+                    let skillEffMap = student.skillEffeciency || {};
+                    if (typeof skillEffMap === 'string') {
+                        try { skillEffMap = JSON.parse(skillEffMap); } catch (e) { skillEffMap = {}; }
                     }
+
+                    // Update mapping
+                    skillEffMap[subSecKey] = calculatedEfficiency;
+
+                    // Update fields
+                    student.currentEffeciency = calculatedEfficiency;
+                    student.skillEffeciency = skillEffMap;
+
+                    await student.save();
+                    console.log(`[SkillMatrixEvaluation] Synced operator ${studentId} efficiency for subSectionId ${subSecKey}: ${calculatedEfficiency}%`);
                 }
+            }
+        } catch (err) {
+            console.error("[SkillMatrixEvaluation] Failed to sync operator efficiency:", err);
+        }
 
-                const newGlobalOrder = Math.max(currentLevelOrder, earnedLevelOrder);
-                const newGlobalLevelObj = activeConfig.levels.find(l => l.order === newGlobalOrder);
-                const newGlobalLevelName = newGlobalLevelObj ? newGlobalLevelObj.name : earnedLevelName;
+        // Level upgrade sync
+        try {
+            if (earnedLevelName) {
+                const [uRows] = await executeQuery(
+                    "SELECT currentLevel, currentSkill, subSectionId, targetSubSectionId FROM users WHERE id = ?", [studentId]
+                );
+                if (uRows.length > 0) {
+                    const userData = uRows[0];
+                    const currentGlobal = userData.currentLevel || 'L0';
+                    
+                    const currentLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === currentGlobal.toUpperCase());
+                    const currentLevelOrder = currentLevelObj ? currentLevelObj.order : -1;
 
-                if (newGlobalOrder > currentLevelOrder) {
-                    levelUpgraded = true;
-                    newLevel = newGlobalLevelName;
-                }
+                    const earnedLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === earnedLevelName.toUpperCase());
+                    const earnedLevelOrder = earnedLevelObj ? earnedLevelObj.order : -1;
 
-                if (levelUpgraded || skillMapChanged) {
-                    await executeQuery(
-                        "UPDATE users SET currentLevel = ?, currentSkill = ?, updatedAt = GETDATE() WHERE id = ?",
-                        [newGlobalLevelName, JSON.stringify(skillMap), studentId]
-                    );
+                    let skillMap = parseJSON(userData.currentSkill, {});
+                    let skillMapChanged = false;
 
-                    if (levelUpgraded) {
-                        const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("../utils/handover.util.js");
-                        await checkAndProcessHandover(studentId, newGlobalLevelName);
-                        await checkAndProcessMaxLevelNotification(studentId, newGlobalLevelName);
+                    const normalizeId = (id) => {
+                        if (!id || id === 'undefined' || id === 'null' || id === '') return null;
+                        return id;
+                    };
+                    const targetSubSecId = normalizeId(subSectionId) || normalizeId(userData.subSectionId) || normalizeId(userData.targetSubSectionId);
+
+                    if (targetSubSecId) {
+                        const subSecKey = String(targetSubSecId);
+                        const currentSubSecSkill = skillMap[subSecKey] || 'L0';
+                        const currentSubSecSkillObj = activeConfig.levels.find(l => l.name.toUpperCase() === currentSubSecSkill.toUpperCase());
+                        const currentSubSecSkillOrder = currentSubSecSkillObj ? currentSubSecSkillObj.order : -1;
+
+                        if (earnedLevelOrder > currentSubSecSkillOrder) {
+                            skillMap[subSecKey] = earnedLevelName;
+                            skillMapChanged = true;
+                        }
                     }
-                }
 
-                if (skillMapChanged && targetSubSecId) {
-                    try {
-                        const matrixLevelName = earnedLevelName.includes('-') ? earnedLevelName : earnedLevelName.replace('L', 'L-');
-                        
-                        // 1. Fetch all machines in this sub-section
-                        const [machinesInSubSec] = await executeQuery(
-                            "SELECT id FROM machines WHERE subSectionId = ?",
-                            [targetSubSecId]
+                    const newGlobalOrder = Math.max(currentLevelOrder, earnedLevelOrder);
+                    const newGlobalLevelObj = activeConfig.levels.find(l => l.order === newGlobalOrder);
+                    const newGlobalLevelName = newGlobalLevelObj ? newGlobalLevelObj.name : earnedLevelName;
+
+                    if (newGlobalOrder > currentLevelOrder) {
+                        levelUpgraded = true;
+                        newLevel = newGlobalLevelName;
+                    }
+
+                    if (levelUpgraded || skillMapChanged) {
+                        await executeQuery(
+                            "UPDATE users SET currentLevel = ?, currentSkill = ?, updatedAt = GETDATE() WHERE id = ?",
+                            [newGlobalLevelName, JSON.stringify(skillMap), studentId]
                         );
-                        const machineIds = machinesInSubSec.map(m => String(m.id));
 
-                        if (machineIds.length > 0) {
-                            // 2. Query all skill matrices that contain this operator's userId in their JSON entries
-                            const studentIdStr = String(studentId);
-                            const [matchingMatrices] = await executeQuery(
-                                `SELECT id, entries FROM skill_matrices 
-                                 WHERE entries LIKE '%"userId":' + ? + '%' 
-                                    OR entries LIKE '%"userId":"' + ? + '"%'`,
-                                [studentIdStr, studentIdStr]
+                        if (levelUpgraded) {
+                            const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("../utils/handover.util.js");
+                            await checkAndProcessHandover(studentId, newGlobalLevelName);
+                            await checkAndProcessMaxLevelNotification(studentId, newGlobalLevelName);
+                        }
+                    }
+
+                    if (skillMapChanged && targetSubSecId) {
+                        try {
+                            const matrixLevelName = earnedLevelName.includes('-') ? earnedLevelName : earnedLevelName.replace('L', 'L-');
+                            
+                            const [machinesInSubSec] = await executeQuery(
+                                "SELECT id FROM machines WHERE subSectionId = ?",
+                                [targetSubSecId]
                             );
+                            const machineIds = machinesInSubSec.map(m => String(m.id));
 
-                            for (const matrix of matchingMatrices) {
-                                let entriesList = parseJSON(matrix.entries, []);
-                                if (!Array.isArray(entriesList)) continue;
+                            if (machineIds.length > 0) {
+                                const studentIdStr = String(studentId);
+                                const [matchingMatrices] = await executeQuery(
+                                    `SELECT id, entries FROM skill_matrices 
+                                     WHERE entries LIKE '%"userId":' + ? + '%' 
+                                        OR entries LIKE '%"userId":"' + ? + '"%'`,
+                                    [studentIdStr, studentIdStr]
+                                );
 
-                                let matrixChanged = false;
-                                for (const entry of entriesList) {
-                                    const entryUserId = String(entry.userId || entry._id || "");
-                                    if (entryUserId === studentIdStr) {
-                                        if (entry.stations && Array.isArray(entry.stations)) {
-                                            for (const s of entry.stations) {
-                                                const stationIdStr = String(s.machineId || s._id || "");
-                                                if (machineIds.includes(stationIdStr)) {
-                                                    if (s.curr !== matrixLevelName) {
-                                                        s.curr = matrixLevelName;
-                                                        matrixChanged = true;
+                                for (const matrix of matchingMatrices) {
+                                    let entriesList = parseJSON(matrix.entries, []);
+                                    if (!Array.isArray(entriesList)) continue;
+
+                                    let matrixChanged = false;
+                                    for (const entry of entriesList) {
+                                        const entryUserId = String(entry.userId || entry._id || "");
+                                        if (entryUserId === studentIdStr) {
+                                            if (entry.stations && Array.isArray(entry.stations)) {
+                                                for (const s of entry.stations) {
+                                                    const stationIdStr = String(s.machineId || s._id || "");
+                                                    if (machineIds.includes(stationIdStr)) {
+                                                        if (s.curr !== matrixLevelName) {
+                                                            s.curr = matrixLevelName;
+                                                            matrixChanged = true;
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                }
 
-                                if (matrixChanged) {
-                                    await executeQuery(
-                                        "UPDATE skill_matrices SET entries = ?, updatedAt = GETDATE() WHERE id = ?",
-                                        [JSON.stringify(entriesList), matrix.id]
-                                    );
-                                    console.log(`[SkillMatrixEvaluation] Auto-synced operator ${studentId} level ${matrixLevelName} in skill matrix ID ${matrix.id}`);
+                                    if (matrixChanged) {
+                                        await executeQuery(
+                                            "UPDATE skill_matrices SET entries = ?, updatedAt = GETDATE() WHERE id = ?",
+                                            [JSON.stringify(entriesList), matrix.id]
+                                        );
+                                        console.log(`[SkillMatrixEvaluation] Auto-synced operator ${studentId} level ${matrixLevelName} in skill matrix ID ${matrix.id}`);
+                                    }
                                 }
                             }
+                        } catch (syncErr) {
+                            console.error("[SkillMatrixEvaluation] Failed to auto-sync saved skill matrices:", syncErr);
                         }
-                    } catch (syncErr) {
-                        console.error("[SkillMatrixEvaluation] Failed to auto-sync saved skill matrices:", syncErr);
                     }
                 }
             }
+        } catch (err) {
+            console.error("[SkillMatrixEvaluation] Failed to compute level upgrade:", err);
         }
-    } catch (err) {
-        console.error("[SkillMatrixEvaluation] Failed to compute level upgrade:", err);
     }
 
     if (sendEmail) {
@@ -894,6 +898,65 @@ const saveSkillMatrixEvaluation = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, { ...evaluation, levelUpgraded, newLevel }, "Evaluation saved successfully"));
 });
 
+/**
+ * Save Skill Matrix Certificate Evaluation (Active sheet backward compatibility)
+ */
+const saveSkillMatrixEvaluation = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    
+    // Find active sheet or create one
+    let activeSheet = await SkillMatrixEvaluation.findActiveByStudentId(studentId);
+    if (!activeSheet) {
+        activeSheet = await SkillMatrixEvaluation.upsert({
+            studentId,
+            departmentId: req.body.departmentId || 'GLOBAL',
+            headerData: req.body.headerData || {},
+            docData: req.body.docData || {},
+            evalData: req.body.evalData || {},
+            opinion: req.body.opinion || "",
+            updatedBy: req.user.id,
+            sheetIndex: 1,
+            period: getPeriodFromDate(),
+            isActive: 1
+        });
+    }
+    
+    // Delegate to saveEvaluationSheet
+    req.params.sheetId = activeSheet.id;
+    return saveEvaluationSheet(req, res);
+});
+
+/**
+ * Get Skill Matrix Dashboard Configuration
+ */
+const getSkillMatrixDashboardConfig = asyncHandler(async (req, res) => {
+    const { departmentId } = req.params;
+    const config = await SkillMatrixDashboardConfig.findByDepartmentId(departmentId);
+    res.json(new ApiResponse(200, { config: config ? config.config : null, history: [] }, "Dashboard configuration fetched successfully"));
+});
+
+/**
+ * Save Skill Matrix Dashboard Configuration
+ */
+const saveSkillMatrixDashboardConfig = asyncHandler(async (req, res) => {
+    const { departmentId, config, remark } = req.body;
+    if (!config) {
+        throw new ApiError(400, "Configuration is required");
+    }
+    const updatedBy = req.user.id;
+    const newConfig = await SkillMatrixDashboardConfig.upsert(departmentId, config, remark, updatedBy);
+    res.json(new ApiResponse(200, newConfig, "Dashboard configuration saved successfully"));
+});
+
+/**
+ * Get Skill Matrix Dashboard Configuration History
+ */
+const getSkillMatrixDashboardHistory = asyncHandler(async (req, res) => {
+    const { departmentId } = req.params;
+    const history = await SkillMatrixDashboardConfig.getHistory(departmentId);
+    res.json(new ApiResponse(200, history, "Dashboard history fetched successfully"));
+});
+
 export {
     saveSkillMatrix,
     getSkillMatrix,
@@ -903,6 +966,10 @@ export {
     getSkillMatrixCertHistory,
     getSkillMatrixEvaluation,
     saveSkillMatrixEvaluation,
+    getEvaluationSheets,
+    getEvaluationSheet,
+    createEvaluationSheet,
+    saveEvaluationSheet,
     getSkillMatrixEfficiencyStats,
     getSkillMatrixEfficiencySummary,
     getSkillMatrixDashboardConfig,

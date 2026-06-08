@@ -96,6 +96,53 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [isMatrixOpen, setIsMatrixOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(isEmbeddedView ? "skillMatrix" : "handoverSheet");
     const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
+    const [evaluationSheets, setEvaluationSheets] = useState([]);
+    const [selectedSheetId, setSelectedSheetId] = useState(null);
+    const [isSheetsLoading, setIsSheetsLoading] = useState(false);
+
+    const fetchEvaluationSheets = async (studentId) => {
+        if (!studentId) return;
+        try {
+            setIsSheetsLoading(true);
+            const response = await axiosInstance.get(`/api/skill-matrix/evaluation/${studentId}/sheets`);
+            if (response.data.success) {
+                setEvaluationSheets(response.data.data || []);
+            }
+        } catch (error) {
+            console.error("Failed to fetch evaluation sheets list:", error);
+        } finally {
+            setIsSheetsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (selectedOperatorForEval) {
+            fetchEvaluationSheets(selectedOperatorForEval);
+            setSelectedSheetId(null);
+        } else {
+            setEvaluationSheets([]);
+            setSelectedSheetId(null);
+        }
+    }, [selectedOperatorForEval]);
+
+    const handleCreateNewSheetFromList = async () => {
+        if (!selectedOperatorForEval) return;
+        try {
+            const response = await axiosInstance.post(`/api/skill-matrix/evaluation/${selectedOperatorForEval}/sheet/create`, {
+                departmentId: evalDepartment || selectedDepartment
+            });
+            if (response.data.success && response.data.data) {
+                const newSheet = response.data.data;
+                toast.success(`Sheet ${newSheet.sheetIndex} (${newSheet.period}) created successfully!`);
+                setSelectedSheetId(newSheet.id);
+                fetchEvaluationSheets(selectedOperatorForEval);
+            }
+        } catch (error) {
+            console.error("Failed to create new sheet:", error);
+            toast.error("Failed to create new evaluation sheet");
+        }
+    };
+
     const [createOpen, setCreateOpen] = useState(false);
 
     useEffect(() => {
@@ -2076,22 +2123,121 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     </div>
 
                     {selectedOperatorForEval ? (
-                        <div className="bg-white border rounded p-4 shadow">
-                            <SkillMatrixCertificate
-                                studentId={selectedOperatorForEval}
-                                studentName={
-                                    matrixEntries.find(e => e._id === selectedOperatorForEval)?.name ||
-                                    filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.fullName ||
-                                    filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.name
-                                }
-                                employeeCode={
-                                    matrixEntries.find(e => e._id === selectedOperatorForEval)?.cardNo ||
-                                    filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo
-                                }
-                                departmentId={evalDepartment || selectedDepartment}
-                                subSectionId={evalSubSection || selectedSubSection}
-                            />
-                        </div>
+                        selectedSheetId ? (
+                            <div className="bg-white border rounded p-4 shadow">
+                                <SkillMatrixCertificate
+                                    studentId={selectedOperatorForEval}
+                                    studentName={
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.name ||
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.fullName ||
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.name
+                                    }
+                                    employeeCode={
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.cardNo ||
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo
+                                    }
+                                    departmentId={evalDepartment || selectedDepartment}
+                                    subSectionId={evalSubSection || selectedSubSection}
+                                    initialSheetId={selectedSheetId}
+                                    onBackToList={() => {
+                                        setSelectedSheetId(null);
+                                        fetchEvaluationSheets(selectedOperatorForEval);
+                                    }}
+                                />
+                            </div>
+                        ) : (
+                            <div className="bg-white border rounded p-6 shadow space-y-4">
+                                <div className="flex justify-between items-center border-b pb-3">
+                                    <div>
+                                        <h3 className="text-base font-bold text-gray-800">
+                                            Evaluation Sheets for {
+                                                matrixEntries.find(e => e._id === selectedOperatorForEval)?.name ||
+                                                filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.fullName ||
+                                                filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.name
+                                            }
+                                        </h3>
+                                        <p className="text-xs text-gray-500">
+                                            Select a sheet row to view details, or create a new evaluation sheet.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            onClick={handleCreateNewSheetFromList}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs"
+                                        >
+                                            + Create New Sheet
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {isSheetsLoading ? (
+                                    <div className="flex justify-center py-8">
+                                        <IconLoader className="animate-spin h-6 w-6" />
+                                    </div>
+                                ) : evaluationSheets.length === 0 ? (
+                                    <div className="text-center py-10 text-gray-400 italic">
+                                        No evaluation sheets created yet. Click "+ Create New Sheet" to begin.
+                                    </div>
+                                ) : (
+                                    <div className="border rounded overflow-hidden">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                                <tr>
+                                                    <th className="p-3 border-b text-left">Sheet #</th>
+                                                    <th className="p-3 border-b text-left">Period</th>
+                                                    <th className="p-3 border-b text-left">Level Earned</th>
+                                                    <th className="p-3 border-b text-left">Efficiency</th>
+                                                    <th className="p-3 border-b text-left">Status</th>
+                                                    <th className="p-3 border-b text-left">Created Date</th>
+                                                    <th className="p-3 border-b text-center">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {evaluationSheets.map((sheet, idx) => (
+                                                    <tr
+                                                        key={sheet.id || idx}
+                                                        className="hover:bg-muted/30 cursor-pointer border-b text-xs transition-colors duration-150"
+                                                        onClick={() => setSelectedSheetId(sheet.id)}
+                                                    >
+                                                        <td className="p-3 font-bold">Sheet {sheet.sheetIndex}</td>
+                                                        <td className="p-3">{sheet.period}</td>
+                                                        <td className="p-3 font-bold text-blue-600">{sheet.earnedLevel || 'L0'}</td>
+                                                        <td className="p-3 font-semibold">{sheet.efficiency ? `${sheet.efficiency}%` : '0%'}</td>
+                                                        <td className="p-3">
+                                                            {sheet.isActive ? (
+                                                                <span className="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                                                    Active
+                                                                </span>
+                                                            ) : (
+                                                                <span className="bg-gray-100 text-gray-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                                                    Previous
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-3">
+                                                            {new Date(sheet.createdAt).toLocaleDateString('en-GB')}
+                                                        </td>
+                                                        <td className="p-3 text-center">
+                                                            <Button
+                                                                size="xs"
+                                                                variant="outline"
+                                                                className="h-7 text-xs font-semibold px-3"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSelectedSheetId(sheet.id);
+                                                                }}
+                                                            >
+                                                                View
+                                                            </Button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )
                     ) : (
                         <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
                             No operator selected. Please select a Department and filter/search for an operator from the criteria above.

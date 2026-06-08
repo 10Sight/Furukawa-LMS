@@ -8,6 +8,10 @@ import {
     getSkillMatrixCertHistory,
     getSkillMatrixEvaluation,
     saveSkillMatrixEvaluation,
+    getEvaluationSheets,
+    getEvaluationSheet,
+    createEvaluationSheet,
+    saveEvaluationSheet,
     getSkillMatrixDashboardConfig,
     saveSkillMatrixDashboardConfig,
     getSkillMatrixDashboardHistory,
@@ -35,6 +39,12 @@ router.route("/config/history/:departmentId").get(getSkillMatrixCertHistory);
 // Skill Matrix Evaluation Routes
 router.route("/evaluation/:studentId").get(getSkillMatrixEvaluation);
 router.route("/evaluation/save/:studentId").post(saveSkillMatrixEvaluation);
+
+// Multi-Sheet Skill Matrix Evaluation Routes
+router.route("/evaluation/:studentId/sheets").get(getEvaluationSheets);
+router.route("/evaluation/:studentId/sheet/create").post(createEvaluationSheet);
+router.route("/evaluation/sheet/:sheetId").get(getEvaluationSheet);
+router.route("/evaluation/sheet/:sheetId/save").put(saveEvaluationSheet);
 
 // Skill Matrix Dashboard Config Routes
 router.route("/dashboard/config/:departmentId").get(getSkillMatrixDashboardConfig);

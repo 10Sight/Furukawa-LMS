@@ -24,15 +24,6 @@ export const instructorApi = createApi({
             }),
             providesTags: ['Instructor'],
         }),
-
-        getMultiSkillingStudents: builder.query({
-            query: ({ departmentId = "", sectionId = "", sixteenDayApprovedOnly = "" } = {}) => ({
-                url: `/api/users/multi-skilling-students`,
-                method: "GET",
-                params: { departmentId, sectionId, sixteenDayApprovedOnly }
-            }),
-            providesTags: ['Instructor'],
-        }),
         getAllMentors: builder.query({
             query: ({ page = 1, limit = 10, search = "", status = "", unit = "" } = {}) => ({
                 url: "/api/users/mentors",
@@ -318,8 +309,6 @@ export const {
     useGetAllInstructorsQuery,
     useGetInstructorByIdQuery,
     useGetAllStudentsQuery,
-    useGetMultiSkillingStudentsQuery,
-    useLazyGetMultiSkillingStudentsQuery,
     useCreateInstructorMutation,
     useUpdateInstructorMutation,
     useDeleteInstructorMutation,

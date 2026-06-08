@@ -153,26 +153,6 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
             });
         });
 
-        // Automatically append any active department/section students who are not in the saved plan
-        students.forEach((student) => {
-            const studentIdStr = String(student._id || student.id);
-            if (!savedUserIds.some(uid => String(uid) === studentIdStr)) {
-                savedRows.push({
-                    rowId: studentIdStr,
-                    userId: studentIdStr,
-                    userName: student.fullName || student.name || "",
-                    cardNo: student.cardNo || student.username || student.empId || "",
-                    shift: "",
-                    modelLine: student.lineName || "",
-                    station: student.subSectionName || "",
-                    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
-                    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
-                    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
-                    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
-                });
-            }
-        });
-
         // Pad to 25 rows
         const totalRowsNeeded = 25;
         const currentCount = savedRows.length;

@@ -91,7 +91,22 @@ const formatTodayDate = () => {
     return `${dd} - ${mm} - ${yyyy}`;
 };
 
-const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departmentId = 'GLOBAL', subSectionId }) => {
+const getPeriodFromDate = (date = new Date()) => {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const quarter = Math.floor(d.getMonth() / 3) + 1;
+    return `${year}-Q${quarter}`;
+};
+
+const SkillMatrixCertificate = ({ 
+    studentId, 
+    studentName, 
+    employeeCode, 
+    departmentId = 'GLOBAL', 
+    subSectionId,
+    initialSheetId,
+    onBackToList
+}) => {
     // State
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -123,6 +138,14 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
     const [showTraineeSuggestions, setShowTraineeSuggestions] = useState(false);
     const [isSearchingTrainee, setIsSearchingTrainee] = useState(false);
 
+    // Multi-sheet State
+    const [sheets, setSheets] = useState([]);
+    const [selectedSheetId, setSelectedSheetId] = useState(initialSheetId || null);
+    const [isActiveSheet, setIsActiveSheet] = useState(true);
+    const [currentPeriod, setCurrentPeriod] = useState("");
+    const [currentSheetIndex, setCurrentSheetIndex] = useState(1);
+    const [createDialogOpen, setCreateDialogOpen] = useState(false);
+
     const authUser = useSelector(state => state.auth.user);
 
     const { data: activeConfigData } = useGetActiveConfigQuery();
@@ -130,11 +153,29 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
     const displayLevels = activeConfig?.levels || [];
     const maxLevels = displayLevels.length;
 
+    // Load configs
     useEffect(() => {
-        fetchData();
         fetchConfig();
-    }, [studentId, departmentId]);
+    }, [departmentId]);
 
+    // Load sheets list
+    useEffect(() => {
+        fetchSheets();
+    }, [studentId]);
+
+    // Load specific sheet content when active sheet selection changes
+    useEffect(() => {
+        fetchSheetData();
+    }, [selectedSheetId, studentId]);
+
+    // Listen for initialSheetId prop changes
+    useEffect(() => {
+        if (initialSheetId) {
+            setSelectedSheetId(initialSheetId);
+        }
+    }, [initialSheetId]);
+
+    // Set employeeNo / name Suggestions
     useEffect(() => {
         const fetchStudentEmpId = async () => {
             if (!studentId) return;
@@ -184,12 +225,40 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
         }
     }, [authUser, docData.planned]);
 
-    const fetchData = async () => {
+    // Fetch Sheets List for operator
+    const fetchSheets = async () => {
         if (!studentId) return;
+        try {
+            const response = await axiosInstance.get(`/api/skill-matrix/evaluation/${studentId}/sheets`);
+            if (response.data.success) {
+                const fetchedSheets = response.data.data || [];
+                if (fetchedSheets.length === 0) {
+                    // Auto create sheet index 1 if none exist
+                    await handleCreateSheet(true);
+                } else {
+                    setSheets(fetchedSheets);
+                    const active = fetchedSheets.find(s => s.isActive);
+                    if (!selectedSheetId) {
+                        if (active) {
+                            setSelectedSheetId(active.id);
+                        } else if (fetchedSheets.length > 0) {
+                            setSelectedSheetId(fetchedSheets[0].id);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error fetching evaluation sheets list:", error);
+        }
+    };
+
+    // Fetch Sheet details
+    const fetchSheetData = async () => {
+        if (!studentId || !selectedSheetId) return;
         try {
             setLoading(true);
 
-            // Reset all user-specific state before fetching new user's data
+            // Default reset states
             const defaultHeader = {
                 dateOfEvaluation: formatTodayDate(),
                 trainee: studentName || '',
@@ -211,9 +280,12 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
             setEvalData({});
             setOpinion('');
 
-            const response = await axiosInstance.get(`/api/skill-matrix/evaluation/${studentId}`);
-            if (response.data.success && !response.data.data.isNew) {
+            const response = await axiosInstance.get(`/api/skill-matrix/evaluation/sheet/${selectedSheetId}`);
+            if (response.data.success && response.data.data) {
                 const data = response.data.data;
+                setIsActiveSheet(data.isActive === true || data.isActive === 1 || data.isActive === '1');
+                setCurrentPeriod(data.period);
+                setCurrentSheetIndex(data.sheetIndex || 1);
                 setHeaderData(data.headerData || defaultHeader);
 
                 let fetchedDocData = data.docData || defaultDoc;
@@ -231,12 +303,11 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                     };
                 }
                 setDocData(fetchedDocData);
-
                 setEvalData(data.evalData || {});
                 setOpinion(data.opinion || '');
             }
         } catch (error) {
-            console.error("Error fetching evaluation data:", error);
+            console.error("Error fetching sheet data:", error);
         } finally {
             setLoading(false);
         }
@@ -247,10 +318,8 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
             const response = await axiosInstance.get(`/api/skill-matrix/config/${departmentId}`);
             if (response.data.success && response.data.data.config) {
                 const config = response.data.data.config;
-                // Handle both new nested format and legacy flat format
                 if (config.levels) {
                     setSkillConfig(config);
-                    // Also update headers if they are empty (new evaluation)
                     if (!headerData.processInCharge && config.headerDefaults) {
                         setHeaderData(prev => ({ ...prev, ...config.headerDefaults }));
                     }
@@ -274,8 +343,35 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
         }
     };
 
+    const handleCreateSheet = async (autoCreate = false) => {
+        try {
+            setSaving(true);
+            const response = await axiosInstance.post(`/api/skill-matrix/evaluation/${studentId}/sheet/create`, {
+                departmentId
+            });
+            if (response.data.success && response.data.data) {
+                const newSheet = response.data.data;
+                if (!autoCreate) {
+                    toast.success(`Sheet ${newSheet.sheetIndex} (${newSheet.period}) created successfully!`);
+                }
+                setSelectedSheetId(newSheet.id);
+                // Reload list
+                const listResp = await axiosInstance.get(`/api/skill-matrix/evaluation/${studentId}/sheets`);
+                if (listResp.data.success) {
+                    setSheets(listResp.data.data || []);
+                }
+            }
+        } catch (error) {
+            console.error("Error creating new sheet:", error);
+            toast.error("Failed to create new evaluation sheet");
+        } finally {
+            setSaving(false);
+            setCreateDialogOpen(false);
+        }
+    };
+
     const handleSave = async (triggerEmail = false) => {
-        if (!studentId) return;
+        if (!studentId || !selectedSheetId) return;
         try {
             setSaving(true);
             const payload = {
@@ -285,12 +381,18 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                 docData,
                 evalData,
                 opinion,
-                sendEmail: triggerEmail
+                sendEmail: triggerEmail,
+                period: currentPeriod
             };
-            const response = await axiosInstance.post(`/api/skill-matrix/evaluation/save/${studentId}`, payload);
+            const response = await axiosInstance.put(`/api/skill-matrix/evaluation/sheet/${selectedSheetId}/save`, payload);
             toast.success(triggerEmail ? "Evaluation saved and email sent successfully" : "Evaluation saved successfully");
             if (response.data?.data?.levelUpgraded) {
                 toast.success(`Level upgraded to ${response.data.data.newLevel}!`);
+            }
+            // Refresh sheets metadata
+            const listResp = await axiosInstance.get(`/api/skill-matrix/evaluation/${studentId}/sheets`);
+            if (listResp.data.success) {
+                setSheets(listResp.data.data || []);
             }
         } catch (error) {
             console.error("Error saving evaluation:", error);
@@ -427,7 +529,7 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                     </Button>
                     <Button
                         onClick={() => handleSave(false)}
-                        disabled={saving}
+                        disabled={saving || !isActiveSheet}
                         className="bg-slate-700 hover:bg-slate-800 text-white gap-2 transition-all duration-200"
                     >
                         {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -435,7 +537,7 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                     </Button>
                     <Button
                         onClick={() => handleSave(true)}
-                        disabled={saving}
+                        disabled={saving || !isActiveSheet}
                         className="bg-green-600 hover:bg-green-700 text-white gap-2 transition-all duration-200"
                     >
                         {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -444,6 +546,56 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                 </div>
             </CardHeader>
             <CardContent className="p-0">
+                {/* Sheets History Pills Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-gray-50 border border-gray-200 rounded-lg mb-4 text-xs no-print">
+                    <div className="flex items-center gap-2 overflow-x-auto py-1">
+                        <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px]">Pills:</span>
+                        {sheets.map(s => (
+                            <button
+                                key={s.id}
+                                onClick={() => setSelectedSheetId(s.id)}
+                                className={`px-3 py-1.5 rounded-full font-bold transition-all flex items-center gap-1.5 ${
+                                    String(selectedSheetId) === String(s.id)
+                                        ? "bg-slate-800 text-white shadow-sm"
+                                        : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                                }`}
+                            >
+                                <span>Sheet {s.sheetIndex} ({s.period})</span>
+                                {s.isActive && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                        {onBackToList && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs font-semibold px-3"
+                                onClick={onBackToList}
+                            >
+                                Back to Sheets Table
+                            </Button>
+                        )}
+                        <Button
+                            onClick={() => setCreateDialogOpen(true)}
+                            disabled={saving}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-8 text-xs px-3 gap-1 rounded"
+                        >
+                            + Create New Sheet
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Banner if viewing inactive/previous sheet */}
+                {!isActiveSheet && (
+                    <div className="p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg font-bold text-xs mb-4 text-center no-print">
+                        Viewing previous sheet — Sheet {currentSheetIndex} ({currentPeriod}). This sheet is read-only.
+                    </div>
+                )}
+
                 <div className="space-y-4">
                     {/* Header Info Sections */}
                     <div className="flex flex-col md:flex-row justify-between gap-4">
@@ -452,7 +604,13 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Date of evaluation</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input type="text" className="w-full text-center outline-none" value={headerData.dateOfEvaluation} onChange={e => setHeaderData({ ...headerData, dateOfEvaluation: e.target.value })} />
+                                    <input 
+                                        type="text" 
+                                        className="w-full text-center outline-none bg-transparent" 
+                                        value={headerData.dateOfEvaluation} 
+                                        onChange={e => setHeaderData({ ...headerData, dateOfEvaluation: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
                                 </div>
                             </div >
                             <div className="flex border-b border-black">
@@ -460,12 +618,13 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white relative">
                                     <input
                                         type="text"
-                                        className="w-full text-center outline-none"
+                                        className="w-full text-center outline-none bg-transparent"
                                         value={headerData.trainee}
                                         onChange={e => handleTraineeChange(e.target.value)}
                                         onBlur={() => setTimeout(() => setShowTraineeSuggestions(false), 200)}
                                         onFocus={() => { if (traineeSuggestions.length > 0) setShowTraineeSuggestions(true); }}
                                         placeholder="Type to search..."
+                                        disabled={!isActiveSheet}
                                     />
                                     {isSearchingTrainee && (
                                         <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
@@ -491,19 +650,37 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Employee No.</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input type="text" className="w-full text-center outline-none" value={headerData.employeeNo} onChange={e => setHeaderData({ ...headerData, employeeNo: e.target.value })} />
+                                    <input 
+                                        type="text" 
+                                        className="w-full text-center outline-none bg-transparent" 
+                                        value={headerData.employeeNo} 
+                                        onChange={e => setHeaderData({ ...headerData, employeeNo: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
                                 </div>
                             </div>
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Process in charge</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input type="text" className="w-full text-center outline-none" value={headerData.processInCharge} onChange={e => setHeaderData({ ...headerData, processInCharge: e.target.value })} />
+                                    <input 
+                                        type="text" 
+                                        className="w-full text-center outline-none bg-transparent" 
+                                        value={headerData.processInCharge} 
+                                        onChange={e => setHeaderData({ ...headerData, processInCharge: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
                                 </div>
                             </div>
                             <div className="flex">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-[10px]">Skill check Responsible person :</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white flex items-center justify-center">
-                                    <input type="text" className="w-full text-center outline-none text-xs" value={headerData.resultPerson} onChange={e => setHeaderData({ ...headerData, resultPerson: e.target.value })} />
+                                    <input 
+                                        type="text" 
+                                        className="w-full text-center outline-none text-xs bg-transparent" 
+                                        value={headerData.resultPerson} 
+                                        onChange={e => setHeaderData({ ...headerData, resultPerson: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
                                 </div>
                             </div>
                         </div >
@@ -525,19 +702,47 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                         <div className="w-full md:w-[25%] border-2 border-black" >
                             <div className="flex border-b border-black" >
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Doc.No.</div>
-                                <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none" value={docData.docNo} onChange={e => setDocData({ ...docData, docNo: e.target.value })} /></div>
+                                <div className="w-[60%] p-1 text-xs">
+                                    <input 
+                                        className="w-full outline-none bg-transparent" 
+                                        value={docData.docNo} 
+                                        onChange={e => setDocData({ ...docData, docNo: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
+                                </div>
                             </div >
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Rev.No</div>
-                                <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none text-xs" value={docData.revNo || ''} onChange={e => setDocData({ ...docData, revNo: e.target.value })} /></div>
+                                <div className="w-[60%] p-1 text-xs">
+                                    <input 
+                                        className="w-full outline-none text-xs bg-transparent" 
+                                        value={docData.revNo || ''} 
+                                        onChange={e => setDocData({ ...docData, revNo: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
+                                </div>
                             </div>
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Rev Date</div>
-                                <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none text-xs" value={docData.revDate || ''} onChange={e => setDocData({ ...docData, revDate: e.target.value })} /></div>
+                                <div className="w-[60%] p-1 text-xs">
+                                    <input 
+                                        className="w-full outline-none text-xs bg-transparent" 
+                                        value={docData.revDate || ''} 
+                                        onChange={e => setDocData({ ...docData, revDate: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
+                                </div>
                             </div>
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Date of issue</div>
-                                <div className="w-[60%] p-1 text-xs"><input className="w-full outline-none" value={docData.dateOfIssue} onChange={e => setDocData({ ...docData, dateOfIssue: e.target.value })} /></div>
+                                <div className="w-[60%] p-1 text-xs">
+                                    <input 
+                                        className="w-full outline-none bg-transparent" 
+                                        value={docData.dateOfIssue} 
+                                        onChange={e => setDocData({ ...docData, dateOfIssue: e.target.value })} 
+                                        disabled={!isActiveSheet}
+                                    />
+                                </div>
                             </div>
                             <div className="flex border-b border-black text-center text-xs">
                                 <div className="w-1/3 p-1 border-r border-black">Approved</div>
@@ -546,7 +751,11 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                             </div>
                             <div className="flex h-12 text-center text-xs text-blue-600 font-bold">
                                 <div className="w-1/3 p-1 border-r border-black flex items-center justify-center">
-                                    {!docData.approved ? (
+                                    {!isActiveSheet ? (
+                                        <span className="text-[10px] text-gray-500 font-semibold break-all leading-tight">
+                                            {docData.approved || "—"}
+                                        </span>
+                                    ) : !docData.approved ? (
                                         <div className="flex flex-col gap-1 w-full justify-center px-1">
                                             <button
                                                 onClick={() => {
@@ -582,7 +791,11 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                     )}
                                 </div>
                                 <div className="w-1/3 p-1 border-r border-black flex items-center justify-center">
-                                    {!docData.confirmed ? (
+                                    {!isActiveSheet ? (
+                                        <span className="text-[10px] text-gray-500 font-semibold break-all leading-tight">
+                                            {docData.confirmed || "—"}
+                                        </span>
+                                    ) : !docData.confirmed ? (
                                         <div className="flex flex-col gap-1 w-full justify-center px-1">
                                             <button
                                                 onClick={() => {
@@ -623,6 +836,7 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                         rows={2}
                                         value={docData.planned || ''}
                                         onChange={e => setDocData({ ...docData, planned: e.target.value })}
+                                        disabled={!isActiveSheet}
                                     />
                                 </div>
                             </div>
@@ -675,6 +889,7 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                                             placeholder="..."
                                                             value={currentData.standardText || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
+                                                            disabled={!isActiveSheet}
                                                         />
                                                     </div>
                                                     <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-2 bg-white">
@@ -682,6 +897,7 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                                             className="w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400"
                                                             value={currentData.standard || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
+                                                            disabled={!isActiveSheet}
                                                         >
                                                             <option value="">Select</option>
                                                             <option value="OK">OK</option>
@@ -689,14 +905,14 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                                         </select>
                                                         {currentData.standard === 'OK' && (
                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                <span className="font-bold text-gray-500">OK</span>
-                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} /> )</span>
+                                                                 <span className="font-bold text-gray-500">OK</span>
+                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
                                                             </div>
                                                         )}
                                                         {currentData.standard === 'NG' && (
                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                <span className="font-bold text-gray-500">NG</span>
-                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} /> )</span>
+                                                                 <span className="font-bold text-gray-500">NG</span>
+                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -706,6 +922,7 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                                                             rows={3}
                                                             value={currentData.reEducation || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'reEducation', e.target.value)}
+                                                            disabled={!isActiveSheet}
                                                         ></textarea>
                                                     </div>
                                                 </div>
@@ -727,10 +944,32 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                             value={opinion}
                             onChange={e => setOpinion(e.target.value)}
                             placeholder="Enter final opinion and comments..."
+                            disabled={!isActiveSheet}
                         ></textarea>
                     </div>
                 </div >
             </CardContent >
+
+            {/* Confirmation Dialog for Creating New Sheet */}
+            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <DialogContent className="max-w-[400px]">
+                    <DialogHeader>
+                        <DialogTitle>Create New Sheet</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4 text-sm text-gray-700">
+                        Create a new certificate evaluation sheet for <strong>{getPeriodFromDate()}</strong>? 
+                        The current sheet will become inactive and read-only.
+                    </div>
+                    <DialogFooter className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setCreateDialogOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold" size="sm" onClick={() => handleCreateSheet(false)} disabled={saving}>
+                            {saving ? "Creating..." : "Confirm & Create"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Edit Layout Dialog */}
             <Dialog open={isEditingLayout} onOpenChange={setIsEditingLayout}>
@@ -806,4 +1045,3 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
 };
 
 export default SkillMatrixCertificate;
-

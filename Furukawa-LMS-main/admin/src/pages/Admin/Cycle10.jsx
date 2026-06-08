@@ -80,7 +80,9 @@ const Cycle10 = () => {
     const { data: usersData } = useGetAllUsersQuery({
         departmentId: selectedDepartmentFilter,
         limit: 1000,
-        includeTemporary: "true"
+        isEmployee: true,
+        includeTemporary: "true",
+        ojtApprovedToday: "true"
     }, { skip: !selectedDepartmentFilter });
     const operators = usersData?.data?.users || [];
 

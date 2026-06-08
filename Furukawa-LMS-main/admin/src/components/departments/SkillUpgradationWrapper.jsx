@@ -11,7 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
-import { useGetMultiSkillingStudentsQuery } from '@/Redux/AllApi/InstructorApi';
+import { useGetAllStudentsQuery as useGetAllStudentsQueryInstructor } from '@/Redux/AllApi/InstructorApi';
 import { 
     IconStars, 
     IconHierarchy2,
@@ -64,10 +64,12 @@ const SkillUpgradationWrapper = () => {
     const { data: sectionsData } = useGetSectionsByDepartmentQuery(dept, { skip: !dept });
     const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDept, { skip: !createDept });
     
-    // Fetch students/operators specifically for the selected section (no pagination/temporary limits)
-    const { data: studentsData, isFetching: isFetchingStudents } = useGetMultiSkillingStudentsQuery({
+    // Fetch students/operators for the selected section
+    const { data: studentsData, isFetching: isFetchingStudents } = useGetAllStudentsQueryInstructor({
         departmentId: dept,
-        sectionId: section
+        sectionId: section,
+        limit: 1000,
+        sixteenDayApprovedOnly: "true"
     }, { 
         skip: !dept || !section,
         refetchOnMountOrArgChange: true 

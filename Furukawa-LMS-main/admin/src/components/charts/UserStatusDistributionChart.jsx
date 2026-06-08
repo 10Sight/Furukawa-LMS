@@ -125,7 +125,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="operator">Operators</SelectItem>
-                            <SelectItem value="dojo">Dojo Users</SelectItem>
+                            <SelectItem value="dojo">Candidate</SelectItem>
                         </SelectContent>
                     </Select>
                     <Button

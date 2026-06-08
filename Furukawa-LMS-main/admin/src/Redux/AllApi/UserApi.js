@@ -258,5 +258,6 @@ export const {
     useGetImportLogsQuery,
     useGetImportLogDetailsQuery,
     useGetTemporaryUsersQuery,
+    useLazyGetTemporaryUsersQuery,
     useLazyGetNextTemporaryIdQuery
 } = userApi;

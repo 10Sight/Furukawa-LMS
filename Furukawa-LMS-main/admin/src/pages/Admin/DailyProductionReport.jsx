@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DPRManage from "./DPRManage";
-import { format, startOfMonth } from "date-fns";
+import { format, startOfMonth, subDays } from "date-fns";
 import {
     Save as IconSave,
     Printer as IconPrinter,
@@ -394,8 +394,8 @@ const DailyProductionReport = () => {
     const activeReportKey = React.useRef("");
 
     // Filter State
-    const [dashboardDate, setDashboardDate] = useState(format(new Date(), "yyyy-MM-dd"));
-    const [selectedDate, setSelectedDate] = useState(location.state?.date || format(new Date(), "yyyy-MM-dd"));
+    const [dashboardDate, setDashboardDate] = useState(format(subDays(new Date(), 1), "yyyy-MM-dd"));
+    const [selectedDate, setSelectedDate] = useState(location.state?.date || format(subDays(new Date(), 1), "yyyy-MM-dd"));
     const [selectedDepartment, setSelectedDepartment] = useState(location.state?.department || "");
     const [selectedSection, setSelectedSection] = useState("");
     const [selectedLine, setSelectedLine] = useState(location.state?.line || "");
@@ -427,7 +427,7 @@ const DailyProductionReport = () => {
     const lines = lineData?.data || [];
 
     // Create Form States
-    const [createDate, setCreateDate] = useState(format(new Date(), "yyyy-MM-dd"));
+    const [createDate, setCreateDate] = useState(format(subDays(new Date(), 1), "yyyy-MM-dd"));
     const [createDepartment, setCreateDepartment] = useState("");
     const [createSection, setCreateSection] = useState("");
     const [createLine, setCreateLine] = useState("");
@@ -1237,7 +1237,7 @@ const DailyProductionReport = () => {
 
                     <div className="md:col-span-3 lg:col-span-6 flex justify-end">
                         <Button variant="outline" size="sm" onClick={() => {
-                            setDashboardDate(format(new Date(), "yyyy-MM-dd"));
+                            setDashboardDate(format(subDays(new Date(), 1), "yyyy-MM-dd"));
                             setSelectedDepartment("all");
                             setSelectedSection("all");
                             setSelectedLine("all");

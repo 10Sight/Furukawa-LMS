@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
     useCreateUserMutation,
     useGetTemporaryUsersQuery,
+    useLazyGetTemporaryUsersQuery,
     useLazyGetNextTemporaryIdQuery,
     useUpdateUserMutation,
     useDeleteUserMutation,
@@ -14,6 +15,10 @@ import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesBySubSectionQuery } from "@/Redux/AllApi/MachineApi";
 import { toast } from "sonner";
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+import { format } from "date-fns";
+import { safeDateFormat } from "@/utils/dateUtils";
 import {
     Table,
     TableBody,
@@ -60,7 +65,8 @@ import {
     IconUpload,
     IconDownload,
     IconInfoCircle,
-    IconX
+    IconX,
+    IconHistory
 } from "@tabler/icons-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -71,7 +77,7 @@ import FilterSelect from "@/components/common/FilterSelect";
 import StatCard from "@/components/common/StatCard";
 import FilterBar from "@/components/common/FilterBar";
 import { useSelector } from "react-redux";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 
 // Section tab component imports
 import TestPaper from "./TestPaper";
@@ -131,6 +137,8 @@ const DojoHiring = () => {
         leavingDate: "", reasonOfLeaving: ""
     });
 
+    const location = useLocation();
+    const [triggerGetTemporaryUsers] = useLazyGetTemporaryUsersQuery();
     const { data: tempUsersData, isLoading: isLoadingUsers, refetch } = useGetTemporaryUsersQuery({ 
         page: currentPage, 
         search: searchTerm,
@@ -307,6 +315,115 @@ const DojoHiring = () => {
         }
     };
 
+    const handleExportExcel = async () => {
+        const toastId = toast.loading("Preparing Excel file...");
+        try {
+            const PAGE_SIZE = 100;
+            let allCandidates = [];
+            let page = 1;
+            let totalUsers = Infinity;
+
+            while (allCandidates.length < totalUsers) {
+                const result = await triggerGetTemporaryUsers({
+                    page,
+                    limit: PAGE_SIZE,
+                    search: searchTerm || "",
+                    gender: genderFilter !== "ALL" ? genderFilter : "",
+                    today: activeTab === "today" ? "true" : "false"
+                }).unwrap();
+
+                const batch = result?.data?.users || [];
+                totalUsers = result?.data?.totalUsers ?? 0;
+                allCandidates = [...allCandidates, ...batch];
+
+                if (batch.length === 0) break;
+                page++;
+            }
+
+            if (allCandidates.length === 0) {
+                toast.dismiss(toastId);
+                toast.error("No data to export");
+                return;
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Dojo Candidates');
+
+            worksheet.columns = [
+                { header: "Candidate Name", key: "fullName", width: 25 },
+                { header: "Employee Code", key: "userName", width: 20 },
+                { header: "Temporary ID", key: "empId", width: 20 },
+                { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
+                { header: "Gender", key: "gender", width: 10 },
+                { header: "Designation", key: "designation", width: 20 },
+                { header: "Onboarding Status", key: "status", width: 15 },
+                { header: "Mobile No", key: "phoneNumber", width: 15 },
+                { header: "Email", key: "email", width: 30 },
+                { header: "Department", key: "deptName", width: 25 },
+                { header: "Section", key: "sectionName", width: 20 },
+                { header: "Line", key: "lineName", width: 15 },
+                { header: "Sub Section", key: "subSectionName", width: 20 },
+                { header: "Station No.", key: "stationName", width: 15 },
+                { header: "DOB", key: "dob", width: 15 },
+                { header: "Date of Joining", key: "joiningDate", width: 15 },
+                { header: "Education", key: "education", width: 20 },
+                { header: "District", key: "district", width: 15 },
+                { header: "State", key: "state", width: 15 },
+                { header: "PIN", key: "pin", width: 10 },
+                { header: "Bus Route", key: "busRoute", width: 15 },
+                { header: "Date of Leaving", key: "leavingDate", width: 15 },
+                { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
+            ];
+
+            allCandidates.forEach((candidate) => {
+                worksheet.addRow({
+                    fullName: candidate.fullName || "",
+                    userName: candidate.userName || "",
+                    empId: candidate.empId || "",
+                    fatherHusbandName: candidate.fatherHusbandName || "",
+                    gender: candidate.gender || "",
+                    designation: candidate.designation || "",
+                    status: candidate.status || "PRESENT",
+                    phoneNumber: candidate.phoneNumber || "",
+                    email: candidate.email || "",
+                    deptName: candidate.deptName || "",
+                    sectionName: candidate.sectionName || "",
+                    lineName: candidate.lineName || "",
+                    subSectionName: candidate.subSectionName || "",
+                    stationName: candidate.stationName || "",
+                    dob: safeDateFormat(candidate.dob, "yyyy-MM-dd"),
+                    joiningDate: safeDateFormat(candidate.joiningDate, "yyyy-MM-dd"),
+                    education: candidate.education || "",
+                    district: candidate.district || "",
+                    state: candidate.state || "",
+                    pin: candidate.pin || "",
+                    busRoute: candidate.busRoute || "",
+                    leavingDate: safeDateFormat(candidate.leavingDate, "yyyy-MM-dd"),
+                    reasonOfLeaving: candidate.reasonOfLeaving || "",
+                });
+            });
+
+            // Style header row
+            worksheet.getRow(1).font = { bold: true };
+            worksheet.getRow(1).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0E0E0' }
+            };
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            saveAs(blob, `Dojo_Candidates_Export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+
+            toast.dismiss(toastId);
+            toast.success(`Exported ${allCandidates.length} candidates successfully!`);
+        } catch (error) {
+            console.error("Export error:", error);
+            toast.dismiss(toastId);
+            toast.error("Failed to export data");
+        }
+    };
+
     const openEditModal = (user) => {
         setSelectedUser(user);
         setFormData({
@@ -400,6 +517,27 @@ const DojoHiring = () => {
                     <p className="text-slate-500 font-medium">Register and manage temporary candidates in the pipeline</p>
                 </div>
                 <div className="flex gap-3">
+                    <Button 
+                        variant="outline"
+                        onClick={handleExportExcel}
+                        className="border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-6 py-5 h-auto flex gap-2 items-center font-bold"
+                    >
+                        <IconDownload className="w-5 h-5" />
+                        Export Excel
+                    </Button>
+                    {hasPermission("user:import_logs") && (
+                        <Button 
+                            variant="outline"
+                            onClick={() => {
+                                const parentPath = location.pathname.split("/")[1];
+                                navigate(`/${parentPath}/employees/import-logs?type=DOJO_CANDIDATE`);
+                            }}
+                            className="border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-6 py-5 h-auto flex gap-2 items-center font-bold"
+                        >
+                            <IconHistory className="w-5 h-5" />
+                            Import Logs
+                        </Button>
+                    )}
                     {canCreate && (
                         <Button 
                             variant="outline"

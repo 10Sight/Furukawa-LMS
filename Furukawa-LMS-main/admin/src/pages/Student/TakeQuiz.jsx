@@ -64,7 +64,10 @@ const TakeQuiz = () => {
   useEffect(() => {
     if (!canAdminister && currentUser) {
       setCandidateName(currentUser.fullName || "");
-      setECode(currentUser.empId || "");
+      const code = (currentUser.isTemporary === true || currentUser.isTemporary === 1 || currentUser.isTemporary === "true") 
+        ? (currentUser.userName || "") 
+        : (currentUser.empId || "");
+      setECode(code);
       setSelectedStudent(currentUser);
     }
   }, [currentUser, canAdminister]);
@@ -129,7 +132,12 @@ const TakeQuiz = () => {
         }
       });
       const studentsList = response.data?.data?.users || [];
-      const exactMatch = studentsList.find(s => s.empId && s.empId.toLowerCase().trim() === value.toLowerCase().trim());
+      const exactMatch = studentsList.find(s => {
+        const studentCode = (s.isTemporary === true || s.isTemporary === 1 || s.isTemporary === "true") 
+          ? (s.userName || "") 
+          : (s.empId || "");
+        return studentCode.toLowerCase().trim() === value.toLowerCase().trim();
+      });
       if (exactMatch) {
         setCandidateName(exactMatch.fullName);
         setSelectedStudent(exactMatch);
@@ -141,7 +149,10 @@ const TakeQuiz = () => {
 
   const handleSelectStudent = (student) => {
     setCandidateName(student.fullName);
-    setECode(student.empId || "");
+    const code = (student.isTemporary === true || student.isTemporary === 1 || student.isTemporary === "true") 
+      ? (student.userName || "") 
+      : (student.empId || "");
+    setECode(code);
     setSelectedStudent(student);
     setShowSuggestions(false);
   };
@@ -668,7 +679,7 @@ const TakeQuiz = () => {
                               className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm flex flex-col"
                             >
                               <span className="font-bold text-gray-800">{student.fullName}</span>
-                              <span className="text-xs text-gray-500 font-mono">E.Code: {student.empId}</span>
+                              <span className="text-xs text-gray-500 font-mono">E.Code: {(student.isTemporary === true || student.isTemporary === 1 || student.isTemporary === "true") ? student.userName : student.empId}</span>
                             </li>
                           ))}
                         </ul>

@@ -23,16 +23,30 @@ import {
 } from "@tabler/icons-react";
 import { useGetImportLogsQuery, useGetImportLogDetailsQuery } from "@/Redux/AllApi/UserApi";
 import { format } from "date-fns";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 const OperatorImportLogs = () => {
     const [selectedLogId, setSelectedLogId] = useState(null);
     const { data: logsData, isLoading: isLoadingLogs } = useGetImportLogsQuery();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const importTypeFilter = searchParams.get("type");
+
+    const filteredLogs = React.useMemo(() => {
+        if (!logsData?.data) return [];
+        if (!importTypeFilter) return logsData.data;
+        return logsData.data.filter(log => log.importType === importTypeFilter);
+    }, [logsData, importTypeFilter]);
 
     const handleLogClick = (id) => {
         setSelectedLogId(id);
     };
+
+    const isDojo = importTypeFilter === "DOJO_CANDIDATE";
+    const titleText = isDojo ? "DOJO Candidate Import Logs" : "Operator Import Logs";
+    const subtitleText = selectedLogId 
+        ? "Detailed view of import results" 
+        : (isDojo ? "History of all bulk DOJO candidate imports" : "History of all bulk operator imports");
 
     return (
         <div className="p-6 space-y-6">
@@ -49,10 +63,10 @@ const OperatorImportLogs = () => {
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                             <IconHistory className="h-7 w-7 text-orange-500" />
-                            Operator Import Logs
+                            {titleText}
                         </h1>
                         <p className="text-muted-foreground">
-                            {selectedLogId ? "Detailed view of import results" : "History of all bulk operator imports"}
+                            {subtitleText}
                         </p>
                     </div>
                 </div>
@@ -84,8 +98,8 @@ const OperatorImportLogs = () => {
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
-                                        ) : logsData?.data?.length > 0 ? (
-                                            logsData.data.map((log) => (
+                                        ) : filteredLogs?.length > 0 ? (
+                                            filteredLogs.map((log) => (
                                                 <TableRow 
                                                     key={log.id} 
                                                     className="cursor-pointer hover:bg-muted/30 transition-colors" 
@@ -142,7 +156,7 @@ const OperatorImportLogs = () => {
                                                     <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                                                         <IconHistory className="h-12 w-12 text-muted-foreground/30" />
                                                         <p className="text-lg font-medium">No import records found</p>
-                                                        <p className="text-sm">When you import operators from Excel, they will appear here.</p>
+                                                        <p className="text-sm">When you import {isDojo ? "candidates" : "operators"} from Excel, they will appear here.</p>
                                                     </div>
                                                 </TableCell>
                                             </TableRow>

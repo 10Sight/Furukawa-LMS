@@ -5,6 +5,11 @@ import { Mail, Plus, Trash2, FileSpreadsheet, CheckCircle2, Clock } from 'lucide
 import { toast } from "react-hot-toast";
 
 const EmailReports = () => {
+    const { user } = useSelector((state) => state.auth);
+    const isAdmin = user?.isAdmin || user?.role === 'SUPERADMIN';
+    const canTrigger = isAdmin || user?.customRole?.permissions?.includes('mps_email_reports:trigger_mail');
+    const canManageRecipients = isAdmin || user?.customRole?.permissions?.includes('mps_email_reports:add_mail');
+
     const { theme } = useSelector((state) => state.theme) || {
         theme: {
             card: 'bg-white',
@@ -180,33 +185,36 @@ const EmailReports = () => {
                             <span className="font-semibold text-green-600">Excel</span> files and sent to registered recipients.
                         </p>
                     </div>
-                    <button
-                        onClick={handleSendReport}
-                        disabled={sending}
-                        className={`px-6 py-3 rounded-xl font-bold text-sm shadow-xl flex items-center gap-2 transition-all transform hover:-translate-y-0.5 ${sending
-                            ? 'bg-slate-400 cursor-not-allowed text-white'
-                            : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-blue-600/20'
-                            }`}
-                    >
-                        {sending ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                Sending...
-                            </>
-                        ) : (
-                            <>
-                                <Mail size={18} />
-                                Trigger Manual Report
-                            </>
-                        )}
-                    </button>
+                    {canTrigger && (
+                        <button
+                            onClick={handleSendReport}
+                            disabled={sending}
+                            className={`px-6 py-3 rounded-xl font-bold text-sm shadow-xl flex items-center gap-2 transition-all transform hover:-translate-y-0.5 ${sending
+                                ? 'bg-slate-400 cursor-not-allowed text-white'
+                                : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-blue-600/20'
+                                }`}
+                        >
+                            {sending ? (
+                                <>
+                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Sending...
+                                </>
+                            ) : (
+                                <>
+                                    <Mail size={18} />
+                                    Trigger Manual Report
+                                </>
+                            )}
+                        </button>
+                    )}
                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Configuration Panel */}
-                <div className="lg:col-span-4 space-y-6">
-                    <div className="p-6 rounded-2xl border shadow-sm bg-white sticky top-6 border-slate-200">
+                {canManageRecipients && (
+                    <div className="lg:col-span-4 space-y-6">
+                        <div className="p-6 rounded-2xl border shadow-sm bg-white sticky top-6 border-slate-200">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold text-slate-900">Add Recipient</h3>
                             <span className="text-xs font-bold px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
@@ -337,11 +345,12 @@ const EmailReports = () => {
                                 )}
                             </button>
                         </form>
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* List Panel */}
-                <div className="lg:col-span-8">
+                <div className={canManageRecipients ? "lg:col-span-8" : "lg:col-span-12"}>
                     <div className="rounded-2xl border shadow-sm bg-white overflow-hidden flex flex-col h-full border-slate-200">
                         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
                             <div>
@@ -404,13 +413,15 @@ const EmailReports = () => {
                                                     </div>
                                                 </div>
 
-                                                <button
-                                                    onClick={() => handleDelete(r.id)}
-                                                    className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
-                                                    title="Remove Recipient"
-                                                >
-                                                    <Trash2 size={18} />
-                                                </button>
+                                                {canManageRecipients && (
+                                                    <button
+                                                        onClick={() => handleDelete(r.id)}
+                                                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+                                                        title="Remove Recipient"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                )}
                                             </div>
                                         );
                                     })}

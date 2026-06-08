@@ -93,3 +93,15 @@ export const getMultiSkillingPlanHistory = asyncHandler(async (req, res) => {
         new ApiResponse(200, history, "History fetched successfully")
     );
 });
+
+// List all multi-skilling plans
+export const listMultiSkillingPlans = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId } = req.query;
+    const plans = await MultiSkillingPlan.listPlans(
+        departmentId ? parseInt(departmentId) : null,
+        sectionId ? parseInt(sectionId) : null
+    );
+    return res.status(200).json(
+        new ApiResponse(200, plans, "Multi-skilling plans list fetched successfully")
+    );
+});

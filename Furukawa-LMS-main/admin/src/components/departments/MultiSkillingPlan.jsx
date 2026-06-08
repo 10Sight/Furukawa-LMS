@@ -3,6 +3,7 @@ import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
+import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
 import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus } from "@tabler/icons-react";
@@ -57,7 +58,7 @@ const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChan
                         <li
                             key={s._id || s.id}
                             onMouseDown={() => {
-                                onChange(s._id || s.id, s.fullName || s.name);
+                                onChange(s._id || s.id, s.fullName || s.name, s.lineName, s.subSectionName);
                                 handleRowFieldChange(rowId, "cardNo", s.cardNo || s.username || s.empId || "-");
                                 setShowSuggestions(false);
                             }}
@@ -97,6 +98,14 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
     });
     const lines = (sectionId ? sectLines?.data : deptLines?.data) || [];
 
+    const { data: subSectionsData } = useGetSubSectionsQuery({
+        departmentId,
+        sectionId,
+    }, {
+        skip: !departmentId,
+    });
+    const subSections = subSectionsData?.data || [];
+
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(false);
@@ -127,15 +136,19 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                 station: data.station || "",
                 q1Skill: data.q1Skill || "",
                 q1Date: data.q1Date || "",
+                q1DateActual: data.q1DateActual || "",
                 q1Status: data.q1Status || "",
                 q2Skill: data.q2Skill || "",
                 q2Date: data.q2Date || "",
+                q2DateActual: data.q2DateActual || "",
                 q2Status: data.q2Status || "",
                 q3Skill: data.q3Skill || "",
                 q3Date: data.q3Date || "",
+                q3DateActual: data.q3DateActual || "",
                 q3Status: data.q3Status || "",
                 q4Skill: data.q4Skill || "",
                 q4Date: data.q4Date || "",
+                q4DateActual: data.q4DateActual || "",
                 q4Status: data.q4Status || ""
             });
         });
@@ -153,10 +166,10 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                     shift: "",
                     modelLine: "",
                     station: "",
-                    q1Skill: "", q1Date: "", q1Status: "",
-                    q2Skill: "", q2Date: "", q2Status: "",
-                    q3Skill: "", q3Date: "", q3Status: "",
-                    q4Skill: "", q4Date: "", q4Status: ""
+                    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
+                    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
+                    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
+                    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
                 });
             }
         }
@@ -208,10 +221,10 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                 shift: "",
                 modelLine: "",
                 station: "",
-                q1Skill: "", q1Date: "", q1Status: "",
-                q2Skill: "", q2Date: "", q2Status: "",
-                q3Skill: "", q3Date: "", q3Status: "",
-                q4Skill: "", q4Date: "", q4Status: ""
+                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
+                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
+                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
+                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
             }
         ]);
     };
@@ -248,19 +261,23 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
             if (row.userId) {
                 newTableData[row.userId] = {
                     shift: row.shift,
-                    modelLine: row.modelLine,
-                    station: row.station,
+                    modelLine: row.modelLine || "",
+                    station: row.station || "",
                     q1Skill: row.q1Skill,
                     q1Date: row.q1Date,
+                    q1DateActual: row.q1DateActual,
                     q1Status: row.q1Status,
                     q2Skill: row.q2Skill,
                     q2Date: row.q2Date,
+                    q2DateActual: row.q2DateActual,
                     q2Status: row.q2Status,
                     q3Skill: row.q3Skill,
                     q3Date: row.q3Date,
+                    q3DateActual: row.q3DateActual,
                     q3Status: row.q3Status,
                     q4Skill: row.q4Skill,
                     q4Date: row.q4Date,
+                    q4DateActual: row.q4DateActual,
                     q4Status: row.q4Status
                 };
             }
@@ -357,28 +374,32 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                 <th rowSpan="2" className="border-r border-slate-300 p-2 text-center font-bold align-middle whitespace-nowrap">Shift</th>
                                 <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Model & Line</th>
                                 <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Station</th>
-                                <th colSpan="3" className="border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap">Jan-March</th>
-                                <th colSpan="3" className="border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap">April-June</th>
-                                <th colSpan="3" className="border-r border-slate-300 p-2 text-center font-bold bg-green-50 text-green-800 whitespace-nowrap">July-Sep</th>
-                                <th colSpan="3" className="border-r border-slate-300 p-2 text-center font-bold bg-purple-50 text-purple-800 whitespace-nowrap">Oct-Dec</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap">Jan-March</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap">April-June</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-green-50 text-green-800 whitespace-nowrap">July-Sep</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-purple-50 text-purple-800 whitespace-nowrap">Oct-Dec</th>
                                 <th rowSpan="2" className="p-2 text-center font-bold align-middle no-print whitespace-nowrap">Action</th>
                             </tr>
                             <tr className="bg-slate-50 border-b border-slate-300">
                                 {/* Jan-March */}
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
                                 {/* April-June */}
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
                                 {/* July-Sep */}
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
                                 {/* Oct-Dec */}
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
                                 <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
                             </tr>
                         </thead>
@@ -386,15 +407,22 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                         <tbody className="bg-white">
                             {filteredRows.map((row, index) => {
                                 const rowId = row.rowId;
+                                const associatedUser = students.find(s => String(s._id || s.id) === String(row.userId));
+                                const rowSubSections = row.modelLine 
+                                    ? subSections.filter(ss => ss.lineName === row.modelLine) 
+                                    : subSections;
+
                                 return (
                                     <tr key={rowId} className="hover:bg-slate-50/50 border-b border-slate-200 transition-colors">
                                         <td className="border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap">{index + 1}</td>
                                         <td className="border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap">
                                             <UserCellSelector
                                                 value={row.userName}
-                                                onChange={(userId, userName) => {
+                                                onChange={(userId, userName, lineName, subSectionName) => {
                                                     handleRowFieldChange(rowId, "userId", userId);
                                                     handleRowFieldChange(rowId, "userName", userName);
+                                                    handleRowFieldChange(rowId, "modelLine", lineName || "");
+                                                    handleRowFieldChange(rowId, "station", subSectionName || "");
                                                 }}
                                                 students={students}
                                                 rowId={rowId}
@@ -433,7 +461,10 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                         <td className="border-r border-slate-200 p-1 whitespace-nowrap">
                                             <Select
                                                 value={row.modelLine || ""}
-                                                onValueChange={(val) => handleRowFieldChange(rowId, "modelLine", val)}
+                                                onValueChange={(val) => {
+                                                    handleRowFieldChange(rowId, "modelLine", val);
+                                                    handleRowFieldChange(rowId, "station", ""); // Reset station when line changes
+                                                }}
                                                 disabled={!canManage}
                                             >
                                                 <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
@@ -450,13 +481,22 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                         </td>
                                         {/* Station */}
                                         <td className="border-r border-slate-200 p-1 whitespace-nowrap">
-                                            <Input
+                                            <Select
                                                 value={row.station || ""}
-                                                onChange={(e) => handleRowFieldChange(rowId, "station", e.target.value)}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "station", val)}
                                                 disabled={!canManage}
-                                                className="h-8 w-full min-w-[100px] text-xs shadow-none bg-white border-slate-200"
-                                                placeholder="Station"
-                                            />
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="Select Station" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {rowSubSections.map((ss) => (
+                                                        <SelectItem key={ss.id || ss._id} value={ss.name}>
+                                                            {ss.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
                                         </td>
 
                                         {/* Jan-March */}
@@ -484,6 +524,16 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                                 type="date"
                                                 value={row.q1Date || ""}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q1Date", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-amber-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q1DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q1DateActual", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
                                             />
@@ -536,6 +586,16 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
                                             />
                                         </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-blue-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q2DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q2DateActual", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
                                         {/* Status */}
                                         <td className="border-r border-slate-200 p-1 bg-blue-50/20 whitespace-nowrap">
                                             <Select
@@ -580,6 +640,16 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                                 type="date"
                                                 value={row.q3Date || ""}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q3Date", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-green-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q3DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q3DateActual", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
                                             />
@@ -632,6 +702,16 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
                                             />
                                         </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-purple-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q4DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q4DateActual", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
                                         {/* Status */}
                                         <td className="border-r border-slate-200 p-1 bg-purple-50/20 whitespace-nowrap">
                                             <Select
@@ -671,7 +751,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
 
                             {filteredRows.length === 0 && (
                                 <tr>
-                                    <td colSpan="19" className="border border-slate-300 p-8 text-center text-muted-foreground bg-slate-50">
+                                    <td colSpan="23" className="border border-slate-300 p-8 text-center text-muted-foreground bg-slate-50">
                                         No rows match the search filter.
                                     </td>
                                 </tr>

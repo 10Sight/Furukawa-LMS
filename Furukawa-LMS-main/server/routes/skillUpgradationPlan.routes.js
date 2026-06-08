@@ -7,11 +7,19 @@ import {
     getSkillUpgradationPlanConfig,
     saveSkillUpgradationPlanConfig,
     getSkillUpgradationPlanHistory,
+    listSkillUpgradationPlans,
 } from "../controllers/skillUpgradationPlan.controller.js";
 
 const router = Router();
 
 router.use(verifyJWT);
+
+// List all skill upgradation plans
+router.get(
+    "/list",
+    authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
+    listSkillUpgradationPlans
+);
 
 // Get skill upgradation plan by department and section
 router.get(

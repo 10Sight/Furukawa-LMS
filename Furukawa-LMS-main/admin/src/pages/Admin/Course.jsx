@@ -393,7 +393,7 @@ const Course = () => {
 
   const handleCourseClick = (course) => {
     const handle = course.slug || course._id;
-    navigate(`${handle}`);
+    navigate(`/admin/courses/${handle}`);
   };
 
   const getStatusBadge = (status) => {

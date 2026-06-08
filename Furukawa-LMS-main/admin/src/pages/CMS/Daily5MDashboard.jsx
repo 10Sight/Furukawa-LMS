@@ -73,6 +73,24 @@ const scrollbarStyles = `
   }
 `;
 
+const parseLocalDate = (dateStr) => {
+    if (!dateStr) return undefined;
+    if (dateStr instanceof Date) return dateStr;
+    
+    // If it's a string, clean any time components (e.g. ISO string split by 'T')
+    const cleanStr = typeof dateStr === 'string' && dateStr.includes('T') 
+        ? dateStr.split('T')[0] 
+        : dateStr;
+        
+    if (typeof cleanStr !== 'string') return new Date(dateStr);
+
+    const [year, month, day] = cleanStr.split('-').map(Number);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+        return new Date(dateStr); // fallback to standard parsing if splitting fails
+    }
+    return new Date(year, month - 1, day);
+};
+
 const Daily5MDashboard = () => {
     const navigate = useNavigate();
     const { data: departmentsData } = useGetAllDepartmentsQuery();
@@ -168,7 +186,7 @@ const Daily5MDashboard = () => {
         } else {
             setRowStats(null);
         }
-    }, [selectedDepartment, selectedSection, chartStartDate, chartEndDate, selectedChartDepts, chartViewType]);
+    }, [selectedDepartment, selectedSection, chartStartDate, chartEndDate, startDate, endDate, selectedChartDepts, chartViewType]);
 
     // Debounced search
     useEffect(() => {
@@ -223,31 +241,22 @@ const Daily5MDashboard = () => {
 
             let query = `/api/daily-5m/stats/daily/${deptId}?t=${Date.now()}`;
             if (selectedSection && selectedSection !== 'all') query += `&sectionId=${selectedSection}`;
-            if (chartStartDate) query += `&startDate=${chartStartDate}`;
-            if (chartEndDate) query += `&endDate=${chartEndDate}`;
+            
+            const effectiveStartDate = chartStartDate || startDate;
+            const effectiveEndDate = chartEndDate || endDate;
+
+            if (effectiveStartDate) query += `&startDate=${effectiveStartDate}`;
+            if (effectiveEndDate) query += `&endDate=${effectiveEndDate}`;
 
             const response = await axiosInstance.get(query);
             if (response.data.success) {
                 const fetchedData = response.data.data;
                 
                 // Determine the range to display in local timezone
-                let rangeEnd;
-                if (chartEndDate) {
-                    const [year, month, day] = chartEndDate.split('-').map(Number);
-                    rangeEnd = new Date(year, month - 1, day);
-                } else {
-                    rangeEnd = new Date();
-                }
+                let rangeEnd = parseLocalDate(effectiveEndDate) || new Date();
+                let rangeStart = parseLocalDate(effectiveStartDate) || new Date();
 
-                let rangeStart;
-                if (chartStartDate) {
-                    const [year, month, day] = chartStartDate.split('-').map(Number);
-                    rangeStart = new Date(year, month - 1, day);
-                } else {
-                    rangeStart = new Date();
-                }
-
-                if (!chartStartDate) {
+                if (!effectiveStartDate) {
                     rangeStart.setDate(rangeStart.getDate() - 29); // Default to last 30 days
                 }
 
@@ -302,8 +311,8 @@ const Daily5MDashboard = () => {
             // Only apply date filters if view type is 'daily'
             if (chartViewType === 'daily') {
                 // If user has selected local chart dates, use them. Otherwise default to today for the pie charts.
-                const effectiveStartDate = chartStartDate || format(new Date(), "yyyy-MM-dd");
-                const effectiveEndDate = chartEndDate || format(new Date(), "yyyy-MM-dd");
+                const effectiveStartDate = chartStartDate || startDate || format(new Date(), "yyyy-MM-dd");
+                const effectiveEndDate = chartEndDate || endDate || format(new Date(), "yyyy-MM-dd");
                 
                 query += `&startDate=${effectiveStartDate}`;
                 query += `&endDate=${effectiveEndDate}`;
@@ -536,10 +545,10 @@ const Daily5MDashboard = () => {
                                         {startDate ? (
                                             endDate ? (
                                                 <>
-                                                    {format(new Date(startDate), "dd/MM/yy")} - {format(new Date(endDate), "dd/MM/yy")}
+                                                    {format(parseLocalDate(startDate), "dd/MM/yy")} - {format(parseLocalDate(endDate), "dd/MM/yy")}
                                                 </>
                                             ) : (
-                                                format(new Date(startDate), "dd/MM/yy")
+                                                format(parseLocalDate(startDate), "dd/MM/yy")
                                             )
                                         ) : (
                                             <span>Pick a date range</span>
@@ -550,10 +559,10 @@ const Daily5MDashboard = () => {
                                     <Calendar
                                         initialFocus
                                         mode="range"
-                                        defaultMonth={startDate ? new Date(startDate) : undefined}
+                                        defaultMonth={startDate ? parseLocalDate(startDate) : undefined}
                                         selected={{
-                                            from: startDate ? new Date(startDate) : undefined,
-                                            to: endDate ? new Date(endDate) : undefined,
+                                            from: parseLocalDate(startDate),
+                                            to: parseLocalDate(endDate),
                                         }}
                                         onSelect={(range) => {
                                             setStartDate(range?.from ? format(range.from, "yyyy-MM-dd") : "");
@@ -757,17 +766,17 @@ const Daily5MDashboard = () => {
                                                 size="sm"
                                                 className={cn(
                                                     "h-8 justify-start text-left font-normal border-dashed text-xs bg-white",
-                                                    (!chartStartDate && !chartEndDate) && "text-slate-400"
+                                                    (!(chartStartDate || startDate) && !(chartEndDate || endDate)) && "text-slate-400"
                                                 )}
                                             >
                                                 <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                                                {chartStartDate ? (
-                                                    chartEndDate ? (
+                                                {(chartStartDate || startDate) ? (
+                                                    (chartEndDate || endDate) ? (
                                                         <>
-                                                            {format(new Date(chartStartDate), "dd/MM/yy")} - {format(new Date(chartEndDate), "dd/MM/yy")}
+                                                            {format(parseLocalDate(chartStartDate || startDate), "dd/MM/yy")} - {format(parseLocalDate(chartEndDate || endDate), "dd/MM/yy")}
                                                         </>
                                                     ) : (
-                                                        format(new Date(chartStartDate), "dd/MM/yy")
+                                                        format(parseLocalDate(chartStartDate || startDate), "dd/MM/yy")
                                                     )
                                                 ) : (
                                                     <span>Today</span>
@@ -783,16 +792,16 @@ const Daily5MDashboard = () => {
                                                     className="h-6 text-[10px]"
                                                     onClick={() => { setChartStartDate(""); setChartEndDate(""); }}
                                                 >
-                                                    Reset to Today
+                                                    Clear Custom Range
                                                 </Button>
                                             </div>
                                             <Calendar
                                                 initialFocus
                                                 mode="range"
-                                                defaultMonth={chartStartDate ? new Date(chartStartDate) : undefined}
+                                                defaultMonth={chartStartDate ? parseLocalDate(chartStartDate) : (startDate ? parseLocalDate(startDate) : undefined)}
                                                 selected={{
-                                                    from: chartStartDate ? new Date(chartStartDate) : undefined,
-                                                    to: chartEndDate ? new Date(chartEndDate) : undefined,
+                                                    from: parseLocalDate(chartStartDate) || parseLocalDate(startDate),
+                                                    to: parseLocalDate(chartEndDate) || parseLocalDate(endDate),
                                                 }}
                                                 onSelect={(range) => {
                                                     setChartStartDate(range?.from ? format(range.from, "yyyy-MM-dd") : "");
@@ -951,7 +960,7 @@ const Daily5MDashboard = () => {
                                 {records.map((record) => (
                                     <TableRow key={record.id} className="group hover:bg-slate-50/50 transition-colors">
                                         <TableCell className="font-mono text-xs text-blue-600 font-bold">#{record.id}</TableCell>
-                                        <TableCell className="whitespace-nowrap">{format(new Date(record.date), "PPP")}</TableCell>
+                                        <TableCell className="whitespace-nowrap">{format(parseLocalDate(record.date), "PPP")}</TableCell>
                                         <TableCell>
                                             <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-semibold">
                                                 {record.departmentName || "Dept"}

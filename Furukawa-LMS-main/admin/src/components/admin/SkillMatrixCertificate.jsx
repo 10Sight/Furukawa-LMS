@@ -287,8 +287,11 @@ const SkillMatrixCertificate = ({ studentId, studentName, employeeCode, departme
                 opinion,
                 sendEmail: triggerEmail
             };
-            await axiosInstance.post(`/api/skill-matrix/evaluation/save/${studentId}`, payload);
+            const response = await axiosInstance.post(`/api/skill-matrix/evaluation/save/${studentId}`, payload);
             toast.success(triggerEmail ? "Evaluation saved and email sent successfully" : "Evaluation saved successfully");
+            if (response.data?.data?.levelUpgraded) {
+                toast.success(`Level upgraded to ${response.data.data.newLevel}!`);
+            }
         } catch (error) {
             console.error("Error saving evaluation:", error);
             toast.error("Failed to save evaluation");

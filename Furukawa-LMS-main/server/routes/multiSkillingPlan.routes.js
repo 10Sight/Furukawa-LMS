@@ -7,11 +7,19 @@ import {
     getMultiSkillingPlanConfig,
     saveMultiSkillingPlanConfig,
     getMultiSkillingPlanHistory,
+    listMultiSkillingPlans,
 } from "../controllers/multiSkillingPlan.controller.js";
 
 const router = Router();
 
 router.use(verifyJWT);
+
+// List all multi-skilling plans
+router.get(
+    "/list",
+    authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
+    listMultiSkillingPlans
+);
 
 // Get multi skilling plan by department
 // Get multi skilling plan by department and section

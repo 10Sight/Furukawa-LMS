@@ -14,7 +14,11 @@ import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import {
     IconStars,
     IconHierarchy2,
-    IconPlus
+    IconPlus,
+    IconArrowLeft,
+    IconEye,
+    IconCalendarTime,
+    IconCalendar
 } from "@tabler/icons-react";
 import MultiSkillingPlan from '@/components/departments/MultiSkillingPlan';
 
@@ -48,6 +52,11 @@ const MultiSkilling = () => {
     const [section, setSection] = useState("");
     const [year, setYear] = useState(new Date().getFullYear().toString());
 
+    // Plans list and selection states
+    const [selectedPlan, setSelectedPlan] = useState(null);
+    const [plansList, setPlansList] = useState([]);
+    const [loadingPlans, setLoadingPlans] = useState(false);
+
     // Create Plan dialog states
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [createDept, setCreateDept] = useState("");
@@ -77,6 +86,41 @@ const MultiSkilling = () => {
 
     const createSections = createSectionsData?.data || [];
 
+    const fetchPlansList = async () => {
+        if (!dept || !section) {
+            setPlansList([]);
+            return;
+        }
+        try {
+            setLoadingPlans(true);
+            const response = await axiosInstance.get('/api/multi-skilling-plan/list', {
+                params: { departmentId: dept, sectionId: section }
+            });
+            if (response.data?.success) {
+                setPlansList(response.data.data || []);
+            } else {
+                setPlansList([]);
+            }
+        } catch (error) {
+            console.error("Error fetching plans list:", error);
+            toast.error("Failed to load plans list");
+            setPlansList([]);
+        } finally {
+            setLoadingPlans(false);
+        }
+    };
+
+    React.useEffect(() => {
+        fetchPlansList();
+        setSelectedPlan(null);
+    }, [dept, section]);
+
+    React.useEffect(() => {
+        if (selectedPlan === null) {
+            fetchPlansList();
+        }
+    }, [selectedPlan]);
+
     const handleCreatePlanSubmit = async () => {
         if (!createDept || !createSection || !createYear) {
             toast.error("Please select Department, Section, and Year.");
@@ -95,6 +139,12 @@ const MultiSkilling = () => {
                 setYear(createYear);
                 setIsCreateOpen(false);
                 toast.success(`Multi-Skilling Plan created successfully for Year ${createYear}`);
+                fetchPlansList();
+                if (response.data.data) {
+                    setSelectedPlan(response.data.data);
+                } else {
+                    setSelectedPlan({ year: createYear });
+                }
             }
         } catch (error) {
             console.error("Error creating plan:", error);
@@ -192,7 +242,7 @@ const MultiSkilling = () => {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="pt-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department</Label>
                                     <Select
@@ -227,35 +277,91 @@ const MultiSkilling = () => {
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Year</Label>
-                                    <Select
-                                        value={year}
-                                        onValueChange={setYear}
-                                    >
-                                        <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-amber-500 text-sm">
-                                            <SelectValue placeholder="Select Year" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {yearsList.map((y) => (
-                                                <SelectItem key={y} value={y}>{y}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
                             </div>
                         </CardContent>
                     </Card>
 
-                    {/* Training Plan Sheet */}
+                    {/* Training Plan Sheet / List Table */}
                     {dept && section ? (
-                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <MultiSkillingPlan
-                                students={students}
-                                departmentId={dept}
-                                sectionId={section}
-                                year={year}
-                            />
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
+                            {selectedPlan ? (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between no-print">
+                                        <Button
+                                            onClick={() => setSelectedPlan(null)}
+                                            variant="outline"
+                                            className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm text-xs h-9"
+                                        >
+                                            <IconArrowLeft className="w-4 h-4 mr-1.5" />
+                                            Back to Plans
+                                        </Button>
+                                    </div>
+                                    <MultiSkillingPlan
+                                        students={students}
+                                        departmentId={dept}
+                                        sectionId={section}
+                                        year={selectedPlan.year}
+                                    />
+                                </div>
+                            ) : (
+                                <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
+                                    <CardHeader className="pb-3 border-b bg-slate-50/50">
+                                        <CardTitle className="text-base flex items-center justify-between font-semibold text-slate-800">
+                                            <span className="flex items-center gap-2">
+                                                <IconCalendarTime className="w-4 h-4 text-amber-500" />
+                                                Saved Training Plans
+                                            </span>
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="pt-6">
+                                        {loadingPlans ? (
+                                            <div className="flex flex-col items-center justify-center py-12">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mb-4" />
+                                                <p className="text-sm text-slate-500">Loading saved plans...</p>
+                                            </div>
+                                        ) : plansList.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                                <div className="p-4 bg-amber-50 rounded-full mb-4">
+                                                    <IconCalendar className="w-10 h-10 text-amber-300" />
+                                                </div>
+                                                <h4 className="text-md font-bold text-slate-700">No Saved Plans</h4>
+                                                <p className="text-xs text-slate-500 max-w-xs mt-2">
+                                                    There are no multi-skilling plans created for this department and section yet. Click the "Create Plan" button above to get started.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="w-full overflow-x-auto rounded-lg border border-slate-200">
+                                                <table className="w-full border-collapse text-sm text-left">
+                                                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase text-xs font-bold">
+                                                        <tr>
+                                                            <th className="p-3 pl-4">Department</th>
+                                                            <th className="p-3">Section</th>
+                                                            <th className="p-3">Year</th>
+                                                            <th className="p-3">Created By</th>
+                                                            <th className="p-3 pr-4">Last Updated By</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                        {plansList.map((plan) => (
+                                                            <tr 
+                                                                key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`} 
+                                                                onClick={() => setSelectedPlan(plan)}
+                                                                className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                                                            >
+                                                                <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
+                                                                <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
+                                                                <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
+                                                                <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
+                                                                <td className="p-3 pr-4 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            )}
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-32 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200">

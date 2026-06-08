@@ -19,6 +19,7 @@ import AttemptReviewModal from "@/components/common/AttemptReviewModal";
 import OnJobTrainingTable from "@/components/admin/OnJobTrainingTable";
 import OJTTrainingRecordSheet from "@/components/admin/OJTTrainingRecordSheet";
 import SixteenDayMonitoringSheet from "@/components/admin/SixteenDayMonitoringSheet";
+import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -544,10 +545,21 @@ const StudentDetail = () => {
                     <TabsTrigger value="quizzes">Test Attempts ({stats.totalAttempts})</TabsTrigger>
                     <TabsTrigger value="ojt">On Job Training</TabsTrigger>
                     <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
+                    <TabsTrigger value="skillEvaluation">Check Sheet of Skill Evaluation</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="monitoring16">
                     <SixteenDayMonitoringSheet studentId={studentId} />
+                </TabsContent>
+
+                <TabsContent value="skillEvaluation">
+                    <SkillMatrixCertificate
+                        studentId={student.id}
+                        studentName={student?.fullName || ""}
+                        employeeCode={student?.userName || student?.empId || ""}
+                        departmentId={typeof student.department === 'object' ? (student.department?._id || student.department?.id || "GLOBAL") : (student.department || "GLOBAL")}
+                        subSectionId={student?.subSectionId || student?.targetSubSectionId}
+                    />
                 </TabsContent>
 
                 <TabsContent value="overview" className="space-y-6">

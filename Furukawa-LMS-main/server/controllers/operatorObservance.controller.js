@@ -68,12 +68,16 @@ export const getObservanceByStudent = asyncHandler(async (req, res) => {
 
     // If no record exists, return an empty structure so frontend can initialize
     if (!observance) {
-        return res.json(new ApiResponse(200, { isNew: true, studentId: resolvedId, level1Date: derivedLevel1Date }, "No existing observance record"));
+        return res.json(new ApiResponse(200, { isNew: true, studentId: resolvedId, level1Date: derivedLevel1Date, preparedBy: "", checkedBy: "", verifiedBy: "", status: "Draft" }, "No existing observance record"));
     }
 
     const responseData = {
         ...observance,
         level1Date: observance.level1Date || derivedLevel1Date || null,
+        preparedBy: observance.preparedBy || "",
+        checkedBy: observance.checkedBy || "",
+        verifiedBy: observance.verifiedBy || "",
+        status: observance.status || "Draft",
     };
 
     res.json(new ApiResponse(200, responseData, "Observance record fetched"));
@@ -90,6 +94,7 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
 
     const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
     const finalLevel1Date = data.level1Date || derivedLevel1Date || null;
+    const userSavingName = req.user?.fullName || req.user?.name || "System";
 
     let observance = await OperatorObservance.findByStudentId(resolvedId);
 
@@ -100,16 +105,20 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
         observance.level1Date = finalLevel1Date;
         observance.operatorNameCode = data.operatorNameCode;
         observance.observanceData = data.observanceData;
-        observance.checkedBy = data.checkedBy;
-        observance.verifiedBy = data.verifiedBy;
+        observance.checkedBy = data.checkedBy || "";
+        observance.verifiedBy = data.verifiedBy || "";
+        observance.preparedBy = data.preparedBy || observance.preparedBy || userSavingName;
+        observance.status = data.status || "Draft";
         if (data.revHistory) observance.revHistory = data.revHistory;
 
 
         await observance.save();
 
-        // Trigger Email Notification
-        NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, resolvedId)
-            .catch(err => console.error("[Observance] Notification failed:", err));
+        // Trigger Email Notification only if status is Submitted
+        if (data.status === "Submitted") {
+            NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, resolvedId)
+                .catch(err => console.error("[Observance] Notification failed:", err));
+        }
 
         res.json(new ApiResponse(200, observance, "Observance record updated"));
     } else {
@@ -118,11 +127,17 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
             studentId: resolvedId,
             ...data,
             level1Date: finalLevel1Date,
+            preparedBy: data.preparedBy || userSavingName,
+            checkedBy: data.checkedBy || "",
+            verifiedBy: data.verifiedBy || "",
+            status: data.status || "Draft",
         });
 
-        // Trigger Email Notification
-        NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, resolvedId)
-            .catch(err => console.error("[Observance] Notification failed:", err));
+        // Trigger Email Notification only if status is Submitted
+        if (data.status === "Submitted") {
+            NotificationService.sendFormReport("Operator Observance Check Sheet", null, req.body, resolvedId)
+                .catch(err => console.error("[Observance] Notification failed:", err));
+        }
 
         res.status(201).json(new ApiResponse(201, newRecord, "Observance record created"));
     }

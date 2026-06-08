@@ -722,6 +722,31 @@ class NotificationService {
             });
         }
 
+        // --- Signature Section ---
+        const sigRowStart = worksheet.lastRow.number + 2;
+        worksheet.addRow(['', 'Prepared By', '', 'Checked By', '', 'Approved By']);
+        worksheet.mergeCells(sigRowStart, 2, sigRowStart, 3);
+        worksheet.mergeCells(sigRowStart, 4, sigRowStart, 5);
+
+        worksheet.addRow(['Sign.', formData.preparedBy ? 'Prepared' : '', '', formData.checkedBy || '', '', formData.verifiedBy || '']);
+        worksheet.mergeCells(sigRowStart + 1, 2, sigRowStart + 1, 3);
+        worksheet.mergeCells(sigRowStart + 1, 4, sigRowStart + 1, 5);
+
+        const checkedByName = formData.checkedBy ? formData.checkedBy.replace("Approved By: ", "").replace("Rejected By: ", "") : "";
+        const verifiedByName = formData.verifiedBy ? formData.verifiedBy.replace("Approved By: ", "").replace("Rejected By: ", "") : "";
+        worksheet.addRow(['Name', formData.preparedBy || '', '', checkedByName, '', verifiedByName]);
+        worksheet.mergeCells(sigRowStart + 2, 2, sigRowStart + 2, 3);
+        worksheet.mergeCells(sigRowStart + 2, 4, sigRowStart + 2, 5);
+
+        for (let r = sigRowStart; r <= sigRowStart + 2; r++) {
+            const row = worksheet.getRow(r);
+            row.font = { bold: true, size: 9 };
+            row.eachCell(cell => {
+                this._applyBorderStyle(cell);
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            });
+        }
+
         // --- Footer Section ---
         const lastRowNumber = worksheet.lastRow.number + 2;
         worksheet.mergeCells(`A${lastRowNumber}:F${lastRowNumber}`);

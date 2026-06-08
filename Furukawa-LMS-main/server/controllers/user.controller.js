@@ -146,13 +146,12 @@ export const formatUser = (u) => {
   const assignments = parseJSON(u.assignments, []);
   const currentSkill = parseJSON(u.currentSkill, {});
 
-  // Resolve TRUE primary level: Strict check against primary stationId
+  // Resolve TRUE primary level: Check against sub-section ID since currentSkill is keyed by subSectionId
   let resolvedPrimaryLevel = null;
-  if (u.stationId) {
-    // If they have a primary station assigned, their level MUST come from that station's skill in the map
-    resolvedPrimaryLevel = currentSkill[u.stationId] || null;
+  const subSecId = u.subSectionId || u.targetSubSectionId;
+  if (subSecId && currentSkill[subSecId]) {
+    resolvedPrimaryLevel = currentSkill[subSecId];
   } else {
-    // Fallback to global level only if no primary station is assigned
     resolvedPrimaryLevel = u.currentLevel || null;
   }
 
@@ -675,14 +674,20 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   const oldUser = rows[0];
 
-  // If station is being updated, sync currentLevel with the skill level for that station
+  // If station is being updated, sync currentLevel with the skill level for that station's sub-section
   if (data.stationId && data.stationId !== oldUser.stationId) {
     let currentSkill = oldUser.currentSkill || {};
     if (typeof currentSkill === 'string') {
       try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
     }
-    // Set currentLevel to the level associated with the new station, default to L1
-    data.currentLevel = currentSkill[data.stationId] || null;
+    // Set currentLevel to the level associated with the new station's sub-section
+    const [machRows] = await executeQuery("SELECT subSectionId FROM machines WHERE id = ?", [data.stationId]);
+    if (machRows.length > 0) {
+      const subSecId = machRows[0].subSectionId;
+      data.currentLevel = (subSecId && currentSkill[subSecId]) || null;
+    } else {
+      data.currentLevel = null;
+    }
   }
 
   // Auto-set leavingDate if status is changed to LEFT and no date is provided

@@ -79,6 +79,7 @@ import CertificateTemplates from "./CertificateTemplates";
 import EvaluationTestList from "./EvaluationTest/EvaluationTestList";
 import HandoverSheetPage from "./HandoverSheetPage";
 import SixteenDayMonitoring from "./SixteenDayMonitoring";
+import Course from "./Course";
 
 const DojoHiring = () => {
     const navigate = useNavigate();
@@ -385,6 +386,7 @@ const DojoHiring = () => {
                     <TabsTrigger value="dojoEvaluationTest" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">DOJO Evaluation Test</TabsTrigger>
                     <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Handover Sheet</TabsTrigger>
                     <TabsTrigger value="sixteenDays" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">16 Days</TabsTrigger>
+                    <TabsTrigger value="course" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Course</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="dojoHiring" className="space-y-6">
@@ -683,6 +685,10 @@ const DojoHiring = () => {
 
             <TabsContent value="sixteenDays" className="space-y-6">
                 <SixteenDayMonitoring readOnly={true} />
+            </TabsContent>
+
+            <TabsContent value="course" className="space-y-6">
+                <Course />
             </TabsContent>
         </Tabs>
 

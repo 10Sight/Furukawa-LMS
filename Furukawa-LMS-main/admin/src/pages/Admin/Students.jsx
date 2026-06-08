@@ -82,7 +82,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -102,6 +102,7 @@ import FilterBar from "@/components/common/FilterBar";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getMediaUrl } from "@/utils/mediaUtils";
 import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
+import StudentLevelManager from "@/components/admin/StudentLevelManager";
 
 
 const normalizeStatus = (status) => {
@@ -1226,6 +1227,17 @@ const Students = () => {
   }
 
   return (
+    <Tabs defaultValue="operators" className="w-full space-y-6">
+      <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
+        <TabsTrigger value="operators" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          Operators
+        </TabsTrigger>
+        <TabsTrigger value="operatorLevels" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          Operator Levels
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="operators">
     <div className="space-y-6">
       {/* Header with Stats using reusable StatCard */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -2926,6 +2938,12 @@ const Students = () => {
       </Dialog>
 
     </div>
+      </TabsContent>
+
+      <TabsContent value="operatorLevels">
+        <StudentLevelManager />
+      </TabsContent>
+    </Tabs>
   );
 };
 

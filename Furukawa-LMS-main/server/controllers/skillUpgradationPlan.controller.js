@@ -8,13 +8,17 @@ import NotificationService from "../services/notification.service.js";
 // Get skill upgradation plan by department
 export const getSkillUpgradationPlanByDepartment = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
-    const { sectionId } = req.query;
+    const { sectionId, year } = req.query;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
-    const plan = await SkillUpgradationPlan.findByHierarchy(departmentId, sectionId);
+    const plan = await SkillUpgradationPlan.findByHierarchy(
+        departmentId,
+        sectionId ? parseInt(sectionId) : null,
+        year ? parseInt(year) : null
+    );
     if (!plan) {
         return res.status(200).json(
-            new ApiResponse(200, { isNew: true, departmentId, sectionId, selectedLines: [], tableData: {} }, "No skill upgradation plan found")
+            new ApiResponse(200, { isNew: true, departmentId, sectionId, year, selectedLines: [], tableData: {} }, "No skill upgradation plan found")
         );
     }
 
@@ -28,18 +32,19 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
     const { departmentId } = req.params;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
-    const { sectionId, selectedLines, tableData } = req.body || {};
+    const { sectionId, year, selectedLines, tableData } = req.body || {};
 
     const saved = await SkillUpgradationPlan.upsert({
-        departmentId,
-        sectionId,
+        departmentId: parseInt(departmentId),
+        sectionId: sectionId ? parseInt(sectionId) : null,
+        year: year ? parseInt(year) : null,
         selectedLines: Array.isArray(selectedLines) ? selectedLines : [],
         tableData: tableData && typeof tableData === "object" ? tableData : {},
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
     });
 
     // Trigger Email Notification
-    NotificationService.sendFormReport("Skill Upgradation Sheet", departmentId, { sectionId, selectedLines, tableData })
+    NotificationService.sendFormReport("Skill Upgradation Sheet", departmentId, { sectionId, year, selectedLines, tableData })
         .catch(err => console.error("[Notification] Failed to trigger email:", err));
 
     return res.status(200).json(
@@ -86,5 +91,17 @@ export const getSkillUpgradationPlanHistory = asyncHandler(async (req, res) => {
     const history = await SkillUpgradationPlanConfig.getHistory(departmentId);
     return res.status(200).json(
         new ApiResponse(200, history, "History fetched successfully")
+    );
+});
+
+// List all skill upgradation plans
+export const listSkillUpgradationPlans = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId } = req.query;
+    const plans = await SkillUpgradationPlan.listPlans(
+        departmentId ? parseInt(departmentId) : null,
+        sectionId ? parseInt(sectionId) : null
+    );
+    return res.status(200).json(
+        new ApiResponse(200, plans, "Skill upgradation plans list fetched successfully")
     );
 });

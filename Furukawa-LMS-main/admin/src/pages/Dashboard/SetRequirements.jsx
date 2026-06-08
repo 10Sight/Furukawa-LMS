@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -213,8 +214,11 @@ const MonthStatusLabel = ({ cell }) => {
 };
 
 export default function SetRequirements() {
+  const { user } = useSelector((state) => state.auth);
   const { hasPrivilege } = usePrivileges();
   const canManageRequirements = hasPrivilege("setrequirement");
+  const canUpload = user?.isAdmin || user?.role === 'SUPERADMIN' || canManageRequirements || user?.customRole?.permissions?.includes('mps_requirement:upload_excel');
+  const canManageEmails = user?.isAdmin || user?.role === 'SUPERADMIN' || canManageRequirements || user?.customRole?.permissions?.includes('mps_requirement:add_emails');
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
@@ -470,7 +474,7 @@ export default function SetRequirements() {
 
   const handleUpload = async () => {
     if (!selectedFile) return toast.error("Please select a file");
-    if (!canManageRequirements) return toast.error("You don't have privilege to upload.");
+    if (!canUpload) return toast.error("You don't have privilege to upload.");
 
     setUploading(true);
     try {
@@ -832,26 +836,25 @@ export default function SetRequirements() {
             </Button>
           </div>
 
-          {canManageRequirements && (
-            <>
-              <Button
-                onClick={() => setIsMailModalOpen(true)}
-                variant="outline"
-                className="bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm"
-                title="Manage Notification Emails"
-              >
-                Emails
-              </Button>
+          {canManageEmails && (
+            <Button
+              onClick={() => setIsMailModalOpen(true)}
+              variant="outline"
+              className="bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm"
+              title="Manage Notification Emails"
+            >
+              Emails
+            </Button>
+          )}
 
-
-              <Button
-                onClick={() => setIsUploadOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Upload Excel
-              </Button>
-            </>
+          {canUpload && (
+            <Button
+              onClick={() => setIsUploadOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Upload Excel
+            </Button>
           )}
         </div>
       </div>

@@ -188,6 +188,14 @@ const SYSTEM_PERMISSIONS = {
   DOJO_EVALUATION_TEST_APPROVE: "dojo_evaluation_test:approve",
   DOJO_EVALUATION_TEST_CONFIRM: "dojo_evaluation_test:confirm",
   DOJO_EVALUATION_TEST_VIEW: "dojo_evaluation_test:view",
+
+  // MPS Portal Management
+  MPS_ATTENDANCE_READ: "mps_attendance:read",
+  MPS_ATTENDANCE_UPLOAD: "mps_attendance:upload_excel",
+  MPS_REQUIREMENT_ADD_EMAILS: "mps_requirement:add_emails",
+  MPS_REQUIREMENT_UPLOAD: "mps_requirement:upload_excel",
+  MPS_EMAIL_REPORTS_TRIGGER: "mps_email_reports:trigger_mail",
+  MPS_EMAIL_REPORTS_ADD: "mps_email_reports:add_mail",
 };
 
 // Define default role permissions
@@ -492,6 +500,14 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE, name: "Approve DOJO Evaluation Test", description: "Approve submitted DOJO evaluation tests" },
         { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CONFIRM, name: "Confirm DOJO Evaluation Test", description: "Confirm/verify submitted DOJO evaluation tests" },
         { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW, name: "View DOJO Evaluation Test", description: "View list and details of DOJO evaluation tests and attempts" }
+      ],
+      "MPS Portal": [
+        { id: SYSTEM_PERMISSIONS.MPS_ATTENDANCE_READ, name: "View Attendance", description: "View attendance records and logs" },
+        { id: SYSTEM_PERMISSIONS.MPS_ATTENDANCE_UPLOAD, name: "Upload Attendance Excel", description: "Upload and import attendance data from Excel files" },
+        { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_ADD_EMAILS, name: "Add Emails to Requirements", description: "Add email configurations for line requirements notifications" },
+        { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_UPLOAD, name: "Upload Requirements Excel", description: "Upload line requirements from Excel templates" },
+        { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_TRIGGER, name: "Trigger Email Reports", description: "Manually trigger the sending of email reports" },
+        { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_ADD, name: "Add Email to Reports", description: "Add new email recipients to report configurations" }
       ]
     };
 

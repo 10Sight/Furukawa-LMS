@@ -15,6 +15,8 @@ class MultiSkillingPlan {
             : (data.tableData || {});
         this.createdBy = data.createdBy || "";
         this.updatedBy = data.updatedBy || "";
+        this.departmentName = data.departmentName || "";
+        this.sectionName = data.sectionName || "";
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -101,6 +103,31 @@ class MultiSkillingPlan {
         const [rows] = await executeQuery(query, params);
         if (rows.length === 0) return null;
         return new MultiSkillingPlan(rows[0]);
+    }
+
+    static async listPlans(departmentId = null, sectionId = null) {
+        let query = `
+            SELECT msp.*, d.name AS departmentName, s.name AS sectionName
+            FROM multi_skilling_plans msp
+            LEFT JOIN departments d ON msp.departmentId = d.id
+            LEFT JOIN [sections] s ON msp.sectionId = s.id
+        `;
+        let params = [];
+        let conditions = [];
+        if (departmentId) {
+            conditions.push("msp.departmentId = ?");
+            params.push(departmentId);
+        }
+        if (sectionId) {
+            conditions.push("msp.sectionId = ?");
+            params.push(sectionId);
+        }
+        if (conditions.length > 0) {
+            query += " WHERE " + conditions.join(" AND ");
+        }
+        query += " ORDER BY msp.year DESC, msp.updatedAt DESC";
+        const [rows] = await executeQuery(query, params);
+        return rows.map(r => new MultiSkillingPlan(r));
     }
 
     static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName }) {

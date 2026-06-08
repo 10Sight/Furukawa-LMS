@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,8 @@ import { toast } from 'sonner'; // Assuming sonner is used, or I'll use simple a
 // Actually, I'll stick to standard alert or simple console for errors to be safe, or check if `toast` is available in `components/ui`.
 
 const Attendance = () => {
+    const { user } = useSelector((state) => state.auth);
+    const canUpload = user?.isAdmin || user?.role === 'SUPERADMIN' || user?.customRole?.permissions?.includes('mps_attendance:upload_excel');
     const [activeTab, setActiveTab] = useState("employees");
 
     const [departments, setDepartments] = useState([]);
@@ -276,24 +279,26 @@ const Attendance = () => {
                     </div>
 
                     {/* Upload Button */}
-                    <div className="flex items-center">
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleFileUpload}
-                            accept=".xlsx, .xls"
-                            className="hidden"
-                        />
-                        <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white text-xs h-8 shadow-sm"
-                            onClick={triggerFileUpload}
-                            disabled={uploading}
-                        >
-                            {uploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <FileSpreadsheet className="w-3 h-3 mr-2" />}
-                            {uploading ? "Uploading..." : "Upload Excel"}
-                        </Button>
-                    </div>
+                    {canUpload && (
+                        <div className="flex items-center">
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleFileUpload}
+                                accept=".xlsx, .xls"
+                                className="hidden"
+                            />
+                            <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white text-xs h-8 shadow-sm"
+                                onClick={triggerFileUpload}
+                                disabled={uploading}
+                            >
+                                {uploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <FileSpreadsheet className="w-3 h-3 mr-2" />}
+                                {uploading ? "Uploading..." : "Upload Excel"}
+                            </Button>
+                        </div>
+                    )}
                 </div>
             </div>
 

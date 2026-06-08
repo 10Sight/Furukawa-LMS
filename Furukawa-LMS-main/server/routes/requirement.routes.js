@@ -3,6 +3,8 @@ import multer from "multer";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 import { checkPrivilege } from "../middlewares/checkPrivilege.middleware.js";
+import { hasPermission } from "../middlewares/roleAuth.middleware.js";
+import { SYSTEM_PERMISSIONS } from "../controllers/rolesPermissions.controller.js";
 import {
     addRequirements,
     createRequirement,
@@ -20,6 +22,14 @@ import {
 const router = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Custom middleware to support both role permissions and privilege fallback
+const authorizeUpload = (req, res, next) => {
+    if (req.user && (req.user.role === "SUPERADMIN" || req.user.isAdmin || hasPermission(req.user, SYSTEM_PERMISSIONS.MPS_REQUIREMENT_UPLOAD))) {
+        return next();
+    }
+    return checkPrivilege("setrequirement")(req, res, next);
+};
 
 // Public approval links from email
 router.route("/approve-batch").get(approveBatchRequirements).post(approveBatchRequirements);
@@ -39,7 +49,7 @@ router.post(
     "/upload",
     verifyJWT,
     authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
-    checkPrivilege("setrequirement"),
+    authorizeUpload,
     upload.single("file"),
     addRequirements
 );

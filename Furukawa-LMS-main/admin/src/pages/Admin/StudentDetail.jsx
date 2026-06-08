@@ -16,7 +16,7 @@ import AttemptReviewModal from "@/components/common/AttemptReviewModal";
 import OnJobTrainingTable from "@/components/admin/OnJobTrainingTable"; // Keep this for detail view
 import OJTTrainingRecordSheet from "@/components/admin/OJTTrainingRecordSheet"; // New format
 import { useGetStudentOJTsQuery } from "@/Redux/AllApi/OnJobTrainingApi";
-// SkillMatrixCertificate import removed (moved to Skill Matrix page)
+import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
 import OperatorObservanceSheet from "@/components/admin/OperatorObservanceSheet";
 import SixteenDayMonitoringSheet from "@/components/admin/SixteenDayMonitoringSheet";
 import ThreeDayMonitoringSheet from "@/components/admin/ThreeDayMonitoringSheet";
@@ -747,6 +747,7 @@ const StudentDetail = () => {
           <TabsTrigger value="observance">Operator Observance</TabsTrigger>
           <TabsTrigger value="monitoring3">3 Day Monitoring</TabsTrigger>
           <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
+          <TabsTrigger value="skillEvaluation">Check Sheet of Skill Evaluation</TabsTrigger>
         </TabsList>
 
         <TabsContent value="monitoring16">
@@ -763,6 +764,16 @@ const StudentDetail = () => {
           <ThreeDayMonitoringSheet
             studentId={studentId}
             departmentId={student?.department?._id || student?.department}
+          />
+        </TabsContent>
+
+        <TabsContent value="skillEvaluation">
+          <SkillMatrixCertificate
+            studentId={student.id}
+            studentName={student?.fullName || ""}
+            employeeCode={student?.userName || student?.empId || ""}
+            departmentId={typeof student.department === 'object' ? (student.department?._id || student.department?.id || "GLOBAL") : (student.department || "GLOBAL")}
+            subSectionId={student?.subSectionId || student?.targetSubSectionId}
           />
         </TabsContent>
 

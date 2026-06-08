@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ const CHECK_CONTENTS = [
 ];
 
 const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "" }) => {
+    const authUser = useSelector((state) => state.auth?.user);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -48,7 +50,10 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
         lineName: "",
         processName: "",
         level1Date: "",
-        operatorNameCode: ""
+        operatorNameCode: "",
+        preparedBy: "",
+        checkedBy: "",
+        verifiedBy: ""
     });
 
     // Table Data Structure: 
@@ -68,6 +73,35 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
             }));
         }
     }, [studentName, employeeCode]);
+
+    useEffect(() => {
+        if (authUser && !headerData.preparedBy) {
+            setHeaderData(prev => ({
+                ...prev,
+                preparedBy: authUser.fullName || authUser.name || ""
+            }));
+        }
+    }, [authUser, headerData.preparedBy]);
+
+    const handleSignatureClick = (field, type) => {
+        const name = authUser?.fullName || authUser?.name;
+        if (!name) {
+            toast.error("Please login to sign this sheet");
+            return;
+        }
+        const prefix = type === 'approve' ? "Approved By: " : "Rejected By: ";
+        setHeaderData(prev => ({
+            ...prev,
+            [field]: `${prefix}${name}`
+        }));
+    };
+
+    const handleClearSignatureClick = (field) => {
+        setHeaderData(prev => ({
+            ...prev,
+            [field]: ""
+        }));
+    };
 
     const fetchData = async () => {
         try {
@@ -95,7 +129,10 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         lineName: data.lineName || assignmentLineName || "",
                         processName: data.processName || assignmentProcessName || "",
                         level1Date: data.level1Date ? new Date(data.level1Date).toISOString().split('T')[0] : "",
-                        operatorNameCode: defaultOperatorNameCode || ""
+                        operatorNameCode: defaultOperatorNameCode || "",
+                        preparedBy: data.preparedBy || "",
+                        checkedBy: data.checkedBy || "",
+                        verifiedBy: data.verifiedBy || ""
                     });
                     setTableData(data.observanceData || {});
                 } else {
@@ -105,6 +142,9 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         processName: assignmentProcessName || prev.processName,
                         level1Date: data.level1Date ? new Date(data.level1Date).toISOString().split('T')[0] : prev.level1Date,
                         operatorNameCode: defaultOperatorNameCode || prev.operatorNameCode,
+                        preparedBy: prev.preparedBy || authUser?.fullName || authUser?.name || "",
+                        checkedBy: "",
+                        verifiedBy: ""
                     }));
                 }
             }
@@ -116,17 +156,27 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
         }
     };
 
-    const handleSave = async () => {
+    const handleSave = async (targetStatus) => {
         try {
             setSaving(true);
             const payload = {
                 ...headerData,
-                observanceData: tableData
+                observanceData: tableData,
+                status: targetStatus
             };
 
             await axiosInstance.post(`/api/operator-observance/${studentId}`, payload);
 
-            toast.success("Observance Sheet Saved Successfully");
+            setHeaderData(prev => ({
+                ...prev,
+                status: targetStatus
+            }));
+
+            if (targetStatus === "Submitted") {
+                toast.success("Observance Sheet Submitted & Emailed Successfully");
+            } else {
+                toast.success("Observance Sheet Saved as Draft Successfully");
+            }
         } catch (error) {
             console.error("Error saving observance data:", error);
             toast.error("Failed to save data");
@@ -212,27 +262,106 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                 {/* Header Section */}
                 <div className="border-2 border-black mb-4">
                     <div className="grid grid-cols-[3fr_1fr] border-b-2 border-black">
-                        <div className="flex items-center justify-center text-3xl font-serif py-4 border-r-2 border-black">
-                            Operator Observance Sheet
+                        <div className="flex items-center justify-center text-3xl font-serif py-4 border-r-2 border-black gap-3">
+                            <span>Operator Observance Sheet</span>
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${headerData.status === 'Submitted' ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-yellow-100 text-yellow-800 border border-yellow-200'}`}>
+                                {headerData.status || "Draft"}
+                            </span>
                         </div>
                         <div className="text-xs">
                             <div className="grid grid-cols-[1fr_1fr_1fr_1fr] border-b border-black">
-                                <div className="border-r border-black"></div>
-                                <div className="border-r border-black p-1">Prepared By</div>
-                                <div className="border-r border-black p-1">Checked By</div>
-                                <div className="p-1">Approved By</div>
+                                <div className="border-r border-black p-1"></div>
+                                <div className="border-r border-black p-1 font-bold text-center">Prepared By</div>
+                                <div className="border-r border-black p-1 font-bold text-center">Checked By</div>
+                                <div className="p-1 font-bold text-center">Approved By</div>
                             </div>
-                            <div className="grid grid-cols-[1fr_1fr_1fr_1fr] h-8 border-b border-black">
-                                <div className="border-r border-black p-1 flex items-center justify-center">Sign.</div>
-                                <div className="border-r border-black"></div>
-                                <div className="border-r border-black"></div>
-                                <div></div>
+                            <div className="grid grid-cols-[1fr_1fr_1fr_1fr] h-8 border-b border-black items-center">
+                                <div className="border-r border-black p-1 flex items-center justify-center font-bold h-full">Sign.</div>
+                                <div className="border-r border-black p-1 flex items-center justify-center font-bold text-blue-700 italic h-full">
+                                    {headerData.preparedBy ? "Prepared" : ""}
+                                </div>
+                                <div className="border-r border-black p-1 flex items-center justify-center h-full">
+                                    {!headerData.checkedBy ? (
+                                        <div className="flex gap-1 justify-center items-center h-full w-full">
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={() => handleSignatureClick('checkedBy', 'approve')} 
+                                                className="h-6 text-[9px] bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 px-1.5 py-0 border-green-200"
+                                            >
+                                                Approve
+                                            </Button>
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={() => handleSignatureClick('checkedBy', 'reject')} 
+                                                className="h-6 text-[9px] bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800 px-1.5 py-0 border-red-200"
+                                            >
+                                                Reject
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-center gap-1 h-full w-full font-bold">
+                                            <span className={headerData.checkedBy.startsWith("Approved") ? "text-green-600 text-[10px]" : "text-red-600 text-[10px]"}>
+                                                {headerData.checkedBy.startsWith("Approved") ? "APPROVED" : "REJECTED"}
+                                            </span>
+                                            <button
+                                                onClick={() => handleClearSignatureClick('checkedBy')}
+                                                className="text-gray-400 hover:text-red-600 ml-1 text-sm font-normal"
+                                                title="Clear Signature"
+                                            >
+                                                &times;
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="p-1 flex items-center justify-center h-full">
+                                    {!headerData.verifiedBy ? (
+                                        <div className="flex gap-1 justify-center items-center h-full w-full">
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={() => handleSignatureClick('verifiedBy', 'approve')} 
+                                                className="h-6 text-[9px] bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 px-1.5 py-0 border-green-200"
+                                            >
+                                                Approve
+                                            </Button>
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={() => handleSignatureClick('verifiedBy', 'reject')} 
+                                                className="h-6 text-[9px] bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800 px-1.5 py-0 border-red-200"
+                                            >
+                                                Reject
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-center gap-1 h-full w-full font-bold">
+                                            <span className={headerData.verifiedBy.startsWith("Approved") ? "text-green-600 text-[10px]" : "text-red-600 text-[10px]"}>
+                                                {headerData.verifiedBy.startsWith("Approved") ? "APPROVED" : "REJECTED"}
+                                            </span>
+                                            <button
+                                                onClick={() => handleClearSignatureClick('verifiedBy')}
+                                                className="text-gray-400 hover:text-red-600 ml-1 text-sm font-normal"
+                                                title="Clear Signature"
+                                            >
+                                                &times;
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div className="grid grid-cols-[1fr_1fr_1fr_1fr] h-8">
-                                <div className="border-r border-black p-1 flex items-center justify-center">Name</div>
-                                <div className="border-r border-black"></div>
-                                <div className="border-r border-black"></div>
-                                <div></div>
+                            <div className="grid grid-cols-[1fr_1fr_1fr_1fr] h-8 items-center">
+                                <div className="border-r border-black p-1 flex items-center justify-center font-bold h-full">Name</div>
+                                <div className="border-r border-black p-1 flex items-center justify-center font-semibold text-center h-full">
+                                    {headerData.preparedBy || ""}
+                                </div>
+                                <div className="border-r border-black p-1 flex items-center justify-center font-semibold text-center h-full">
+                                    {headerData.checkedBy ? headerData.checkedBy.replace("Approved By: ", "").replace("Rejected By: ", "") : ""}
+                                </div>
+                                <div className="p-1 flex items-center justify-center font-semibold text-center h-full">
+                                    {headerData.verifiedBy ? headerData.verifiedBy.replace("Approved By: ", "").replace("Rejected By: ", "") : ""}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -385,9 +514,13 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     >
                         Export to Excel
                     </Button>
-                    <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+                    <Button onClick={() => handleSave("Draft")} disabled={saving} className="bg-slate-600 hover:bg-slate-700 text-white">
                         {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Save Observance Sheet
+                        Save Draft
+                    </Button>
+                    <Button onClick={() => handleSave("Submitted")} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+                        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Submit & Send Email
                     </Button>
                 </div>
             </CardContent>

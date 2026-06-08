@@ -19,6 +19,25 @@ import UserAutocomplete from '../common/UserAutocomplete';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 
+const INTERVIEW_OPTIONS = [
+    { value: "OK", label: "✓ OK" },
+    { value: "CROSS", label: "✗ Cross" },
+    { value: "NA", label: "— N/A" },
+];
+
+const InterviewSelect = ({ value, onChange }) => (
+    <Select value={value || ""} onValueChange={onChange}>
+        <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
+            <SelectValue placeholder="—" />
+        </SelectTrigger>
+        <SelectContent>
+            {INTERVIEW_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+        </SelectContent>
+    </Select>
+);
+
 const ProcessSelect = ({ departmentId, value, onValueChange, className = "" }) => {
     const { data } = useGetSubSectionsQuery({ departmentId }, { skip: !departmentId });
     const subSections = Array.isArray(data?.data) ? data.data : (data?.data?.subSections || []);
@@ -758,9 +777,16 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 value={entry.process || ""}
                                                                 onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                             />
+                                                        ) : (col.field === 'interview1' || col.field === 'interview2') ? (
+                                                            <InterviewSelect
+                                                                value={entry[col.field] || ""}
+                                                                onChange={(val) => handleEntryChange(index, col.field, val)}
+                                                            />
                                                         ) : col.readOnly ? (
                                                             <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
-                                                                {entry[col.field]}
+                                                                {(col.field === 'interview1' || col.field === 'interview2')
+                                                                    ? (INTERVIEW_OPTIONS.find(o => o.value === entry[col.field])?.label || entry[col.field])
+                                                                    : entry[col.field]}
                                                             </div>
                                                         ) : (
                                                             <Input
@@ -836,19 +862,15 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         />
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <Input
+                                                        <InterviewSelect
                                                             value={entry.interview1}
-                                                            onChange={(e) => handleEntryChange(index, 'interview1', e.target.value)}
-                                                            className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                            size={Math.max((entry.interview1 || "").length || 1, 10)}
+                                                            onChange={(val) => handleEntryChange(index, 'interview1', val)}
                                                         />
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <Input
+                                                        <InterviewSelect
                                                             value={entry.interview2}
-                                                            onChange={(e) => handleEntryChange(index, 'interview2', e.target.value)}
-                                                            className="h-7 min-w-[50px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                            size={Math.max((entry.interview2 || "").length || 1, 10)}
+                                                            onChange={(val) => handleEntryChange(index, 'interview2', val)}
                                                         />
                                                     </td>
                                                     <td className="border p-1">

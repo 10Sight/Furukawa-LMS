@@ -28,8 +28,8 @@ import {
   Avatar
 } from '@mui/material';
 import {
-  ExpandMore,
-  Close,
+  ChevronDown,
+  X,
   Shield,
   Plus,
   Palette,
@@ -110,7 +110,7 @@ const PermissionCategory = ({ category, permissions, selectedPermissions, onPerm
   return (
     <Accordion>
       <AccordionSummary
-        expandIcon={<ExpandMore />}
+        expandIcon={<ChevronDown />}
         sx={{
           '&.Mui-expanded': {
             borderBottom: `1px solid ${theme.palette.divider}`
@@ -317,7 +317,7 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
             </Box>
           </Box>
           <IconButton onClick={handleClose}>
-            <Close />
+            <X />
           </IconButton>
         </Box>
       </DialogTitle>

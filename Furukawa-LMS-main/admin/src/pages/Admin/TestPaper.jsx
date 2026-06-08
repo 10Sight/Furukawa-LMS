@@ -31,6 +31,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { useSelector } from "react-redux";
 import { se } from "date-fns/locale";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import AdminQuizMonitoring from "./QuizMonitoring";
 
 const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, skillUpgradation: forceSkillUpgradation }) => {
   const navigate = useNavigate();
@@ -380,6 +382,17 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Standard Admin/Student UI
   return (
+    <Tabs defaultValue="testPaper" className="w-full space-y-6">
+      <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
+        <TabsTrigger value="testPaper" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          Test Paper
+        </TabsTrigger>
+        <TabsTrigger value="testMonitoring" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          Test Monitoring
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="testPaper">
     <div className="space-y-6 p-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -781,6 +794,12 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
         </CardContent>
       </Card>
     </div>
+      </TabsContent>
+
+      <TabsContent value="testMonitoring">
+        <AdminQuizMonitoring />
+      </TabsContent>
+    </Tabs>
   );
 };
 

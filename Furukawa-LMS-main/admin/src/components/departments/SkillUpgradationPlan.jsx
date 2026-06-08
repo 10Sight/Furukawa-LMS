@@ -3,11 +3,10 @@ import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
-import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
-import { useGetMachinesByLineQuery } from "@/Redux/AllApi/MachineApi";
+import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
-import { IconDeviceFloppy, IconPrinter } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus } from "@tabler/icons-react";
 import {
     Select,
     SelectContent,
@@ -15,280 +14,169 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { IconSettings, IconHistory } from "@tabler/icons-react";
-import { Loader2 } from "lucide-react";
-import { format } from "date-fns";
 
-const SkillUpgradationPlan = ({ students = [], departmentId, sectionId }) => {
+const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChange, disabled }) => {
+    const [searchTerm, setSearchTerm] = useState(value || "");
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    useEffect(() => {
+        setSearchTerm(value || "");
+    }, [value]);
+
+    const suggestions = useMemo(() => {
+        if (!searchTerm.trim()) return [];
+        const lower = searchTerm.toLowerCase();
+        return students.filter(s => 
+            (s.fullName || "").toLowerCase().includes(lower) || 
+            (s.cardNo || "").toLowerCase().includes(lower)
+        ).slice(0, 5);
+    }, [students, searchTerm]);
+
+    return (
+        <div className="relative w-full">
+            <Input
+                value={searchTerm}
+                onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setShowSuggestions(true);
+                    if (e.target.value === "") {
+                        onChange("", "");
+                        handleRowFieldChange(rowId, "cardNo", "");
+                    }
+                }}
+                onFocus={() => !disabled && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                placeholder="Search user..."
+                disabled={disabled}
+                className="h-8 w-full min-w-[180px] text-xs shadow-none border-slate-200 bg-white"
+            />
+            {showSuggestions && suggestions.length > 0 && !disabled && (
+                <ul className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-40 overflow-y-auto z-50 py-1 normal-case font-normal text-left">
+                    {suggestions.map((s) => (
+                        <li
+                            key={s._id || s.id}
+                            onMouseDown={() => {
+                                onChange(s._id || s.id, s.fullName || s.name, s.lineName, s.subSectionName);
+                                handleRowFieldChange(rowId, "cardNo", s.cardNo || s.username || s.empId || "-");
+                                setShowSuggestions(false);
+                            }}
+                            className="px-2 py-1 text-xs hover:bg-blue-50 cursor-pointer flex flex-col"
+                        >
+                            <span className="font-semibold text-slate-700">{s.fullName || s.name}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">Card: {s.cardNo || s.username || s.empId || "—"}</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+};
+
+const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) => {
     const authUser = useSelector(state => state.auth.user);
-    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
-    const { canManage, canEditLayout, canViewHistory } = useMemo(() => {
+    const { canManage } = useMemo(() => {
         const permissions = authUser?.customRole?.permissions || [];
         return {
             canManage: permissions.includes('skill_upgradation:manage') || isAdmin,
-            canEditLayout: permissions.includes('skill_upgradation:edit_layout') || isAdmin,
-            canViewHistory: permissions.includes('skill_upgradation:view_history') || isAdmin
         };
     }, [authUser, isAdmin]);
 
-    const employees = students;
+    const [searchText, setSearchText] = useState("");
+    const [rows, setRows] = useState([]);
+    const [hasLoaded, setHasLoaded] = useState(false);
 
-    // Dynamic slots — sized to match lines available in the selected section/department.
-    const [selectedLines, setSelectedLines] = useState([]);
-    // Saved lines from backend before lines data loads, used to restore selections.
-    const [savedLines, setSavedLines] = useState(null);
-
-    const { data: deptLines, isLoading: deptLinesLoading } = useGetLinesByDepartmentQuery(departmentId, {
+    // Fetch lines for model & line selection helper
+    const { data: deptLines } = useGetLinesByDepartmentQuery(departmentId, {
         skip: !departmentId || !!sectionId,
     });
-    const { data: sectLines, isLoading: sectLinesLoading } = useGetLinesBySectionQuery(sectionId, {
+    const { data: sectLines } = useGetLinesBySectionQuery(sectionId, {
         skip: !sectionId,
     });
-
-    const linesLoading = sectionId ? sectLinesLoading : deptLinesLoading;
     const lines = (sectionId ? sectLines?.data : deptLines?.data) || [];
 
-    // Resize selectedLines whenever available lines change, restoring saved selections.
-    useEffect(() => {
-        if (linesLoading || lines.length === 0) return;
-        setSelectedLines(prev => lines.map((_, i) => {
-            const base = savedLines ?? prev;
-            return base[i] || "";
-        }));
-    }, [lines.length, linesLoading, savedLines]);
+    const { data: subSectionsData } = useGetSubSectionsQuery({
+        departmentId,
+        sectionId,
+    }, {
+        skip: !departmentId,
+    });
+    const subSections = subSectionsData?.data || [];
 
-    // Static hook calls up to a max of 15 slots (React rules of hooks forbid dynamic calls).
-    // Each is skipped when its slot index exceeds the actual line count or has no selection.
-    const { data: machinesData0  } = useGetMachinesByLineQuery(selectedLines[0],  { skip: !selectedLines[0]  });
-    const { data: machinesData1  } = useGetMachinesByLineQuery(selectedLines[1],  { skip: !selectedLines[1]  });
-    const { data: machinesData2  } = useGetMachinesByLineQuery(selectedLines[2],  { skip: !selectedLines[2]  });
-    const { data: machinesData3  } = useGetMachinesByLineQuery(selectedLines[3],  { skip: !selectedLines[3]  });
-    const { data: machinesData4  } = useGetMachinesByLineQuery(selectedLines[4],  { skip: !selectedLines[4]  });
-    const { data: machinesData5  } = useGetMachinesByLineQuery(selectedLines[5],  { skip: !selectedLines[5]  });
-    const { data: machinesData6  } = useGetMachinesByLineQuery(selectedLines[6],  { skip: !selectedLines[6]  });
-    const { data: machinesData7  } = useGetMachinesByLineQuery(selectedLines[7],  { skip: !selectedLines[7]  });
-    const { data: machinesData8  } = useGetMachinesByLineQuery(selectedLines[8],  { skip: !selectedLines[8]  });
-    const { data: machinesData9  } = useGetMachinesByLineQuery(selectedLines[9],  { skip: !selectedLines[9]  });
-    const { data: machinesData10 } = useGetMachinesByLineQuery(selectedLines[10], { skip: !selectedLines[10] });
-    const { data: machinesData11 } = useGetMachinesByLineQuery(selectedLines[11], { skip: !selectedLines[11] });
-    const { data: machinesData12 } = useGetMachinesByLineQuery(selectedLines[12], { skip: !selectedLines[12] });
-    const { data: machinesData13 } = useGetMachinesByLineQuery(selectedLines[13], { skip: !selectedLines[13] });
-    const { data: machinesData14 } = useGetMachinesByLineQuery(selectedLines[14], { skip: !selectedLines[14] });
-
-    const machinesBySlot = [
-        machinesData0?.data  || [], machinesData1?.data  || [], machinesData2?.data  || [],
-        machinesData3?.data  || [], machinesData4?.data  || [], machinesData5?.data  || [],
-        machinesData6?.data  || [], machinesData7?.data  || [], machinesData8?.data  || [],
-        machinesData9?.data  || [], machinesData10?.data || [], machinesData11?.data || [],
-        machinesData12?.data || [], machinesData13?.data || [], machinesData14?.data || [],
-    ].slice(0, lines.length);
-
-    const { data: subSectionsData0  } = useGetSubSectionsByLineQuery(selectedLines[0],  { skip: !selectedLines[0]  });
-    const { data: subSectionsData1  } = useGetSubSectionsByLineQuery(selectedLines[1],  { skip: !selectedLines[1]  });
-    const { data: subSectionsData2  } = useGetSubSectionsByLineQuery(selectedLines[2],  { skip: !selectedLines[2]  });
-    const { data: subSectionsData3  } = useGetSubSectionsByLineQuery(selectedLines[3],  { skip: !selectedLines[3]  });
-    const { data: subSectionsData4  } = useGetSubSectionsByLineQuery(selectedLines[4],  { skip: !selectedLines[4]  });
-    const { data: subSectionsData5  } = useGetSubSectionsByLineQuery(selectedLines[5],  { skip: !selectedLines[5]  });
-    const { data: subSectionsData6  } = useGetSubSectionsByLineQuery(selectedLines[6],  { skip: !selectedLines[6]  });
-    const { data: subSectionsData7  } = useGetSubSectionsByLineQuery(selectedLines[7],  { skip: !selectedLines[7]  });
-    const { data: subSectionsData8  } = useGetSubSectionsByLineQuery(selectedLines[8],  { skip: !selectedLines[8]  });
-    const { data: subSectionsData9  } = useGetSubSectionsByLineQuery(selectedLines[9],  { skip: !selectedLines[9]  });
-    const { data: subSectionsData10 } = useGetSubSectionsByLineQuery(selectedLines[10], { skip: !selectedLines[10] });
-    const { data: subSectionsData11 } = useGetSubSectionsByLineQuery(selectedLines[11], { skip: !selectedLines[11] });
-    const { data: subSectionsData12 } = useGetSubSectionsByLineQuery(selectedLines[12], { skip: !selectedLines[12] });
-    const { data: subSectionsData13 } = useGetSubSectionsByLineQuery(selectedLines[13], { skip: !selectedLines[13] });
-    const { data: subSectionsData14 } = useGetSubSectionsByLineQuery(selectedLines[14], { skip: !selectedLines[14] });
-
-    const subSectionsBySlot = [
-        subSectionsData0?.data  || [], subSectionsData1?.data  || [], subSectionsData2?.data  || [],
-        subSectionsData3?.data  || [], subSectionsData4?.data  || [], subSectionsData5?.data  || [],
-        subSectionsData6?.data  || [], subSectionsData7?.data  || [], subSectionsData8?.data  || [],
-        subSectionsData9?.data  || [], subSectionsData10?.data || [], subSectionsData11?.data || [],
-        subSectionsData12?.data || [], subSectionsData13?.data || [], subSectionsData14?.data || [],
-    ].slice(0, lines.length);
-
-    const lineNameById = useMemo(() => {
-        const map = {};
-        lines.forEach((line) => {
-            map[String(line._id || line.id)] = line.name;
-        });
-        return map;
-    }, [lines]);
-
-    const slotColumns = useMemo(() => {
-        return selectedLines.map((lineId, slotIdx) => {
-            const lineName = lineNameById[lineId] || `Line ${slotIdx + 1}`;
-            const machines = machinesBySlot[slotIdx] || [];
-            const subSections = subSectionsBySlot[slotIdx] || [];
-
-            if (!lineId) {
-                return [{
-                    key: `slot-${slotIdx}-empty`,
-                    slotIdx,
-                    lineId: "",
-                    lineName: "",
-                    subSectionId: "",
-                    subSectionName: "",
-                    machineIds: [],
-                }];
-            }
-
-            // Group columns by sub-section instead of machines
-            if (subSections.length === 0) {
-                return [{
-                    key: `slot-${slotIdx}-no-sub`,
-                    slotIdx,
-                    lineId,
-                    lineName,
-                    subSectionId: "",
-                    subSectionName: "-",
-                    machineIds: [],
-                }];
-            }
-
-            return subSections.map(ss => {
-                const ssMachines = machines.filter(m => String(m.subSectionId) === String(ss.id || ss._id));
-                return {
-                    key: `slot-${slotIdx}-sub-${ss.id || ss._id}`,
-                    slotIdx,
-                    lineId,
-                    lineName,
-                    subSectionId: String(ss.id || ss._id),
-                    subSectionName: ss.name,
-                    machineIds: ssMachines.map(m => String(m.id || m._id)),
-                };
-            });
-        });
-    }, [selectedLines, lineNameById, machinesBySlot, subSectionsBySlot]);
-
-    const machineColumns = useMemo(() => slotColumns.flat(), [slotColumns]);
-    const totalProcessCols = machineColumns.length || 1;
-
-    // Calculate spans for headers
-    const headerSpans = useMemo(() => {
-        return selectedLines.map((lineId, slotIdx) => {
-            const cols = slotColumns[slotIdx] || [];
-            return {
-                lineId,
-                totalCount: cols.length,
-                subSections: cols.map(col => ({
-                    id: col.subSectionId,
-                    name: col.subSectionName,
-                    count: 1
-                }))
-            };
-        });
-    }, [slotColumns, selectedLines]);
-
-    const machineIdsForLookup = useMemo(
-        () => [...new Set(machineColumns.flatMap((col) => col.machineIds || []).filter(Boolean))],
-        [machineColumns]
-    );
-
-    const machineIdsKey = machineIdsForLookup.join(",");
-
-    // { [userId]: { plan: { [columnKey]: "yyyy-mm-dd" }, actual: { ... } } }
     const [tableData, setTableData] = useState({});
-    // { `${userId}_${machineId}`: "yyyy-mm-dd" }
-    const [assignmentDateMap, setAssignmentDateMap] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(false);
 
-    // Layout Config State
-    const [tableConfig, setTableConfig] = useState(null);
-    const [isEditingLayout, setIsEditingLayout] = useState(false);
-    const [jsonConfigStr, setJsonConfigStr] = useState("");
-    const [layoutRemark, setLayoutRemark] = useState("");
-    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-    const [configHistory, setConfigHistory] = useState([]);
-    const [loadingHistory, setLoadingHistory] = useState(false);
-    const [loadingConfig, setLoadingConfig] = useState(false);
-
+    // Reset loading state when department/section/year changes
     useEffect(() => {
-        if (departmentId) {
-            fetchConfig();
-        }
-    }, [departmentId]);
+        setHasLoaded(false);
+        setRows([]);
+    }, [departmentId, sectionId, year]);
 
-    const fetchConfig = async () => {
-        try {
-            setLoadingConfig(true);
-            const response = await axiosInstance.get(`/api/skill-upgradation-plan/config/${departmentId}`);
-            if (response.data.success && response.data.data.config) {
-                setTableConfig(response.data.data.config);
-                setJsonConfigStr(JSON.stringify(response.data.data.config, null, 2));
-            }
-        } catch (error) {
-            console.error("Error fetching config:", error);
-        } finally {
-            setLoadingConfig(false);
-        }
-    };
-
-    const handleSaveConfig = async () => {
-        if (!layoutRemark.trim()) {
-            toast.error("Please enter a remark detailing your layout changes.");
-            return;
-        }
-
-        try {
-            let parsedConfig;
-            try {
-                parsedConfig = JSON.parse(jsonConfigStr);
-            } catch (e) {
-                toast.error("Invalid JSON format");
-                return;
-            }
-
-            await axiosInstance.post(`/api/skill-upgradation-plan/config/save`, {
-                departmentId,
-                config: parsedConfig,
-                remark: layoutRemark
-            });
-
-            setTableConfig(parsedConfig);
-            setIsEditingLayout(false);
-            setLayoutRemark("");
-            toast.success("Configuration saved successfully");
-        } catch (error) {
-            console.error("Error saving config:", error);
-            toast.error("Failed to save configuration");
-        }
-    };
-
-    const fetchHistory = async () => {
-        try {
-            setLoadingHistory(true);
-            const response = await axiosInstance.get(`/api/skill-upgradation-plan/history/${departmentId}`);
-            if (response.data.success) {
-                setConfigHistory(response.data.data);
-                setIsHistoryOpen(true);
-            }
-        } catch (error) {
-            console.error("Error fetching history:", error);
-            toast.error("Failed to load history");
-        } finally {
-            setLoadingHistory(false);
-        }
-    };
-
+    // Initialize rows when both students and plan details are ready
     useEffect(() => {
-        setTableData((prev) => {
-            const next = { ...prev };
-            employees.forEach((emp) => {
-                const id = emp._id || emp.id;
-                if (id && !next[id]) {
-                    next[id] = { plan: {}, actual: {} };
-                }
+        if (isLoadingPlan || hasLoaded || students.length === 0) return;
+
+        const savedRows = [];
+        const savedUserIds = Object.keys(tableData || {});
+
+        savedUserIds.forEach((userId) => {
+            const user = students.find(s => String(s._id || s.id) === String(userId));
+            const data = tableData[userId] || {};
+            savedRows.push({
+                rowId: userId,
+                userId: userId,
+                userName: user?.fullName || user?.name || data.userName || "",
+                cardNo: user?.cardNo || user?.username || user?.empId || data.cardNo || "",
+                shift: data.shift || "",
+                modelLine: data.modelLine || "",
+                station: data.station || "",
+                q1Skill: data.q1Skill || "",
+                q1Date: data.q1Date || "",
+                q1DateActual: data.q1DateActual || "",
+                q1Status: data.q1Status || "",
+                q2Skill: data.q2Skill || "",
+                q2Date: data.q2Date || "",
+                q2DateActual: data.q2DateActual || "",
+                q2Status: data.q2Status || "",
+                q3Skill: data.q3Skill || "",
+                q3Date: data.q3Date || "",
+                q3DateActual: data.q3DateActual || "",
+                q3Status: data.q3Status || "",
+                q4Skill: data.q4Skill || "",
+                q4Date: data.q4Date || "",
+                q4DateActual: data.q4DateActual || "",
+                q4Status: data.q4Status || ""
             });
-            return next;
         });
-    }, [employees]);
+
+        // Pad to 25 rows
+        const totalRowsNeeded = 25;
+        const currentCount = savedRows.length;
+        if (currentCount < totalRowsNeeded) {
+            for (let i = currentCount; i < totalRowsNeeded; i++) {
+                savedRows.push({
+                    rowId: `temp-${i}-${Date.now()}`,
+                    userId: "",
+                    userName: "",
+                    cardNo: "",
+                    shift: "",
+                    modelLine: "",
+                    station: "",
+                    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
+                    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
+                    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
+                    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
+                });
+            }
+        }
+
+        setRows(savedRows);
+        setHasLoaded(true);
+    }, [tableData, students, isLoadingPlan, hasLoaded]);
 
     useEffect(() => {
         if (!departmentId) return;
@@ -296,19 +184,15 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId }) => {
 
         const loadSavedPlan = async () => {
             try {
-                setSavedLines(null);
                 setIsLoadingPlan(true);
+                setTableData({});
                 const response = await axiosInstance.get(`/api/skill-upgradation-plan/department/${departmentId}`, {
-                    params: { sectionId }
+                    params: { sectionId, year }
                 });
                 const data = response?.data?.data;
                 if (!cancelled && data) {
-                    if (Array.isArray(data.selectedLines)) {
-                        // Store raw saved lines; the lines-length effect will resize and apply them.
-                        setSavedLines(data.selectedLines);
-                    }
                     if (data.tableData && typeof data.tableData === "object") {
-                        setTableData((prev) => ({ ...prev, ...data.tableData }));
+                        setTableData(data.tableData);
                     }
                 }
             } catch (error) {
@@ -324,96 +208,88 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId }) => {
         return () => {
             cancelled = true;
         };
-    }, [departmentId]);
+    }, [departmentId, sectionId, year]);
 
-    useEffect(() => {
-        if (machineIdsForLookup.length === 0) {
-            setAssignmentDateMap((prev) => (Object.keys(prev).length ? {} : prev));
-            return;
-        }
-
-        let cancelled = false;
-
-        const loadAssignmentDates = async () => {
-            try {
-                const responses = await Promise.all(
-                    machineIdsForLookup.map((machineId) => axiosInstance.get(`/api/machines/${machineId}/employees`))
-                );
-
-                const nextMap = {};
-                responses.forEach((res, idx) => {
-                    const machineId = machineIdsForLookup[idx];
-                    const assignedEmployees = res?.data?.data || [];
-                    assignedEmployees.forEach((employee) => {
-                        const userId = String(employee?.id || employee?._id || "");
-                        const assignedAt = employee?.assigned_at;
-                        if (userId && assignedAt) {
-                            const formatted = new Date(assignedAt).toISOString().split("T")[0];
-                            nextMap[`${userId}_${machineId}`] = formatted;
-                        }
-                    });
-                });
-
-                if (!cancelled) {
-                    setAssignmentDateMap((prev) => {
-                        const prevKeys = Object.keys(prev);
-                        const nextKeys = Object.keys(nextMap);
-                        if (prevKeys.length === nextKeys.length) {
-                            let changed = false;
-                            for (const key of nextKeys) {
-                                if (prev[key] !== nextMap[key]) {
-                                    changed = true;
-                                    break;
-                                }
-                            }
-                            if (!changed) return prev;
-                        }
-                        return nextMap;
-                    });
-                }
-            } catch (error) {
-                if (!cancelled) {
-                    setAssignmentDateMap((prev) => (Object.keys(prev).length ? {} : prev));
-                }
+    const handleAddRow = () => {
+        setRows(prev => [
+            ...prev,
+            {
+                rowId: `temp-add-${prev.length}-${Date.now()}`,
+                userId: "",
+                userName: "",
+                cardNo: "",
+                shift: "",
+                modelLine: "",
+                station: "",
+                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
+                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
+                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
+                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
             }
-        };
-
-        loadAssignmentDates();
-        return () => {
-            cancelled = true;
-        };
-    }, [machineIdsKey]);
-
-    const handleLineSelectChange = (slotIdx, value) => {
-        const next = [...selectedLines];
-        next[slotIdx] = value;
-        setSelectedLines(next);
+        ]);
     };
 
-    const handleDataChange = (userId, type, columnKey, value) => {
-        setTableData((prev) => {
-            const userRecord = prev[userId] || { plan: {}, actual: {} };
-            return {
-                ...prev,
-                [userId]: {
-                    ...userRecord,
-                    [type]: {
-                        ...(userRecord[type] || {}),
-                        [columnKey]: value,
-                    },
-                },
-            };
-        });
+    const handleRemoveEmployee = (rowId) => {
+        setRows(prev => prev.filter(row => row.rowId !== rowId));
+        toast.success("Row removed from sheet");
     };
+
+    const handleRowFieldChange = (rowId, field, value) => {
+        setRows(prev => prev.map(row => {
+            if (row.rowId === rowId) {
+                return { ...row, [field]: value };
+            }
+            return row;
+        }));
+    };
+
+    const filteredRows = useMemo(() => {
+        if (!searchText.trim()) return rows;
+        const lower = searchText.toLowerCase();
+        return rows.filter(row =>
+            (row.userName || "").toLowerCase().includes(lower) ||
+            (row.cardNo || "").toLowerCase().includes(lower)
+        );
+    }, [rows, searchText]);
 
     const handleSave = async () => {
         if (!departmentId) return;
+
+        // Convert rows to tableData format
+        const newTableData = {};
+        rows.forEach(row => {
+            if (row.userId) {
+                newTableData[row.userId] = {
+                    shift: row.shift,
+                    modelLine: row.modelLine || "",
+                    station: row.station || "",
+                    q1Skill: row.q1Skill,
+                    q1Date: row.q1Date,
+                    q1DateActual: row.q1DateActual,
+                    q1Status: row.q1Status,
+                    q2Skill: row.q2Skill,
+                    q2Date: row.q2Date,
+                    q2DateActual: row.q2DateActual,
+                    q2Status: row.q2Status,
+                    q3Skill: row.q3Skill,
+                    q3Date: row.q3Date,
+                    q3DateActual: row.q3DateActual,
+                    q3Status: row.q3Status,
+                    q4Skill: row.q4Skill,
+                    q4Date: row.q4Date,
+                    q4DateActual: row.q4DateActual,
+                    q4Status: row.q4Status
+                };
+            }
+        });
+
         try {
             setIsSaving(true);
             await axiosInstance.post(`/api/skill-upgradation-plan/department/${departmentId}`, {
                 sectionId,
-                selectedLines,
-                tableData,
+                year,
+                selectedLines: [],
+                tableData: newTableData,
             });
             toast.success("Skill upgradation plan saved successfully");
         } catch (error) {
@@ -436,24 +312,16 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId }) => {
                         Plan for Skill Upgradation
                     </h2>
                     <div className="flex items-center gap-2">
-                        {canViewHistory && (
-                            <Button variant="outline" onClick={fetchHistory}>
-                                <IconHistory className="h-4 w-4 mr-2" />
-                                History
-                            </Button>
-                        )}
-                        {canEditLayout && (
-                            <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
-                                <IconSettings className="h-4 w-4 mr-2" />
-                                Edit Layout
-                            </Button>
-                        )}
+                        <Button variant="outline" onClick={handleAddRow} className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
+                            <IconPlus className="h-4 w-4 mr-2" />
+                            Add Row
+                        </Button>
                         <Button variant="outline" onClick={handlePrint}>
                             <IconPrinter className="h-4 w-4 mr-2" />
                             Print
                         </Button>
                         {canManage && (
-                            <Button onClick={handleSave} disabled={isSaving || isLoadingPlan}>
+                            <Button onClick={handleSave} disabled={isSaving || isLoadingPlan} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm">
                                 <IconDeviceFloppy className="h-4 w-4 mr-2" />
                                 {isSaving ? "Saving..." : "Save"}
                             </Button>
@@ -469,189 +337,428 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId }) => {
                             Plan for Skill Upgradation
                         </h2>
                         <span className="print:hidden text-xs font-bold text-slate-400 uppercase tracking-wider">
-                            Interactive Skill Upgradation Plan
+                            Interactive Skill Upgradation Plan (Year: {year})
                         </span>
                     </div>
                     <div className="text-xs font-bold text-slate-900 border border-slate-950 bg-slate-50 px-3 py-1 rounded shadow-sm print:shadow-none print:bg-white print:rounded-none whitespace-nowrap">
                         Document No: FRM-WH-QA-236
                     </div>
                 </div>
-                <table className="w-full min-w-[1200px] border-collapse border border-black text-sm">
-                    <thead>
-                        {/* Line dropdown row */}
-                        <tr className="bg-white">
-                            <th rowSpan="3" className="border border-black p-2 w-12 align-middle">Sr. No</th>
-                            <th rowSpan="3" className="border border-black p-2 w-48 align-middle">Associates Name</th>
-                            <th rowSpan="3" className="border border-black p-2 w-32 align-middle">Card No</th>
-                            <th rowSpan="3" className="border border-black p-2 w-24 align-middle">Plan/Actual</th>
-                            <th colSpan={totalProcessCols} className="border border-black p-1 text-center font-bold bg-slate-100">Process (Line)</th>
-                        </tr>
-                        <tr>
-                            {headerSpans.map((span, slotIdx) => (
-                                <th key={`slot-${slotIdx}`} colSpan={span.totalCount} className="border border-black p-0 h-10">
-                                    <Select
-                                        value={selectedLines[slotIdx]}
-                                        onValueChange={(value) => handleLineSelectChange(slotIdx, value)}
-                                        disabled={!canManage}
-                                    >
-                                        <SelectTrigger className="w-full h-full rounded-none border-0 px-2 text-center justify-center font-bold bg-white disabled:opacity-100 disabled:cursor-default">
-                                            <SelectValue placeholder={`Select Line ${slotIdx + 1}`} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {linesLoading ? (
-                                                <SelectItem value={`loading-${slotIdx}`} disabled>Loading...</SelectItem>
-                                            ) : lines.length === 0 ? (
-                                                <SelectItem value={`none-${slotIdx}`} disabled>No lines found</SelectItem>
-                                            ) : (
-                                                lines.map((line) => (
-                                                    <SelectItem key={line._id || line.id} value={String(line._id || line.id)}>
-                                                        {line.name}
-                                                    </SelectItem>
-                                                ))
-                                            )}
-                                        </SelectContent>
-                                    </Select>
-                                </th>
-                            ))}
-                        </tr>
-
-                        {/* Sub-Section Name row */}
-                        <tr className="bg-slate-50">
-                            {machineColumns.map((col) => (
-                                <th
-                                    key={col.key}
-                                    className="border border-black p-1 text-center text-[10px] font-bold uppercase text-slate-600"
-                                >
-                                    {col.subSectionName || "-"}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-
-                    <tbody>
-                        {employees.map((emp, index) => {
-                            const data = tableData[emp._id] || { plan: {}, actual: {} };
-                            return (
-                                <React.Fragment key={emp._id}>
-                                    <tr className="hover:bg-gray-50">
-                                        <td rowSpan="2" className="border border-black p-2 text-center">{index + 1}</td>
-                                        <td rowSpan="2" className="border border-black p-2 font-bold text-blue-700 uppercase">
-                                            {emp.fullName}
-                                        </td>
-                                        <td rowSpan="2" className="border border-black p-2 text-center font-bold text-blue-700">
-                                            {emp.username || emp.userName || emp.empId || "-"}
-                                        </td>
-                                        <td className="border border-black p-1 text-center bg-gray-50 text-[10px] font-bold">Plan</td>
-                                        {machineColumns.map((col) => (
-                                            <td key={`plan-${emp._id}-${col.key}`} className="border border-black p-0">
-                                                <input
-                                                    type="date"
-                                                    className="w-full h-full text-center outline-none bg-transparent p-1 text-[10px] disabled:opacity-80"
-                                                    value={data.plan?.[col.key] || ""}
-                                                    onChange={(e) => handleDataChange(emp._id, "plan", col.key, e.target.value)}
-                                                    disabled={!canManage}
-                                                />
-                                            </td>
-                                        ))}
-                                    </tr>
-
-                                    <tr className="hover:bg-gray-50">
-                                        <td className="border border-black p-1 text-center bg-gray-50 text-[10px] font-bold">Actual</td>
-                                        {machineColumns.map((col) => {
-                                            const studentId = String(emp._id || emp.id || "");
-                                            const assignedDates = (col.machineIds || [])
-                                                .map(mId => assignmentDateMap[`${studentId}_${mId}`])
-                                                .filter(Boolean);
-                                            const assignedDate = assignedDates.length > 0 ? assignedDates.sort()[0] : "";
-                                            const cellValue = assignedDate || data.actual?.[col.key] || "";
-
-                                            return (
-                                                <td key={`actual-${emp._id}-${col.key}`} className="border border-black p-0">
-                                                    <input
-                                                        type="date"
-                                                        className="w-full h-full text-center outline-none bg-transparent p-1 text-[10px] disabled:opacity-80"
-                                                        value={cellValue}
-                                                        onChange={(e) => handleDataChange(emp._id, "actual", col.key, e.target.value)}
-                                                        disabled={!!assignedDate || !canManage}
-                                                    />
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                </React.Fragment>
-                            );
-                        })}
-
-                        {employees.length === 0 && (
-                            <tr>
-                                <td colSpan={4 + totalProcessCols} className="border border-black p-8 text-center text-muted-foreground">
-                                    No employees found in this department.
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
-            </CardContent>
-
-            {/* Edit Layout Dialog */}
-            <Dialog open={isEditingLayout} onOpenChange={setIsEditingLayout}>
-                <DialogContent className="max-w-[800px] max-h-[90vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Edit Table Configuration (JSON)</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-auto p-1 space-y-4">
-                        <Textarea
-                            className="font-mono text-xs h-[400px]"
-                            value={jsonConfigStr}
-                            onChange={(e) => setJsonConfigStr(e.target.value)}
-                            placeholder='e.g. { "headers": [[{"text": "Sr. No", "rowSpan": 3}]] }'
-                        />
-                        <div className="space-y-2">
-                            <Label htmlFor="remark">Remark (Required)</Label>
+                <div className="no-print flex flex-col sm:flex-row items-end gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="w-full sm:w-72">
+                        <Label className="text-xs font-bold text-slate-700 mb-1 block">Filter Table Rows</Label>
+                        <div className="flex items-center gap-2">
                             <Input
-                                id="remark"
-                                placeholder="Briefly describe the changes made to the layout..."
-                                value={layoutRemark}
-                                onChange={(e) => setLayoutRemark(e.target.value)}
+                                placeholder="Filter active associates..."
+                                value={searchText}
+                                onChange={(e) => setSearchText(e.target.value)}
+                                className="h-9 bg-white text-sm"
                             />
+                            {searchText && (
+                                <Button variant="ghost" size="sm" onClick={() => setSearchText("")} className="h-9 px-2 text-xs">
+                                    Clear
+                                </Button>
+                            )}
                         </div>
                     </div>
-                    <div className="flex justify-between">
-                        <Button variant="ghost" onClick={() => setIsEditingLayout(false)}>Cancel</Button>
-                        <Button onClick={handleSaveConfig} disabled={!layoutRemark.trim()}>
-                            Save Configuration
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
+                </div>
 
-            {/* History Dialog */}
-            <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-                <DialogContent className="max-w-[600px] max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Layout Change History</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-auto p-4 space-y-4">
-                        {loadingHistory ? (
-                            <div className="flex justify-center py-10"><Loader2 className="animate-spin w-8 h-8" /></div>
-                        ) : configHistory.length === 0 ? (
-                            <div className="text-center text-gray-500 py-8">No history found.</div>
-                        ) : (
-                            configHistory.map((entry, idx) => (
-                                <div key={idx} className="border p-3 rounded-lg space-y-2 bg-slate-50">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="font-semibold">{entry.updatedBy}</span>
-                                        <span className="text-gray-500">{format(new Date(entry.createdAt), "PP p")}</span>
-                                    </div>
-                                    <div className="text-sm border-l-2 border-blue-400 pl-2">
-                                        {entry.remark}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
+                <div className="w-full overflow-x-auto rounded-lg border border-slate-300">
+                    <table className="w-full border-collapse border border-slate-300 text-sm table-auto">
+                        <thead className="bg-slate-100 text-slate-700">
+                            {/* Group headers row */}
+                            <tr className="border-b border-slate-300">
+                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-center font-bold align-middle whitespace-nowrap">Sr. No</th>
+                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Associates Name</th>
+                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-center font-bold align-middle whitespace-nowrap">Card No</th>
+                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-center font-bold align-middle whitespace-nowrap">Shift</th>
+                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Model & Line</th>
+                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Station</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap">Jan-March</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap">April-June</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-green-50 text-green-800 whitespace-nowrap">July-Sep</th>
+                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-purple-50 text-purple-800 whitespace-nowrap">Oct-Dec</th>
+                                <th rowSpan="2" className="p-2 text-center font-bold align-middle no-print whitespace-nowrap">Action</th>
+                            </tr>
+                            <tr className="bg-slate-50 border-b border-slate-300">
+                                {/* Jan-March */}
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                                {/* April-June */}
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                                {/* July-Sep */}
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                                {/* Oct-Dec */}
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
+                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                            </tr>
+                        </thead>
+
+                        <tbody className="bg-white">
+                            {filteredRows.map((row, index) => {
+                                const rowId = row.rowId;
+                                const rowSubSections = row.modelLine 
+                                    ? subSections.filter(ss => ss.lineName === row.modelLine) 
+                                    : subSections;
+
+                                return (
+                                    <tr key={rowId} className="hover:bg-slate-50/50 border-b border-slate-200 transition-colors">
+                                        <td className="border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap">{index + 1}</td>
+                                        <td className="border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap">
+                                            <UserCellSelector
+                                                value={row.userName}
+                                                onChange={(userId, userName, lineName, subSectionName) => {
+                                                    handleRowFieldChange(rowId, "userId", userId);
+                                                    handleRowFieldChange(rowId, "userName", userName);
+                                                    handleRowFieldChange(rowId, "modelLine", lineName || "");
+                                                    handleRowFieldChange(rowId, "station", subSectionName || "");
+                                                }}
+                                                students={students}
+                                                rowId={rowId}
+                                                handleRowFieldChange={handleRowFieldChange}
+                                                disabled={!canManage}
+                                            />
+                                        </td>
+                                        <td className="border-r border-slate-200 p-2 text-center font-mono text-slate-700 whitespace-nowrap">
+                                            <Input
+                                                value={row.cardNo || ""}
+                                                disabled={true}
+                                                className="h-8 w-full min-w-[90px] text-xs shadow-none bg-slate-50 border-slate-200 text-center font-bold"
+                                                placeholder="Card No"
+                                                readOnly
+                                            />
+                                        </td>
+                                        {/* Shift */}
+                                        <td className="border-r border-slate-200 p-1 text-center whitespace-nowrap">
+                                            <Select
+                                                value={row.shift || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "shift", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="A">A</SelectItem>
+                                                    <SelectItem value="B">B</SelectItem>
+                                                    <SelectItem value="C">C</SelectItem>
+                                                    <SelectItem value="G">G</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+                                        {/* Model & Line */}
+                                        <td className="border-r border-slate-200 p-1 whitespace-nowrap">
+                                            <Select
+                                                value={row.modelLine || ""}
+                                                onValueChange={(val) => {
+                                                    handleRowFieldChange(rowId, "modelLine", val);
+                                                    handleRowFieldChange(rowId, "station", ""); // Reset station when line changes
+                                                }}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="Select Model/Line" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {lines.map((l) => (
+                                                        <SelectItem key={l.id || l._id} value={l.name}>
+                                                            {l.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+                                        {/* Station */}
+                                        <td className="border-r border-slate-200 p-1 whitespace-nowrap">
+                                            <Select
+                                                value={row.station || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "station", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="Select Station" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {rowSubSections.map((ss) => (
+                                                        <SelectItem key={ss.id || ss._id} value={ss.name}>
+                                                            {ss.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+
+                                        {/* Jan-March */}
+                                        {/* Skill Level */}
+                                        <td className="border-r border-slate-200 p-1 bg-amber-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q1Skill || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q1Skill", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="L1">L1</SelectItem>
+                                                    <SelectItem value="L2">L2</SelectItem>
+                                                    <SelectItem value="L3">L3</SelectItem>
+                                                    <SelectItem value="L4">L4</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+                                        {/* Date */}
+                                        <td className="border-r border-slate-200 p-1 bg-amber-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q1Date || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q1Date", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-amber-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q1DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q1DateActual", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Status */}
+                                        <td className="border-r border-slate-200 p-1 bg-amber-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q1Status || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q1Status", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[110px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="Status" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Planned">Planned</SelectItem>
+                                                    <SelectItem value="Ongoing">Ongoing</SelectItem>
+                                                    <SelectItem value="Completed">Completed</SelectItem>
+                                                    <SelectItem value="N/A">N/A</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+
+                                        {/* April-June */}
+                                        {/* Skill Level */}
+                                        <td className="border-r border-slate-200 p-1 bg-blue-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q2Skill || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q2Skill", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="L1">L1</SelectItem>
+                                                    <SelectItem value="L2">L2</SelectItem>
+                                                    <SelectItem value="L3">L3</SelectItem>
+                                                    <SelectItem value="L4">L4</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+                                        {/* Date */}
+                                        <td className="border-r border-slate-200 p-1 bg-blue-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q2Date || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q2Date", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-blue-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q2DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q2DateActual", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Status */}
+                                        <td className="border-r border-slate-200 p-1 bg-blue-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q2Status || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q2Status", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[110px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="Status" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Planned">Planned</SelectItem>
+                                                    <SelectItem value="Ongoing">Ongoing</SelectItem>
+                                                    <SelectItem value="Completed">Completed</SelectItem>
+                                                    <SelectItem value="N/A">N/A</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+
+                                        {/* July-Sep */}
+                                        {/* Skill Level */}
+                                        <td className="border-r border-slate-200 p-1 bg-green-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q3Skill || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q3Skill", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="L1">L1</SelectItem>
+                                                    <SelectItem value="L2">L2</SelectItem>
+                                                    <SelectItem value="L3">L3</SelectItem>
+                                                    <SelectItem value="L4">L4</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+                                        {/* Date */}
+                                        <td className="border-r border-slate-200 p-1 bg-green-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q3Date || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q3Date", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-green-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q3DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q3DateActual", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Status */}
+                                        <td className="border-r border-slate-200 p-1 bg-green-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q3Status || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q3Status", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[110px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="Status" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Planned">Planned</SelectItem>
+                                                    <SelectItem value="Ongoing">Ongoing</SelectItem>
+                                                    <SelectItem value="Completed">Completed</SelectItem>
+                                                    <SelectItem value="N/A">N/A</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+
+                                        {/* Oct-Dec */}
+                                        {/* Skill Level */}
+                                        <td className="border-r border-slate-200 p-1 bg-purple-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q4Skill || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q4Skill", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="L1">L1</SelectItem>
+                                                    <SelectItem value="L2">L2</SelectItem>
+                                                    <SelectItem value="L3">L3</SelectItem>
+                                                    <SelectItem value="L4">L4</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+                                        {/* Date */}
+                                        <td className="border-r border-slate-200 p-1 bg-purple-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q4Date || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q4Date", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Date Actual */}
+                                        <td className="border-r border-slate-200 p-1 bg-purple-50/20 text-center whitespace-nowrap">
+                                            <input
+                                                type="date"
+                                                value={row.q4DateActual || ""}
+                                                onChange={(e) => handleRowFieldChange(rowId, "q4DateActual", e.target.value)}
+                                                disabled={!canManage}
+                                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                                            />
+                                        </td>
+                                        {/* Status */}
+                                        <td className="border-r border-slate-200 p-1 bg-purple-50/20 whitespace-nowrap">
+                                            <Select
+                                                value={row.q4Status || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q4Status", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[110px] bg-white border-slate-200 text-xs shadow-none">
+                                                    <SelectValue placeholder="Status" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Planned">Planned</SelectItem>
+                                                    <SelectItem value="Ongoing">Ongoing</SelectItem>
+                                                    <SelectItem value="Completed">Completed</SelectItem>
+                                                    <SelectItem value="N/A">N/A</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+
+                                        {/* Action */}
+                                        <td className="p-2 text-center no-print whitespace-nowrap">
+                                            {canManage && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleRemoveEmployee(rowId)}
+                                                    className="text-red-500 hover:text-red-700 p-1 h-auto"
+                                                    title="Remove Row"
+                                                >
+                                                    <IconTrash className="w-4 h-4 text-red-500 hover:text-red-700" />
+                                                </Button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+
+                            {filteredRows.length === 0 && (
+                                <tr>
+                                    <td colSpan="23" className="border border-slate-300 p-8 text-center text-muted-foreground bg-slate-50">
+                                        No rows match the search filter.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </CardContent>
         </Card>
     );
 };

@@ -430,12 +430,13 @@ class Daily5MRecord {
                     // Check up to 20 rows
                     for (let i = 0; i < 20; i++) {
                         const rowStatus = data[`rec_${i}_RowStatus`];
-                        const line = data[`rec_${i}_Line`];
-                        const station = data[`rec_${i}_Station`];
-                        const operator = data[`rec_${i}_OperatorName`];
+                        const hasData = data[`rec_${i}_Date`] || 
+                                        data[`rec_${i}_Line`] || 
+                                        data[`rec_${i}_StationMC`] || 
+                                        data[`rec_${i}_OpName`];
 
                         // If any identifying field is filled, consider the row filled
-                        if (line || station || operator || rowStatus) {
+                        if (hasData) {
                             rowCount++;
                             if (rowStatus === 'APPROVED') approvedRows++;
                             else if (rowStatus === 'REJECTED' || rowStatus === 'DECLINED') rejectedRows++;

@@ -200,7 +200,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                 if (!val) resetForm();
                 onClose(val);
             }}
-            className="w-[96vw] max-w-[1420px] bg-white text-slate-900 border border-slate-200 shadow-xl overflow-hidden rounded-2xl"
+            className="w-[96vw] max-w-[1420px] bg-white text-slate-900 border border-slate-200 shadow-xl rounded-2xl"
         >
             <DialogContent className="p-0">
 

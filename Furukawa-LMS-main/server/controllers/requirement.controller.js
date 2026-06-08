@@ -640,9 +640,6 @@ export const createRequirement = asyncHandler(async (req, res) => {
     const finalMonthNumber =
         monthNumber || getMonthNumber(finalMonthName) || null;
 
-    const heads = await findSectionHeadsForRequirement({ sectionCode, sectionName, lineCode, lineDescription });
-    const matchedCcEmail = heads.map((h) => h.CCMail).filter(Boolean).join(", ");
-
     const query = `
         INSERT INTO requirements
         (
@@ -660,11 +657,10 @@ export const createRequirement = asyncHandler(async (req, res) => {
             year,
             is_active,
             approvalStatus,
-            createdAt,
-            ccEmail
+            createdAt
         )
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
     `;
 
     const [rows] = await executeSql(query, [
@@ -682,7 +678,6 @@ export const createRequirement = asyncHandler(async (req, res) => {
         year || new Date().getFullYear(),
         1,
         "approved",
-        matchedCcEmail || null,
     ]);
 
     const requirementId = rows?.[0]?.id || null;
@@ -1005,32 +1000,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
     try {
         await transaction.begin();
 
-        // Retrieve and cache CC emails map
-        const [ccMapRows] = await executeSql(
-            `
-            SELECT DISTINCT 
-                s.uniCode, 
-                s.name AS sectionName, 
-                sh.CCMail
-            FROM section_heads sh
-            LEFT JOIN sections s ON sh.sectionId = s.id
-            WHERE sh.CCMail IS NOT NULL AND LTRIM(RTRIM(sh.CCMail)) != ''
-            `,
-            [],
-            transaction
-        );
 
-        const ccEmailsMap = new Map();
-        ccMapRows.forEach((row) => {
-            if (row.uniCode) ccEmailsMap.set(row.uniCode.toUpperCase(), row.CCMail);
-            if (row.sectionName) ccEmailsMap.set(row.sectionName.toUpperCase(), row.CCMail);
-        });
-
-        const getCcEmailForReq = (row) => {
-            const codeKey = (row.sectionCode || "").toUpperCase();
-            const nameKey = (row.sectionName || "").toUpperCase();
-            return ccEmailsMap.get(codeKey) || ccEmailsMap.get(nameKey) || "";
-        };
 
         const uploadBatchId = `BATCH_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
         const yearsToUpdate = [...new Set(rowsToProcess.map((r) => r.year))];
@@ -1078,7 +1048,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
             const paramsArray = [];
 
             chunk.forEach((row) => {
-                const ccEmailVal = getCcEmailForReq(row);
                 paramsArray.push(
                     row.srNo,
                     row.sectionCode,
@@ -1095,13 +1064,12 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     0,
                     uploadBatchId,
                     "pending",
-                    row.category,
-                    ccEmailVal || null
+                    row.category
                 );
             });
 
             const placeholders = chunk
-                .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                 .join(", ");
 
             const insertQuery = `
@@ -1122,8 +1090,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     is_active,
                     uploadBatchId,
                     approvalStatus,
-                    category,
-                    ccEmail
+                    category
                 )
                 VALUES ${placeholders}
             `;
@@ -1140,7 +1107,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
         let updateCount = 0;
 
         for (const row of rowsToUpdate) {
-            const ccEmailVal = getCcEmailForReq(row);
             const updateQuery = `
                 UPDATE requirements
                 SET
@@ -1158,7 +1124,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     uploadBatchId = ?,
                     approvalStatus = ?,
                     category = ?,
-                    ccEmail = ?,
                     approvalSource = NULL,
                     approvedBy = NULL,
                     approvedByEmail = NULL,
@@ -1185,7 +1150,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     uploadBatchId,
                     "pending",
                     row.category,
-                    ccEmailVal || null,
                     row.id,
                 ],
                 transaction
@@ -1828,16 +1792,7 @@ export const updateRequirement = asyncHandler(async (req, res) => {
         values.push(prodPlanFN02);
     }
 
-    const heads = await findSectionHeadsForRequirement({
-        sectionCode: sectionCode !== undefined ? sectionCode : oldReq.sectionCode,
-        sectionName: sectionName !== undefined ? sectionName : oldReq.sectionName,
-        lineCode: lineCode !== undefined ? lineCode : oldReq.lineCode,
-        lineDescription: lineDescription !== undefined ? lineDescription : oldReq.lineDescription,
-    });
-    const matchedCcEmail = heads.map((h) => h.CCMail).filter(Boolean).join(", ");
-
-    fields.push("ccEmail = ?");
-    values.push(matchedCcEmail || null);
+    // No ccEmail column in requirements database table
 
     if (fields.length === 0) {
         return res

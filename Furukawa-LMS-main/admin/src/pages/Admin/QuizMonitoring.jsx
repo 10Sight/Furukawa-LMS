@@ -401,8 +401,12 @@ const AdminQuizMonitoring = () => {
                 <TableBody>
                   {attempts.map((attempt) => {
                     const candidateName = attempt.student?.fullName || "Unknown";
-                    const empIdValue = attempt.student?.empId || "N/A";
-                    
+                    const isDojoUser = attempt.student?.isTemporary;
+                    const idLabel = isDojoUser ? "Base ID" : "ID";
+                    const empIdValue = isDojoUser
+                      ? (attempt.student?.userName || "N/A")
+                      : (attempt.student?.empId || "N/A");
+
                     return (
                       <TableRow key={attempt._id || attempt.id} className="hover:bg-gray-50/50 transition-colors">
                         {/* Candidate Column */}
@@ -415,7 +419,7 @@ const AdminQuizMonitoring = () => {
                               <div className="font-medium text-gray-900 leading-tight">{candidateName}</div>
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 <span className="text-[11px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">
-                                  ID: {empIdValue}
+                                  {idLabel}: {empIdValue}
                                 </span>
                               </div>
                             </div>

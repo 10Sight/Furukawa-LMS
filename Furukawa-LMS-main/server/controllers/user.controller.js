@@ -1752,6 +1752,20 @@ export const getMultiSkillingStudents = asyncHandler(async (req, res) => {
   }
   if (subSectId) { whereClauses.push("u.subSectionId = ?"); params.push(subSectId); }
 
+  if (req.query.sixteenDayApprovedOnly === "true") {
+    whereClauses.push(`EXISTS (
+      SELECT 1 FROM (
+        SELECT studentId, approvedBy, verifiedBy,
+               ROW_NUMBER() OVER (PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
+        FROM sixteen_day_monitorings
+      ) latest_sdm
+      WHERE latest_sdm.studentId = u.id
+        AND latest_sdm.rn = 1
+        AND latest_sdm.verifiedBy LIKE '%Approved%'
+        AND latest_sdm.verifiedBy NOT LIKE '%Rejected%'
+    )`);
+  }
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
   const [students] = await executeQuery(`
     SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName

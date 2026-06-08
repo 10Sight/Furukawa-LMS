@@ -26,10 +26,10 @@ export const instructorApi = createApi({
         }),
 
         getMultiSkillingStudents: builder.query({
-            query: ({ departmentId = "", sectionId = "" } = {}) => ({
+            query: ({ departmentId = "", sectionId = "", sixteenDayApprovedOnly = "" } = {}) => ({
                 url: `/api/users/multi-skilling-students`,
                 method: "GET",
-                params: { departmentId, sectionId }
+                params: { departmentId, sectionId, sixteenDayApprovedOnly }
             }),
             providesTags: ['Instructor'],
         }),

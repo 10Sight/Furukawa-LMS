@@ -25,7 +25,12 @@ export const createComparison = asyncHandler(async (req, res) => {
                     const result = await saveToLocal(file, "learning-content");
                     if (result.success) urls.push(result.url);
                 }
-                if (urls.length > 0) fileData[field] = JSON.stringify(urls);
+                if (urls.length > 0) {
+                    fileData[field] = JSON.stringify(urls);
+                    const descRaw = req.body[`${field}Descriptions`];
+                    const descs = descRaw ? JSON.parse(descRaw) : [];
+                    fileData[`${field}Descriptions`] = JSON.stringify(urls.map((_, i) => descs[i] || ''));
+                }
             }
         }
     }
@@ -65,18 +70,25 @@ export const updateComparison = asyncHandler(async (req, res) => {
     }
 
     for (const field of fileFields) {
-        const kept = Array.isArray(remainingExisting[field]) ? remainingExisting[field] : [];
-        const newUrls = [];
+        const rawKept = Array.isArray(remainingExisting[field]) ? remainingExisting[field] : [];
+        const kept = rawKept.map(i => (typeof i === 'string' ? i : i.path));
+        const keptDescs = rawKept.map(i => (typeof i === 'string' ? '' : (i.description || '')));
 
+        const newUrls = [];
         if (req.files && req.files[field] && req.files[field].length > 0) {
             for (const file of req.files[field]) {
                 const result = await saveToLocal(file, "learning-content");
                 if (result.success) newUrls.push(result.url);
             }
         }
+        const newDescRaw = req.body[`${field}Descriptions`];
+        const newDescs = newDescRaw ? JSON.parse(newDescRaw) : [];
 
         const combined = [...kept, ...newUrls];
+        const combinedDescs = [...keptDescs, ...newUrls.map((_, i) => newDescs[i] || '')];
+
         updateData[field] = combined.length > 0 ? JSON.stringify(combined) : null;
+        updateData[`${field}Descriptions`] = combinedDescs.length > 0 ? JSON.stringify(combinedDescs) : null;
     }
 
     const updated = await LearningComparison.update(id, updateData);

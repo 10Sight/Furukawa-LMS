@@ -46,8 +46,20 @@ const LearningComparisonDetail = () => {
     }, [id]);
 
     const copyToClipboard = async (path) => {
+        const text = `${baseUrl}${path}`;
         try {
-            await navigator.clipboard.writeText(`${baseUrl}${path}`);
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                if (!document.execCommand('copy')) throw new Error();
+                document.body.removeChild(textarea);
+            }
             toast.success("Link copied to clipboard!");
         } catch {
             toast.error("Failed to copy link — clipboard not available");
@@ -68,7 +80,7 @@ const LearningComparisonDetail = () => {
     };
 
     // Renders a single video player entry
-    const VideoPreview = ({ path, index, total }) => {
+    const VideoPreview = ({ path, index, total, description }) => {
         const fullUrl = `${baseUrl}${path}`;
         const label = total > 1 ? `Video ${index + 1}` : 'Video';
         return (
@@ -86,32 +98,36 @@ const LearningComparisonDetail = () => {
                 <div className="relative rounded-2xl overflow-hidden bg-black aspect-video shadow-inner">
                     <video src={fullUrl} controls className="w-full h-full object-contain" poster="/video-placeholder.png" />
                 </div>
+                {description && <p className="text-xs text-gray-500 italic px-1">{description}</p>}
             </div>
         );
     };
 
     // Renders a single non-video file card
-    const FileCard = ({ path, label, icon: Icon, color }) => (
-        <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 transition-all group">
-            <div className="flex items-center gap-3 overflow-hidden">
-                <div className={`p-2 rounded-lg ${color} bg-opacity-10 shrink-0`}>
-                    <Icon className={`w-4 h-4 ${color}`} />
+    const FileCard = ({ path, label, icon: Icon, color, description }) => (
+        <div className="space-y-1">
+            <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 transition-all group">
+                <div className="flex items-center gap-3 overflow-hidden">
+                    <div className={`p-2 rounded-lg ${color} bg-opacity-10 shrink-0`}>
+                        <Icon className={`w-4 h-4 ${color}`} />
+                    </div>
+                    <div className="min-w-0">
+                        <h4 className="font-semibold text-gray-900 text-sm truncate">{label}</h4>
+                        <p className="text-[10px] text-gray-400 truncate">{path.split('/').pop()}</p>
+                    </div>
                 </div>
-                <div className="min-w-0">
-                    <h4 className="font-semibold text-gray-900 text-sm truncate">{label}</h4>
-                    <p className="text-[10px] text-gray-400 truncate">{path.split('/').pop()}</p>
+                <div className="flex items-center gap-1 shrink-0">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-blue-600" onClick={() => copyToClipboard(path)}><Copy className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-emerald-600" onClick={() => handleDownload(path, label)}><Download className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-indigo-600" onClick={() => handleView(path)}><Eye className="w-3.5 h-3.5" /></Button>
                 </div>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-blue-600" onClick={() => copyToClipboard(path)}><Copy className="w-3.5 h-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-emerald-600" onClick={() => handleDownload(path, label)}><Download className="w-3.5 h-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-indigo-600" onClick={() => handleView(path)}><Eye className="w-3.5 h-3.5" /></Button>
-            </div>
+            {description && <p className="text-xs text-gray-500 italic px-1">{description}</p>}
         </div>
     );
 
     // Renders all files of a given non-video type (array)
-    const FileSection = ({ paths, label, icon, color }) => {
+    const FileSection = ({ paths, descs, label, icon, color }) => {
         if (!paths || paths.length === 0) return null;
         return (
             <div className="space-y-2">
@@ -122,6 +138,7 @@ const LearningComparisonDetail = () => {
                         label={paths.length > 1 ? `${label} ${i + 1}` : label}
                         icon={icon}
                         color={color}
+                        description={descs?.[i] || ''}
                     />
                 ))}
             </div>
@@ -136,6 +153,13 @@ const LearningComparisonDetail = () => {
         const ppts    = content[`${prefix}Ppt`]    || [];
         const images  = content[`${prefix}Image`]  || [];
         const descText = content[`${prefix}Description`];
+
+        const videoDescs  = content[`${prefix}VideoDescriptions`]  || [];
+        const pdfDescs    = content[`${prefix}PdfDescriptions`]    || [];
+        const excelDescs  = content[`${prefix}ExcelDescriptions`]  || [];
+        const wordDescs   = content[`${prefix}WordDescriptions`]   || [];
+        const pptDescs    = content[`${prefix}PptDescriptions`]    || [];
+        const imageDescs  = content[`${prefix}ImageDescriptions`]  || [];
 
         const hasAnyFile = videos.length || pdfs.length || excels.length || words.length || ppts.length || images.length;
 
@@ -162,7 +186,7 @@ const LearningComparisonDetail = () => {
                         {videos.length > 0 && (
                             <div className="space-y-4">
                                 {videos.map((path, i) => (
-                                    <VideoPreview key={i} path={path} index={i} total={videos.length} />
+                                    <VideoPreview key={i} path={path} index={i} total={videos.length} description={videoDescs[i] || ''} />
                                 ))}
                             </div>
                         )}
@@ -172,11 +196,11 @@ const LearningComparisonDetail = () => {
                             <div className="space-y-3 pt-2 border-t border-gray-100">
                                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Documents & Images</h4>
                                 <div className="space-y-2">
-                                    <FileSection paths={pdfs}   label="SOP Document"  icon={FileText}       color="text-red-500" />
-                                    <FileSection paths={excels} label="Data Sheet"     icon={FileSpreadsheet} color="text-emerald-500" />
-                                    <FileSection paths={words}  label="Word Manual"   icon={FileIcon}       color="text-blue-500" />
-                                    <FileSection paths={ppts}   label="Presentation"  icon={Presentation}   color="text-orange-500" />
-                                    <FileSection paths={images} label="Image"         icon={ImageIcon}      color="text-purple-500" />
+                                    <FileSection paths={pdfs}   descs={pdfDescs}   label="SOP Document"  icon={FileText}        color="text-red-500" />
+                                    <FileSection paths={excels} descs={excelDescs} label="Data Sheet"     icon={FileSpreadsheet} color="text-emerald-500" />
+                                    <FileSection paths={words}  descs={wordDescs}  label="Word Manual"    icon={FileIcon}        color="text-blue-500" />
+                                    <FileSection paths={ppts}   descs={pptDescs}   label="Presentation"   icon={Presentation}    color="text-orange-500" />
+                                    <FileSection paths={images} descs={imageDescs} label="Image"          icon={ImageIcon}       color="text-purple-500" />
                                 </div>
                             </div>
                         )}

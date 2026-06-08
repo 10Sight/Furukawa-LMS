@@ -36,6 +36,20 @@ class LearningComparison {
         this.afterPpt    = parseFileField(data.afterPpt);
         this.afterImage  = parseFileField(data.afterImage);
 
+        this.beforeVideoDescriptions = parseFileField(data.beforeVideoDescriptions);
+        this.beforePdfDescriptions   = parseFileField(data.beforePdfDescriptions);
+        this.beforeExcelDescriptions = parseFileField(data.beforeExcelDescriptions);
+        this.beforeWordDescriptions  = parseFileField(data.beforeWordDescriptions);
+        this.beforePptDescriptions   = parseFileField(data.beforePptDescriptions);
+        this.beforeImageDescriptions = parseFileField(data.beforeImageDescriptions);
+
+        this.afterVideoDescriptions  = parseFileField(data.afterVideoDescriptions);
+        this.afterPdfDescriptions    = parseFileField(data.afterPdfDescriptions);
+        this.afterExcelDescriptions  = parseFileField(data.afterExcelDescriptions);
+        this.afterWordDescriptions   = parseFileField(data.afterWordDescriptions);
+        this.afterPptDescriptions    = parseFileField(data.afterPptDescriptions);
+        this.afterImageDescriptions  = parseFileField(data.afterImageDescriptions);
+
         this.createdBy = data.createdBy;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -87,6 +101,54 @@ class LearningComparison {
                 BEGIN
                     ALTER TABLE learning_comparisons ADD afterImage NVARCHAR(MAX);
                 END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeVideoDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD beforeVideoDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforePdfDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD beforePdfDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeExcelDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD beforeExcelDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeWordDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD beforeWordDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforePptDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD beforePptDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeImageDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD beforeImageDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterVideoDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD afterVideoDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterPdfDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD afterPdfDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterExcelDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD afterExcelDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterWordDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD afterWordDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterPptDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD afterPptDescriptions NVARCHAR(MAX);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterImageDescriptions')
+                BEGIN
+                    ALTER TABLE learning_comparisons ADD afterImageDescriptions NVARCHAR(MAX);
+                END
             END
         `;
         try {
@@ -101,6 +163,10 @@ class LearningComparison {
             "title", "description", "beforeDescription", "afterDescription",
             "beforeVideo", "beforePdf", "beforeExcel", "beforeWord", "beforePpt", "beforeImage",
             "afterVideo", "afterPdf", "afterExcel", "afterWord", "afterPpt", "afterImage",
+            "beforeVideoDescriptions", "beforePdfDescriptions", "beforeExcelDescriptions",
+            "beforeWordDescriptions", "beforePptDescriptions", "beforeImageDescriptions",
+            "afterVideoDescriptions", "afterPdfDescriptions", "afterExcelDescriptions",
+            "afterWordDescriptions", "afterPptDescriptions", "afterImageDescriptions",
             "createdBy"
         ];
         const values = fields.map(field => data[field]);

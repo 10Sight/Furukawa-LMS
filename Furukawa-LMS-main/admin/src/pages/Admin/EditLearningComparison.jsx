@@ -46,6 +46,241 @@ const parseField = (val) => {
     }
 };
 
+const FILE_TYPES = [
+    { id: 'Video', label: 'Video',          icon: Video,           color: 'text-rose-500',    accept: 'video/*' },
+    { id: 'Pdf',   label: 'PDF Document',    icon: FileText,        color: 'text-red-500',     accept: '.pdf' },
+    { id: 'Excel', label: 'Excel Sheet',     icon: FileSpreadsheet, color: 'text-emerald-500', accept: '.xlsx,.xls,.csv' },
+    { id: 'Word',  label: 'Word Document',   icon: FileIcon,        color: 'text-blue-500',    accept: '.doc,.docx' },
+    { id: 'Ppt',   label: 'PowerPoint',      icon: Presentation,    color: 'text-orange-500',  accept: '.ppt,.pptx' },
+    { id: 'Image', label: 'Image',           icon: ImageIcon,       color: 'text-purple-500',  accept: 'image/*' },
+];
+
+// Defined outside parent so the reference is stable across renders — prevents focus loss on textarea
+const FileUploadInput = ({
+    label, field, icon: Icon, color, accept,
+    existingList, newList,
+    onFileChange, onRemove, onDeleteExisting, onDescChange, onExistingDescChange,
+}) => (
+    <div className="space-y-2">
+        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</Label>
+
+        <div className="relative group">
+            <input
+                type="file"
+                accept={accept}
+                multiple
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                onChange={(e) => onFileChange(e, field)}
+            />
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-gray-200 group-hover:border-blue-400 group-hover:bg-blue-50/50 transition-all">
+                <div className="p-2 rounded-lg bg-gray-50 group-hover:bg-white group-hover:shadow-sm text-gray-400 group-hover:text-blue-500 transition-all">
+                    <Upload className="w-4 h-4" />
+                </div>
+                <span className="text-sm text-gray-500 group-hover:text-blue-600 transition-colors font-medium">
+                    {existingList.length + newList.length > 0 ? `Add more ${label}` : `Upload ${label}`}
+                </span>
+            </div>
+        </div>
+
+        {/* Existing server files */}
+        {existingList.map((item, i) => (
+            <div key={`ex-${i}`} className="space-y-1">
+                <div className="flex items-center justify-between p-2.5 rounded-xl border border-gray-100 bg-white shadow-sm">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="p-1.5 rounded-lg bg-gray-100">
+                            <Icon className={`w-3.5 h-3.5 ${color}`} />
+                        </div>
+                        <div className="min-w-0">
+                            <span className="text-xs font-semibold text-gray-900 truncate block max-w-[140px]">
+                                {item.path.split('/').pop()}
+                            </span>
+                            <span className="text-[9px] text-gray-400 font-bold uppercase">Existing</span>
+                        </div>
+                    </div>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-red-400 hover:bg-red-50 hover:text-red-600"
+                        onClick={() => onDeleteExisting(field, i)}
+                    >
+                        <X className="w-3 h-3" />
+                    </Button>
+                </div>
+                <textarea
+                    placeholder="Add description for this file..."
+                    value={item.description}
+                    onChange={e => onExistingDescChange(field, i, e.target.value)}
+                    className="w-full text-xs rounded-lg border border-gray-100 bg-white p-2 resize-none min-h-[52px] focus:outline-none focus:ring-1 focus:ring-gray-300 text-gray-700 placeholder-gray-400"
+                />
+            </div>
+        ))}
+
+        {/* Newly staged files */}
+        {newList.map((item, i) => (
+            <div key={`new-${i}`} className="space-y-1 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between p-2.5 rounded-xl border border-blue-200 bg-blue-50/50">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                        <div className={`p-1.5 rounded-lg ${color} bg-white shadow-sm`}>
+                            <Icon className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                            <span className="text-xs font-bold text-blue-900 truncate block max-w-[140px]">
+                                {item.file.name}
+                            </span>
+                            <span className="text-[9px] text-blue-500 font-bold uppercase">New</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => onRemove(field, i)}
+                        className="p-1.5 hover:bg-blue-100 rounded-full text-blue-600 transition-colors"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                </div>
+                <textarea
+                    placeholder="Add description for this file..."
+                    value={item.description}
+                    onChange={e => onDescChange(field, i, e.target.value)}
+                    className="w-full text-xs rounded-lg border border-blue-100 bg-white p-2 resize-none min-h-[52px] focus:outline-none focus:ring-1 focus:ring-blue-300 text-gray-700 placeholder-gray-400"
+                />
+            </div>
+        ))}
+    </div>
+);
+
+// Defined outside parent for the same reason — stable reference prevents SidePanel children from remounting
+const SidePanel = ({
+    prefix, selectedType, setSelectedType,
+    files, existingFiles, formData, setFormData,
+    borderColor, headerBg, dividerColor, accentBorder, placeholderDesc, descLabel,
+    onFileChange, onRemove, onDeleteExisting, onDescChange, onExistingDescChange,
+}) => {
+    const totalExisting = FILE_TYPES.reduce((sum, t) => sum + existingFiles[`${prefix}${t.id}`].length, 0);
+    const totalNew = FILE_TYPES.reduce((sum, t) => sum + files[`${prefix}${t.id}`].length, 0);
+    const totalFiles = totalExisting + totalNew;
+    const selectedTypeDef = FILE_TYPES.find(t => `${prefix}${t.id}` === selectedType);
+
+    return (
+        <Card className={`border-none shadow-sm overflow-hidden border-t-4 ${borderColor}`}>
+            <CardHeader className={headerBg}>
+                <CardTitle className="text-lg flex items-center gap-2">
+                    <div className={`w-8 h-8 rounded-lg ${prefix === 'before' ? 'bg-amber-100' : 'bg-emerald-100'} flex items-center justify-center`}>
+                        {prefix === 'before'
+                            ? <Clock className="w-4 h-4 text-amber-600" />
+                            : <Plus className="w-4 h-4 text-emerald-600" />
+                        }
+                    </div>
+                    {prefix === 'before' ? 'BEFORE State' : 'AFTER State'}
+                    {totalFiles > 0 && (
+                        <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${prefix === 'before' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {totalFiles} file{totalFiles !== 1 ? 's' : ''}
+                        </span>
+                    )}
+                </CardTitle>
+                <CardDescription>{prefix === 'before' ? 'Update legacy materials and context' : 'Update optimized materials and context'}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 space-y-5">
+                <div className="space-y-2">
+                    <Label htmlFor={`${prefix}Desc`} className="text-xs font-bold text-gray-500 uppercase tracking-wider">{descLabel}</Label>
+                    <Textarea
+                        id={`${prefix}Desc`}
+                        placeholder={placeholderDesc}
+                        className={`min-h-[80px] bg-white ${accentBorder} resize-none`}
+                        value={formData[`${prefix}Description`]}
+                        onChange={(e) => setFormData(p => ({ ...p, [`${prefix}Description`]: e.target.value }))}
+                    />
+                </div>
+                <div className={`h-px ${dividerColor} my-2`} />
+
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-gray-500 uppercase">Upload or Replace File</Label>
+                        <Select value={selectedType} onValueChange={setSelectedType}>
+                            <SelectTrigger className={`w-full bg-white ${accentBorder}`}>
+                                <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {FILE_TYPES.map(type => {
+                                    const count = existingFiles[`${prefix}${type.id}`].length + files[`${prefix}${type.id}`].length;
+                                    return (
+                                        <SelectItem key={type.id} value={`${prefix}${type.id}`}>
+                                            <div className="flex items-center gap-2">
+                                                <type.icon className={`w-4 h-4 ${type.color}`} />
+                                                {type.label}
+                                                {count > 0 && (
+                                                    <span className="ml-1 text-[10px] font-bold text-gray-400">({count})</span>
+                                                )}
+                                            </div>
+                                        </SelectItem>
+                                    );
+                                })}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {selectedTypeDef && (
+                        <FileUploadInput
+                            label={selectedTypeDef.label}
+                            field={selectedType}
+                            icon={selectedTypeDef.icon}
+                            color={selectedTypeDef.color}
+                            accept={selectedTypeDef.accept}
+                            existingList={existingFiles[selectedType]}
+                            newList={files[selectedType]}
+                            onFileChange={onFileChange}
+                            onRemove={onRemove}
+                            onDeleteExisting={onDeleteExisting}
+                            onDescChange={onDescChange}
+                            onExistingDescChange={onExistingDescChange}
+                        />
+                    )}
+
+                    {/* Cross-type summary */}
+                    {FILE_TYPES.some(t => existingFiles[`${prefix}${t.id}`].length > 0 || files[`${prefix}${t.id}`].length > 0) && (
+                        <div className="space-y-2 mt-2">
+                            <Label className="text-xs font-semibold text-gray-500 uppercase">All Current Files</Label>
+                            <div className="space-y-1.5">
+                                {FILE_TYPES.flatMap(type => [
+                                    ...existingFiles[`${prefix}${type.id}`].map((item, i) => (
+                                        <div key={`ex-${type.id}-${i}`} className={`flex items-center justify-between p-2 rounded-lg bg-white border ${prefix === 'before' ? 'border-amber-100' : 'border-emerald-100'} shadow-sm`}>
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                <type.icon className={`w-3.5 h-3.5 ${type.color}`} />
+                                                <div className="min-w-0">
+                                                    <span className="text-xs font-medium truncate block max-w-[140px]">{item.path.split('/').pop()}</span>
+                                                    <span className="text-[9px] text-gray-400 font-bold uppercase">Existing</span>
+                                                </div>
+                                            </div>
+                                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:bg-red-50" onClick={() => onDeleteExisting(`${prefix}${type.id}`, i)}>
+                                                <X className="w-3 h-3" />
+                                            </Button>
+                                        </div>
+                                    )),
+                                    ...files[`${prefix}${type.id}`].map((item, i) => (
+                                        <div key={`new-${type.id}-${i}`} className="flex items-center justify-between p-2 rounded-lg bg-blue-50/50 border border-blue-100">
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                <type.icon className={`w-3.5 h-3.5 ${type.color}`} />
+                                                <div className="min-w-0">
+                                                    <span className="text-xs font-medium truncate block max-w-[140px]">{item.file.name}</span>
+                                                    <span className="text-[9px] text-blue-500 font-bold uppercase">New</span>
+                                                </div>
+                                            </div>
+                                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:bg-red-50" onClick={() => onRemove(`${prefix}${type.id}`, i)}>
+                                                <X className="w-3 h-3" />
+                                            </Button>
+                                        </div>
+                                    )),
+                                ])}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
+
 const EditLearningComparison = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -58,15 +293,6 @@ const EditLearningComparison = () => {
     const [selectedTypeBefore, setSelectedTypeBefore] = useState('beforeVideo');
     const [selectedTypeAfter, setSelectedTypeAfter] = useState('afterVideo');
 
-    const fileTypes = [
-        { id: 'Video', label: 'Video',           icon: Video,          color: 'text-rose-500',    accept: 'video/*' },
-        { id: 'Pdf',   label: 'PDF Document',     icon: FileText,       color: 'text-red-500',     accept: '.pdf' },
-        { id: 'Excel', label: 'Excel Sheet',      icon: FileSpreadsheet,color: 'text-emerald-500', accept: '.xlsx,.xls,.csv' },
-        { id: 'Word',  label: 'Word Document',    icon: FileIcon,       color: 'text-blue-500',    accept: '.doc,.docx' },
-        { id: 'Ppt',   label: 'PowerPoint',       icon: Presentation,   color: 'text-orange-500',  accept: '.ppt,.pptx' },
-        { id: 'Image', label: 'Image',            icon: ImageIcon,      color: 'text-purple-500',  accept: 'image/*' },
-    ];
-
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -77,19 +303,24 @@ const EditLearningComparison = () => {
                     beforeDescription: data.beforeDescription || '',
                     afterDescription: data.afterDescription || ''
                 });
+                const toItems = (pathsRaw, descsRaw) => {
+                    const paths = parseField(pathsRaw);
+                    const descs = parseField(descsRaw);
+                    return paths.map((path, i) => ({ path, description: descs[i] || '' }));
+                };
                 setExistingFiles({
-                    beforeVideo: parseField(data.beforeVideo),
-                    beforePdf:   parseField(data.beforePdf),
-                    beforeExcel: parseField(data.beforeExcel),
-                    beforeWord:  parseField(data.beforeWord),
-                    beforePpt:   parseField(data.beforePpt),
-                    beforeImage: parseField(data.beforeImage),
-                    afterVideo:  parseField(data.afterVideo),
-                    afterPdf:    parseField(data.afterPdf),
-                    afterExcel:  parseField(data.afterExcel),
-                    afterWord:   parseField(data.afterWord),
-                    afterPpt:    parseField(data.afterPpt),
-                    afterImage:  parseField(data.afterImage),
+                    beforeVideo: toItems(data.beforeVideo, data.beforeVideoDescriptions),
+                    beforePdf:   toItems(data.beforePdf,   data.beforePdfDescriptions),
+                    beforeExcel: toItems(data.beforeExcel, data.beforeExcelDescriptions),
+                    beforeWord:  toItems(data.beforeWord,  data.beforeWordDescriptions),
+                    beforePpt:   toItems(data.beforePpt,   data.beforePptDescriptions),
+                    beforeImage: toItems(data.beforeImage, data.beforeImageDescriptions),
+                    afterVideo:  toItems(data.afterVideo,  data.afterVideoDescriptions),
+                    afterPdf:    toItems(data.afterPdf,    data.afterPdfDescriptions),
+                    afterExcel:  toItems(data.afterExcel,  data.afterExcelDescriptions),
+                    afterWord:   toItems(data.afterWord,   data.afterWordDescriptions),
+                    afterPpt:    toItems(data.afterPpt,    data.afterPptDescriptions),
+                    afterImage:  toItems(data.afterImage,  data.afterImageDescriptions),
                 });
             } catch (error) {
                 toast.error("Failed to load content details");
@@ -104,7 +335,10 @@ const EditLearningComparison = () => {
     const handleFileChange = (e, field) => {
         const newFiles = Array.from(e.target.files);
         if (newFiles.length) {
-            setFiles(prev => ({ ...prev, [field]: [...prev[field], ...newFiles] }));
+            setFiles(prev => ({
+                ...prev,
+                [field]: [...prev[field], ...newFiles.map(f => ({ file: f, description: '' }))]
+            }));
         }
         e.target.value = '';
     };
@@ -115,6 +349,20 @@ const EditLearningComparison = () => {
 
     const handleDeleteExisting = (field, index) => {
         setExistingFiles(prev => ({ ...prev, [field]: prev[field].filter((_, i) => i !== index) }));
+    };
+
+    const updateFileDesc = (field, index, value) => {
+        setFiles(prev => ({
+            ...prev,
+            [field]: prev[field].map((item, i) => i === index ? { ...item, description: value } : item)
+        }));
+    };
+
+    const updateExistingDesc = (field, index, value) => {
+        setExistingFiles(prev => ({
+            ...prev,
+            [field]: prev[field].map((item, i) => i === index ? { ...item, description: value } : item)
+        }));
     };
 
     const handleSubmit = async (e) => {
@@ -128,12 +376,18 @@ const EditLearningComparison = () => {
             data.append('beforeDescription', formData.beforeDescription);
             data.append('afterDescription', formData.afterDescription);
 
-            // Send the kept existing files so the backend knows what to preserve
-            data.append('remainingExisting', JSON.stringify(existingFiles));
+            const remainingPayload = {};
+            Object.keys(existingFiles).forEach(key => {
+                remainingPayload[key] = existingFiles[key].map(item => ({
+                    path: item.path,
+                    description: item.description || ''
+                }));
+            });
+            data.append('remainingExisting', JSON.stringify(remainingPayload));
 
-            // New files
             Object.keys(files).forEach(key => {
-                files[key].forEach(file => data.append(key, file));
+                files[key].forEach(item => data.append(key, item.file));
+                data.append(`${key}Descriptions`, JSON.stringify(files[key].map(i => i.description || '')));
             });
 
             await axiosInstance.put(`/api/learning-comparisons/${id}`, data, {
@@ -147,205 +401,6 @@ const EditLearningComparison = () => {
         } finally {
             setSaving(false);
         }
-    };
-
-    const FileUploadInput = ({ label, field, icon: Icon, color, accept }) => {
-        const existingList = existingFiles[field] || [];
-        const newList = files[field] || [];
-        return (
-            <div className="space-y-2">
-                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</Label>
-
-                {/* Upload zone — always visible */}
-                <div className="relative group">
-                    <input
-                        type="file"
-                        accept={accept}
-                        multiple
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                        onChange={(e) => handleFileChange(e, field)}
-                    />
-                    <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-gray-200 group-hover:border-blue-400 group-hover:bg-blue-50/50 transition-all">
-                        <div className="p-2 rounded-lg bg-gray-50 group-hover:bg-white group-hover:shadow-sm text-gray-400 group-hover:text-blue-500 transition-all">
-                            <Upload className="w-4 h-4" />
-                        </div>
-                        <span className="text-sm text-gray-500 group-hover:text-blue-600 transition-colors font-medium">
-                            {existingList.length + newList.length > 0 ? `Add more ${label}` : `Upload ${label}`}
-                        </span>
-                    </div>
-                </div>
-
-                {/* Existing server files */}
-                {existingList.map((path, i) => (
-                    <div key={`ex-${i}`} className="flex items-center justify-between p-2.5 rounded-xl border border-gray-100 bg-white shadow-sm">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                            <div className={`p-1.5 rounded-lg bg-gray-100`}>
-                                <Icon className={`w-3.5 h-3.5 ${color}`} />
-                            </div>
-                            <div className="min-w-0">
-                                <span className="text-xs font-semibold text-gray-900 truncate block max-w-[140px]">
-                                    {path.split('/').pop()}
-                                </span>
-                                <span className="text-[9px] text-gray-400 font-bold uppercase">Existing</span>
-                            </div>
-                        </div>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-red-400 hover:bg-red-50 hover:text-red-600"
-                            onClick={() => handleDeleteExisting(field, i)}
-                        >
-                            <X className="w-3 h-3" />
-                        </Button>
-                    </div>
-                ))}
-
-                {/* Newly staged files */}
-                {newList.map((file, i) => (
-                    <div key={`new-${i}`} className="flex items-center justify-between p-2.5 rounded-xl border border-blue-200 bg-blue-50/50 animate-in zoom-in-95 duration-200">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                            <div className={`p-1.5 rounded-lg ${color} bg-white shadow-sm`}>
-                                <Icon className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="min-w-0">
-                                <span className="text-xs font-bold text-blue-900 truncate block max-w-[140px]">
-                                    {file.name}
-                                </span>
-                                <span className="text-[9px] text-blue-500 font-bold uppercase">New</span>
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => removeFile(field, i)}
-                            className="p-1.5 hover:bg-blue-100 rounded-full text-blue-600 transition-colors"
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
-                    </div>
-                ))}
-            </div>
-        );
-    };
-
-    const SidePanel = ({ prefix, selectedType, setSelectedType, borderColor, headerBg, dividerColor, accentBorder, placeholderDesc, descLabel }) => {
-        const totalExisting = fileTypes.reduce((sum, t) => sum + existingFiles[`${prefix}${t.id}`].length, 0);
-        const totalNew = fileTypes.reduce((sum, t) => sum + files[`${prefix}${t.id}`].length, 0);
-        const totalFiles = totalExisting + totalNew;
-
-        return (
-            <Card className={`border-none shadow-sm overflow-hidden border-t-4 ${borderColor}`}>
-                <CardHeader className={headerBg}>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-lg ${prefix === 'before' ? 'bg-amber-100' : 'bg-emerald-100'} flex items-center justify-center`}>
-                            {prefix === 'before'
-                                ? <Clock className="w-4 h-4 text-amber-600" />
-                                : <Plus className="w-4 h-4 text-emerald-600" />
-                            }
-                        </div>
-                        {prefix === 'before' ? 'BEFORE State' : 'AFTER State'}
-                        {totalFiles > 0 && (
-                            <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${prefix === 'before' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                {totalFiles} file{totalFiles !== 1 ? 's' : ''}
-                            </span>
-                        )}
-                    </CardTitle>
-                    <CardDescription>{prefix === 'before' ? 'Update legacy materials and context' : 'Update optimized materials and context'}</CardDescription>
-                </CardHeader>
-                <CardContent className="p-6 space-y-5">
-                    <div className="space-y-2">
-                        <Label htmlFor={`${prefix}Desc`} className="text-xs font-bold text-gray-500 uppercase tracking-wider">{descLabel}</Label>
-                        <Textarea
-                            id={`${prefix}Desc`}
-                            placeholder={placeholderDesc}
-                            className={`min-h-[80px] bg-white ${accentBorder} resize-none`}
-                            value={formData[`${prefix}Description`]}
-                            onChange={(e) => setFormData(p => ({ ...p, [`${prefix}Description`]: e.target.value }))}
-                        />
-                    </div>
-                    <div className={`h-px ${dividerColor} my-2`} />
-
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                            <Label className="text-xs font-semibold text-gray-500 uppercase">Upload or Replace File</Label>
-                            <Select value={selectedType} onValueChange={setSelectedType}>
-                                <SelectTrigger className={`w-full bg-white ${accentBorder}`}>
-                                    <SelectValue placeholder="Select type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {fileTypes.map(type => {
-                                        const count = existingFiles[`${prefix}${type.id}`].length + files[`${prefix}${type.id}`].length;
-                                        return (
-                                            <SelectItem key={type.id} value={`${prefix}${type.id}`}>
-                                                <div className="flex items-center gap-2">
-                                                    <type.icon className={`w-4 h-4 ${type.color}`} />
-                                                    {type.label}
-                                                    {count > 0 && (
-                                                        <span className="ml-1 text-[10px] font-bold text-gray-400">({count})</span>
-                                                    )}
-                                                </div>
-                                            </SelectItem>
-                                        );
-                                    })}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {(() => {
-                            const type = fileTypes.find(t => `${prefix}${t.id}` === selectedType);
-                            return (
-                                <FileUploadInput
-                                    label={type.label}
-                                    field={selectedType}
-                                    icon={type.icon}
-                                    color={type.color}
-                                    accept={type.accept}
-                                />
-                            );
-                        })()}
-
-                        {/* Cross-type summary */}
-                        {fileTypes.some(t => existingFiles[`${prefix}${t.id}`].length > 0 || files[`${prefix}${t.id}`].length > 0) && (
-                            <div className="space-y-2 mt-2">
-                                <Label className="text-xs font-semibold text-gray-500 uppercase">All Current Files</Label>
-                                <div className="space-y-1.5">
-                                    {fileTypes.flatMap(type => [
-                                        ...existingFiles[`${prefix}${type.id}`].map((path, i) => (
-                                            <div key={`ex-${type.id}-${i}`} className={`flex items-center justify-between p-2 rounded-lg bg-white border ${prefix === 'before' ? 'border-amber-100' : 'border-emerald-100'} shadow-sm`}>
-                                                <div className="flex items-center gap-2 overflow-hidden">
-                                                    <type.icon className={`w-3.5 h-3.5 ${type.color}`} />
-                                                    <div className="min-w-0">
-                                                        <span className="text-xs font-medium truncate block max-w-[140px]">{path.split('/').pop()}</span>
-                                                        <span className="text-[9px] text-gray-400 font-bold uppercase">Existing</span>
-                                                    </div>
-                                                </div>
-                                                <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:bg-red-50" onClick={() => handleDeleteExisting(`${prefix}${type.id}`, i)}>
-                                                    <X className="w-3 h-3" />
-                                                </Button>
-                                            </div>
-                                        )),
-                                        ...files[`${prefix}${type.id}`].map((file, i) => (
-                                            <div key={`new-${type.id}-${i}`} className={`flex items-center justify-between p-2 rounded-lg bg-blue-50/50 border border-blue-100`}>
-                                                <div className="flex items-center gap-2 overflow-hidden">
-                                                    <type.icon className={`w-3.5 h-3.5 ${type.color}`} />
-                                                    <div className="min-w-0">
-                                                        <span className="text-xs font-medium truncate block max-w-[140px]">{file.name}</span>
-                                                        <span className="text-[9px] text-blue-500 font-bold uppercase">New</span>
-                                                    </div>
-                                                </div>
-                                                <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:bg-red-50" onClick={() => removeFile(`${prefix}${type.id}`, i)}>
-                                                    <X className="w-3 h-3" />
-                                                </Button>
-                                            </div>
-                                        )),
-                                    ])}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
-        );
     };
 
     if (loading) return (
@@ -411,6 +466,15 @@ const EditLearningComparison = () => {
                             prefix="before"
                             selectedType={selectedTypeBefore}
                             setSelectedType={setSelectedTypeBefore}
+                            files={files}
+                            existingFiles={existingFiles}
+                            formData={formData}
+                            setFormData={setFormData}
+                            onFileChange={handleFileChange}
+                            onRemove={removeFile}
+                            onDeleteExisting={handleDeleteExisting}
+                            onDescChange={updateFileDesc}
+                            onExistingDescChange={updateExistingDesc}
                             borderColor="border-t-amber-400"
                             headerBg="bg-amber-50/50"
                             dividerColor="bg-amber-100/50"
@@ -422,6 +486,15 @@ const EditLearningComparison = () => {
                             prefix="after"
                             selectedType={selectedTypeAfter}
                             setSelectedType={setSelectedTypeAfter}
+                            files={files}
+                            existingFiles={existingFiles}
+                            formData={formData}
+                            setFormData={setFormData}
+                            onFileChange={handleFileChange}
+                            onRemove={removeFile}
+                            onDeleteExisting={handleDeleteExisting}
+                            onDescChange={updateFileDesc}
+                            onExistingDescChange={updateExistingDesc}
                             borderColor="border-t-emerald-400"
                             headerBg="bg-emerald-50/50"
                             dividerColor="bg-emerald-100/50"

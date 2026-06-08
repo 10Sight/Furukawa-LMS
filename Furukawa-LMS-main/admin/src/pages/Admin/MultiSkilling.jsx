@@ -10,7 +10,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
-import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
+import { useGetAllStudentsQuery, useGetMultiSkillingStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import {
     IconStars,
     IconHierarchy2,
@@ -74,11 +74,10 @@ const MultiSkilling = () => {
     const { data: sectionsData } = useGetSectionsByDepartmentQuery(dept, { skip: !dept });
     const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDept, { skip: !createDept });
 
-    // Fetch students/operators for Plan Calander
-    const { data: studentsData } = useGetAllStudentsQuery({
+    // Fetch students/operators specifically for Plan Calendar (includes all department/section users without pagination limits)
+    const { data: studentsData } = useGetMultiSkillingStudentsQuery({
         departmentId: dept,
-        sectionId: section,
-        limit: 1000
+        sectionId: section
     }, {
         skip: !dept || !section,
         refetchOnMountOrArgChange: true

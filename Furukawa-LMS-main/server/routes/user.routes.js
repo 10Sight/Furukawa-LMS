@@ -26,6 +26,7 @@ import {
   getEmployeeById,
   getTemporaryUsers,
   getNextTemporaryId,
+  getMultiSkillingStudents,
 } from "../controllers/user.controller.js";
 import { AvailableUserRoles } from "../constants.js";
 
@@ -91,6 +92,9 @@ router.get("/instructors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_REA
 
 // Get all students (admin/super-admin/instructor only)
 router.get("/students", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllStudents);
+
+// Get all students specifically for Multi-Skilling plan sheet
+router.get("/multi-skilling-students", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getMultiSkillingStudents);
 
 // Get all mentors
 router.get("/mentors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllMentors);

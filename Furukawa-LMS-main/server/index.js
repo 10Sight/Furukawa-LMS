@@ -110,12 +110,6 @@ import EvaluationTestAttempt from "./models/evaluationTestAttempt.model.js";
 
 const app = express();
 const allowedOrigins = [
-    "https://furukawa-lms.onrender.com",
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:5176",
-    "http://localhost:5177",
     "http://192.168.90.19:5174"
 ];
 const isAllowedOrigin = (origin) => {

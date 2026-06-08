@@ -280,7 +280,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                             <SelectContent>
                                                 {sections.map((s) => (
                                                     <SelectItem key={s.id} value={s.id.toString()}>
-                                                        {s.name}
+                                                        {s.name}{s.category ? `(${s.category.toLowerCase()})` : ""}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>

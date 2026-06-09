@@ -1020,7 +1020,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
         const [existingReqs] = await executeSql(
             `
-            SELECT id, srNo, sectionCode, lineCode, monthName, year
+            SELECT *
             FROM requirements WITH (NOLOCK)
             WHERE year IN (${placeholdersYears})
             `,
@@ -1034,7 +1034,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
         const existingMap = new Map();
 
         existingReqs.forEach((r) => {
-            existingMap.set(makeKey(r), r.id);
+            existingMap.set(makeKey(r), r);
         });
 
         const rowsToInsert = [];
@@ -1042,15 +1042,22 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
         rowsToProcess.forEach((r) => {
             const key = makeKey(r);
-            const existingId = existingMap.get(key);
+            const existingReq = existingMap.get(key);
 
-            if (existingId) {
-                r.id = existingId;
+            if (existingReq) {
+                r.id = existingReq.id;
+                r.oldReq = existingReq;
                 rowsToUpdate.push(r);
             } else {
                 rowsToInsert.push(r);
             }
         });
+
+        const getSectionId = (sectionName, lineCode) => {
+            const nameKey = normalizeUnicode(sectionName);
+            const uniKey = normalizeUnicode(lineCode);
+            return validSectionsMap.get(`${nameKey}|${uniKey}`) || validSectionsMap.get(`FALLBACK|${nameKey}`) || null;
+        };
 
         const chunkSize = 50;
 
@@ -1103,14 +1110,31 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     approvalStatus,
                     category
                 )
+                OUTPUT INSERTED.id, INSERTED.srNo, INSERTED.sectionCode, INSERTED.lineCode, INSERTED.monthName, INSERTED.year, INSERTED.sectionName, INSERTED.lineDescription, INSERTED.salesPlan, INSERTED.prodPlan, INSERTED.prodPlanFN01, INSERTED.prodPlanFN02, INSERTED.category
                 VALUES ${placeholders}
             `;
 
-            const [, meta] = await executeSql(
+            const [insertedRows, meta] = await executeSql(
                 insertQuery,
                 paramsArray,
                 transaction
             );
+
+            // Log inserted requirements
+            for (const insertedRow of insertedRows) {
+                try {
+                    await RequirementLog.create({
+                        requirement_id: insertedRow.id,
+                        section_id: getSectionId(insertedRow.sectionName, insertedRow.lineCode),
+                        old_values: null,
+                        new_values: insertedRow,
+                        employee_id: req.user?._id || req.user?.id || null,
+                        employee_role: req.user?.role || "Admin",
+                    }, transaction);
+                } catch (logErr) {
+                    console.error("Failed to log bulk insert requirement:", logErr.message);
+                }
+            }
 
             totalInsertedRows += meta?.affectedRows || chunk.length;
         }
@@ -1165,6 +1189,27 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 ],
                 transaction
             );
+
+            // Fetch and log updated requirement
+            try {
+                const [newRows] = await executeSql(
+                    "SELECT * FROM requirements WHERE id = ?",
+                    [row.id],
+                    transaction
+                );
+                if (newRows.length > 0) {
+                    await RequirementLog.create({
+                        requirement_id: row.id,
+                        section_id: getSectionId(row.sectionName, row.lineCode),
+                        old_values: row.oldReq,
+                        new_values: newRows[0],
+                        employee_id: req.user?._id || req.user?.id || null,
+                        employee_role: req.user?.role || "Admin",
+                    }, transaction);
+                }
+            } catch (logErr) {
+                console.error("Failed to log bulk update requirement:", logErr.message);
+            }
 
             updateCount++;
         }
@@ -1844,15 +1889,43 @@ export const updateRequirement = asyncHandler(async (req, res) => {
 
     const newReq = updatedRows[0];
 
+    // Find section_id
+    let sectionIdToLog = null;
+    try {
+        const [sectionRows] = await executeSql(
+            `
+            SELECT id FROM sections 
+            WHERE name = ? AND uniCode = ?
+            `,
+            [newReq.sectionName, newReq.lineCode]
+        );
+        if (sectionRows.length > 0) {
+            sectionIdToLog = sectionRows[0].id;
+        } else {
+            // fallback
+            const [fallbackRows] = await executeSql(
+                `
+                SELECT id FROM sections 
+                WHERE name = ?
+                `,
+                [newReq.sectionName]
+            );
+            if (fallbackRows.length > 0) {
+                sectionIdToLog = fallbackRows[0].id;
+            }
+        }
+    } catch (err) {
+        console.error("Failed to find section for log:", err.message);
+    }
+
     try {
         await RequirementLog.create({
             requirement_id: id,
+            section_id: sectionIdToLog,
             old_values: oldReq,
             new_values: newReq,
             employee_id: req.user?._id || req.user?.id || null,
             employee_role: req.user?.role || "Admin",
-            updated_by_name:
-                req.user?.fullName || req.user?.name || req.user?.username || null,
         });
     } catch (logErr) {
         console.error("Failed to log requirement update:", logErr.message);

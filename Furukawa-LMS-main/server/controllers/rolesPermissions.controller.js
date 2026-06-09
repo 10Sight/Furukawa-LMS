@@ -196,6 +196,10 @@ const SYSTEM_PERMISSIONS = {
   MPS_REQUIREMENT_UPLOAD: "mps_requirement:upload_excel",
   MPS_EMAIL_REPORTS_TRIGGER: "mps_email_reports:trigger_mail",
   MPS_EMAIL_REPORTS_ADD: "mps_email_reports:add_mail",
+
+  // Settings Management
+  SETTINGS_CHANGE_PASSWORD: "settings:change_password",
+  SETTINGS_EMAIL_CONFIG: "settings:email_config",
 };
 
 // Define default role permissions
@@ -298,7 +302,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.DOJO_HIRING_READ,
       SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE,
       SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE,
-      SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE
+      SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE,
+      SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -318,7 +323,9 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.ROLE_DELETE,
       SYSTEM_PERMISSIONS.BULK_ENROLLMENT,
       SYSTEM_PERMISSIONS.BULK_EMAIL,
-      SYSTEM_PERMISSIONS.BULK_CERTIFICATES
+      SYSTEM_PERMISSIONS.BULK_CERTIFICATES,
+      SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD,
+      SYSTEM_PERMISSIONS.SETTINGS_EMAIL_CONFIG
     ],
     isSystemRole: true,
     color: "#F59E0B"
@@ -508,6 +515,10 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_UPLOAD, name: "Upload Requirements Excel", description: "Upload line requirements from Excel templates" },
         { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_TRIGGER, name: "Trigger Email Reports", description: "Manually trigger the sending of email reports" },
         { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_ADD, name: "Add Email to Reports", description: "Add new email recipients to report configurations" }
+      ],
+      "Settings Management": [
+        { id: SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD, name: "Change Password", description: "Allow user to change their own login password from the Settings page" },
+        { id: SYSTEM_PERMISSIONS.SETTINGS_EMAIL_CONFIG, name: "Email Configuration", description: "View and modify system email configuration settings" }
       ]
     };
 

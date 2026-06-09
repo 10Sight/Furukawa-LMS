@@ -321,6 +321,39 @@ export const refreshAccessAndRefreshToken = asyncHandler(async (req, res) => {
     );
 });
 
+// Change Password (authenticated user changes their own password)
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    throw new ApiError("All fields are required", 400);
+  }
+
+  if (newPassword.length < 6) {
+    throw new ApiError("New password must be at least 6 characters long", 400);
+  }
+
+  if (newPassword !== confirmPassword) {
+    throw new ApiError("New password and confirm password do not match", 400);
+  }
+
+  const user = await User.findById(req.user.id);
+  if (!user) throw new ApiError("User not found", 404);
+
+  const isMatch = await user.comparePassword(currentPassword);
+  if (!isMatch) throw new ApiError("Current password is incorrect", 400);
+
+  user.password = newPassword;
+  user.refreshToken = null;
+  await user.save();
+
+  await logAudit(user.id, "CHANGE_PASSWORD");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "Password changed successfully! Please log in again."));
+});
+
 // Reset Password
 export const resetPassword = asyncHandler(async (req, res) => {
   const { token } = req.params;

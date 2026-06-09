@@ -7,6 +7,7 @@ import {
   forgotPassword,
   resetPassword,
   refreshAccessAndRefreshToken,
+  changePassword,
 } from "../controllers/auth.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import checkAccountStatus from "../middlewares/accountStatus.middleware.js";
@@ -23,5 +24,6 @@ router.post("/refresh-token", refreshAccessAndRefreshToken);
 // Protected routes (require valid access token)
 router.get("/logout", verifyJWT, logout);
 router.get("/profile", verifyJWT, checkAccountStatus(true), profile);
+router.patch("/change-password", verifyJWT, changePassword);
 
 export default router;

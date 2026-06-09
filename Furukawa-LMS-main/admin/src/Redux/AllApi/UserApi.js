@@ -32,6 +32,14 @@ export const userApi = createApi({
             invalidatesTags: ['User'],
         }),
 
+        changePassword: builder.mutation({
+            query: (data) => ({
+                url: "/api/v1/auth/change-password",
+                method: "PATCH",
+                data,
+            }),
+        }),
+
         updateAvatar: builder.mutation({
             query: (formData) => ({
                 url: "/api/users/avatar",
@@ -259,5 +267,6 @@ export const {
     useGetImportLogDetailsQuery,
     useGetTemporaryUsersQuery,
     useLazyGetTemporaryUsersQuery,
-    useLazyGetNextTemporaryIdQuery
+    useLazyGetNextTemporaryIdQuery,
+    useChangePasswordMutation,
 } = userApi;

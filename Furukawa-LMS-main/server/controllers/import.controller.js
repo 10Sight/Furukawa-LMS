@@ -807,6 +807,17 @@ export const importDojoUsers = async (req, res) => {
                     throw new Error(`Candidate with Employee Code ${normalizedRow.empId} already exists.`);
                 }
 
+                // If phone number is already in use, clear it so creation still proceeds
+                if (normalizedRow.phoneNumber) {
+                    const [dupPhone] = await executeQuery(
+                        "SELECT id FROM users WHERE phoneNumber = ?",
+                        [normalizedRow.phoneNumber]
+                    );
+                    if (dupPhone && dupPhone.length > 0) {
+                        normalizedRow.phoneNumber = null;
+                    }
+                }
+
                 // Resolve hierarchy
                 const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
                 const sectionId = (departmentId && normalizedRow.section) ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`) : null;
@@ -826,7 +837,7 @@ export const importDojoUsers = async (req, res) => {
                     isEmployee: true,
                     isTemporary: true,
                     status: "PRESENT",
-                    gender: normalizedRow.gender.toUpperCase().startsWith('F') ? "FEMALE" : "MALE",
+                    gender: (normalizedRow.gender || "").toUpperCase().startsWith('F') ? "FEMALE" : "MALE",
                     email: normalizedRow.email || null,
                     phoneNumber: normalizedRow.phoneNumber || null,
                     departmentId: departmentId,

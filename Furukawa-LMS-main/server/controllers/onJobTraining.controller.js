@@ -85,6 +85,8 @@ export const createOnJobTraining = async (req, res, next) => {
         if (ojt) {
             ojt.entries = parseJSON(ojt.entries, []);
             ojt.scoring = parseJSON(ojt.scoring, null);
+            ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
+            ojt.trainingLog = parseJSON(ojt.trainingLog, []);
             ojt.department = { id: ojt.department, name: ojt.deptName };
             ojt.section = ojt.section ? { id: ojt.section, name: ojt.sectionName } : null;
             ojt.line = ojt.line ? { id: ojt.line, name: ojt.lineName } : null;
@@ -149,6 +151,8 @@ export const getStudentOnJobTrainings = async (req, res, next) => {
         const formatted = ojts.map(ojt => {
             ojt.entries = parseJSON(ojt.entries, []);
             ojt.scoring = parseJSON(ojt.scoring, null);
+            ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
+            ojt.trainingLog = parseJSON(ojt.trainingLog, []);
             ojt.department = { id: ojt.department, name: ojt.deptName };
             ojt.section = ojt.section ? { id: ojt.section, name: ojt.sectionName } : null;
             ojt.line = ojt.line ? { id: ojt.line, name: ojt.lineName } : null;
@@ -210,6 +214,7 @@ export const getOnJobTrainingById = async (req, res, next) => {
         ojt.entries = parseJSON(ojt.entries, []);
         ojt.scoring = parseJSON(ojt.scoring, null);
         ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
+        ojt.trainingLog = parseJSON(ojt.trainingLog, []);
         ojt.department = { id: ojt.department, name: ojt.deptName };
         ojt.section = ojt.section ? { id: ojt.section, name: ojt.sectionName } : null;
         ojt.line = ojt.line ? { id: ojt.line, name: ojt.lineName } : null;
@@ -289,6 +294,7 @@ export const getAllOnJobTrainings = async (req, res, next) => {
             ojt.entries = parseJSON(ojt.entries, []);
             ojt.scoring = parseJSON(ojt.scoring, null);
             ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
+            ojt.trainingLog = parseJSON(ojt.trainingLog, []);
             ojt.department = { id: ojt.department, name: ojt.deptName };
             ojt.section = ojt.section ? { id: ojt.section, name: ojt.sectionName } : null;
             ojt.line = ojt.line ? { id: ojt.line, name: ojt.lineName } : null;
@@ -322,7 +328,7 @@ export const updateOnJobTraining = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { entries, scoring, totalMarks, totalMarksObtained, totalPercentage, result, remarks, remarkImage,
-            areaLine, trainingDate, trainingGivenBy, trainingTopic, trainingStartTime, trainingEndTime, trainingDetail, attendanceRecords, trainingDetailImage
+            areaLine, trainingDate, trainingGivenBy, trainingTopic, trainingStartTime, trainingEndTime, trainingDetail, attendanceRecords, trainingDetailImage, trainingLog
         } = req.body;
 
         console.log(`[DEBUG] Update OJT ${id} Payload:`, JSON.stringify(req.body, null, 2));
@@ -356,6 +362,7 @@ export const updateOnJobTraining = async (req, res, next) => {
         if (trainingDetail !== undefined) { updateFields.push("trainingDetail = ?"); updateValues.push(trainingDetail); }
         if (attendanceRecords !== undefined) { updateFields.push("attendanceRecords = ?"); updateValues.push(JSON.stringify(attendanceRecords)); }
         if (trainingDetailImage !== undefined) { updateFields.push("trainingDetailImage = ?"); updateValues.push(trainingDetailImage); }
+        if (trainingLog !== undefined) { updateFields.push("trainingLog = ?"); updateValues.push(JSON.stringify(trainingLog)); }
 
         updateFields.push("updatedBy = ?"); updateValues.push(req.user.id);
         updateFields.push("updatedAt = GETDATE()");
@@ -450,9 +457,9 @@ export const updateOnJobTraining = async (req, res, next) => {
 
         if (updatedOJT) {
             updatedOJT.entries = parseJSON(updatedOJT.entries, []);
-            updatedOJT.entries = parseJSON(updatedOJT.entries, []);
             updatedOJT.scoring = parseJSON(updatedOJT.scoring, null);
             updatedOJT.attendanceRecords = parseJSON(updatedOJT.attendanceRecords, []);
+            updatedOJT.trainingLog = parseJSON(updatedOJT.trainingLog, []);
         }
 
         // --- EMAIL NOTIFICATION TRIGGER ---

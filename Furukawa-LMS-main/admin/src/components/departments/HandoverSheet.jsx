@@ -22,7 +22,7 @@ import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 const INTERVIEW_OPTIONS = [
     { value: "OK", label: "✓ OK" },
     { value: "CROSS", label: "✗ Cross" },
-    { value: "NA", label: "— N/A" },
+    { value: "NA", label: "Not Required" },
 ];
 
 const InterviewSelect = ({ value, onChange }) => (
@@ -234,11 +234,11 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                             statusActionBy: "",
                             isAutoSuggested: true
                         }));
-                    } 
+                    }
                     // 2. Fallback to all eligible temporary students if no quiz-based suggestions and they are already loaded
                     else if (students && students.length > 0) {
-                        const eligibleStudents = dojoHandoverPassedOnly 
-                            ? students 
+                        const eligibleStudents = dojoHandoverPassedOnly
+                            ? students
                             : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
                         initialEntries = eligibleStudents.map((student, index) => ({
                             sn: index + 1,
@@ -297,10 +297,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
         if (!loading && isNewSheet && students && students.length > 0) {
             // Check if we are currently showing just the single fallback empty row
             const isCurrentlyEmpty = entries.length === 1 && entries[0].studentId === "" && !entries[0].employeeName;
-            
+
             if (isCurrentlyEmpty) {
-                const eligibleStudents = dojoHandoverPassedOnly 
-                    ? students 
+                const eligibleStudents = dojoHandoverPassedOnly
+                    ? students
                     : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
                 if (eligibleStudents.length > 0) {
                     const populatedEntries = eligibleStudents.map((student, index) => ({

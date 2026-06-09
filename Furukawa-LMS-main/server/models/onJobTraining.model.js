@@ -33,6 +33,7 @@ class OnJobTraining {
         this.trainingDetail = data.trainingDetail;
         this.attendanceRecords = typeof data.attendanceRecords === 'string' ? JSON.parse(data.attendanceRecords) : (data.attendanceRecords || []);
         this.trainingDetailImage = data.trainingDetailImage;
+        this.trainingLog = typeof data.trainingLog === 'string' ? JSON.parse(data.trainingLog) : (data.trainingLog || []);
         this.createdBy = data.createdBy;
         this.updatedBy = data.updatedBy;
 
@@ -91,6 +92,10 @@ class OnJobTraining {
                 IF COL_LENGTH('on_job_trainings', 'subSection') IS NULL
                 BEGIN
                     ALTER TABLE on_job_trainings ADD subSection VARCHAR(255);
+                END
+                IF COL_LENGTH('on_job_trainings', 'trainingLog') IS NULL
+                BEGIN
+                    ALTER TABLE on_job_trainings ADD trainingLog NVARCHAR(MAX);
                 END
                 
                 -- Ensure student, line, and machine columns are nullable

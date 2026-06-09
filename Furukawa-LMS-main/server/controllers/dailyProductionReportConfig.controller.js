@@ -91,7 +91,7 @@ const DEFAULT_DPR_CONFIG = {
             { text: "Handover", width: "w-16" },
             { text: "Present", width: "w-12" },
             { text: "Absent", width: "w-12" },
-            { text: "Present (2)", width: "w-12" }
+            { text: "Present %", width: "w-12" }
         ],
         rows: [
             { process: "Leader" },

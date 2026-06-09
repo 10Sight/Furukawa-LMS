@@ -477,23 +477,23 @@ const DailyProductionReport = () => {
         },
         shiftCommunication: Array(3).fill({ issue: "" }),
         moral: [
-            { process: "Leader", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Sub Leader", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Charging", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Sub Assy", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Material Trolley", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Tapping", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Clamp Cutting", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Clamp Attach", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Dimension", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "ECT Inspection", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "High Voltage", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "COH", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "EMDEP", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Twist Wrap", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Optional", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Visual", handover: "", present: 0, absent: 0, present2: 0 },
-            { process: "Leader", handover: "", present: 0, absent: 0, present2: 0 },
+            { process: "Leader", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Sub Leader", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Charging", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Sub Assy", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Material Trolley", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Tapping", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Clamp Cutting", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Clamp Attach", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Dimension", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "ECT Inspection", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "High Voltage", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "COH", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "EMDEP", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Twist Wrap", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Optional", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Visual", handover: 0, present: 0, absent: 0, present2: 0 },
+            { process: "Leader", handover: 0, present: 0, absent: 0, present2: 0 },
         ],
         directEfficiency: { target: 0, actual: 0 },
         customerEndDefectDetails: Array(5).fill({ ...emptyDefectDetailRow }),
@@ -704,7 +704,6 @@ const DailyProductionReport = () => {
                         if (stats) {
                             return {
                                 ...row,
-                                handover: stats.totalCount || 0,
                                 present: stats.presentCount || 0,
                                 absent: stats.absentCount || 0
                             };
@@ -841,8 +840,8 @@ const DailyProductionReport = () => {
             const baseMoralRows = configMoralRows || defaultFormData.moral;
             const mergedMoral = baseMoralRows.map((defItem, idx) => {
                 return (loadedData.moral && loadedData.moral[idx])
-                    ? loadedData.moral[idx]
-                    : { ...defItem, handover: "", present: 0, absent: 0, present2: 0 };
+                    ? { ...defItem, ...loadedData.moral[idx], handover: loadedData.moral[idx].handover ?? 0 }
+                    : { ...defItem, handover: 0, present: 0, absent: 0, present2: 0 };
             });
 
             // Pad Defect Details
@@ -894,7 +893,7 @@ const DailyProductionReport = () => {
                     manpowerAttendance: runtimeInitialRows,
                     moral: configMoralRows.map(row => ({
                         ...row,
-                        handover: "",
+                        handover: 0,
                         present: 0,
                         absent: 0,
                         present2: 0
@@ -1926,7 +1925,7 @@ const DailyProductionReport = () => {
                                                 { text: "Section Count", width: "w-16" },
                                                 { text: "Present", width: "w-12" },
                                                 { text: "Absent", width: "w-12" },
-                                                { text: "Present (2)", width: "w-12" }
+                                                { text: "Present %", width: "w-12" }
                                             ]).map((h, i) => (
                                                 <th key={i} className={`border border-black ${h.width || ''}`} dangerouslySetInnerHTML={{ __html: h.text }}></th>
                                             ))}
@@ -1940,7 +1939,12 @@ const DailyProductionReport = () => {
                                                 <td className="border border-black p-0"><NumberCell value={item.handover} onChange={(v) => handleMoralChange(idx, 'handover', v)} disabled={!canEdit} /></td>
                                                 <td className="border border-black p-0"><NumberCell value={item.present} onChange={(v) => handleMoralChange(idx, 'present', v)} disabled={!canEdit} /></td>
                                                 <td className="border border-black p-0 text-red-600"><NumberCell value={item.absent} onChange={(v) => handleMoralChange(idx, 'absent', v)} disabled={!canEdit} /></td>
-                                                <td className="border border-black p-0 text-blue-600"><NumberCell value={item.present2} onChange={(v) => handleMoralChange(idx, 'present2', v)} disabled={!canEdit} /></td>
+                                                <td className="border border-black text-blue-600">
+                                                    {(() => {
+                                                        const total = (item.present || 0) + (item.absent || 0);
+                                                        return total === 0 ? '0%' : `${((item.present || 0) / total * 100).toFixed(1)}%`;
+                                                    })()}
+                                                </td>
                                             </tr>
                                         ))}
                                         <tr className="bg-gray-100 font-bold h-[20px]">
@@ -1948,7 +1952,14 @@ const DailyProductionReport = () => {
                                             <td className="border border-black bg-white"></td>
                                             <td className="border border-black">{formData.moral.reduce((s, i) => s + (i.present || 0), 0)}</td>
                                             <td className="border border-black text-red-600">{formData.moral.reduce((s, i) => s + (i.absent || 0), 0)}</td>
-                                            <td className="border border-black text-blue-600">{formData.moral.reduce((s, i) => s + (i.present2 || 0), 0)}</td>
+                                            <td className="border border-black text-blue-600">
+                                                {(() => {
+                                                    const totalPresent = formData.moral.reduce((s, i) => s + (i.present || 0), 0);
+                                                    const totalAbsent  = formData.moral.reduce((s, i) => s + (i.absent  || 0), 0);
+                                                    const total = totalPresent + totalAbsent;
+                                                    return total === 0 ? '0%' : `${(totalPresent / total * 100).toFixed(1)}%`;
+                                                })()}
+                                            </td>
                                         </tr>
                                     </tbody>
                                 </table>

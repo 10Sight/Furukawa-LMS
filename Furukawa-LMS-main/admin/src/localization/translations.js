@@ -40,6 +40,7 @@ export const translations = {
     "nav.mentor": "Mentor",
     "nav.supervisor": "Supervisor",
     "nav.incharge": "Incharge",
+    "nav.settings": "Settings",
 
     "nav.profile": "Profile",
     "nav.department": "Department",

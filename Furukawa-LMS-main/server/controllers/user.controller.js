@@ -1223,22 +1223,28 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}))`);
     } else whereClauses.push("1=0");
   } else if (req.user.role === "CUSTOM") {
-    let allowedDepts = [];
-    if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+    const customTargetLayout = String(req.user.customRole?.targetLayout || '').toLowerCase();
+    const isAdminLayout = ['admin', 'superadmin'].includes(customTargetLayout);
 
-    try {
-      const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
-      if (Array.isArray(parsedDepts)) {
-        parsedDepts.forEach(d => allowedDepts.push(String(d)));
+    if (!isAdminLayout) {
+      let allowedDepts = [];
+      if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+
+      try {
+        const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
+        if (Array.isArray(parsedDepts)) {
+          parsedDepts.forEach(d => allowedDepts.push(String(d)));
+        }
+      } catch (e) { }
+
+      allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
+
+      if (allowedDepts.length > 0) {
+        const ids = allowedDepts.map(d => `'${d}'`).join(',');
+        whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}))`);
       }
-    } catch (e) { }
-
-    allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
-
-    if (allowedDepts.length > 0) {
-      const ids = allowedDepts.map(d => `'${d}'`).join(',');
-      whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}))`);
     }
+    // Admin/superadmin targetLayout: no department restriction — same scope as ADMIN role
   }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;

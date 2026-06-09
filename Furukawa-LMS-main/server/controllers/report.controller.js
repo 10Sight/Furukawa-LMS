@@ -73,7 +73,7 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             break;
 
         case "Operator Observance Check Sheet":
-            const [ooRows] = await executeQuery(`SELECT * FROM operator_observance WHERE id = ?`, [id]);
+            const [ooRows] = await executeQuery(`SELECT * FROM operator_observances WHERE id = ?`, [id]);
             if (ooRows.length > 0) {
                 formData = {
                     ...ooRows[0],

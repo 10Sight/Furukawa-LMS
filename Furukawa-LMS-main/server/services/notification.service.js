@@ -673,8 +673,52 @@ class NotificationService {
     }
 
     static async _fillObservanceSheet(worksheet, formData) {
-        // --- Header ---
-        worksheet.mergeCells('A1:F1');
+        const CHECK_CONTENTS = [
+            {
+                id: "workingManner",
+                title: "Working Manner",
+                desc: "◆ Do work As per work standards \n◆ Confirm around the process whether he/she is capable to manage 5S on process or not."
+            },
+            {
+                id: "cycleTime",
+                title: "Cycle Time",
+                desc: "◆ As per Running part no.\n(As per conveyor run at that time)"
+            },
+            {
+                id: "checkSheets",
+                title: "Check Sheets (If applicable)",
+                desc: "◆ Confirm that he/she is aware about contents of check sheets."
+            },
+            {
+                id: "processProductAwareness",
+                title: "Process & Product Awareness",
+                desc: "◆ Confirm the type of defect can occur on process and impact of bypass."
+            },
+            {
+                id: "pastCustomerClaim",
+                title: "Past Customer Claim Information",
+                desc: "◆ Operator must be aware regarding the past customer claim"
+            },
+            { id: "checkedByLine", title: "Checked By (Line Incharge)", desc: "" },
+            { id: "verificationByShift", title: "Verification By (Shift Incharge)", desc: "" }
+        ];
+
+        // --- Column Widths ---
+        worksheet.columns = [
+            { key: 'contents', width: 35 },
+            { key: 'obs1', width: 14 },
+            { key: 'obs1Re', width: 14 },
+            { key: 'obs2', width: 14 },
+            { key: 'obs2Re', width: 14 },
+            { key: 'obs3', width: 14 },
+            { key: 'obs3Re', width: 14 },
+            { key: 'obs4', width: 14 },
+            { key: 'obs4Re', width: 14 },
+            { key: 'remarks', width: 20 }
+        ];
+
+        // --- Header Section ---
+        worksheet.mergeCells('A1:J1');
         const companyCell = worksheet.getCell('A1');
         companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
         companyCell.font = { bold: true, size: 10 };
@@ -682,77 +726,164 @@ class NotificationService {
 
         worksheet.mergeCells('A2:F2');
         const titleCell = worksheet.getCell('A2');
-        titleCell.value = 'OPERATOR OBSERVANCE CHECK SHEET';
+        titleCell.value = 'Operator Observance Sheet';
         titleCell.font = { bold: true, size: 16 };
-        titleCell.alignment = { horizontal: 'center' };
+        titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+
+        // --- Signatures block on the right side of Row 2 to Row 4 ---
+        worksheet.getCell('G2').value = 'Prepared By';
+        worksheet.getCell('H2').value = 'Checked By';
+        worksheet.getCell('I2').value = 'Approved By';
+        worksheet.mergeCells('I2:J2');
+
+        worksheet.getCell('G3').value = formData.preparedBy ? 'Prepared' : '';
+        worksheet.getCell('H3').value = formData.checkedBy ? (formData.checkedBy.startsWith('Approved') ? 'APPROVED' : 'REJECTED') : '';
+        worksheet.getCell('I3').value = formData.verifiedBy ? (formData.verifiedBy.startsWith('Approved') ? 'APPROVED' : 'REJECTED') : '';
+        worksheet.mergeCells('I3:J3');
+
+        worksheet.getCell('G4').value = formData.preparedBy || '';
+        worksheet.getCell('H4').value = formData.checkedBy ? formData.checkedBy.replace('Approved By: ', '').replace('Rejected By: ', '') : '';
+        worksheet.getCell('I4').value = formData.verifiedBy ? formData.verifiedBy.replace('Approved By: ', '').replace('Rejected By: ', '') : '';
+        worksheet.mergeCells('I4:J4');
+
+        // Style the signatures block
+        for (let r = 2; r <= 4; r++) {
+            for (let c = 7; c <= 10; c++) {
+                const cell = worksheet.getCell(r, c);
+                this._applyBorderStyle(cell);
+                cell.font = { size: 9, bold: true };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                if (r === 2) {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFD9D9D9' }
+                    };
+                }
+            }
+        }
 
         // --- Info Section ---
-        worksheet.addRow(['Line:', formData.lineName || '', 'Process:', formData.processName || '', 'Operator:', formData.operatorNameCode || '']);
-        worksheet.addRow(['Date:', formData.date || '', 'Shift:', formData.shift || '', 'Observer:', formData.observerName || '']);
-        worksheet.getRow(worksheet.lastRow.number - 1).font = { bold: true };
-        worksheet.getRow(worksheet.lastRow.number).font = { bold: true };
+        worksheet.addRow([]); // Blank row 5
+        
+        worksheet.addRow([
+            'Line Name:-', formData.lineName || '', '',
+            'Process Name:-', formData.processName || '', '',
+            'Date of Level-1 Complete:-', formData.level1Date ? new Date(formData.level1Date).toLocaleDateString() : '', '',
+            'Operator Name & Code:-', formData.operatorNameCode || ''
+        ]);
+        worksheet.mergeCells('A6:B6');
+        worksheet.mergeCells('D6:E6');
+        worksheet.mergeCells('G6:H6');
+        worksheet.mergeCells('J6:K6');
+        worksheet.getRow(6).font = { bold: true, size: 10 };
 
-        // --- Checklist Table ---
-        worksheet.addRow([]);
-        const headerRow = worksheet.addRow(['S.No', 'Checkpoint / Activity', 'Observation (Yes/No)', 'Description of Gap (if any)', '', 'Final Judgment']);
-        worksheet.mergeCells(headerRow.number, 4, headerRow.number, 5);
-        headerRow.eachCell(cell => this._applyHeaderStyle(cell));
+        worksheet.addRow([]); // Blank row 7
 
-        worksheet.columns = [
-            { key: 'sn', width: 5 },
-            { key: 'checkpoint', width: 40 },
-            { key: 'status', width: 20 },
-            { key: 'gap1', width: 15 },
-            { key: 'gap2', width: 15 },
-            { key: 'judgment', width: 15 }
-        ];
+        // --- Table Headers ---
+        const h1 = worksheet.addRow([
+            'Period for Inspection-->',
+            '1st Observance', '',
+            '2nd Observance', '',
+            '3rd Observance', '',
+            '4th Observance', '',
+            'Remarks (If Any)'
+        ]);
+        worksheet.mergeCells('B8:C8');
+        worksheet.mergeCells('D8:E8');
+        worksheet.mergeCells('F8:G8');
+        worksheet.mergeCells('H8:I8');
+        worksheet.mergeCells('J8:J9');
 
-        if (formData.observanceData) {
-            Object.entries(formData.observanceData).forEach(([checkpoint, status], index) => {
-                const row = worksheet.addRow({
-                    sn: index + 1,
-                    checkpoint: checkpoint,
-                    status: status,
-                    gap1: '',
-                    gap2: '',
-                    judgment: ''
-                });
-                worksheet.mergeCells(row.number, 4, row.number, 5);
-                row.eachCell(cell => this._applyBorderStyle(cell));
-            });
-        }
+        const colDates = formData.observanceData?.columnDates || {};
+        const getColHeader = (label, dateVal) => {
+            return dateVal ? `${label}\n(${dateVal})` : `${label}\n(Date: -)`;
+        };
 
-        // --- Signature Section ---
-        const sigRowStart = worksheet.lastRow.number + 2;
-        worksheet.addRow(['', 'Prepared By', '', 'Checked By', '', 'Approved By']);
-        worksheet.mergeCells(sigRowStart, 2, sigRowStart, 3);
-        worksheet.mergeCells(sigRowStart, 4, sigRowStart, 5);
+        const h2 = worksheet.addRow([
+            'Check Contents',
+            getColHeader('1st Time', colDates.obs1),
+            getColHeader('Reinspect', colDates.obs1Re),
+            getColHeader('1st Time', colDates.obs2),
+            getColHeader('Reinspect', colDates.obs2Re),
+            getColHeader('1st Time', colDates.obs3),
+            getColHeader('Reinspect', colDates.obs3Re),
+            getColHeader('1st Time', colDates.obs4),
+            getColHeader('Reinspect', colDates.obs4Re),
+            '' // Remarks merged from J8
+        ]);
 
-        worksheet.addRow(['Sign.', formData.preparedBy ? 'Prepared' : '', '', formData.checkedBy || '', '', formData.verifiedBy || '']);
-        worksheet.mergeCells(sigRowStart + 1, 2, sigRowStart + 1, 3);
-        worksheet.mergeCells(sigRowStart + 1, 4, sigRowStart + 1, 5);
+        h1.eachCell(cell => this._applyHeaderStyle(cell));
+        h2.eachCell(cell => this._applyHeaderStyle(cell));
+        h2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 
-        const checkedByName = formData.checkedBy ? formData.checkedBy.replace("Approved By: ", "").replace("Rejected By: ", "") : "";
-        const verifiedByName = formData.verifiedBy ? formData.verifiedBy.replace("Approved By: ", "").replace("Rejected By: ", "") : "";
-        worksheet.addRow(['Name', formData.preparedBy || '', '', checkedByName, '', verifiedByName]);
-        worksheet.mergeCells(sigRowStart + 2, 2, sigRowStart + 2, 3);
-        worksheet.mergeCells(sigRowStart + 2, 4, sigRowStart + 2, 5);
+        // --- Table Body ---
+        const tableData = formData.observanceData || {};
+        CHECK_CONTENTS.forEach(row => {
+            const cellData = tableData[row.id] || {};
+            
+            const getObsVal = (obsKey) => {
+                const obs = cellData[obsKey] || {};
+                const statusStr = obs.status ? `[${obs.status}]` : '';
+                const valStr = obs.val || '';
+                return [statusStr, valStr].filter(Boolean).join('\n');
+            };
 
-        for (let r = sigRowStart; r <= sigRowStart + 2; r++) {
-            const row = worksheet.getRow(r);
-            row.font = { bold: true, size: 9 };
-            row.eachCell(cell => {
+            const dataRow = worksheet.addRow([
+                `${row.title}\n${row.desc}`,
+                getObsVal('obs1'),
+                getObsVal('obs1Re'),
+                getObsVal('obs2'),
+                getObsVal('obs2Re'),
+                getObsVal('obs3'),
+                getObsVal('obs3Re'),
+                getObsVal('obs4'),
+                getObsVal('obs4Re'),
+                cellData.remarks || ''
+            ]);
+
+            // Styling for the row
+            dataRow.eachCell((cell, colIndex) => {
                 this._applyBorderStyle(cell);
-                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell.alignment = { wrapText: true, vertical: 'top', horizontal: colIndex === 1 || colIndex === 10 ? 'left' : 'center' };
+                
+                // Color formatting for OK/NG
+                if (colIndex > 1 && colIndex < 10) {
+                    const text = cell.value || '';
+                    if (text.includes('[OK]')) {
+                        cell.font = { color: { argb: 'FF008000' } }; // Green
+                    } else if (text.includes('[NG]')) {
+                        cell.font = { color: { argb: 'FFFF0000' } }; // Red
+                    }
+                }
             });
-        }
+            dataRow.getCell(1).font = { bold: true, size: 9 };
+        });
 
-        // --- Footer Section ---
-        const lastRowNumber = worksheet.lastRow.number + 2;
-        worksheet.mergeCells(`A${lastRowNumber}:F${lastRowNumber}`);
-        const footerCell = worksheet.getCell(`A${lastRowNumber}`);
-        footerCell.value = 'FRM-WH-QA-172 | REV: 02 | REV DATE: 10.10.2022 | PAGE: 1 OF 1';
-        footerCell.alignment = { horizontal: 'center' };
+        // --- Footer Notes ---
+        worksheet.addRow([]); // Blank row
+        
+        const note1 = worksheet.addRow(['Note: ◆ This sheet follow for the level-1 & Level-2 operator only and do inspection on mothly basis.']);
+        worksheet.mergeCells(note1.number, 1, note1.number, 10);
+        note1.getCell(1).font = { italic: true, size: 9 };
+
+        const note2 = worksheet.addRow(['◆ If there is no abnormality found in 1st time then 2nd is not mandatory. If some lacking found in 1st time then after 1 hour training on lack points reconfirm is to be execute.']);
+        worksheet.mergeCells(note2.number, 1, note2.number, 10);
+        note2.getCell(1).font = { italic: true, size: 9 };
+
+        const note3 = worksheet.addRow(['◆ During periodical inspection, inspector inspect the operator during production of 10 cycle Minimum.']);
+        worksheet.mergeCells(note3.number, 1, note3.number, 10);
+        note3.getCell(1).font = { italic: true, size: 9 };
+
+        worksheet.addRow([]); // Blank row
+
+        const docInfo = worksheet.addRow(['Doc. No:- FRM-WH-QA-277', 'Rev. No:00', '', 'Rev. Date : 01.04.2025', '', '', '', '', '', 'Page1:1']);
+        worksheet.mergeCells(docInfo.number, 1, docInfo.number, 2);
+        worksheet.mergeCells(docInfo.number, 4, docInfo.number, 5);
+        worksheet.mergeCells(docInfo.number, 10, docInfo.number, 10);
+        docInfo.eachCell(cell => {
+            cell.font = { size: 8, color: { argb: 'FF808080' } };
+        });
     }
 
     static async _fillThreeDaySheet(worksheet, formData) {

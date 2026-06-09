@@ -206,42 +206,28 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
 
     const renderCell = (rowId, colId) => {
         const cellData = tableData[rowId]?.[colId] || {};
+
+        const getSelectClass = (status) => {
+            const base = "h-7 w-20 text-[10px] px-1 py-0.5 rounded border font-semibold focus:outline-none focus:ring-1 cursor-pointer transition-colors text-center ";
+            if (status === "OK") return base + "bg-green-50 border-green-200 text-green-700 focus:ring-green-500";
+            if (status === "NG") return base + "bg-red-50 border-red-200 text-red-700 focus:ring-red-500";
+            return base + "bg-white border-gray-200 text-gray-400 focus:ring-blue-500";
+        };
+
         return (
             <div className="flex flex-col gap-1 p-1 h-full">
                 <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1">
-                        <span className="text-[10px] w-8">Date:</span>
-                        <Input
-                            type="date"
-                            className="h-6 text-[10px] p-1 w-full"
-                            value={cellData.date || ""}
-                            onChange={(e) => handleTableChange(rowId, colId, 'date', e.target.value)}
-                        />
-                    </div>
-                    {/* OK/NG Radio Buttons */}
-                    <div className="flex items-center justify-end gap-2 text-[10px]">
-                        <label className="flex items-center gap-1 cursor-pointer">
-                            <input
-                                type="radio"
-                                name={`${rowId}-${colId}-status`}
-                                value="OK"
-                                checked={cellData.status === "OK"}
-                                onChange={(e) => handleTableChange(rowId, colId, 'status', e.target.value)}
-                                className="w-3 h-3 text-blue-600"
-                            />
-                            <span>OK</span>
-                        </label>
-                        <label className="flex items-center gap-1 cursor-pointer">
-                            <input
-                                type="radio"
-                                name={`${rowId}-${colId}-status`}
-                                value="NG"
-                                checked={cellData.status === "NG"}
-                                onChange={(e) => handleTableChange(rowId, colId, 'status', e.target.value)}
-                                className="w-3 h-3 text-red-600"
-                            />
-                            <span>NG</span>
-                        </label>
+                    {/* OK/NG Dropdown */}
+                    <div className="flex items-center justify-center py-1 border-b border-dashed border-gray-100">
+                        <select
+                            value={cellData.status || ""}
+                            onChange={(e) => handleTableChange(rowId, colId, 'status', e.target.value)}
+                            className={getSelectClass(cellData.status)}
+                        >
+                            <option value="" className="text-gray-400 font-normal bg-white">Select...</option>
+                            <option value="OK" className="text-green-700 font-semibold bg-white">OK</option>
+                            <option value="NG" className="text-red-700 font-semibold bg-white">NG</option>
+                        </select>
                     </div>
                 </div>
                 <Textarea
@@ -417,17 +403,81 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         {/* Sub headers */}
                         <div className="border-b border-black p-2 flex items-center justify-center">Check Contents</div>
 
-                        <div className="p-1 text-xs border-b border-black">1st Time</div>
-                        <div className="p-1 text-xs border-b border-black">Reinspect (If Fail)</div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>1st Time</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs1 || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs1', null, e.target.value)}
+                            />
+                        </div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>Reinspect (If Fail)</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs1Re || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs1Re', null, e.target.value)}
+                            />
+                        </div>
 
-                        <div className="p-1 text-xs border-b border-black">1st Time</div>
-                        <div className="p-1 text-xs border-b border-black">Reinspect (If Fail)</div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>1st Time</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs2 || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs2', null, e.target.value)}
+                            />
+                        </div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>Reinspect (If Fail)</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs2Re || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs2Re', null, e.target.value)}
+                            />
+                        </div>
 
-                        <div className="p-1 text-xs border-b border-black">1st Time</div>
-                        <div className="p-1 text-xs border-b border-black">Reinspect (If Fail)</div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>1st Time</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs3 || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs3', null, e.target.value)}
+                            />
+                        </div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>Reinspect (If Fail)</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs3Re || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs3Re', null, e.target.value)}
+                            />
+                        </div>
 
-                        <div className="p-1 text-xs border-b border-black">1st Time</div>
-                        <div className="p-1 text-xs border-b border-black">Reinspect (If Fail)</div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>1st Time</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs4 || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs4', null, e.target.value)}
+                            />
+                        </div>
+                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
+                            <span>Reinspect (If Fail)</span>
+                            <Input
+                                type="date"
+                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                value={tableData.columnDates?.obs4Re || ""}
+                                onChange={(e) => handleTableChange('columnDates', 'obs4Re', null, e.target.value)}
+                            />
+                        </div>
                     </div>
 
                     {/* Table Body */}

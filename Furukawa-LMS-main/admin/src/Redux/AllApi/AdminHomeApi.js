@@ -38,10 +38,10 @@ export const adminHomeApi = createApi({
             keepUnusedDataFor: 0,
         }),
         getDojoHiringTrend: builder.query({
-            query: ({ startDate = "", endDate = "" } = {}) => ({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
                 url: "/api/admin-home/dojo-hiring-trend",
                 method: "GET",
-                params: { startDate, endDate }
+                params: { startDate, endDate, groupBy, departmentId }
             }),
             keepUnusedDataFor: 0,
         }),

@@ -193,38 +193,67 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
  * flips to 0 but the TEMP prefix on empId is permanent, preserving the hire event.
  */
 export const getDojoHiringTrend = asyncHandler(async (req, res) => {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
 
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    // Default date window per groupBy when caller supplies no explicit range
+    const now = new Date();
     let start, end;
     if (startDate && endDate) {
         start = startDate;
         end = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
     } else {
-        // Default: last 12 months
-        const now = new Date();
-        end = now.toISOString().split('T')[0];
+        // monthly: last 12 months
         const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
         start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    // Dynamic GROUP BY expression — zero-padded so ORDER BY period ASC is chronological
+    const formatMap = {
+        daily:   "FORMAT(createdAt, 'yyyy-MM-dd')",
+        monthly: "FORMAT(createdAt, 'yyyy-MM')",
+        yearly:  "FORMAT(createdAt, 'yyyy')",
+    };
+    const periodExpr = formatMap[safeGroupBy];
+
+    // Build optional department filter
+    // Temp users store dept in targetDeptId; after handover it moves to departmentId
+    const params = [start, end];
+    let deptClause = '';
+    if (departmentId && departmentId !== '' && departmentId !== 'all') {
+        deptClause = 'AND (targetDeptId = ? OR departmentId = ?)';
+        params.push(departmentId, departmentId);
     }
 
     const [rows] = await executeQuery(`
         SELECT
-            FORMAT(createdAt, 'yyyy-MM') as period,
-            COUNT(*)                                                    as total,
-            SUM(CASE WHEN gender = 'MALE'   THEN 1 ELSE 0 END)         as maleCount,
-            SUM(CASE WHEN gender = 'FEMALE' THEN 1 ELSE 0 END)         as femaleCount,
-            SUM(CASE WHEN gender NOT IN ('MALE','FEMALE') OR gender IS NULL THEN 1 ELSE 0 END) as otherCount
+            ${periodExpr}                                                               AS period,
+            COUNT(*)                                                                    AS total,
+            SUM(CASE WHEN gender = 'MALE'   THEN 1 ELSE 0 END)                         AS maleCount,
+            SUM(CASE WHEN gender = 'FEMALE' THEN 1 ELSE 0 END)                         AS femaleCount,
+            SUM(CASE WHEN gender NOT IN ('MALE','FEMALE') OR gender IS NULL THEN 1 ELSE 0 END) AS otherCount
         FROM users
         WHERE empId LIKE 'TEMP%'
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND createdAt >= ?
           AND createdAt <= ?
-        GROUP BY FORMAT(createdAt, 'yyyy-MM')
+          ${deptClause}
+        GROUP BY ${periodExpr}
         ORDER BY period ASC
-    `, [start, end]);
+    `, params);
 
     res.status(200).json(
-        new ApiResponse(200, { trend: rows, start, end }, "Dojo hiring trend fetched successfully")
+        new ApiResponse(200, { trend: rows, groupBy: safeGroupBy, start, end }, "Dojo hiring trend fetched successfully")
     );
 });
 

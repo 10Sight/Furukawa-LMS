@@ -219,7 +219,7 @@ const Home = () => {
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <DojoHiringTrendChart dateRange={dateRange} />
+        <DojoHiringTrendChart />
         <DojoHiringChart dateRange={dateRange} />
         <HandoverComparisonChart dateRange={dateRange} />
         <TestPaperPassChart dateRange={dateRange} />

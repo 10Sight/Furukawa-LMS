@@ -73,6 +73,8 @@ import {
   IconUpload,
   IconDownload,
   IconHistory,
+  IconUserX,
+  IconUserMinus,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -1240,7 +1242,7 @@ const Students = () => {
       <TabsContent value="operators">
     <div className="space-y-6">
       {/* Header with Stats using reusable StatCard */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title="Total Operators"
           value={studentsData?.data?.totalUsers || 0}
@@ -1267,6 +1269,34 @@ const Students = () => {
           borderColor="border-green-200"
           textColor="text-green-800"
           valueColor="text-green-900"
+        />
+
+        <StatCard
+          title="On Leave"
+          value={studentsData?.data?.counts?.onLeaveCount || 0}
+          description="Currently on leave"
+          icon={IconUserMinus}
+          iconBgColor="bg-amber-100"
+          iconColor="text-amber-600"
+          gradientFrom="from-amber-50"
+          gradientTo="to-amber-100"
+          borderColor="border-amber-200"
+          textColor="text-amber-800"
+          valueColor="text-amber-900"
+        />
+
+        <StatCard
+          title="Left Operators"
+          value={studentsData?.data?.counts?.leftCount || 0}
+          description="No longer active"
+          icon={IconUserX}
+          iconBgColor="bg-red-100"
+          iconColor="text-red-600"
+          gradientFrom="from-red-50"
+          gradientTo="to-red-100"
+          borderColor="border-red-200"
+          textColor="text-red-800"
+          valueColor="text-red-900"
         />
 
         <StatCard

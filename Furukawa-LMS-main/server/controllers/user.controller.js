@@ -1197,6 +1197,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     `;
   }
 
+  let statusParamAdded = false;
+  let shiftParamAdded = false;
+
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
     else whereClauses.push("al.logStatus = 'Present'");
@@ -1206,6 +1209,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
+    statusParamAdded = true;
   } else if (req.query.includeLeft !== "true") {
     whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
   }
@@ -1214,6 +1218,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     if (dateFrom || date) whereClauses.push("al.logShift = ?");
     else whereClauses.push("u.shift = ?");
     params.push(shift);
+    shiftParamAdded = true;
   }
 
   if (req.user.role === "INSTRUCTOR") {
@@ -1247,26 +1252,53 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     // Admin/superadmin targetLayout: no department restriction — same scope as ADMIN role
   }
 
+  // Build counts query: same scope (search, hierarchy, role) but without status/shift/attendance filters
+  const countsWhereClauses = whereClauses.filter(c =>
+    c !== "u.status = ?" &&
+    c !== "(u.status IS NULL OR u.status != 'LEFT')" &&
+    !c.includes("al.")
+  );
+  const countsParams = shiftParamAdded && statusParamAdded
+    ? params.slice(0, -2)
+    : shiftParamAdded || statusParamAdded
+      ? params.slice(0, -1)
+      : [...params];
+  const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
   const [cnt] = await executeQuery(`
-    SELECT COUNT(*) as total 
-    FROM users u ${getHierarchyJoinSQL} 
+    SELECT COUNT(*) as total
+    FROM users u ${getHierarchyJoinSQL}
     ${attendanceJoinSQL}
     ${whereSQL}
   `, [...attendanceParams, ...params]);
   const [students] = await executeQuery(`
     SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
            al.logShift, al.logStatus, al.logDate
-    FROM users u ${getHierarchyJoinSQL} 
+    FROM users u ${getHierarchyJoinSQL}
     ${attendanceJoinSQL}
     ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...attendanceParams, ...params, offset, limit]);
 
+  const [statusCountsData] = await executeQuery(`
+    SELECT
+      SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
+      SUM(CASE WHEN u.status = 'ON_LEAVE' THEN 1 ELSE 0 END) as onLeaveCount,
+      SUM(CASE WHEN (u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE')) THEN 1 ELSE 0 END) as presentCount
+    FROM users u ${getHierarchyJoinSQL}
+    ${countsWhereSQL}
+  `, countsParams);
+
   res.json(new ApiResponse(200, {
     users: students.map(formatUser),
     totalUsers: cnt[0].total,
-    totalPages: Math.ceil(cnt[0].total / limit)
+    totalPages: Math.ceil(cnt[0].total / limit),
+    counts: {
+      presentCount: statusCountsData[0]?.presentCount || 0,
+      onLeaveCount: statusCountsData[0]?.onLeaveCount || 0,
+      leftCount: statusCountsData[0]?.leftCount || 0,
+    }
   }, "Students fetched successfully"));
 });
 

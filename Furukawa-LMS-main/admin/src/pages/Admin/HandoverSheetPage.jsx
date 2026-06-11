@@ -21,12 +21,22 @@ import HandoverSheet from '@/components/departments/HandoverSheet';
 const HandoverSheetPage = () => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const hasHandoverBypass = authUser?.customRole?.permissions?.includes('dojo:handover_sheet');
+    const canAccessAll = isAdmin || hasHandoverBypass;
 
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     // Selections
     const [dept, setDept] = useState(searchParams.get('dept') || "");
     const [section, setSection] = useState(searchParams.get('section') || "");
+
+    // Synchronize selections with URL query params
+    useEffect(() => {
+        const params = {};
+        if (dept) params.dept = dept;
+        if (section) params.section = section;
+        setSearchParams(params, { replace: true });
+    }, [dept, section, setSearchParams]);
 
     // API Data
     const { data: deptsData } = useGetAllDepartmentsQuery({ limit: 500 });
@@ -56,20 +66,20 @@ const HandoverSheetPage = () => {
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
         if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
         const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
-        if (!authUser || isAdmin || assignedIds.length === 0) return allDepts;
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allDepts;
         return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
-    }, [departments, authUser, isAdmin]);
+    }, [departments, authUser, canAccessAll]);
 
     const assignableSections = useMemo(() => {
         const allSections = sections || [];
         const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
         if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
         const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
-        if (!authUser || isAdmin || assignedIds.length === 0) return allSections;
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
         return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
-    }, [sections, authUser, isAdmin]);
+    }, [sections, authUser, canAccessAll]);
 
-    const isRestricted = !isAdmin && authUser && (
+    const isRestricted = !canAccessAll && authUser && (
         (authUser.departments?.length > 0) || authUser.departmentId ||
         (authUser.sections?.length > 0) || authUser.sectionId
     );
@@ -140,17 +150,16 @@ const HandoverSheetPage = () => {
                         </div>
 
                         <div className="space-y-1.5">
-                            <Label className="text-xs font-semibold text-slate-500 uppercase">Section (Optional)</Label>
+                            <Label className="text-xs font-semibold text-slate-500 uppercase">Section</Label>
                             <Select
                                 value={String(section)}
                                 onValueChange={(val) => setSection(val)}
                                 disabled={!dept || (isRestricted && assignableSections.length <= 1)}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200 disabled:opacity-80 disabled:bg-slate-50">
-                                    <SelectValue placeholder="Select Section (All)" />
+                                    <SelectValue placeholder="Select Section" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="0">All Sections</SelectItem>
                                     {assignableSections.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.category})</SelectItem>
                                     ))}
@@ -162,7 +171,7 @@ const HandoverSheetPage = () => {
             </Card>
 
             {/* Handover Sheet Area */}
-            {dept ? (
+            {dept && section && section !== "0" ? (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <HandoverSheet
                         departmentId={dept}
@@ -181,9 +190,9 @@ const HandoverSheetPage = () => {
                     <div className="p-5 bg-white rounded-full shadow-sm mb-5">
                         <IconHierarchy2 className="w-16 h-16 text-slate-300" />
                     </div>
-                    <h3 className="text-xl font-bold text-slate-700">Select Department</h3>
+                    <h3 className="text-xl font-bold text-slate-700">Select Department and Section</h3>
                     <p className="text-sm text-slate-500 max-w-xs text-center mt-2 leading-relaxed">
-                        Choose a department to view and manage its handover sheet records.
+                        Choose a department and section to view and manage its handover sheet records.
                     </p>
                 </div>
             )}

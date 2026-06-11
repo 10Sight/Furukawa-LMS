@@ -38,8 +38,8 @@ const InterviewSelect = ({ value, onChange }) => (
     </Select>
 );
 
-const ProcessSelect = ({ departmentId, value, onValueChange, className = "" }) => {
-    const { data } = useGetSubSectionsQuery({ departmentId }, { skip: !departmentId });
+const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, className = "" }) => {
+    const { data } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
     const subSections = Array.isArray(data?.data) ? data.data : (data?.data?.subSections || []);
 
     return (
@@ -774,6 +774,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             <ProcessSelect
                                                                 key={`process-select-${index}`}
                                                                 departmentId={departmentId}
+                                                                sectionId={sectionId}
                                                                 value={entry.process || ""}
                                                                 onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                             />
@@ -844,6 +845,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         <ProcessSelect
                                                             key={`process-select-def-${index}`}
                                                             departmentId={departmentId}
+                                                            sectionId={sectionId}
                                                             value={entry.process || ""}
                                                             onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                         />

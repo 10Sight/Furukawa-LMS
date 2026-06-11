@@ -12,7 +12,8 @@ import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
-import { useGetMonitoringAttemptsQuery } from "@/Redux/AllApi/AttemptedQuizApi";
+import { useGetMonitoringAttemptsQuery, useDeleteAttemptMutation } from "@/Redux/AllApi/AttemptedQuizApi";
+import { toast } from "sonner";
 import {
   IconClipboardList,
   IconEye,
@@ -36,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const AdminQuizMonitoring = () => {
   const navigate = useNavigate();
+  const [deleteAttempt, { isLoading: isDeleting }] = useDeleteAttemptMutation();
   const [selectedDeptId, setSelectedDeptId] = useState("all");
   const [selectedSectionId, setSelectedSectionId] = useState("all");
   const [selectedLineId, setSelectedLineId] = useState("all");
@@ -117,6 +119,18 @@ const AdminQuizMonitoring = () => {
 
   const { data: attemptsData, isLoading: attemptsLoading, refetch } = useGetMonitoringAttemptsQuery(queryParams);
   const attempts = attemptsData?.data || [];
+
+  const handleDeleteAttempt = async (id) => {
+    if (window.confirm("Are you sure you want to delete this test attempt? This action cannot be undone.")) {
+      try {
+        await deleteAttempt(id).unwrap();
+        toast.success("Test attempt deleted successfully");
+        refetch();
+      } catch (error) {
+        toast.error(error?.data?.message || "Failed to delete test attempt");
+      }
+    }
+  };
 
   const handleResetAll = () => {
     setSelectedDeptId("all");
@@ -523,15 +537,27 @@ const AdminQuizMonitoring = () => {
 
                         {/* Actions Column */}
                         <TableCell className="text-center pr-6 py-4">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => navigate(`/admin/quiz-monitoring/review/${attempt._id || attempt.id}`)}
-                            className="h-8 w-8 p-0 border-gray-300 hover:bg-gray-50"
-                            title="Audit Graded test Sheet"
-                          >
-                            <IconEye className="h-4 w-4 text-gray-600" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => navigate(`/admin/quiz-monitoring/review/${attempt._id || attempt.id}`)}
+                              className="h-8 w-8 p-0 border-gray-300 hover:bg-gray-50"
+                              title="Audit Graded test Sheet"
+                            >
+                              <IconEye className="h-4 w-4 text-gray-600" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDeleteAttempt(attempt._id || attempt.id)}
+                              disabled={isDeleting}
+                              className="h-8 w-8 p-0 border-red-200 hover:bg-red-50 text-red-600 hover:text-red-700 disabled:opacity-50"
+                              title="Delete Test Attempt"
+                            >
+                              <IconTrash className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

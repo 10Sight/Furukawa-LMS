@@ -48,6 +48,8 @@ const EMPTY_ARRAY = [];
 const SixteenDayMonitoring = ({ readOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const hasSixteenDayBypass = authUser?.customRole?.permissions?.includes('dojo:sixteenday_monitoring');
+    const canAccessAll = isAdmin || hasSixteenDayBypass;
 
     // A user is a subject (employee) if they are explicitly marked as such OR don't have global admin rights
     const { isEmployee, hasManagePermission, canManageFeedback, canViewFeedback } = useMemo(() => {
@@ -82,9 +84,9 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
 
     // Freeze hierarchy if the user is a staff member restricted to their own area
     const isSelectionLocked = useMemo(() => {
-        if (isAdmin) return false;
+        if (canAccessAll) return false;
         return authUser?.role === 'CUSTOM' && hasManagePermission;
-    }, [authUser, isAdmin, hasManagePermission]);
+    }, [authUser, canAccessAll, hasManagePermission]);
 
     const { studentId: paramStudentId } = useParams();
 
@@ -119,18 +121,18 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : EMPTY_ARRAY;
         if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
         const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
-        if (!authUser || isAdmin || assignedIds.length === 0) return allDepts;
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allDepts;
         return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
-    }, [departments, authUser, isAdmin]);
+    }, [departments, authUser, canAccessAll]);
 
     const assignableSections = useMemo(() => {
         const allSections = sections;
         const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : EMPTY_ARRAY;
         if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
         const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
-        if (!authUser || isAdmin || assignedIds.length === 0) return allSections;
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
         return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
-    }, [sections, authUser, isAdmin]);
+    }, [sections, authUser, canAccessAll]);
 
     const handleAfterMonitoringSave = async (status) => {
         await feedbackRef.current?.saveFeedback();

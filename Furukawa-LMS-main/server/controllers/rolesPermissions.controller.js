@@ -131,6 +131,8 @@ const SYSTEM_PERMISSIONS = {
   HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
   HANDOVER_SHEET_READ: "handover_sheet:read",
   HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
+  DOJO_HANDOVER_SHEET: "dojo:handover_sheet",
+  DOJO_SIXTEENDAY_MONITORING: "dojo:sixteenday_monitoring",
 
   // 10-Cycle Sheet Management
   TEN_CYCLE_MANAGE: "ten_cycle:manage",
@@ -441,6 +443,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_MANAGE, name: "Manage 16-Day Monitoring", description: "Manage 16-day monitoring records" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.DOJO_SIXTEENDAY_MONITORING, name: "Access All in 16-Day Monitoring", description: "Allows unrestricted access to all departments, sections, lines, and stations in 16-Day Monitoring" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT, name: "Edit 3-Day Monitoring Layout", description: "Modify the structure and categories of 3-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_MANAGE, name: "Manage 3-Day Monitoring", description: "Manage 3-day monitoring records" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_VERIFY, name: "Verify 3-Day Monitoring", description: "Verify 3-day monitoring records (Area Incharge sign-off)" },
@@ -454,6 +457,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT, name: "Edit Skill Upgradation Layout", description: "Modify the table configuration and structure of skill upgradation sheets" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
+        { id: SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, name: "Access All in Handover Sheet", description: "Allows unrestricted access to all departments, sections, sub-sections, and stations in Handover Sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet", description: "Fill out, save, and submit 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },

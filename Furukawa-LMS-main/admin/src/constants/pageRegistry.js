@@ -234,7 +234,7 @@ export const PAGE_REGISTRY = [
     { key: "test-paper", label: "Test Paper", labelKey: "nav.testPaper", layout: "admin", link: "/admin/test-paper", icon: "IconFileText" },
     // { key: "attempt-requests", label: "Attempt Requests", labelKey: "nav.attemptRequests", layout: "admin", link: "/admin/attempt-requests", icon: "IconBell" },
     { key: "course-level-settings", label: "Course Level Settings", labelKey: "nav.courseLevelSettings", layout: "admin", link: "/admin/course-level-settings", icon: "IconLayersIntersect" },
-    { key: "certificate-templates", label: "Certificate Templates", labelKey: "nav.certificateTemplates", layout: "admin", link: "/admin/certificate-templates", icon: "IconTemplate" },
+    // { key: "certificate-templates", label: "Certificate Templates", labelKey: "nav.certificateTemplates", layout: "admin", link: "/admin/certificate-templates", icon: "IconTemplate" },
     { key: "analytics", label: "Recent Activity", labelKey: "nav.analytics", layout: "admin", link: "/admin/analytics", icon: "IconChartPie" },
     { key: "report", label: "Report", labelKey: "nav.report", layout: "admin", link: "/admin/report", icon: "IconClipboardList" },
     // { key: "10-cycle", label: "10 Cycle", labelKey: "nav.tenCycle", layout: "admin", link: "/admin/10-cycle", icon: "IconRepeat" },

@@ -4,7 +4,9 @@ import {
     getSectionHeadById,
     createSectionHead,
     updateSectionHead,
-    deleteSectionHead
+    deleteSectionHead,
+    getGlobalCcEmails,
+    updateGlobalCcEmails
 } from "../controllers/sectionHead.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import { authorizeRole } from "../middlewares/roleAuth.middleware.js";
@@ -17,6 +19,10 @@ router.use(verifyJWT);
 router.route("/")
     .get(getAllSectionHeads)
     .post(authorizeRole([SYSTEM_PERMISSIONS.MPS_REQUIREMENT_ADD_EMAILS]), createSectionHead);
+
+router.route("/global-cc")
+    .get(getGlobalCcEmails)
+    .post(authorizeRole([SYSTEM_PERMISSIONS.MPS_REQUIREMENT_ADD_EMAILS]), updateGlobalCcEmails);
 
 router.route("/:id")
     .get(getSectionHeadById)

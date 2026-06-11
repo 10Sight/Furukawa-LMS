@@ -2,6 +2,13 @@ import SectionHead from "../models/sectionHead.model.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { executeQuery as executeSql } from "../db/mssqlHelper.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const CONFIG_FILE_PATH = path.join(__dirname, "../global_cc_emails.json");
 
 const getAllSectionHeads = asyncHandler(async (req, res) => {
     // This fetches joined sectionName/subSectionName from SQL directly per our Model
@@ -53,10 +60,44 @@ const deleteSectionHead = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, null, "Section head deleted successfully"));
 });
 
+const getGlobalCcEmails = asyncHandler(async (req, res) => {
+    try {
+        if (!fs.existsSync(CONFIG_FILE_PATH)) {
+            return res.status(200).json(new ApiResponse(200, [], "Global CC emails fetched successfully"));
+        }
+        const data = await fs.promises.readFile(CONFIG_FILE_PATH, "utf8");
+        const parsed = JSON.parse(data);
+        return res.status(200).json(new ApiResponse(200, parsed.ccEmails || [], "Global CC emails fetched successfully"));
+    } catch (error) {
+        console.error("Error reading global CC emails config:", error);
+        return res.status(200).json(new ApiResponse(200, [], "Global CC emails fetched successfully"));
+    }
+});
+
+const updateGlobalCcEmails = asyncHandler(async (req, res) => {
+    const { ccEmails } = req.body;
+    if (!Array.isArray(ccEmails)) {
+        return res.status(400).json(new ApiResponse(400, null, "ccEmails must be an array"));
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const validatedEmails = ccEmails.map(e => String(e).trim()).filter(e => emailRegex.test(e));
+
+    try {
+        await fs.promises.writeFile(CONFIG_FILE_PATH, JSON.stringify({ ccEmails: validatedEmails }, null, 2), "utf8");
+        return res.status(200).json(new ApiResponse(200, validatedEmails, "Global CC emails updated successfully"));
+    } catch (error) {
+        console.error("Error writing global CC emails config:", error);
+        return res.status(500).json(new ApiResponse(500, null, "Failed to save global CC emails"));
+    }
+});
+
 export {
     getAllSectionHeads,
     getSectionHeadById,
     createSectionHead,
     updateSectionHead,
-    deleteSectionHead
+    deleteSectionHead,
+    getGlobalCcEmails,
+    updateGlobalCcEmails
 };

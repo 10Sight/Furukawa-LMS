@@ -11,6 +11,28 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import ENV from "../configs/env.config.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const GLOBAL_CC_FILE_PATH = path.join(__dirname, "../global_cc_emails.json");
+
+const getGlobalCcEmailsList = () => {
+    try {
+        if (fs.existsSync(GLOBAL_CC_FILE_PATH)) {
+            const data = fs.readFileSync(GLOBAL_CC_FILE_PATH, "utf8");
+            const parsed = JSON.parse(data);
+            if (Array.isArray(parsed.ccEmails)) {
+                return parsed.ccEmails.filter(Boolean).join(", ");
+            }
+        }
+    } catch (error) {
+        console.error("Error reading global CC emails:", error);
+    }
+    return "";
+};
 
 /* ============================================================
    SQL HELPER
@@ -326,12 +348,10 @@ const autoApproveExpiredRequirements = async () => {
                 );
             }
 
-            await updateRequirementToken(token, {
-                status: "system_approved",
-            });
+            await updateRequirementToken(token, { status: 'approved' });
         }
-    } catch (e) {
-        console.error("[AUTO-APPROVE] Error:", e.message);
+    } catch (err) {
+        console.error("[AUTO-APPROVE] Error:", err.message);
     }
 };
 
@@ -366,8 +386,6 @@ const findSectionHeadsForRequirement = async (reqRow) => {
     return heads || [];
 };
 
-
-
 const sendRequirementEditApprovalMail = async ({
     req,
     requirementId,
@@ -376,19 +394,7 @@ const sendRequirementEditApprovalMail = async ({
 }) => {
     try {
         const heads = await findSectionHeadsForRequirement(newReq);
-        const ccEmails = heads.map((h) => h.CCMail).filter(Boolean).join(", ");
-        console.log("BASE_URL =", process.env.BASE_URL);
-        console.log("APP_BASE_URL =", process.env.APP_BASE_URL);
-        console.log("HOST =", `${req.protocol}://${req.get("host")}`);
-
-        console.log("[REQ-EDIT-MAIL] Looking for section head:", {
-            requirementId,
-            sectionCode: newReq.sectionCode,
-            sectionName: newReq.sectionName,
-            lineCode: newReq.lineCode,
-            lineDescription: newReq.lineDescription,
-            found: heads.length,
-        });
+        const ccEmails = getGlobalCcEmailsList();
 
         if (!heads || heads.length === 0) {
             const [sampleHeads] = await executeSql(
@@ -620,6 +626,7 @@ const sendRequirementEditApprovalMail = async ({
 
 export const createRequirement = asyncHandler(async (req, res) => {
     const {
+
         srNo,
         sectionCode,
         sectionName,
@@ -1293,7 +1300,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     continue;
                 }
 
-                const ccEmails = secHeads.map((h) => h.CCMail).filter(Boolean).join(", ");
+                const ccEmails = getGlobalCcEmailsList();
 
                 await executeSql(
                     `

@@ -66,6 +66,7 @@ const calculateUserEfficiency = (op) => {
 };
 
 const getAvg = (arr) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100 : 0;
+const getSum = (arr) => arr.reduce((a, b) => a + b, 0);
 const getOpDate = (op) => op.attendanceDate || op.date || op.logDate || '';
 const getDateText = (f) => {
     const today = new Date().toLocaleDateString('en-CA');
@@ -90,7 +91,7 @@ const applyFilters = (ops, f) => {
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
     if (f.lineIds?.length) r = r.filter(op => f.lineIds.includes(String(op.lineId || op.lineName)));
     if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || op.shiftName || 'General')));
-    
+
     // Condition 2: Default under-the-hood date range to current date
     const today = new Date().toLocaleDateString('en-CA');
     const dateFrom = f.dateFrom || today;
@@ -125,7 +126,7 @@ const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, all
             }
         });
     }
-    
+
     // Populate Total Efficiency using opsAll (unfiltered by date)
     opsAll.forEach(op => {
         const gId = getIdFn(op);
@@ -133,11 +134,11 @@ const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, all
         if (!gId || !gName) return;
         const eff = calculateUserEfficiency(op);
         const shift = String(op.shift || op.shiftName || 'General');
-        
+
         if (!map[gId]) map[gId] = { id: gId, name: gName, allArr: [], presArr: [], absArr: [], shiftData: {} };
-        
+
         map[gId].allArr.push(eff);
-        
+
         if (isMulti) {
             if (!map[gId].shiftData[shift]) map[gId].shiftData[shift] = { allArr: [], presArr: [], absArr: [] };
             map[gId].shiftData[shift].allArr.push(eff);
@@ -150,17 +151,17 @@ const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, all
         const gName = getNameFn(op);
         if (!gId || !gName) return;
         const eff = calculateUserEfficiency(op);
-        
+
         const hasLogStatus = op.logStatus != null && op.logStatus !== '';
         const isPres = hasLogStatus && PRESENT_STATUSES.has(op.logStatus);
         const isAbs = hasLogStatus && !PRESENT_STATUSES.has(op.logStatus);
-        
+
         const shift = String(op.shift || op.shiftName || 'General');
         if (!map[gId]) map[gId] = { id: gId, name: gName, allArr: [], presArr: [], absArr: [], shiftData: {} };
-        
+
         if (isPres) map[gId].presArr.push(eff);
         if (isAbs) map[gId].absArr.push(eff);
-        
+
         if (isMulti) {
             if (!map[gId].shiftData[shift]) map[gId].shiftData[shift] = { allArr: [], presArr: [], absArr: [] };
             if (isPres) map[gId].shiftData[shift].presArr.push(eff);
@@ -170,28 +171,23 @@ const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, all
 
     return Object.values(map).map(g => {
         const allAvg = getAvg(g.allArr);
-        let presAvg = g.presArr.length ? getAvg(g.presArr) : 0;
-        let absAvg = g.absArr.length ? getAvg(g.absArr) : 0;
-        presAvg = Math.min(presAvg, 100);
-        absAvg = Math.min(absAvg, 100);
-        const tAll = g.allArr.length;
-        const tPres = g.presArr.length;
-        const tAbs = g.absArr.length;
+        const total = g.allArr.length;
+        let presAvg = total ? Math.min(Math.round((getSum(g.presArr) / total) * 100) / 100, 100) : 0;
+        let absAvg  = total ? Math.min(Math.round((getSum(g.absArr)  / total) * 100) / 100, 100) : 0;
+        const tAll = total;
         const item = { id: g.id, name: g.name, displayName: g.name, allEfficiency: allAvg, presEfficiency: presAvg, absEfficiency: absAvg, allTotal: allAvg, presTotal: presAvg, absTotal: absAvg };
         if (isMulti) {
             effectiveShifts.forEach(s => {
                 const sd = g.shiftData[s] || { allArr: [], presArr: [], absArr: [] };
                 const sA = getAvg(sd.allArr);
-                let sP = sd.presArr.length ? getAvg(sd.presArr) : 0;
-                let sAb = sd.absArr.length ? getAvg(sd.absArr) : 0;
-                sP = Math.min(sP, 100);
-                sAb = Math.min(sAb, 100);
-                item[`all_${s}`] = tAll > 0 ? (sd.allArr.length / tAll) * sA : 0;
-                item[`pres_${s}`] = tPres > 0 ? (sd.presArr.length / tPres) * sP : 0;
-                item[`abs_${s}`] = tAbs > 0 ? (sd.absArr.length / tAbs) * sAb : 0;
+                const sP  = total > 0 ? Math.min(Math.round((getSum(sd.presArr) / total) * 100) / 100, 100) : 0;
+                const sAb = total > 0 ? Math.min(Math.round((getSum(sd.absArr)  / total) * 100) / 100, 100) : 0;
+                item[`all_${s}`]      = tAll > 0 ? (sd.allArr.length / tAll) * sA : 0;
+                item[`pres_${s}`]     = sP;
+                item[`abs_${s}`]      = sAb;
                 item[`allLabel_${s}`] = sA;
                 item[`presLabel_${s}`] = sP;
-                item[`absLabel_${s}`] = sAb;
+                item[`absLabel_${s}`]  = sAb;
             });
         }
         return item;
@@ -471,7 +467,7 @@ const EfficiencyChart = () => {
             const lid = String(op.lineId || '');
             const sid = String(op.sectionId || '');
             const did = String(op.departmentId || op.departmentName || '');
-            
+
             if (lid) {
                 if (sid) lineToSection[lid] = sid;
                 if (did) lineToDept[lid] = did;
@@ -497,7 +493,7 @@ const EfficiencyChart = () => {
 
         const averages = {};
         const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-        
+
         Object.entries(map).forEach(([lid, val]) => {
             averages[lid] = {
                 min: roundedAvg(val.minArr),
@@ -736,11 +732,11 @@ const EfficiencyChart = () => {
 
     const d2 = useMemo(() => {
         const base = buildGroupData(
-            opsAll2, 
-            opsAtt2, 
-            op => String(op.sectionId || op.sectionName || ''), 
-            op => op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName, 
-            sh2, 
+            opsAll2,
+            opsAtt2,
+            op => String(op.sectionId || op.sectionName || ''),
+            op => op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName,
+            sh2,
             allSections
         );
         return base.map(item => {
@@ -772,7 +768,7 @@ const EfficiencyChart = () => {
     // Helper to calculate dynamic target based on hierarchy filters
     const getFilteredMinTarget = (filter) => {
         const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-        
+
         if (filter.lineIds?.length) {
             const mins = filter.lineIds.map(id => targetsByLine[id]?.min ?? 0);
             if (mins.length) return roundedAvg(mins);
@@ -785,13 +781,13 @@ const EfficiencyChart = () => {
             const mins = filter.deptIds.map(id => targetsByDept[id]?.min ?? 0);
             if (mins.length) return roundedAvg(mins);
         }
-        
+
         // Fallback: Average of all departments in the system, treating unconfigured ones as 0
         if (allDeptOpts.length) {
             const mins = allDeptOpts.map(d => targetsByDept[d.value]?.min ?? 0);
             return roundedAvg(mins);
         }
-        
+
         return globalEffTarget.min != null ? Math.round(globalEffTarget.min) : null;
     };
 
@@ -799,19 +795,18 @@ const EfficiencyChart = () => {
     const d5 = useMemo(() => {
         const presOps = opsAtt5.filter(op => PRESENT_STATUSES.has(op.logStatus));
         const absOps = opsAtt5.filter(op => op.logStatus && !PRESENT_STATUSES.has(op.logStatus));
-        
+
         const allEffs = opsAll5.map(calculateUserEfficiency);
         const presEffs = presOps.map(calculateUserEfficiency);
         const absEffs = absOps.map(calculateUserEfficiency);
-        
+
         const items = [];
         const tMin = getFilteredMinTarget(f5);
-        const tAll = opsAll5.length ? getAvg(allEffs) : 0;
-        let tPres = presOps.length ? getAvg(presEffs) : 0;
-        let tAbs = absOps.length ? getAvg(absEffs) : 0;
-        tPres = Math.min(tPres, 100);
-        tAbs = Math.min(tAbs, 100);
-        
+        const totalCount = opsAll5.length;
+        const tAll = totalCount ? getAvg(allEffs) : 0;
+        const tPres = totalCount ? Math.min(Math.round((getSum(presEffs) / totalCount) * 100) / 100, 100) : 0;
+        const tAbs  = totalCount ? Math.min(Math.round((getSum(absEffs)  / totalCount) * 100) / 100, 100) : 0;
+
         if (tMin != null) {
             items.push({
                 name: 'Min Efficiency',
@@ -822,7 +817,7 @@ const EfficiencyChart = () => {
                 evaluated: 0
             });
         }
-        
+
         items.push(
             { name: 'Total Efficiency', displayName: 'Total Efficiency', efficiency: tAll, count: opsAll5.length, evaluated: opsAll5.filter(op => op.currentEffeciency != null || op.evalData != null).length },
             { name: 'Present Efficiency', displayName: 'Present Efficiency', efficiency: tPres, count: presOps.length, evaluated: presOps.filter(op => op.currentEffeciency != null || op.evalData != null).length },
@@ -882,7 +877,7 @@ const EfficiencyChart = () => {
 
     return (
         <Card className="col-span-1 lg:col-span-2 border border-slate-100 shadow-sm rounded-3xl overflow-hidden bg-white text-black font-sans">
-            <CardHeader className="pb-5 border-b border-slate-50">
+            {/* <CardHeader className="pb-5 border-b border-slate-50">
                 <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2 text-slate-800 text-xl font-bold">
                         <IconChartBar className="h-6 w-6 text-indigo-600 animate-pulse" />
@@ -892,7 +887,7 @@ const EfficiencyChart = () => {
                         Each chart has independent filters · Two bars per group: Total Efficiency vs Present Users · Default Date: Current Date ({new Date().toLocaleDateString('en-CA')})
                     </CardDescription>
                 </div>
-            </CardHeader>
+            </CardHeader> */}
 
             <CardContent className="p-6">
                 <div className="grid grid-cols-1 gap-10">

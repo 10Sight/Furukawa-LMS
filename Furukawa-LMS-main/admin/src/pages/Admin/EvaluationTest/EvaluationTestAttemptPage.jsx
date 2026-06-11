@@ -136,9 +136,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                 setTraineeName(user.fullName || "");
             }
             if (!employeeNo && isUserStudent) {
-                const displayCode = (user.isTemporary || user.empId?.startsWith("TEMP")) && user.userName
-                    ? user.userName.toUpperCase()
-                    : (user.empId || "");
+                const displayCode = (user.userName || user.empId || "").toUpperCase();
                 setEmployeeNo(displayCode);
             }
             if (!educatorName && !isUserStudent) {
@@ -198,9 +196,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         if ((isView || isEdit) && attemptResponse?.data) {
             const data = attemptResponse.data;
             setTraineeName(data.traineeName || "");
-            const displayCode = (data.isTemporary || data.employeeNo?.startsWith("TEMP")) && data.userName
-                ? data.userName.toUpperCase()
-                : (data.employeeNo || "");
+            const displayCode = (data.userName || data.employeeNo || "").toUpperCase();
             setEmployeeNo(displayCode);
             setEducatorName(data.educatorName || "");
             
@@ -646,9 +642,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                                 onMouseDown={() => {
                                                                     setTraineeName(u.fullName || "");
                                                                     setTraineeSearch(u.fullName || "");
-                                                                    const displayCode = (u.isTemporary || u.empId?.startsWith("TEMP")) && u.userName
-                                                                        ? u.userName.toUpperCase()
-                                                                        : (u.empId || "");
+                                                                    const displayCode = (u.userName || u.empId || "").toUpperCase();
                                                                     setEmployeeNo(displayCode);
                                                                     setShowDropdown(false);
                                                                 }}
@@ -660,7 +654,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                                 </div>
                                                                 {(u.userName || u.empId) && (
                                                                     <span className="px-2 py-0.5 text-[9px] font-extrabold text-blue-700 bg-blue-50 border border-blue-100 rounded-full font-mono uppercase tracking-wider">
-                                                                        ID: {((u.isTemporary || u.empId?.startsWith("TEMP")) && u.userName ? u.userName : u.empId).toUpperCase()}
+                                                                        ID: {(u.userName || u.empId).toUpperCase()}
                                                                     </span>
                                                                 )}
                                                             </button>

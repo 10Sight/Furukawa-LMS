@@ -116,10 +116,11 @@ const EvaluationTestOperatorsPage = () => {
         const map = {};
         attempts.forEach(attempt => {
             if (attempt.employeeNo) {
-                // Keep the latest attempt for the employeeNo / empId
-                const existing = map[attempt.employeeNo];
+                // Keep the latest attempt for the employeeNo / userName (uppercase normalized)
+                const key = attempt.employeeNo.trim().toUpperCase();
+                const existing = map[key];
                 if (!existing || new Date(attempt.createdAt) > new Date(existing.createdAt)) {
-                    map[attempt.employeeNo] = attempt;
+                    map[key] = attempt;
                 }
             }
         });
@@ -250,7 +251,10 @@ const EvaluationTestOperatorsPage = () => {
                                 </TableHeader>
                                 <TableBody>
                                     {filteredOperators.map((operator, index) => {
-                                        const attempt = operatorAttemptsMap[operator.empId];
+                                        const opEmpIdKey = operator.empId?.trim().toUpperCase();
+                                        const opUserKey = operator.userName?.trim().toUpperCase();
+                                        const attempt = (opEmpIdKey ? operatorAttemptsMap[opEmpIdKey] : null) || 
+                                                        (opUserKey ? operatorAttemptsMap[opUserKey] : null);
                                         const filledCols = attempt ? getFilledColumnsList(attempt, maxCols) : [];
                                         const hasAttempt = !!attempt;
 
@@ -369,7 +373,7 @@ const EvaluationTestOperatorsPage = () => {
                                                                     if (hasAttempt) {
                                                                         navigate(`/admin/attempt-evaluation-test/${testId}?attemptId=${attempt.id}`);
                                                                     } else {
-                                                                        navigate(`/admin/attempt-evaluation-test/${testId}?trainee=${encodeURIComponent(operator.fullName)}&empId=${encodeURIComponent(operator.empId)}`);
+                                                                        navigate(`/admin/attempt-evaluation-test/${testId}?trainee=${encodeURIComponent(operator.fullName)}&empId=${encodeURIComponent(operator.userName || operator.empId)}`);
                                                                     }
                                                                 }}
                                                                 className="h-7 text-[10px] px-2 bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1"

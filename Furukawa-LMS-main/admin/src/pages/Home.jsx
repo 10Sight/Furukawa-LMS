@@ -32,6 +32,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import DepartmentQuizChart from "@/components/charts/DepartmentQuizChart";
 import DojoHiringChart from "@/components/charts/DojoHiringChart";
+import DojoHiringTrendChart from "@/components/charts/DojoHiringTrendChart";
 import HandoverComparisonChart from "@/components/charts/HandoverComparisonChart";
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
 import UserStatusDistributionChart from "@/components/charts/UserStatusDistributionChart";
@@ -218,6 +219,7 @@ const Home = () => {
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <DojoHiringTrendChart dateRange={dateRange} />
         <DojoHiringChart dateRange={dateRange} />
         <HandoverComparisonChart dateRange={dateRange} />
         <TestPaperPassChart dateRange={dateRange} />

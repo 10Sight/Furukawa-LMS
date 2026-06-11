@@ -92,6 +92,14 @@ export const DailyProductionReportApi = createApi({
             }),
             providesTags: ["DPRManualStats"],
         }),
+        getDPRFilledDates: builder.query({
+            query: (params) => ({
+                url: "/api/daily-production-report/manual-stats/filled-dates",
+                method: "GET",
+                params, // { month: "YYYY-MM" }
+            }),
+            providesTags: ["DPRManualStats"],
+        }),
         saveDPRManualStats: builder.mutation({
             query: (data) => ({
                 url: "/api/daily-production-report/manual-stats",
@@ -118,5 +126,6 @@ export const {
     useGetBatchMachineAssignmentsQuery,
     useLazyGetBatchMachineAssignmentsQuery,
     useGetDPRManualStatsQuery,
+    useGetDPRFilledDatesQuery,
     useSaveDPRManualStatsMutation,
 } = DailyProductionReportApi;

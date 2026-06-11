@@ -9,7 +9,7 @@ import {
     checkDailyProductionReport
 } from '../controllers/dailyProductionReport.controller.js';
 import { getDPRConfig, saveDPRConfig, getDPRConfigHistory } from '../controllers/dailyProductionReportConfig.controller.js';
-import { getDPRManualStats, saveDPRManualStats } from '../controllers/dprManualStatistics.controller.js';
+import { getDPRManualStats, saveDPRManualStats, getDPRFilledDates } from '../controllers/dprManualStatistics.controller.js';
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 
@@ -19,6 +19,8 @@ router.use(verifyJWT);
 
 router.get('/manpower-stats', getManpowerStats);
 router.get('/machine-assignments', getBatchMachineAssignments);
+
+router.get('/manual-stats/filled-dates', getDPRFilledDates);
 
 router.route('/manual-stats')
     .get(getDPRManualStats)

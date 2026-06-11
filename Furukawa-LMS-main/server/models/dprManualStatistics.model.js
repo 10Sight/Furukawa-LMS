@@ -98,6 +98,32 @@ class DPRManualStatistics {
         return rows.map(row => new DPRManualStatistics(row));
     }
 
+    static async findFilledDatesInMonth(month) {
+        // month is "YYYY-MM"
+        const [year, mon] = month.split('-');
+        const startDate = `${year}-${mon}-01`;
+        const lastDay = new Date(Number(year), Number(mon), 0).getDate();
+        const endDate = `${year}-${mon}-${String(lastDay).padStart(2, '0')}`;
+
+        const [rows] = await executeQuery(
+            `SELECT date FROM dpr_manual_statistics
+             WHERE date >= ? AND date <= ?
+             AND (srcEffPlan > 0 OR srcEffActual > 0 OR srcDefAuto > 0
+                  OR srcDefManual > 0 OR srcDefJoint > 0 OR qaDefAuto > 0
+                  OR qaDefManual > 0 OR qaDefJoint > 0 OR qaEffPlan > 0
+                  OR qaEffActual > 0)
+             ORDER BY date ASC`,
+            [startDate, endDate]
+        );
+
+        return rows.map(row => {
+            const d = row.date instanceof Date
+                ? row.date.toISOString().split('T')[0]
+                : String(row.date).split('T')[0];
+            return d;
+        });
+    }
+
     static async upsert(data) {
         const formattedDate = new Date(data.date).toISOString().split('T')[0];
         const existing = await this.findByDate(formattedDate);

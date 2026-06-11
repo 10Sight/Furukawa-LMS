@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -16,5 +16,8 @@ router.get("/test-paper-stats", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN
 
 // Get User Status distribution stats for Admin Home
 router.get("/user-status-stats", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getAdminHomeUserStatusStats);
+
+// Get Dojo Hiring monthly trend for Admin Home
+router.get("/dojo-hiring-trend", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getDojoHiringTrend);
 
 export default router;

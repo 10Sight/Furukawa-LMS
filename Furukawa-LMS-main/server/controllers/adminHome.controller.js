@@ -187,6 +187,48 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Get Dojo Hiring Trend for Admin Home page
+ * Groups isTemporary users by creation month so historical counts survive handovers.
+ * Uses empId LIKE 'TEMP%' instead of current isTemporary flag — once promoted the flag
+ * flips to 0 but the TEMP prefix on empId is permanent, preserving the hire event.
+ */
+export const getDojoHiringTrend = asyncHandler(async (req, res) => {
+    const { startDate, endDate } = req.query;
+
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end = endDate;
+    } else {
+        // Default: last 12 months
+        const now = new Date();
+        end = now.toISOString().split('T')[0];
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+    }
+
+    const [rows] = await executeQuery(`
+        SELECT
+            FORMAT(createdAt, 'yyyy-MM') as period,
+            COUNT(*)                                                    as total,
+            SUM(CASE WHEN gender = 'MALE'   THEN 1 ELSE 0 END)         as maleCount,
+            SUM(CASE WHEN gender = 'FEMALE' THEN 1 ELSE 0 END)         as femaleCount,
+            SUM(CASE WHEN gender NOT IN ('MALE','FEMALE') OR gender IS NULL THEN 1 ELSE 0 END) as otherCount
+        FROM users
+        WHERE empId LIKE 'TEMP%'
+          AND (isDeleted = 0 OR isDeleted IS NULL)
+          AND createdAt >= ?
+          AND createdAt <= ?
+        GROUP BY FORMAT(createdAt, 'yyyy-MM')
+        ORDER BY period ASC
+    `, [start, end]);
+
+    res.status(200).json(
+        new ApiResponse(200, { trend: rows, start, end }, "Dojo hiring trend fetched successfully")
+    );
+});
+
+/**
  * Get User Status stats for the Admin Home page
  * Groups counts by isTemporary (Dojo vs Operator) and status
  */

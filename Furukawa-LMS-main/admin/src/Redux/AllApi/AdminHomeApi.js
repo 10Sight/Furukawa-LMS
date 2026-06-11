@@ -37,6 +37,14 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
+        getDojoHiringTrend: builder.query({
+            query: ({ startDate = "", endDate = "" } = {}) => ({
+                url: "/api/admin-home/dojo-hiring-trend",
+                method: "GET",
+                params: { startDate, endDate }
+            }),
+            keepUnusedDataFor: 0,
+        }),
     }),
 });
 
@@ -45,4 +53,5 @@ export const {
     useGetAdminHomeHandoverStatsQuery,
     useGetAdminHomeTestPaperStatsQuery,
     useGetAdminHomeUserStatusStatsQuery,
+    useGetDojoHiringTrendQuery,
 } = adminHomeApi;

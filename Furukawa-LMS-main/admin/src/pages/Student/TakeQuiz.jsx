@@ -64,9 +64,7 @@ const TakeQuiz = () => {
   useEffect(() => {
     if (!canAdminister && currentUser) {
       setCandidateName(currentUser.fullName || "");
-      const code = (currentUser.isTemporary === true || currentUser.isTemporary === 1 || currentUser.isTemporary === "true") 
-        ? (currentUser.userName || "") 
-        : (currentUser.empId || "");
+      const code = (currentUser.userName || "").toUpperCase();
       setECode(code);
       setSelectedStudent(currentUser);
     }
@@ -77,6 +75,7 @@ const TakeQuiz = () => {
     setSelectedStudent(null); // Reset selected student as typing indicates custom/new candidate
 
     if (!canAdminister) {
+      setECode(""); // Clear own eCode so backend doesn't resolve to the logged-in user
       return;
     }
 
@@ -133,9 +132,7 @@ const TakeQuiz = () => {
       });
       const studentsList = response.data?.data?.users || [];
       const exactMatch = studentsList.find(s => {
-        const studentCode = (s.isTemporary === true || s.isTemporary === 1 || s.isTemporary === "true") 
-          ? (s.userName || "") 
-          : (s.empId || "");
+        const studentCode = s.userName || "";
         return studentCode.toLowerCase().trim() === value.toLowerCase().trim();
       });
       if (exactMatch) {
@@ -149,9 +146,7 @@ const TakeQuiz = () => {
 
   const handleSelectStudent = (student) => {
     setCandidateName(student.fullName);
-    const code = (student.isTemporary === true || student.isTemporary === 1 || student.isTemporary === "true") 
-      ? (student.userName || "") 
-      : (student.empId || "");
+    const code = (student.userName || "").toUpperCase();
     setECode(code);
     setSelectedStudent(student);
     setShowSuggestions(false);
@@ -374,7 +369,8 @@ const TakeQuiz = () => {
       } else {
         // For standard students (e.g. shared accounts)
         const nameChanged = candidateName.trim() !== (currentUser?.fullName || "").trim();
-        const codeChanged = eCode.trim() !== (currentUser?.empId || "").trim();
+        const currentUserCode = (currentUser?.userName || "").toUpperCase();
+        const codeChanged = eCode.trim().toUpperCase() !== currentUserCode;
 
         if (nameChanged || codeChanged) {
           if (!candidateName.trim()) {
@@ -384,7 +380,9 @@ const TakeQuiz = () => {
             return;
           }
           submitCandidateName = candidateName.trim();
-          submitECode = eCode.trim();
+          // Only send eCode if it was explicitly changed; sending own eCode causes
+          // the backend to resolve the attempt back to the logged-in user
+          submitECode = codeChanged ? eCode.trim() : "";
           if (selectedStudent) {
             studentIdToSubmit = selectedStudent.id || selectedStudent._id;
           }
@@ -409,7 +407,15 @@ const TakeQuiz = () => {
         conductedBy: conductedBy
       });
 
-      setResult(response.data.data);
+      const resultData = response.data.data;
+      setResult(resultData);
+
+      // Sync displayed name/code to whoever the attempt was actually stored under
+      if (resultData.attemptedBy) {
+        setCandidateName(resultData.attemptedBy.fullName || candidateName);
+        setECode((resultData.attemptedBy.userName || "").toUpperCase());
+      }
+
       localStorage.removeItem(STORAGE_KEY);
       setStep("result");
     } catch (err) {
@@ -679,7 +685,7 @@ const TakeQuiz = () => {
                               className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm flex flex-col"
                             >
                               <span className="font-bold text-gray-800">{student.fullName}</span>
-                              <span className="text-xs text-gray-500 font-mono">E.Code: {(student.isTemporary === true || student.isTemporary === 1 || student.isTemporary === "true") ? student.userName : student.empId}</span>
+                              <span className="text-xs text-gray-500 font-mono">E.Code: {(student.userName || "").toUpperCase()}</span>
                             </li>
                           ))}
                         </ul>
@@ -691,7 +697,14 @@ const TakeQuiz = () => {
                       )}
                     </div>
                   ) : (
-                    <span>{candidateName || "—"}</span>
+                    <input
+                      type="text"
+                      value={candidateName}
+                      onChange={(e) => handleCandidateNameChange(e.target.value)}
+                      className="w-full bg-transparent focus:outline-none focus:ring-0 text-black border-none"
+                      placeholder="Enter candidate name..."
+                      required
+                    />
                   )}
                 </span>
               </div>
@@ -708,7 +721,13 @@ const TakeQuiz = () => {
                       required
                     />
                   ) : (
-                    <span>{eCode || "—"}</span>
+                    <input
+                      type="text"
+                      value={eCode}
+                      onChange={(e) => handleECodeChange(e.target.value)}
+                      className="w-full bg-transparent focus:outline-none focus:ring-0 text-black border-none"
+                      placeholder="Enter E.Code..."
+                    />
                   )}
                 </span>
               </div>

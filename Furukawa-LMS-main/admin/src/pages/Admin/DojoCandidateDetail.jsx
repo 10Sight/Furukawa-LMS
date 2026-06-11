@@ -1,25 +1,31 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useGetUserByIdQuery, useUpdateUserMutation, useDeleteUserMutation } from "@/Redux/AllApi/UserApi";
-import { 
-  Card, CardContent, CardHeader, CardTitle, CardDescription 
+import { useGetStudentAttemptsQuery } from "@/Redux/AllApi/AttemptedQuizApi";
+import AttemptReviewModal from "@/components/common/AttemptReviewModal";
+import {
+  Card, CardContent, CardHeader, CardTitle, CardDescription
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  IconArrowLeft, IconUser, IconMail, IconPhone, IconBuilding, 
-  IconLayout, IconGitBranch, IconGitCommit, IconSettings, 
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
+} from "@/components/ui/table";
+import {
+  IconArrowLeft, IconUser, IconMail, IconPhone, IconBuilding,
+  IconLayout, IconGitBranch, IconGitCommit, IconSettings,
   IconCalendar, IconId, IconTrash, IconEdit, IconCheck,
-  IconUserPlus, IconRefresh, IconChevronRight, IconFileText, IconChartBar
+  IconUserPlus, IconRefresh, IconChevronRight, IconFileText, IconChartBar,
+  IconClipboardList, IconEye, IconClock
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { getMediaUrl } from "@/utils/mediaUtils";
-import { 
-  AlertDialog, AlertDialogAction, AlertDialogCancel, 
-  AlertDialogContent, AlertDialogDescription, AlertDialogFooter, 
-  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger 
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 
 const DojoCandidateDetail = () => {
@@ -30,7 +36,23 @@ const DojoCandidateDetail = () => {
   const [updateUser] = useUpdateUserMutation();
   const [deleteUser] = useDeleteUserMutation();
 
+  const { data: attemptsData, isLoading: attemptsLoading } = useGetStudentAttemptsQuery(studentId, {
+    skip: !studentId,
+    refetchOnMountOrArgChange: true,
+  });
+
+  const [viewAttemptId, setViewAttemptId] = useState(null);
+  const [attemptModalOpen, setAttemptModalOpen] = useState(false);
+
   const candidate = candidateData?.data;
+  const attempts = attemptsData?.data || [];
+
+  const attemptStats = useMemo(() => {
+    if (!attempts.length) return { total: 0, passed: 0, failed: 0, avgScore: 0 };
+    const passed = attempts.filter(a => a.passed).length;
+    const avgScore = Math.round(attempts.reduce((sum, a) => sum + (a.scorePercent || 0), 0) / attempts.length);
+    return { total: attempts.length, passed, failed: attempts.length - passed, avgScore };
+  }, [attempts]);
 
   const handlePromote = async () => {
     try {
@@ -238,6 +260,117 @@ const DojoCandidateDetail = () => {
         </CardContent>
       </Card>
 
+      {/* Quiz Attempts Card */}
+      <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <CardHeader className="bg-slate-50/50 py-3 border-b">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <IconClipboardList className="h-4 w-4" />
+              Test Attempts
+            </CardTitle>
+            <Badge variant="outline" className="text-xs font-mono">{attemptStats.total} total</Badge>
+          </div>
+        </CardHeader>
+
+        {/* Stats strip */}
+        {attempts.length > 0 && (
+          <div className="grid grid-cols-4 divide-x border-b bg-slate-50/30 text-center text-xs">
+            <div className="py-2 px-3">
+              <p className="text-muted-foreground uppercase font-bold text-[9px] tracking-widest">Total</p>
+              <p className="font-bold text-slate-800 text-base">{attemptStats.total}</p>
+            </div>
+            <div className="py-2 px-3">
+              <p className="text-muted-foreground uppercase font-bold text-[9px] tracking-widest">Passed</p>
+              <p className="font-bold text-green-600 text-base">{attemptStats.passed}</p>
+            </div>
+            <div className="py-2 px-3">
+              <p className="text-muted-foreground uppercase font-bold text-[9px] tracking-widest">Failed</p>
+              <p className="font-bold text-red-500 text-base">{attemptStats.failed}</p>
+            </div>
+            <div className="py-2 px-3">
+              <p className="text-muted-foreground uppercase font-bold text-[9px] tracking-widest">Avg Score</p>
+              <p className="font-bold text-blue-600 text-base">{attemptStats.avgScore}%</p>
+            </div>
+          </div>
+        )}
+
+        <CardContent className="p-0">
+          {attemptsLoading ? (
+            <div className="p-6 space-y-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : attempts.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50/50">
+                  <TableHead className="text-xs font-bold">Quiz</TableHead>
+                  <TableHead className="text-xs font-bold">Type</TableHead>
+                  <TableHead className="text-xs font-bold">Attempted On</TableHead>
+                  <TableHead className="text-xs font-bold">Score</TableHead>
+                  <TableHead className="text-xs font-bold">Result</TableHead>
+                  <TableHead className="text-xs font-bold">Time</TableHead>
+                  <TableHead className="text-xs font-bold text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {attempts.map((attempt) => (
+                  <TableRow key={attempt._id} className="hover:bg-slate-50/50">
+                    <TableCell className="font-semibold text-sm text-slate-800">
+                      {attempt.quiz?.title || "—"}
+                    </TableCell>
+                    <TableCell>
+                      <AttemptTypeBadge quiz={attempt.quiz} />
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-500">
+                      {attempt.attemptedAt ? new Date(attempt.attemptedAt).toLocaleDateString() : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {attempt.scorePercent ?? 0}%
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={attempt.passed ? "success" : "destructive"} className="text-[10px] px-2 py-0 h-5">
+                        {attempt.passed ? "Passed" : "Failed"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <IconClock className="h-3 w-3" />
+                        {attempt.timeTaken ? `${attempt.timeTaken} min` : "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => { setViewAttemptId(attempt._id); setAttemptModalOpen(true); }}
+                      >
+                        <IconEye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+              <IconClipboardList className="h-12 w-12 text-slate-200" />
+              <p className="text-sm font-semibold text-slate-500">No test attempts yet</p>
+              <p className="text-xs text-slate-400">This candidate has not submitted any quizzes.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AttemptReviewModal
+        attemptId={viewAttemptId}
+        isOpen={attemptModalOpen}
+        onClose={() => setAttemptModalOpen(false)}
+        canEdit={true}
+      />
+
     </div>
   );
 };
@@ -276,6 +409,14 @@ const TimelineItem = ({ label, value, icon: Icon, color }) => {
       </div>
     </div>
   );
+};
+
+const AttemptTypeBadge = ({ quiz }) => {
+  if (!quiz) return <span className="text-slate-400 text-xs">—</span>;
+  if (quiz.isDojo) return <Badge className="text-[9px] px-1.5 py-0 h-4 bg-purple-100 text-purple-700 border-purple-200" variant="outline">Dojo</Badge>;
+  if (quiz.isHandover) return <Badge className="text-[9px] px-1.5 py-0 h-4 bg-orange-100 text-orange-700 border-orange-200" variant="outline">Handover</Badge>;
+  if (quiz.isTheoretical) return <Badge className="text-[9px] px-1.5 py-0 h-4 bg-sky-100 text-sky-700 border-sky-200" variant="outline">Theory</Badge>;
+  return <Badge className="text-[9px] px-1.5 py-0 h-4 bg-slate-100 text-slate-600" variant="outline">Standard</Badge>;
 };
 
 const DeploymentChip = ({ label, value, highlight }) => (

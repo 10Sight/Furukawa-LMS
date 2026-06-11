@@ -128,7 +128,7 @@ const AdminQuizMonitoring = () => {
     setSearch("");
   };
 
-  const hasActiveFilters = 
+  const hasActiveFilters =
     selectedDeptId !== "all" ||
     selectedSectionId !== "all" ||
     selectedLineId !== "all" ||
@@ -193,8 +193,8 @@ const AdminQuizMonitoring = () => {
             {/* Section */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">Section</label>
-              <Select 
-                value={selectedSectionId} 
+              <Select
+                value={selectedSectionId}
                 onValueChange={handleSectionChange}
                 disabled={selectedDeptId === "all"}
               >
@@ -213,8 +213,8 @@ const AdminQuizMonitoring = () => {
             {/* Line */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">Line</label>
-              <Select 
-                value={selectedLineId} 
+              <Select
+                value={selectedLineId}
                 onValueChange={handleLineChange}
                 disabled={selectedSectionId === "all" && selectedDeptId === "all"}
               >
@@ -233,8 +233,8 @@ const AdminQuizMonitoring = () => {
             {/* Sub-Section */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">Sub-Section</label>
-              <Select 
-                value={selectedSubSectionId} 
+              <Select
+                value={selectedSubSectionId}
                 onValueChange={setSelectedSubSectionId}
                 disabled={selectedLineId === "all" && selectedSectionId === "all"}
               >
@@ -316,7 +316,7 @@ const AdminQuizMonitoring = () => {
           {hasActiveFilters && (
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
               <span className="text-xs font-semibold text-gray-500 mr-1">Active filters:</span>
-              
+
               {selectedDeptId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
                   Dept: {departments.find(d => String(d.id) === selectedDeptId)?.name || selectedDeptId}
@@ -360,10 +360,10 @@ const AdminQuizMonitoring = () => {
                 </Badge>
               )}
 
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handleResetAll} 
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetAll}
                 className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 ml-auto"
               >
                 Clear All
@@ -419,7 +419,7 @@ const AdminQuizMonitoring = () => {
                               <div className="font-medium text-gray-900 leading-tight">{candidateName}</div>
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 <span className="text-[11px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">
-                                  {idLabel}: {empIdValue}
+                                  {idLabel}: {empIdValue.toUpperCase()}
                                 </span>
                               </div>
                             </div>
@@ -490,7 +490,7 @@ const AdminQuizMonitoring = () => {
                               </span>
                             </div>
                             <div>
-                              <Badge 
+                              <Badge
                                 variant={attempt.status === "PASSED" ? "success" : "destructive"}
                                 className="text-[10px] font-semibold py-0.5 px-2 tracking-wide"
                               >
@@ -523,9 +523,9 @@ const AdminQuizMonitoring = () => {
 
                         {/* Actions Column */}
                         <TableCell className="text-center pr-6 py-4">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => navigate(`/admin/quiz-monitoring/review/${attempt._id || attempt.id}`)}
                             className="h-8 w-8 p-0 border-gray-300 hover:bg-gray-50"
                             title="Audit Graded test Sheet"

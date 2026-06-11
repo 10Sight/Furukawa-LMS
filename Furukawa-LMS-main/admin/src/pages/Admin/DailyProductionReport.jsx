@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DPRManage from "./DPRManage";
 import { format, startOfMonth, subDays } from "date-fns";
@@ -391,15 +391,16 @@ const DailyProductionReport = () => {
     const isShiftIncharge = user?.role === "SHIFT_INCHARGE" || user?.customRole?.name?.toUpperCase() === "SHIFT INCHARGE";
     const canApprove = isAdmin || isShiftIncharge;
 
+    const [searchParams, setSearchParams] = useSearchParams();
     const activeReportKey = React.useRef("");
 
     // Filter State
-    const [dashboardDate, setDashboardDate] = useState(format(subDays(new Date(), 1), "yyyy-MM-dd"));
-    const [selectedDate, setSelectedDate] = useState(location.state?.date || format(subDays(new Date(), 1), "yyyy-MM-dd"));
-    const [selectedDepartment, setSelectedDepartment] = useState(location.state?.department || "");
-    const [selectedSection, setSelectedSection] = useState("");
-    const [selectedLine, setSelectedLine] = useState(location.state?.line || "");
-    const [selectedShift, setSelectedShift] = useState(location.state?.shift || "all");
+    const [dashboardDate, setDashboardDate] = useState(() => searchParams.get("dashboardDate") || format(subDays(new Date(), 1), "yyyy-MM-dd"));
+    const [selectedDate, setSelectedDate] = useState(() => searchParams.get("date") || location.state?.date || format(subDays(new Date(), 1), "yyyy-MM-dd"));
+    const [selectedDepartment, setSelectedDepartment] = useState(() => searchParams.get("department") || location.state?.department || "");
+    const [selectedSection, setSelectedSection] = useState(() => searchParams.get("section") || "");
+    const [selectedLine, setSelectedLine] = useState(() => searchParams.get("line") || location.state?.line || "");
+    const [selectedShift, setSelectedShift] = useState(() => searchParams.get("shift") || location.state?.shift || "all");
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -506,8 +507,21 @@ const DailyProductionReport = () => {
     };
 
     const [formData, setFormData] = useState(defaultFormData);
-    const [isReportOpen, setIsReportOpen] = useState(false);
+    const [isReportOpen, setIsReportOpen] = useState(() => searchParams.get("open") === "true");
     const [createOpen, setCreateOpen] = useState(false);
+
+    // Sync state variables to URL search parameters
+    useEffect(() => {
+        const params = {};
+        if (dashboardDate) params.dashboardDate = dashboardDate;
+        if (selectedDate) params.date = selectedDate;
+        if (selectedDepartment) params.department = selectedDepartment;
+        if (selectedSection) params.section = selectedSection;
+        if (selectedLine) params.line = selectedLine;
+        if (selectedShift) params.shift = selectedShift;
+        if (isReportOpen) params.open = "true";
+        setSearchParams(params, { replace: true });
+    }, [dashboardDate, selectedDate, selectedDepartment, selectedSection, selectedLine, selectedShift, isReportOpen, setSearchParams]);
 
 
     const [checkReport, { isLoading: isChecking }] = useCheckDailyProductionReportMutation();
@@ -534,7 +548,14 @@ const DailyProductionReport = () => {
     );
 
     // Global Manpower Config
-    const { data: globalConfigResp } = useGetDPRConfigQuery("GLOBAL");
+    const { data: globalConfigResp, isFetching: globalConfigFetching } = useGetDPRConfigQuery("GLOBAL");
+
+    // Line Specific Manpower Config
+    const lineConfigKey = (selectedLine && selectedLine !== 'all') ? `LINE_${selectedLine}` : null;
+    const { data: lineConfigResp, isFetching: lineConfigFetching } = useGetDPRConfigQuery(
+        lineConfigKey,
+        { skip: !lineConfigKey }
+    );
 
     // Fetch Report Query
     const { data: reportResp, isFetching: reportFetching, refetch } = useGetDailyProductionReportQuery(
@@ -545,6 +566,27 @@ const DailyProductionReport = () => {
     // Mutations
     const [saveConfig, { isLoading: isSavingConfig }] = useSaveDPRConfigMutation();
     const [saveReport, { isLoading: isSaving }] = useSaveDailyProductionReportMutation();
+
+    // Resolve Active Template Config based on Priority:
+    // 1. Line Custom (LINE_${id})
+    // 2. Global Custom (GLOBAL)
+    // 3. Department Custom
+    // 4. Fallback to default config (either from lineConfigResp, globalConfigResp, configResp, tableConfig or DEFAULT_DPR_CONFIG)
+    const activeTableConfig = React.useMemo(() => {
+        if (lineConfigResp?.data && !lineConfigResp.data.isDefault && lineConfigResp.data.config) {
+            return lineConfigResp.data.config;
+        }
+        if (globalConfigResp?.data && !globalConfigResp.data.isDefault && globalConfigResp.data.config) {
+            return globalConfigResp.data.config;
+        }
+        if (configResp?.data && !configResp.data.isDefault && configResp.data.config) {
+            return configResp.data.config;
+        }
+        return lineConfigResp?.data?.config || 
+               globalConfigResp?.data?.config || 
+               configResp?.data?.config || 
+               tableConfig;
+    }, [lineConfigResp, globalConfigResp, configResp, tableConfig]);
 
     // Daily Stats & Reports List
     const { data: reportListData, isFetching: isListFetching } = useListDailyProductionReportsQuery(
@@ -676,7 +718,7 @@ const DailyProductionReport = () => {
             const canEdit = !formData.isSubmitted && (formData.status !== 'APPROVED');
             if (!canEdit) return;
 
-            const moralRows = formData.moral || globalConfigResp?.data?.config?.moral?.rows || tableConfig?.moral?.rows || null;
+            const moralRows = formData.moral || activeTableConfig?.moral?.rows || null;
             if (!selectedDate || !selectedShift || !moralRows) return;
 
             const subSectionIds = moralRows
@@ -725,15 +767,15 @@ const DailyProductionReport = () => {
         };
 
         fetchStats();
-    }, [selectedDate, selectedShift, tableConfig, globalConfigResp, formData.moral, getManpowerStats]);
+    }, [selectedDate, selectedShift, activeTableConfig, formData.moral, getManpowerStats]);
 
     // Auto-fetch Machine Assignments for Attendance Table when Date, Shift or Config changes
     useEffect(() => {
         const fetchAssignments = async () => {
-            const globalAttendanceRows = globalConfigResp?.data?.config?.attendance?.rows || tableConfig?.attendance?.rows || null;
-            if (!selectedDate || !selectedShift || !globalAttendanceRows) return;
+            const lineAttendanceRows = activeTableConfig?.attendance?.rows || null;
+            if (!selectedDate || !selectedShift || !lineAttendanceRows) return;
 
-            const machineIds = globalAttendanceRows
+            const machineIds = lineAttendanceRows
                 .map(r => r.stationId)
                 .filter(Boolean);
 
@@ -752,7 +794,7 @@ const DailyProductionReport = () => {
 
                     const updatedAttendance = formData.manpowerAttendance.map(row => {
                         // Find stationId from config if missing in row (important for legacy or mismatched rows)
-                        const configRow = globalAttendanceRows.find(cr => String(cr.srNo) === String(row.srNo));
+                        const configRow = lineAttendanceRows.find(cr => String(cr.srNo) === String(row.srNo));
                         const sId = row.stationId || configRow?.stationId;
 
                         // Use string key to match JSON response
@@ -802,7 +844,7 @@ const DailyProductionReport = () => {
         };
 
         fetchAssignments();
-    }, [selectedDate, selectedShift, tableConfig, globalConfigResp, getBatchAssignments, formData.manpowerAttendance]);
+    }, [selectedDate, selectedShift, activeTableConfig, getBatchAssignments, formData.manpowerAttendance]);
 
     // Initialize/Update form data when report fetch results are available
     useEffect(() => {
@@ -814,26 +856,53 @@ const DailyProductionReport = () => {
 
     // Populate form data on fetch
     useEffect(() => {
-        if (reportFetching) return;
+        if (reportFetching || lineConfigFetching || globalConfigFetching || configFetching) return;
 
         const currentKey = `${selectedDate}-${selectedDepartment}-${selectedLine}-${selectedShift}`;
         const selectionChanged = currentKey !== activeReportKey.current;
 
-        // Global rows take priority if configured via Setup page
-        const configMoralRows = globalConfigResp?.data?.config?.moral?.rows || tableConfig?.moral?.rows || null;
-        const configAttendanceRows = globalConfigResp?.data?.config?.attendance?.rows || tableConfig?.attendance?.rows || null;
+        // Line-specific, then global, then department config rows priority
+        const configMoralRows = activeTableConfig?.moral?.rows || null;
+        const configAttendanceRows = activeTableConfig?.attendance?.rows || null;
 
         if (reportResp?.data) {
             // Merge fetched data with defaults to ensure all arrays/objects exist
             const loadedData = reportResp.data;
 
+            let parsedQuality = {};
+            try {
+                parsedQuality = typeof loadedData.quality === 'string'
+                    ? JSON.parse(loadedData.quality)
+                    : (loadedData.quality || {});
+            } catch (e) {
+                console.error("Failed to parse quality", e);
+            }
+
+            let parsedDownTime = {};
+            try {
+                parsedDownTime = typeof loadedData.downTime === 'string'
+                    ? JSON.parse(loadedData.downTime)
+                    : (loadedData.downTime || {});
+            } catch (e) {
+                console.error("Failed to parse downTime", e);
+            }
+
+            let parsedDirectEfficiency = {};
+            try {
+                parsedDirectEfficiency = typeof loadedData.directEfficiency === 'string'
+                    ? JSON.parse(loadedData.directEfficiency)
+                    : (loadedData.directEfficiency || {});
+            } catch (e) {
+                console.error("Failed to parse directEfficiency", e);
+            }
+
             // Pad arrays if they don't have enough entries
-            const deliveryCount = tableConfig?.delivery?.rows || 6;
+            const deliveryCount = activeTableConfig?.delivery?.rows || 6;
             const paddedDelivery = [...(loadedData.delivery || [])];
             while (paddedDelivery.length < deliveryCount) paddedDelivery.push({ ...emptyDeliveryRow });
 
             const paddedShiftComm = [...(loadedData.shiftCommunication || [])];
-            const shiftCommCount = tableConfig?.shiftComm?.rows || 3;
+            const shiftCommCount = activeTableConfig?.shiftComm?.rows || 3;
             while (paddedShiftComm.length < shiftCommCount) paddedShiftComm.push({ issue: "" });
 
             // Merge moral: prioritize saved report data, fallback to config rows, then to default
@@ -877,6 +946,27 @@ const DailyProductionReport = () => {
                 delivery: paddedDelivery,
                 shiftCommunication: paddedShiftComm,
                 moral: mergedMoral,
+                quality: {
+                    customerEndDefect: {
+                        ...defaultFormData.quality.customerEndDefect,
+                        ...(parsedQuality?.customerEndDefect || {})
+                    },
+                    internalDefect: {
+                        ...defaultFormData.quality.internalDefect,
+                        ...(parsedQuality?.internalDefect || {})
+                    }
+                },
+                downTime: Object.keys(defaultFormData.downTime).reduce((acc, key) => {
+                    acc[key] = {
+                        ...defaultFormData.downTime[key],
+                        ...(parsedDownTime?.[key] || {})
+                    };
+                    return acc;
+                }, {}),
+                directEfficiency: {
+                    ...defaultFormData.directEfficiency,
+                    ...(parsedDirectEfficiency || {})
+                },
                 customerEndDefectDetails: paddedCustomerDefects,
                 internalDefectDetails: paddedInternalDefects,
                 manpowerAttendance: mergedManpower,
@@ -908,7 +998,7 @@ const DailyProductionReport = () => {
             activeReportKey.current = currentKey;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [reportResp, reportFetching, tableConfig, globalConfigResp, selectedDate, selectedDepartment, selectedLine, selectedShift]);
+    }, [reportResp, reportFetching, activeTableConfig, configFetching, globalConfigFetching, lineConfigFetching, selectedDate, selectedDepartment, selectedLine, selectedShift]);
 
     // Auto-populate Leader Name when Line changes
     useEffect(() => {
@@ -1054,7 +1144,9 @@ const DailyProductionReport = () => {
             return;
         }
         setSelectedDate(createDate);
+        setDashboardDate(createDate); // Sync dashboard date
         setSelectedDepartment(createDepartment);
+        setSelectedSection(createSection); // Sync section
         setSelectedLine(createLine);
         setSelectedShift(createShift);
         setIsReportOpen(true);
@@ -1063,6 +1155,7 @@ const DailyProductionReport = () => {
 
     const handleOpenReport = (report) => {
         setSelectedDate(report.date);
+        setDashboardDate(report.date); // Sync dashboard date
         setSelectedDepartment(report.department);
         setSelectedLine(report.line);
         setSelectedShift(report.shift);
@@ -1236,7 +1329,7 @@ const DailyProductionReport = () => {
 
                     <div className="md:col-span-3 lg:col-span-6 flex justify-end">
                         <Button variant="outline" size="sm" onClick={() => {
-                            setDashboardDate(format(subDays(new Date(), 1), "yyyy-MM-dd"));
+                            setDashboardDate("");
                             setSelectedDepartment("all");
                             setSelectedSection("all");
                             setSelectedLine("all");
@@ -1667,30 +1760,30 @@ const DailyProductionReport = () => {
                                         </tr>
                                         <tr>
                                             <td className="border border-black p-1">Production Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality.customerEndDefect.productionQty} onChange={(v) => handleQualityChange('customerEndDefect', 'productionQty', v)} disabled={!canEdit} /></td>
+                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.customerEndDefect?.productionQty ?? 0} onChange={(v) => handleQualityChange('customerEndDefect', 'productionQty', v)} disabled={!canEdit} /></td>
                                         </tr>
                                         <tr>
                                             <td className="border border-black p-1">Defect Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality.customerEndDefect.defectQty} onChange={(v) => handleQualityChange('customerEndDefect', 'defectQty', v)} disabled={!canEdit} /></td>
+                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.customerEndDefect?.defectQty ?? 0} onChange={(v) => handleQualityChange('customerEndDefect', 'defectQty', v)} disabled={!canEdit} /></td>
                                         </tr>
                                         <tr>
                                             <td className="border border-black p-1">PPM</td>
-                                            <td className="border border-black p-1 text-center bg-gray-50">{formData.quality.customerEndDefect.ppm}</td>
+                                            <td className="border border-black p-1 text-center bg-gray-50">{formData.quality?.customerEndDefect?.ppm ?? 0}</td>
                                         </tr>
                                         <tr>
                                             <th colSpan={2} className="border border-black p-1 bg-gray-100 mt-2">Internal Defect</th>
                                         </tr>
                                         <tr>
                                             <td className="border border-black p-1">Production Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality.internalDefect.productionQty} onChange={(v) => handleQualityChange('internalDefect', 'productionQty', v)} disabled={!canEdit} /></td>
+                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.internalDefect?.productionQty ?? 0} onChange={(v) => handleQualityChange('internalDefect', 'productionQty', v)} disabled={!canEdit} /></td>
                                         </tr>
                                         <tr>
                                             <td className="border border-black p-1">Defect Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality.internalDefect.defectQty} onChange={(v) => handleQualityChange('internalDefect', 'defectQty', v)} disabled={!canEdit} /></td>
+                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.internalDefect?.defectQty ?? 0} onChange={(v) => handleQualityChange('internalDefect', 'defectQty', v)} disabled={!canEdit} /></td>
                                         </tr>
                                         <tr>
                                             <td className="border border-black p-1">PPM</td>
-                                            <td className="border border-black p-1 text-center bg-gray-50">{formData.quality.internalDefect.ppm}</td>
+                                            <td className="border border-black p-1 text-center bg-gray-50">{formData.quality?.internalDefect?.ppm ?? 0}</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1737,11 +1830,11 @@ const DailyProductionReport = () => {
                                             const DownTimeRow = ({ label, objKey, colSpan = 2 }) => (
                                                 <tr className="h-[18px]">
                                                     <td className="border border-black px-1" colSpan={colSpan}>{label}</td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime[objKey].hr1} onChange={(v) => handleDownTimeChange(objKey, 'hr1', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime[objKey].hr2} onChange={(v) => handleDownTimeChange(objKey, 'hr2', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime[objKey].hr3} onChange={(v) => handleDownTimeChange(objKey, 'hr3', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime[objKey].hr4} onChange={(v) => handleDownTimeChange(objKey, 'hr4', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime[objKey].total}</td>
+                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr1 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr1', v)} disabled={!canEdit} /></td>
+                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr2 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr2', v)} disabled={!canEdit} /></td>
+                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr3 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr3', v)} disabled={!canEdit} /></td>
+                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr4 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr4', v)} disabled={!canEdit} /></td>
+                                                    <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.[objKey]?.total ?? 0}</td>
                                                 </tr>
                                             );
 
@@ -1758,80 +1851,80 @@ const DailyProductionReport = () => {
                                                     <tr>
                                                         <td className="border border-black px-1 w-24" rowSpan={3}>Delay in Inspection</td>
                                                         <td className="border border-black px-1">Dim</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionDim.hr1} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionDim.hr2} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionDim.hr3} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionDim.hr4} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.delayInInspectionDim.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.delayInInspectionDim?.total ?? 0}</td>
                                                     </tr>
                                                     <tr>
                                                         <td className="border border-black px-1">ECT</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionECT.hr1} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionECT.hr2} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionECT.hr3} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionECT.hr4} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.delayInInspectionECT.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.delayInInspectionECT?.total ?? 0}</td>
                                                     </tr>
                                                     <tr>
                                                         <td className="border border-black px-1">Visual</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionVisual.hr1} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionVisual.hr2} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionVisual.hr3} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.delayInInspectionVisual.hr4} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.delayInInspectionVisual.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.delayInInspectionVisual?.total ?? 0}</td>
                                                     </tr>
 
                                                     {/* Nested Machine Breakdown */}
                                                     <tr>
                                                         <td className="border border-black px-1" rowSpan={7}>Machine Under Break Down</td>
                                                         <td className="border border-black px-1">CPG</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownCPG.hr1} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownCPG.hr2} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownCPG.hr3} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownCPG.hr4} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.machineBreakDownCPG.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownCPG?.total ?? 0}</td>
                                                     </tr>
                                                     <tr><td className="border border-black px-1">Conveyor</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownConveyor.hr1} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownConveyor.hr2} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownConveyor.hr3} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownConveyor.hr4} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.machineBreakDownConveyor.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownConveyor?.total ?? 0}</td>
                                                     </tr>
                                                     <tr><td className="border border-black px-1">Torque Tight</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownTorqueTight.hr1} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownTorqueTight.hr2} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownTorqueTight.hr3} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownTorqueTight.hr4} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.machineBreakDownTorqueTight.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownTorqueTight?.total ?? 0}</td>
                                                     </tr>
                                                     <tr><td className="border border-black px-1">Grease Insert</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGreaseInsert.hr1} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGreaseInsert.hr2} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGreaseInsert.hr3} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGreaseInsert.hr4} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.machineBreakDownGreaseInsert.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownGreaseInsert?.total ?? 0}</td>
                                                     </tr>
                                                     <tr><td className="border border-black px-1">F/A Board</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownFABoard.hr1} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownFABoard.hr2} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownFABoard.hr3} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownFABoard.hr4} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.machineBreakDownFABoard.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownFABoard?.total ?? 0}</td>
                                                     </tr>
                                                     <tr><td className="border border-black px-1">A/B Crimping</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownABCrimping.hr1} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownABCrimping.hr2} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownABCrimping.hr3} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownABCrimping.hr4} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.machineBreakDownABCrimping.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownABCrimping?.total ?? 0}</td>
                                                     </tr>
                                                     <tr><td className="border border-black px-1">Gromett</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGromett.hr1} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGromett.hr2} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGromett.hr3} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime.machineBreakDownGromett.hr4} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime.machineBreakDownGromett.total}</td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr1', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr2', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr3', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr4', v)} disabled={!canEdit} /></td>
+                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownGromett?.total ?? 0}</td>
                                                     </tr>
 
                                                     <DownTimeRow label="Test paper for skill evaluation" objKey="testPaperForSkillEvaluation" />
@@ -1841,11 +1934,11 @@ const DailyProductionReport = () => {
                                                     {/* Total Row */}
                                                     <tr className="bg-gray-100 font-bold h-[20px]">
                                                         <td className="border border-black px-1 text-center" colSpan={2}>Total</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime).reduce((s, o) => s + (o.hr1 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime).reduce((s, o) => s + (o.hr2 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime).reduce((s, o) => s + (o.hr3 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime).reduce((s, o) => s + (o.hr4 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime).reduce((s, o) => s + (o.total || 0), 0)}</td>
+                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr1 || 0), 0)}</td>
+                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr2 || 0), 0)}</td>
+                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr3 || 0), 0)}</td>
+                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr4 || 0), 0)}</td>
+                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.total || 0), 0)}</td>
                                                     </tr>
                                                 </>
                                             );
@@ -1986,15 +2079,15 @@ const DailyProductionReport = () => {
                         <table className="w-full border-collapse border border-black font-bold mt-1 text-[11px]">
                             <tbody>
                                 <tr>
-                                    <td className="border border-black p-1 text-center w-[50%]">Direct Efficiency</td>
-                                    <td className="border border-black p-0 w-[25%] bg-gray-100 text-center border-b">Target</td>
-                                    <td className="border border-black p-0 w-[25%] border-b"><NumberCell value={formData.directEfficiency.target} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...formData.directEfficiency, target: v } })} disabled={!canEdit} /></td>
-                                </tr>
-                                <tr>
-                                    <td className="border border-transparent"></td>
-                                    <td className="border border-black p-0 bg-gray-100 text-center">Actual</td>
-                                    <td className="border border-black p-0"><NumberCell value={formData.directEfficiency.actual} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...formData.directEfficiency, actual: v } })} disabled={!canEdit} /></td>
-                                </tr>
+                                     <td className="border border-black p-1 text-center w-[50%]">Direct Efficiency</td>
+                                     <td className="border border-black p-0 w-[25%] bg-gray-100 text-center border-b">Target</td>
+                                     <td className="border border-black p-0 w-[25%] border-b"><NumberCell value={formData.directEfficiency?.target ?? 0} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...(formData.directEfficiency || {}), target: v } })} disabled={!canEdit} /></td>
+                                 </tr>
+                                 <tr>
+                                     <td className="border border-transparent"></td>
+                                     <td className="border border-black p-0 bg-gray-100 text-center">Actual</td>
+                                     <td className="border border-black p-0"><NumberCell value={formData.directEfficiency?.actual ?? 0} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...(formData.directEfficiency || {}), actual: v } })} disabled={!canEdit} /></td>
+                                 </tr>
                             </tbody>
                         </table>
 

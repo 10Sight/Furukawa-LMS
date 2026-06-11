@@ -7,94 +7,86 @@ import { asyncHandler } from "../utils/asyncHandler.js";
  * @route   GET /api/v1/daily-production-report/manual-stats
  * @access  Private
  */
+const blankRecord = (dateStr) => ({
+    date: dateStr,
+    srcEffPlan: 0, srcEffActual: 0, srcEffTarget: 95.0,
+    srcDefAuto: 0, srcDefManual: 0, srcDefJoint: 0, srcDefProduction: 0, srcDefTarget: 5.9,
+    qaDefAuto: 0, qaDefManual: 0, qaDefJoint: 0, qaDefProduction: 0, qaDefTarget: 5.9,
+    qaEffPlan: 0, qaEffActual: 0, qaEffTarget: 95.0,
+});
+
 export const getDPRManualStats = asyncHandler(async (req, res, next) => {
-    const { date } = req.query;
+    const { date, startDate, endDate } = req.query;
 
-    if (!date) {
-        return next(new ApiError("Please provide a date", 400));
+    let startDateStr, endDateStr;
+
+    if (startDate && endDate) {
+        // Custom range mode
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            return next(new ApiError("Invalid date format", 400));
+        }
+        if (start > end) {
+            return next(new ApiError("startDate must be before or equal to endDate", 400));
+        }
+        startDateStr = start.toISOString().split("T")[0];
+        endDateStr = end.toISOString().split("T")[0];
+    } else if (date) {
+        // Default 7-day mode: 6 days back from the selected date
+        const selected = new Date(date);
+        if (isNaN(selected.getTime())) {
+            return next(new ApiError("Invalid date format", 400));
+        }
+        endDateStr = selected.toISOString().split("T")[0];
+        const start7 = new Date(selected);
+        start7.setDate(start7.getDate() - 6);
+        startDateStr = start7.toISOString().split("T")[0];
+    } else {
+        return next(new ApiError("Please provide date or startDate/endDate", 400));
     }
 
-    const selectedDate = new Date(date);
-    if (isNaN(selectedDate.getTime())) {
-        return next(new ApiError("Invalid date format", 400));
-    }
-
-    // Calculate start date (6 days prior) to get a full 7-day range
-    const endDateStr = selectedDate.toISOString().split("T")[0];
-    const startDate = new Date(selectedDate);
-    startDate.setDate(startDate.getDate() - 6);
-    const startDateStr = startDate.toISOString().split("T")[0];
-
-    // Fetch existing records for this range
     const records = await DPRManualStatistics.findDateRange(startDateStr, endDateStr);
 
-    // Map database results to their dates for quick lookup
     const recordMap = {};
-    records.forEach(r => {
-        recordMap[r.date] = r;
-    });
+    records.forEach(r => { recordMap[r.date] = r; });
 
-    // Construct a full 7-day array, pre-filling defaults for missing days
+    // Build full day-by-day array filling blanks for missing dates
     const resultList = [];
-    const tempDate = new Date(startDate);
+    const tempDate = new Date(startDateStr);
+    const endDateObj = new Date(endDateStr);
 
-    for (let i = 0; i < 7; i++) {
+    while (tempDate <= endDateObj) {
         const currentDateStr = tempDate.toISOString().split("T")[0];
-        
-        if (recordMap[currentDateStr]) {
-            resultList.push(recordMap[currentDateStr]);
-        } else {
-            // Default blank record
-            resultList.push({
-                date: currentDateStr,
-                srcEffPlan: 0,
-                srcEffActual: 0,
-                srcEffTarget: 95.0,
-                srcDefAuto: 0,
-                srcDefManual: 0,
-                srcDefJoint: 0,
-                srcDefProduction: 0,
-                srcDefTarget: 5.9,
-                qaDefAuto: 0,
-                qaDefManual: 0,
-                qaDefJoint: 0,
-                qaDefProduction: 0,
-                qaDefTarget: 5.9,
-                qaEffPlan: 0,
-                qaEffActual: 0,
-                qaEffTarget: 95.0
-            });
-        }
+        resultList.push(recordMap[currentDateStr] || blankRecord(currentDateStr));
         tempDate.setDate(tempDate.getDate() + 1);
     }
 
-    // Also get or define the specific selected date record to make form binding easier
-    const selectedRecord = recordMap[endDateStr] || {
-        date: endDateStr,
-        srcEffPlan: 0,
-        srcEffActual: 0,
-        srcEffTarget: 95.0,
-        srcDefAuto: 0,
-        srcDefManual: 0,
-        srcDefJoint: 0,
-        srcDefProduction: 0,
-        srcDefTarget: 5.9,
-        qaDefAuto: 0,
-        qaDefManual: 0,
-        qaDefJoint: 0,
-        qaDefProduction: 0,
-        qaDefTarget: 5.9,
-        qaEffPlan: 0,
-        qaEffActual: 0,
-        qaEffTarget: 95.0
-    };
+    const selectedRecord = recordMap[endDateStr] || blankRecord(endDateStr);
 
     res.status(200).json({
         success: true,
-        data: {
-            selectedRecord,
-            trend: resultList
-        }
+        data: { selectedRecord, trend: resultList }
+    });
+});
+
+/**
+ * @desc    Get all dates in a given month that have at least one non-zero value
+ * @route   GET /api/v1/daily-production-report/manual-stats/filled-dates
+ * @access  Private
+ */
+export const getDPRFilledDates = asyncHandler(async (req, res, next) => {
+    const { month } = req.query;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+        return next(new ApiError("Please provide a valid month (YYYY-MM)", 400));
+    }
+
+    const filledDates = await DPRManualStatistics.findFilledDatesInMonth(month);
+
+    res.status(200).json({
+        success: true,
+        data: { filledDates }
     });
 });
 

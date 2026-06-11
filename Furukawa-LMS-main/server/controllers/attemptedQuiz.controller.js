@@ -92,6 +92,7 @@ const populateAttempt = async (attempt) => {
                     id: u.id,
                     _id: u.id,
                     fullName: u.fullName,
+                    userName: u.userName,
                     email: u.email,
                     empId: u.empId,
                     departmentId: u.departmentId,
@@ -398,7 +399,17 @@ export const startQuiz = asyncHandler(async (req, res) => {
     if (quiz.course) quiz.course = await Course.findById(quiz.course);
     if (quiz.module) quiz.module = await Module.findById(quiz.module);
 
-    const isAdminOrTrainer = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPERADMIN' || req.user.role === 'INSTRUCTOR' || req.user.role === 'TRAINER');
+    const isCustomAdminOrTrainer = req.user?.role === 'CUSTOM' &&
+        ['admin', 'superadmin', 'trainer', 'instructor'].includes(
+            String(req.user?.customRole?.targetLayout || '').toLowerCase()
+        );
+    const isAdminOrTrainer = req.user && (
+        req.user.role === 'ADMIN' ||
+        req.user.role === 'SUPERADMIN' ||
+        req.user.role === 'INSTRUCTOR' ||
+        req.user.role === 'TRAINER' ||
+        isCustomAdminOrTrainer
+    );
 
     const isTemporaryCandidate = req.user && req.user.isTemporary;
 
@@ -591,7 +602,17 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     const { quizId, answers, timeTaken, studentId, candidateName, eCode, conductedBy } = req.body;
     let userId = req.user.id;
 
-    const isAdminOrTrainer = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPERADMIN' || req.user.role === 'INSTRUCTOR' || req.user.role === 'TRAINER');
+    const isCustomAdminOrTrainer = req.user?.role === 'CUSTOM' &&
+        ['admin', 'superadmin', 'trainer', 'instructor'].includes(
+            String(req.user?.customRole?.targetLayout || '').toLowerCase()
+        );
+    const isAdminOrTrainer = req.user && (
+        req.user.role === 'ADMIN' ||
+        req.user.role === 'SUPERADMIN' ||
+        req.user.role === 'INSTRUCTOR' ||
+        req.user.role === 'TRAINER' ||
+        isCustomAdminOrTrainer
+    );
 
     // Handle student mapping/creation when custom candidateName & eCode are passed
     if (candidateName && candidateName.trim()) {
@@ -698,6 +719,13 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     } else if (isAdminOrTrainer && studentId) {
         userId = studentId;
     }
+
+    // Fetch resolved candidate details to include in response
+    const [candidateRows] = await executeQuery(
+        "SELECT id, fullName, empId, userName, isTemporary FROM users WHERE id = ?",
+        [userId]
+    );
+    const attemptedByUser = candidateRows[0] || null;
 
     if (!quizId) throw new ApiError("Quiz ID is required", 400);
 
@@ -894,6 +922,12 @@ export const submitQuiz = asyncHandler(async (req, res) => {
 
     res.json(new ApiResponse(200, {
         attemptId: attempt.id,
+        attemptedBy: attemptedByUser ? {
+            id: attemptedByUser.id,
+            fullName: attemptedByUser.fullName,
+            userName: (attemptedByUser.userName || "").toUpperCase(),
+            empId: (attemptedByUser.isTemporary ? attemptedByUser.userName : attemptedByUser.empId) || ""
+        } : null,
         quiz: {
             _id: quiz.id,
             title: quiz.title,

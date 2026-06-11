@@ -91,6 +91,13 @@ export const EvaluationTestApi = createApi({
                 { type: "EvaluationAttempt", id },
             ],
         }),
+        deleteEvaluationTestAttempt: builder.mutation({
+            query: (id) => ({
+                url: `/api/evaluation-tests/attempts/${id}`,
+                method: "DELETE",
+            }),
+            invalidatesTags: ["EvaluationAttempt"],
+        }),
     }),
 });
 
@@ -105,4 +112,5 @@ export const {
     useGetEvaluationTestAttemptsByTestIdQuery,
     useCreateEvaluationTestAttemptMutation,
     useUpdateEvaluationTestAttemptMutation,
+    useDeleteEvaluationTestAttemptMutation,
 } = EvaluationTestApi;

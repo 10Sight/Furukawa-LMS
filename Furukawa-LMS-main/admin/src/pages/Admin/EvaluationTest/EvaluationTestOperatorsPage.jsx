@@ -6,10 +6,6 @@ import {
     useGetEvaluationTestAttemptsByTestIdQuery 
 } from "@/Redux/AllApi/EvaluationTestApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
-import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
-import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
-import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
-import { useGetMachinesByLineQuery } from "@/Redux/AllApi/MachineApi";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -55,40 +51,17 @@ const EvaluationTestOperatorsPage = () => {
 
     // Filters states
     const [selectedDepartment, setSelectedDepartment] = useState("all");
-    const [selectedSection, setSelectedSection] = useState("all");
-    const [selectedLine, setSelectedLine] = useState("all");
-    const [selectedSubSection, setSelectedSubSection] = useState("all");
-    const [selectedStation, setSelectedStation] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
 
     // RTK Query hooks for dynamic hierarchy selectors
     const { data: departmentsRes } = useGetAllDepartmentsQuery({ page: 1, limit: 500 });
     const departments = departmentsRes?.data?.departments || [];
 
-    const isDeptSelected = selectedDepartment !== "all";
-    const { data: sectionsRes } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !isDeptSelected });
-    const sections = sectionsRes?.data || [];
-
-    const isSecSelected = selectedSection !== "all";
-    const { data: linesRes } = useGetLinesBySectionQuery(selectedSection, { skip: !isSecSelected });
-    const lines = linesRes?.data || [];
-
-    const isLineSelected = selectedLine !== "all";
-    const { data: subSectionsRes } = useGetSubSectionsByLineQuery(selectedLine, { skip: !isLineSelected });
-    const subSections = subSectionsRes?.data || [];
-
-    const { data: stationsRes } = useGetMachinesByLineQuery(selectedLine, { skip: !isLineSelected });
-    const stations = stationsRes?.data || [];
-
     // Fetch operators/users within the selected hierarchy
     const { data: usersRes, isLoading: isLoadingUsers } = useGetAllUsersQuery({
         departmentId: selectedDepartment === "all" ? "" : selectedDepartment,
-        sectionId: selectedSection === "all" ? "" : selectedSection,
-        lineId: selectedLine === "all" ? "" : selectedLine,
-        subSectionId: selectedSubSection === "all" ? "" : selectedSubSection,
-        stationId: selectedStation === "all" ? "" : selectedStation,
         limit: 1000,
-        isEmployee: true
+        includeTemporary: "only"
     });
     const operators = usersRes?.data?.users || [];
 
@@ -106,23 +79,6 @@ const EvaluationTestOperatorsPage = () => {
     // Reset child selectors upon parent dropdown selection change
     const handleDeptChange = (value) => {
         setSelectedDepartment(value);
-        setSelectedSection("all");
-        setSelectedLine("all");
-        setSelectedSubSection("all");
-        setSelectedStation("all");
-    };
-
-    const handleSecChange = (value) => {
-        setSelectedSection(value);
-        setSelectedLine("all");
-        setSelectedSubSection("all");
-        setSelectedStation("all");
-    };
-
-    const handleLineChange = (value) => {
-        setSelectedLine(value);
-        setSelectedSubSection("all");
-        setSelectedStation("all");
     };
 
     // Compile dynamic filled column indicators (which sub-columns contain actual grades/dates)
@@ -217,7 +173,7 @@ const EvaluationTestOperatorsPage = () => {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="p-5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Department */}
                         <div className="space-y-1.5">
                             <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Department</label>
@@ -236,105 +192,20 @@ const EvaluationTestOperatorsPage = () => {
                             </Select>
                         </div>
 
-                        {/* Section */}
+                        {/* Operator Search */}
                         <div className="space-y-1.5">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Section</label>
-                            <Select 
-                                value={selectedSection} 
-                                onValueChange={handleSecChange}
-                                disabled={!isDeptSelected}
-                            >
-                                <SelectTrigger className="h-9 text-xs border-gray-200 rounded-lg">
-                                    <SelectValue placeholder="All Sections" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Sections</SelectItem>
-                                    {sections.map((sec) => (
-                                        <SelectItem key={sec._id || sec.id} value={String(sec._id || sec.id)}>
-                                            {sec.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Search Operator</label>
+                            <div className="relative">
+                                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+                                <Input 
+                                    type="text"
+                                    placeholder="Search operator by name or employee ID..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="h-9 pl-9 pr-4 py-2 border-gray-200 focus:ring-2 focus:ring-blue-100 rounded-lg text-xs"
+                                />
+                            </div>
                         </div>
-
-                        {/* Line */}
-                        <div className="space-y-1.5">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Line</label>
-                            <Select 
-                                value={selectedLine} 
-                                onValueChange={handleLineChange}
-                                disabled={!isSecSelected}
-                            >
-                                <SelectTrigger className="h-9 text-xs border-gray-200 rounded-lg">
-                                    <SelectValue placeholder="All Lines" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Lines</SelectItem>
-                                    {lines.map((line) => (
-                                        <SelectItem key={line._id || line.id} value={String(line._id || line.id)}>
-                                            {line.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Sub-Section */}
-                        <div className="space-y-1.5">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Sub-Section</label>
-                            <Select 
-                                value={selectedSubSection} 
-                                onValueChange={setSelectedSubSection}
-                                disabled={!isLineSelected}
-                            >
-                                <SelectTrigger className="h-9 text-xs border-gray-200 rounded-lg">
-                                    <SelectValue placeholder="All Sub-Sections" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Sub-Sections</SelectItem>
-                                    {subSections.map((ss) => (
-                                        <SelectItem key={ss._id || ss.id} value={String(ss._id || ss.id)}>
-                                            {ss.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Station */}
-                        <div className="space-y-1.5">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Station / Machine</label>
-                            <Select 
-                                value={selectedStation} 
-                                onValueChange={setSelectedStation}
-                                disabled={!isLineSelected}
-                            >
-                                <SelectTrigger className="h-9 text-xs border-gray-200 rounded-lg">
-                                    <SelectValue placeholder="All Stations" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Stations</SelectItem>
-                                    {stations.map((st) => (
-                                        <SelectItem key={st._id || st.id} value={String(st._id || st.id)}>
-                                            {st.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-
-                    {/* Operator Search */}
-                    <div className="mt-4 relative max-w-md">
-                        <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4.5 w-4.5" />
-                        <Input 
-                            type="text"
-                            placeholder="Search operator by name or employee ID..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-9 pr-4 py-2 border-gray-200 focus:ring-2 focus:ring-blue-100 rounded-lg text-xs"
-                        />
                     </div>
                 </CardContent>
             </Card>
@@ -399,7 +270,7 @@ const EvaluationTestOperatorsPage = () => {
                                                 </TableCell>
                                                 <TableCell className="font-mono text-xs font-semibold">
                                                     <span className="px-2 py-0.5 text-blue-700 bg-blue-50 border border-blue-100 rounded-full text-[10px]">
-                                                        {operator.empId || "N/A"}
+                                                        {(operator.userName || operator.empId || "N/A").toUpperCase()}
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="text-sm font-medium text-gray-700 max-w-[200px] truncate">

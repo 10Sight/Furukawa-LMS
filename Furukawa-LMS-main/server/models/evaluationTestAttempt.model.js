@@ -57,7 +57,7 @@ class EvaluationTestAttempt {
         let resolvedUserId = null;
         if (data.employeeNo) {
             try {
-                const [userRows] = await executeQuery("SELECT id FROM users WHERE empId = ?", [data.employeeNo]);
+                const [userRows] = await executeQuery("SELECT id FROM users WHERE empId = ? OR userName = ?", [data.employeeNo, data.employeeNo.toLowerCase()]);
                 if (userRows && userRows.length > 0) {
                     resolvedUserId = userRows[0].id;
                 }
@@ -86,9 +86,11 @@ class EvaluationTestAttempt {
 
     static async findById(id) {
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount, t.contentStructure 
+            SELECT a.*, t.title as testTitle, t.performDateCount, t.contentStructure,
+                   u.userName, u.isTemporary
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
+            LEFT JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
             WHERE a.id = ?
         `;
         const [rows] = await executeQuery(query, [id]);
@@ -124,9 +126,21 @@ class EvaluationTestAttempt {
 
     static async findAll() {
         const query = `
-            SELECT a.*, t.title as testTitle 
+            SELECT a.*, t.title as testTitle, t.performDateCount,
+                   COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) as departmentId,
+                   COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) as sectionId,
+                   COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) as lineId,
+                   COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) as subSectionId,
+                   u.isTemporary, u.userName,
+                   dept.name as departmentName, sec.name as sectionName,
+                   l.name as lineName, ss.name as subSectionName
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
+            LEFT JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
+            LEFT JOIN departments dept ON COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) = dept.id
+            LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) = sec.id
+            LEFT JOIN [lines] l ON COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) = l.id
+            LEFT JOIN sub_sections ss ON COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) = ss.id
             ORDER BY a.createdAt DESC
         `;
         const [rows] = await executeQuery(query);
@@ -140,6 +154,11 @@ class EvaluationTestAttempt {
             }
             return row;
         });
+    }
+
+    static async delete(id) {
+        await executeQuery("DELETE FROM evaluation_test_attempts WHERE id = ?", [id]);
+        return true;
     }
 
     static async update(id, data) {
@@ -162,7 +181,7 @@ class EvaluationTestAttempt {
             let resolvedUserId = null;
             if (data.employeeNo) {
                 try {
-                    const [userRows] = await executeQuery("SELECT id FROM users WHERE empId = ?", [data.employeeNo]);
+                    const [userRows] = await executeQuery("SELECT id FROM users WHERE empId = ? OR userName = ?", [data.employeeNo, data.employeeNo.toLowerCase()]);
                     if (userRows && userRows.length > 0) {
                         resolvedUserId = userRows[0].id;
                     }

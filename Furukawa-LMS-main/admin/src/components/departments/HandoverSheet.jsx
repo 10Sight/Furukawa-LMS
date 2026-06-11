@@ -646,7 +646,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                             <div className="space-y-4 text-right">
                                 <div className="flex items-center justify-end gap-2">
                                     <span>To:</span>
-                                    <span className="text-blue-600">{(sectionName ? `${departmentName} - ${sectionName}` : departmentName) || "Department"}</span>
+                                    <span className="text-blue-600">{(sectionName ? `${sectionName}` : departmentName) || "Department"}</span>
                                 </div>
                                 <div className="flex items-center justify-end gap-2">
                                     <span>Date:</span>

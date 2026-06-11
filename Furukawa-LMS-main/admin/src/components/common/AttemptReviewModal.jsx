@@ -269,7 +269,7 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                   <div className="flex gap-2 items-center">
                     <span className="min-w-[120px] text-black">E.Code :</span>
                     <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-mono">
-                      {attempt.student?.empId || "—"}
+                      {(attempt.student?.userName || attempt.student?.empId || "—").toUpperCase()}
                     </span>
                   </div>
                 </div>

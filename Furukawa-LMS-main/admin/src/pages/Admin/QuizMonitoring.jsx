@@ -415,10 +415,10 @@ const AdminQuizMonitoring = () => {
                 <TableBody>
                   {attempts.map((attempt) => {
                     const candidateName = attempt.student?.fullName || "Unknown";
-                    const isDojoUser = attempt.student?.isTemporary;
+                    const isDojoUser = attempt.student?.isTemporary || attempt.student?.empId?.startsWith("TEMP") || attempt.quiz?.isDojo;
                     const idLabel = isDojoUser ? "Base ID" : "ID";
                     const empIdValue = isDojoUser
-                      ? (attempt.student?.userName || "N/A")
+                      ? (attempt.student?.userName || attempt.student?.empId || "N/A")
                       : (attempt.student?.empId || "N/A");
 
                     return (

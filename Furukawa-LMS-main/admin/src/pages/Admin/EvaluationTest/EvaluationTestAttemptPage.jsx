@@ -136,7 +136,10 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                 setTraineeName(user.fullName || "");
             }
             if (!employeeNo && isUserStudent) {
-                setEmployeeNo(user.empId || "");
+                const displayCode = (user.isTemporary || user.empId?.startsWith("TEMP")) && user.userName
+                    ? user.userName.toUpperCase()
+                    : (user.empId || "");
+                setEmployeeNo(displayCode);
             }
             if (!educatorName && !isUserStudent) {
                 setEducatorName(user.fullName || user.userName || "");
@@ -195,7 +198,10 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         if ((isView || isEdit) && attemptResponse?.data) {
             const data = attemptResponse.data;
             setTraineeName(data.traineeName || "");
-            setEmployeeNo(data.employeeNo || "");
+            const displayCode = (data.isTemporary || data.employeeNo?.startsWith("TEMP")) && data.userName
+                ? data.userName.toUpperCase()
+                : (data.employeeNo || "");
+            setEmployeeNo(displayCode);
             setEducatorName(data.educatorName || "");
             
             const rawAttemptData = data.attemptData || {};
@@ -640,7 +646,10 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                                 onMouseDown={() => {
                                                                     setTraineeName(u.fullName || "");
                                                                     setTraineeSearch(u.fullName || "");
-                                                                    setEmployeeNo(u.empId || "");
+                                                                    const displayCode = (u.isTemporary || u.empId?.startsWith("TEMP")) && u.userName
+                                                                        ? u.userName.toUpperCase()
+                                                                        : (u.empId || "");
+                                                                    setEmployeeNo(displayCode);
                                                                     setShowDropdown(false);
                                                                 }}
                                                                 className="w-full text-left p-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between transition-colors border-0 outline-none"
@@ -649,9 +658,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                                     <span className="text-xs font-bold text-gray-900 leading-normal">{u.fullName}</span>
                                                                     <span className="text-[10px] text-gray-500 leading-tight">@{u.userName || u.email?.split('@')[0]}</span>
                                                                 </div>
-                                                                {u.empId && (
+                                                                {(u.userName || u.empId) && (
                                                                     <span className="px-2 py-0.5 text-[9px] font-extrabold text-blue-700 bg-blue-50 border border-blue-100 rounded-full font-mono uppercase tracking-wider">
-                                                                        ID: {u.empId}
+                                                                        ID: {((u.isTemporary || u.empId?.startsWith("TEMP")) && u.userName ? u.userName : u.empId).toUpperCase()}
                                                                     </span>
                                                                 )}
                                                             </button>

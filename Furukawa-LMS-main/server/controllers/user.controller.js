@@ -214,17 +214,9 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   }
 
   if (req.query.includeTemporary === "true") {
-    if (req.query.dojoHandoverPassedOnly === "true") {
-      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
-    } else {
-      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
-    }
+    whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
   } else if (req.query.includeTemporary === "only") {
-    if (req.query.dojoHandoverPassedOnly === "true") {
-      whereClauses.push("(u.isTemporary = 1)");
-    } else {
-      whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
-    }
+    whereClauses.push("(u.isTemporary = 1)");
   } else {
     whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
   }
@@ -1079,17 +1071,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     whereClauses.push("(u.isTemporary = 1)");
   } else {
     if (req.query.includeTemporary === "true") {
-      if (req.query.ojtApprovedOnly === "true" || req.query.ojtApprovedToday === "true" || req.query.dojoHandoverPassedOnly === "true") {
-        whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
-      } else {
-        whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR (u.isTemporary = 1 AND u.currentLevel != 'L1'))");
-      }
+      whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
     } else if (req.query.includeTemporary === "only") {
-      if (req.query.ojtApprovedOnly === "true" || req.query.ojtApprovedToday === "true" || req.query.dojoHandoverPassedOnly === "true") {
-        whereClauses.push("(u.isTemporary = 1)");
-      } else {
-        whereClauses.push("(u.isTemporary = 1 AND u.currentLevel != 'L1')");
-      }
+      whereClauses.push("(u.isTemporary = 1)");
     } else {
       if (req.query.ojtApprovedOnly === "true" || req.query.ojtApprovedToday === "true" || req.query.dojoHandoverPassedOnly === "true") {
         whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");

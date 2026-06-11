@@ -153,3 +153,18 @@ export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
         new ApiResponse(200, updatedAttempt, "Evaluation test sheet record updated successfully")
     );
 });
+
+export const deleteEvaluationTestAttempt = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const existingAttempt = await EvaluationTestAttempt.findById(id);
+    if (!existingAttempt) {
+        throw new ApiError("Evaluation test sheet record not found", 404);
+    }
+
+    await EvaluationTestAttempt.delete(id);
+
+    res.json(
+        new ApiResponse(200, null, "Evaluation test sheet record deleted successfully")
+    );
+});

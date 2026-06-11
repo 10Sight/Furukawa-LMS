@@ -188,9 +188,14 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
 
 /**
  * Get Dojo Hiring Trend for Admin Home page
- * Groups isTemporary users by creation month so historical counts survive handovers.
- * Uses empId LIKE 'TEMP%' instead of current isTemporary flag — once promoted the flag
- * flips to 0 but the TEMP prefix on empId is permanent, preserving the hire event.
+ * Groups dojo-hired users by creation period.
+ *
+ * Identity rule: a row is a dojo hire if it was ever created as temporary.
+ * We use (empId LIKE 'TEMP%' OR isTemporary = 1) so we capture:
+ *   - Users still in the pipeline      → isTemporary = 1
+ *   - Users promoted/handed-over        → isTemporary = 0 but empId still starts TEMP
+ *   - Bulk-imported users whose empId   → may not start with TEMP, caught by isTemporary = 1
+ * The union avoids double-counting because it's a single-row predicate.
  */
 export const getDojoHiringTrend = asyncHandler(async (req, res) => {
     const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
@@ -243,7 +248,7 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
             SUM(CASE WHEN gender = 'FEMALE' THEN 1 ELSE 0 END)                         AS femaleCount,
             SUM(CASE WHEN gender NOT IN ('MALE','FEMALE') OR gender IS NULL THEN 1 ELSE 0 END) AS otherCount
         FROM users
-        WHERE empId LIKE 'TEMP%'
+        WHERE (empId LIKE 'TEMP%' OR isTemporary = 1)
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND createdAt >= ?
           AND createdAt <= ?

@@ -232,11 +232,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let attendanceGateSql = `
                 SELECT COUNT(*) AS cnt
                 FROM attendance_logs al
-                INNER JOIN users u
-                    ON al.userId = u.id
                 LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                INNER JOIN users u
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                 WHERE CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
                   AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
                   ${hierCondition}
@@ -506,11 +507,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE') THEN 1 ELSE 0 END) AS absentCount,
                 COUNT(*) AS totalCount
             FROM attendance_logs al
-            INNER JOIN users u
-                ON al.userId = u.id
             LEFT JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(u.empId AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
+            INNER JOIN users u
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS VARCHAR))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
@@ -650,11 +652,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN 1 ELSE 0 END) AS absent_count,
                 COUNT(*) AS total_count
             FROM attendance_logs al
-            INNER JOIN users u
-                ON al.userId = u.id
             LEFT JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(u.empId AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
+            INNER JOIN users u
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
+                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS VARCHAR))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
@@ -846,9 +849,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const attendanceMasterBaseFrom = `
         FROM attendance_logs al
         INNER JOIN users u
-            ON al.userId = u.id
+            ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+             = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
         LEFT JOIN user_hierarchy_snapshots uhs
-            ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+            ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
         WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
           AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
@@ -1299,9 +1303,10 @@ try {
                 COUNT(DISTINCT al.payCode) AS total
             FROM attendance_logs al
             INNER JOIN users u
-                ON al.userId = u.id
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
             LEFT JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
@@ -1583,9 +1588,10 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
             COUNT(*) AS total
         FROM attendance_logs al
         INNER JOIN users u
-            ON al.userId = u.id
+            ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+             = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
         LEFT JOIN user_hierarchy_snapshots uhs
-            ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+            ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
         WHERE CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
           AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'

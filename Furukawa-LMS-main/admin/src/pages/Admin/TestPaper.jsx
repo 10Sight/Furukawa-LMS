@@ -33,6 +33,7 @@ import { useSelector } from "react-redux";
 import { se } from "date-fns/locale";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import AdminQuizMonitoring from "./QuizMonitoring";
+import CertificateTemplates from "./CertificateTemplates";
 
 const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, skillUpgradation: forceSkillUpgradation }) => {
   const navigate = useNavigate();
@@ -389,6 +390,9 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
         </TabsTrigger>
         <TabsTrigger value="testMonitoring" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
           Test Monitoring
+        </TabsTrigger>
+        <TabsTrigger value="certificateTemplates" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          Certificate Templates
         </TabsTrigger>
       </TabsList>
 
@@ -798,6 +802,10 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
       <TabsContent value="testMonitoring">
         <AdminQuizMonitoring />
+      </TabsContent>
+
+      <TabsContent value="certificateTemplates">
+        <CertificateTemplates />
       </TabsContent>
     </Tabs>
   );

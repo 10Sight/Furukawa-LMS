@@ -81,7 +81,6 @@ import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 
 // Section tab component imports
 import TestPaper from "./TestPaper";
-import CertificateTemplates from "./CertificateTemplates";
 import EvaluationTestList from "./EvaluationTest/EvaluationTestList";
 import HandoverSheetPage from "./HandoverSheetPage";
 import SixteenDayMonitoring from "./SixteenDayMonitoring";
@@ -499,7 +498,6 @@ const DojoHiring = () => {
                 <TabsList className="no-print mb-6 flex flex-wrap gap-2 w-fit bg-slate-100 p-1.5 rounded-xl shadow-sm border border-slate-200">
                     <TabsTrigger value="dojoHiring" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">DOJO Hiring</TabsTrigger>
                     <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Test Paper</TabsTrigger>
-                    <TabsTrigger value="certificateTemplates" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Certificate Templates</TabsTrigger>
                     <TabsTrigger value="dojoEvaluationTest" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">DOJO Evaluation Test</TabsTrigger>
                     <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Handover Sheet</TabsTrigger>
                     <TabsTrigger value="sixteenDays" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">16 Days</TabsTrigger>
@@ -807,10 +805,6 @@ const DojoHiring = () => {
 
             <TabsContent value="testPaper" className="space-y-6">
                 <TestPaper isDojo={true} />
-            </TabsContent>
-
-            <TabsContent value="certificateTemplates" className="space-y-6">
-                <CertificateTemplates />
             </TabsContent>
 
             <TabsContent value="dojoEvaluationTest" className="space-y-6">

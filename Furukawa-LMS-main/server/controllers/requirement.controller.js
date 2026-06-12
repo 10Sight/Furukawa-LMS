@@ -49,6 +49,51 @@ const executeSql = async (queryStr, params = [], transactionOrPool = null) => {
 
 const safeTrim = (v) => (v === null || v === undefined ? "" : String(v).trim());
 
+const normalizeEmailList = (value) => {
+    if (!value) return [];
+
+    return String(value)
+        .split(/[;,\r\n]+/)
+        .map((email) => email.trim())
+        .filter((email) => email && email.includes("@"));
+};
+
+const getCcEmailListFromHeads = (heads = []) => {
+    const uniqueEmails = new Set();
+
+    for (const head of heads || []) {
+        for (const email of normalizeEmailList(head?.CCMail)) {
+            uniqueEmails.add(email.toLowerCase());
+        }
+    }
+
+    return Array.from(uniqueEmails);
+};
+
+const sendMailToMultipleRecipients = async (recipients, subject, htmlMsg, logPrefix) => {
+    const emailList = Array.isArray(recipients)
+        ? recipients
+        : normalizeEmailList(recipients);
+
+    if (!emailList.length) return [];
+
+    const results = await Promise.allSettled(
+        emailList.map((email) => sendMail(email, subject, htmlMsg, [], ""))
+    );
+
+    results.forEach((result, index) => {
+        const email = emailList[index];
+        if (result.status === "fulfilled") {
+            console.log(`${logPrefix} Sent to: ${email}`);
+        } else {
+            console.error(`${logPrefix} Failed for ${email}:`, result.reason?.message || result.reason);
+        }
+    });
+
+    return results;
+};
+
+
 const safeNumber = (v) => {
     if (v === null || v === undefined || v === "") return null;
     const n = Number(String(v).replace(/,/g, "").trim());
@@ -376,7 +421,7 @@ const sendRequirementEditApprovalMail = async ({
 }) => {
     try {
         const heads = await findSectionHeadsForRequirement(newReq);
-        const ccEmails = heads.map((h) => h.CCMail).filter(Boolean).join(", ");
+        const ccEmails = getCcEmailListFromHeads(heads);
         console.log("BASE_URL =", process.env.BASE_URL);
         console.log("APP_BASE_URL =", process.env.APP_BASE_URL);
         console.log("HOST =", `${req.protocol}://${req.get("host")}`);
@@ -544,11 +589,7 @@ const sendRequirementEditApprovalMail = async ({
             <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">${oldSP}</td>
             <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:800;">${newSP}</td>
         </tr>
-        <tr>
-            <td style="padding:9px 12px;border:1px solid #e2e8f0;font-weight:700;">Production Plan</td>
-            <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">${oldPP}</td>
-            <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:800;">${newPP}</td>
-        </tr>
+
         <tr>
             <td style="padding:9px 12px;border:1px solid #e2e8f0;font-weight:700;">FN01 Plan</td>
             <td style="padding:9px 12px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">${oldFN01}</td>
@@ -597,38 +638,32 @@ ${showButtons ? `
             return sendMail(h.email, subject, htmlMsgWithButtons, [], "");
         });
 
-        const ccPromises = [];
-        if (ccEmails) {
-            const senderEmail = req.user?.email || "admin@furukawa.com";
-            const ccRecipientName = heads[0]?.name || "Section Head";
-            const htmlMsgWithoutButtons = getHtmlMsg(ccRecipientName, false);
-            ccPromises.push(
-                sendMail(senderEmail, subject, htmlMsgWithoutButtons, [], ccEmails)
-            );
-        }
+        const ccRecipientName = heads[0]?.name || "Section Head";
+        const htmlMsgWithoutButtons = getHtmlMsg(`${ccRecipientName} (CC)`, false);
 
-        const results = await Promise.allSettled([...headPromises, ...ccPromises]);
+        const headResults = await Promise.allSettled(headPromises);
 
-        results.forEach((r, i) => {
-            if (i < heads.length) {
-                const email = heads[i].email;
-                if (r.status === "fulfilled") {
-                    console.log(`[REQ-EDIT-MAIL] Sent to head: ${email}`);
-                } else {
-                    console.error(`[REQ-EDIT-MAIL] Failed for head ${email}:`, r.reason?.message);
-                }
+        headResults.forEach((r, i) => {
+            const email = heads[i].email;
+            if (r.status === "fulfilled") {
+                console.log(`[REQ-EDIT-MAIL] Sent to head: ${email}`);
             } else {
-                if (r.status === "fulfilled") {
-                    console.log(`[REQ-EDIT-MAIL] Sent to CC recipients: ${ccEmails}`);
-                } else {
-                    console.error(`[REQ-EDIT-MAIL] Failed for CC recipients ${ccEmails}:`, r.reason?.message);
-                }
+                console.error(`[REQ-EDIT-MAIL] Failed for head ${email}:`, r.reason?.message || r.reason);
             }
         });
 
+        const ccResults = await sendMailToMultipleRecipients(
+            ccEmails,
+            subject,
+            htmlMsgWithoutButtons,
+            "[REQ-EDIT-MAIL-CC]"
+        );
+
         return {
-            sent: results.some((r) => r.status === "fulfilled"),
+            sent: [...headResults, ...ccResults].some((r) => r.status === "fulfilled"),
             recipientCount: heads.length,
+            ccRecipientCount: ccEmails.length,
+            ccRecipients: ccEmails,
         };
     } catch (err) {
         console.error("[REQ-EDIT-MAIL] Outer error:", err.message, err.stack);
@@ -1318,7 +1353,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     continue;
                 }
 
-                const ccEmails = secHeads.map((h) => h.CCMail).filter(Boolean).join(", ");
+                const ccEmails = getCcEmailListFromHeads(secHeads);
 
                 await executeSql(
                     `
@@ -1357,8 +1392,12 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         (s, r) => s + (Number(r.salesPlan) || 0),
                         0
                     );
-                    const totalPP = monthRows_.reduce(
-                        (s, r) => s + (Number(r.prodPlan) || 0),
+                    const totalFN01 = monthRows_.reduce(
+                        (s, r) => s + (Number(r.prodPlanFN01) || 0),
+                        0
+                    );
+                    const totalFN02 = monthRows_.reduce(
+                        (s, r) => s + (Number(r.prodPlanFN02) || 0),
                         0
                     );
 
@@ -1366,9 +1405,8 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     <tr>
                         <td style="padding:8px 14px;border:1px solid #e2e8f0;font-weight:600;color:#1e293b;">${month}</td>
                         <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">${totalSP}</td>
-                        <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">
-                            ${totalPP}
-                        </td>
+                        <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">${totalFN01}</td>
+                        <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">${totalFN02}</td>
                     </tr>`;
                 });
 
@@ -1470,7 +1508,8 @@ ${showButtons ? `
         <tr>
             <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:left;border:1px solid #1e3a5f;">Month</th>
             <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">Sales Plan</th>
-            <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">Production Plan</th>
+            <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">FN01 Plan</th>
+            <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">FN02 Plan</th>
         </tr>
         ${monthRows}
     </table>
@@ -1520,22 +1559,16 @@ ${showButtons ? `
                         );
                 }
 
-                if (ccEmails) {
+                if (ccEmails.length > 0) {
                     const ccRecipientName = secHeads[0]?.name || "Section Head";
-                    const htmlMsgWithoutButtons = getHtmlMsg(ccRecipientName, false);
-                    const senderEmail = req.user?.email || "admin@furukawa.com";
-                    await sendMail(senderEmail, subject, htmlMsgWithoutButtons, [], ccEmails)
-                        .then(() =>
-                            console.log(
-                                `[UPLOAD-EMAIL-CC] Sent to CC recipients: ${ccEmails} for section: ${secName}`
-                            )
-                        )
-                        .catch((e) =>
-                            console.error(
-                                `[UPLOAD-EMAIL-CC] Failed for CC recipients ${ccEmails}:`,
-                                e.message
-                            )
-                        );
+                    const htmlMsgWithoutButtons = getHtmlMsg(`${ccRecipientName} (CC)`, false);
+
+                    await sendMailToMultipleRecipients(
+                        ccEmails,
+                        subject,
+                        htmlMsgWithoutButtons,
+                        `[UPLOAD-EMAIL-CC][${secName}]`
+                    );
                 }
             }
         } catch (emailErr) {

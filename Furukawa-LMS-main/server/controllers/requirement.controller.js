@@ -58,11 +58,26 @@ const normalizeEmailList = (value) => {
         .filter((email) => email && email.includes("@"));
 };
 
+const getValueIgnoreCase = (obj, keys) => {
+    if (!obj) return undefined;
+    for (const key of keys) {
+        if (obj[key] !== undefined) return obj[key];
+    }
+    const keysLower = keys.map(k => k.toLowerCase());
+    for (const k of Object.keys(obj)) {
+        if (keysLower.includes(k.toLowerCase())) {
+            return obj[k];
+        }
+    }
+    return undefined;
+};
+
 const getCcEmailListFromHeads = (heads = []) => {
     const uniqueEmails = new Set();
 
     for (const head of heads || []) {
-        for (const email of normalizeEmailList(head?.CCMail)) {
+        const ccMailVal = getValueIgnoreCase(head, ["CCMail", "ccMail", "ccmail", "CCMAIL"]);
+        for (const email of normalizeEmailList(ccMailVal)) {
             uniqueEmails.add(email.toLowerCase());
         }
     }
@@ -470,8 +485,8 @@ const sendRequirementEditApprovalMail = async ({
             WHERE id = ?
             `,
             [
-                heads[0]?.name || "Section Head",
-                heads[0]?.email || "",
+                getValueIgnoreCase(heads[0], ["name", "Name", "NAME"]) || "Section Head",
+                getValueIgnoreCase(heads[0], ["email", "Email", "EMAIL"]) || "",
                 requirementId,
             ]
         );
@@ -482,7 +497,7 @@ const sendRequirementEditApprovalMail = async ({
         await createRequirementTokenSafe({
             token,
             requirementId,
-            recipientEmail: heads[0].email,
+            recipientEmail: getValueIgnoreCase(heads[0], ["email", "Email", "EMAIL"]) || "",
             senderEmail: req.user?.email || "admin@furukawa.com",
             expiresAt,
             status: "pending",
@@ -633,18 +648,22 @@ ${showButtons ? `
 </html>`;
 
         const headPromises = heads.map((h) => {
-            const recipientName = h.name || "Section Head";
+            const recipientName = getValueIgnoreCase(h, ["name", "Name", "NAME"]) || "Section Head";
+            const email = getValueIgnoreCase(h, ["email", "Email", "EMAIL"]);
             const htmlMsgWithButtons = getHtmlMsg(recipientName, true);
-            return sendMail(h.email, subject, htmlMsgWithButtons, [], "");
+            if (email) {
+                return sendMail(email, subject, htmlMsgWithButtons, [], "");
+            }
+            return Promise.resolve({ sent: false, reason: "No email address found" });
         });
 
-        const ccRecipientName = heads[0]?.name || "Section Head";
+        const ccRecipientName = getValueIgnoreCase(heads[0], ["name", "Name", "NAME"]) || "Section Head";
         const htmlMsgWithoutButtons = getHtmlMsg(`${ccRecipientName} (CC)`, false);
 
         const headResults = await Promise.allSettled(headPromises);
 
         headResults.forEach((r, i) => {
-            const email = heads[i].email;
+            const email = getValueIgnoreCase(heads[i], ["email", "Email", "EMAIL"]) || `Index ${i}`;
             if (r.status === "fulfilled") {
                 console.log(`[REQ-EDIT-MAIL] Sent to head: ${email}`);
             } else {
@@ -1366,8 +1385,8 @@ export const addRequirements = asyncHandler(async (req, res) => {
                       AND ISNULL(approvalStatus, 'pending') = 'pending'
                     `,
                     [
-                        secHeads[0]?.name || "Section Head",
-                        secHeads[0]?.email || "",
+                        getValueIgnoreCase(secHeads[0], ["name", "Name", "NAME"]) || "Section Head",
+                        getValueIgnoreCase(secHeads[0], ["email", "Email", "EMAIL"]) || "",
                         uploadBatchId,
                         secCode,
                     ]
@@ -1423,7 +1442,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     uploadBatchId,
                     sectionCode: secCode,
                     sectionName: secName,
-                    recipientEmail: secHeads[0].email,
+                    recipientEmail: getValueIgnoreCase(secHeads[0], ["email", "Email", "EMAIL"]) || "",
                     senderEmail: req.user?.email || "admin@furukawa.com",
                     expiresAt: new Date(Date.now() + 24 * 3600000),
                     status: "pending",
@@ -1542,25 +1561,33 @@ ${showButtons ? `
 </html>`;
 
                 for (const head of secHeads) {
-                    const recipientName = head.name || "Section Head";
+                    const recipientName = getValueIgnoreCase(head, ["name", "Name", "NAME"]) || "Section Head";
+                    const email = getValueIgnoreCase(head, ["email", "Email", "EMAIL"]);
                     const htmlMsgWithButtons = getHtmlMsg(recipientName, true);
 
-                    await sendMail(head.email, subject, htmlMsgWithButtons, [], "")
-                        .then(() =>
-                            console.log(
-                                `[UPLOAD-EMAIL] Sent to ${head.email} for section: ${secName}`
+                    if (email) {
+                        await sendMail(email, subject, htmlMsgWithButtons, [], "")
+                            .then(() =>
+                                console.log(
+                                    `[UPLOAD-EMAIL] Sent to ${email} for section: ${secName}`
+                                )
                             )
-                        )
-                        .catch((e) =>
-                            console.error(
-                                `[UPLOAD-EMAIL] Failed for ${head.email}:`,
-                                e.message
-                            )
-                        );
+                            .catch((e) =>
+                                console.error(
+                                    `[UPLOAD-EMAIL] Failed for ${email}:`,
+                                    e.message
+                                )
+                            );
+                    } else {
+                        console.error(`[UPLOAD-EMAIL] Email is missing/undefined for section head: ${recipientName}`);
+                    }
                 }
 
+                console.log(`[UPLOAD-EMAIL] For section ${secName}, secHeads count: ${secHeads.length}`);
+                console.log(`[UPLOAD-EMAIL] For section ${secName}, ccEmails extracted:`, ccEmails);
+
                 if (ccEmails.length > 0) {
-                    const ccRecipientName = secHeads[0]?.name || "Section Head";
+                    const ccRecipientName = getValueIgnoreCase(secHeads[0], ["name", "Name", "NAME"]) || "Section Head";
                     const htmlMsgWithoutButtons = getHtmlMsg(`${ccRecipientName} (CC)`, false);
 
                     await sendMailToMultipleRecipients(

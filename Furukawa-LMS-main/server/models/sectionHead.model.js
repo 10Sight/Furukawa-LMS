@@ -32,7 +32,7 @@ class SectionHead {
                     ALTER TABLE [dbo].[section_heads] ADD CONSTRAINT FK_sh_Section FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE;
                 END
 
-                -- Ensure CCMail column exists and has sufficient length
+                -- Ensure CCMail column exists and has NVARCHAR(2000)
                 IF COL_LENGTH('section_heads', 'CCMail') IS NULL
                 BEGIN
                     ALTER TABLE [dbo].[section_heads] ADD CCMail NVARCHAR(2000) NULL;
@@ -108,8 +108,8 @@ class SectionHead {
 
         if (updates.sectionId !== undefined) { fields.push("sectionId = ?"); values.push(updates.sectionId || null); }
         if (updates.subSectionId !== undefined) { fields.push("subSectionId = ?"); values.push(updates.subSectionId || null); }
-        if (updates.email !== undefined) { fields.push("email = ?"); values.push(updates.email || null); }
         if (updates.name !== undefined) { fields.push("name = ?"); values.push(updates.name || null); }
+        if (updates.email !== undefined) { fields.push("email = ?"); values.push(updates.email || null); }
         if (updates.CCMail !== undefined) { fields.push("CCMail = ?"); values.push(updates.CCMail || null); }
 
         if (fields.length === 0) return null;

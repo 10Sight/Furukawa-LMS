@@ -527,7 +527,7 @@ export const createUser = asyncHandler(async (req, res) => {
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations"
+    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "contractorId"
   ];
 
   const values = fields.map(f => {
@@ -643,7 +643,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "contractor", "expectedHandover",
+    "contractor", "contractorId", "expectedHandover",
     "customRoleId", "currentLevel", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "departments", "stations"

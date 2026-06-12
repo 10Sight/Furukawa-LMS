@@ -66,6 +66,7 @@ class User {
         this.busRoute = data.busRoute || null;
         this.reasonOfLeaving = data.reasonOfLeaving || null;
         this.contractor = data.contractor || null;
+        this.contractorId = data.contractorId || null;
         this.mentor = data.mentor || null;
         this.designation = data.designation || null;
         this.supervisor = data.supervisor || null;
@@ -206,7 +207,8 @@ class User {
                 { name: 'skillEffeciency', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
                 { name: 'ojt', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
                 { name: 'stations', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
-                { name: 'expectedHandover', type: 'DATE NULL' }
+                { name: 'expectedHandover', type: 'DATE NULL' },
+                { name: 'contractorId', type: 'INT NULL' }
             ];
 
             for (const col of columnsToAdd) {

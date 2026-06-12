@@ -26,6 +26,7 @@ import {
   useAddStudentToDepartmentMutation,
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetAllContractorsQuery } from "@/Redux/AllApi/ContractorApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesBySubSectionQuery } from "@/Redux/AllApi/MachineApi";
@@ -185,6 +186,7 @@ const Students = () => {
     unit: "UNIT_1",
     supervisor: "",
     incharge: "",
+    contractorId: "",
   });
   const [formErrors, setFormErrors] = useState({});
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -298,6 +300,8 @@ const Students = () => {
   const { data: linesData } = useGetLinesBySectionQuery(formData.sections.join(','), { skip: !formData.sections.length });
   const { data: subSectionsData } = useGetSubSectionsByLineQuery(formData.lines.join(','), { skip: !formData.lines.length });
   const { data: machinesData } = useGetMachinesBySubSectionQuery(formData.subSections.join(','), { skip: !formData.subSections.length });
+  const { data: contractorsResponse } = useGetAllContractorsQuery();
+  const contractorsList = contractorsResponse?.data || [];
 
   const sections = sectionsData?.data || [];
   const lines = linesData?.data || [];
@@ -475,6 +479,7 @@ const Students = () => {
       unit: "UNIT_1",
       supervisor: "",
       incharge: "",
+      contractorId: "",
     });
 
     setFormErrors({});
@@ -572,6 +577,7 @@ const Students = () => {
         supervisor: formData.supervisor?.trim() || null,
         incharge: formData.incharge?.trim() || null,
         customRoleId: formData.customRoleId || null,
+        contractorId: formData.contractorId ? Number(formData.contractorId) : null,
       };
 
 
@@ -639,6 +645,7 @@ const Students = () => {
         incharge: updateData.incharge?.trim() || null,
         customRoleId: updateData.customRoleId || null,
         unit: updateData.unit,
+        contractorId: updateData.contractorId ? Number(updateData.contractorId) : null,
       };
 
 
@@ -998,6 +1005,7 @@ const Students = () => {
       designation: student.designation || student.Designation || "",
       supervisor: student.supervisor || student.Supervisor || "",
       incharge: student.incharge || student.Incharge || "",
+      contractorId: student.contractorId ? String(student.contractorId) : "",
       isEmployee: student.isEmployee !== undefined ? student.isEmployee : (student.IsEmployee !== undefined ? student.IsEmployee : true),
       dob: safeDateToISO(student.dob || student.DOB),
       joiningDate: safeDateToISO(student.joiningDate || student.JoiningDate),
@@ -2128,6 +2136,24 @@ const Students = () => {
               />
             </div>
 
+            <div className="grid gap-2">
+              <Label htmlFor="contractorId">Contractor</Label>
+              <Select
+                value={formData.contractorId || "none"}
+                onValueChange={(val) => setFormData({ ...formData, contractorId: val === "none" ? "" : val })}
+              >
+                <SelectTrigger id="contractorId">
+                  <SelectValue placeholder="Select contractor (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {contractorsList.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Contact Details */}
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
@@ -2573,6 +2599,24 @@ const Students = () => {
                 onChange={handleInputChange}
                 placeholder="Incharge Name"
               />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-contractorId">Contractor</Label>
+              <Select
+                value={formData.contractorId || "none"}
+                onValueChange={(val) => setFormData({ ...formData, contractorId: val === "none" ? "" : val })}
+              >
+                <SelectTrigger id="edit-contractorId">
+                  <SelectValue placeholder="Select contractor (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {contractorsList.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Contact Details */}

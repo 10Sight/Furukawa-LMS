@@ -68,6 +68,7 @@ import learningComparisonRoutes from "./routes/learningComparison.routes.js";
 import evaluationTestRoutes from "./routes/evaluationTest.routes.js";
 import adminHomeRoutes from "./routes/adminHome.routes.js";
 import abnormalConditionRoutes from "./routes/abnormalCondition.routes.js";
+import contractorRoutes from "./routes/contractor.routes.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
 
 import machineRoutes from "./routes/machine.routes.js";
@@ -286,6 +287,7 @@ app.use("/api/learning-comparisons", learningComparisonRoutes);
 app.use("/api/evaluation-tests", evaluationTestRoutes);
 app.use("/api/admin-home", adminHomeRoutes);
 app.use("/api/abnormal-conditions", abnormalConditionRoutes);
+app.use("/api/contractors", contractorRoutes);
 
 
 // Initialize Socket.IO service

@@ -94,6 +94,8 @@ const MultiSkilling = lazy(() => import("./pages/Admin/MultiSkilling"));
 const DojoHiring = lazy(() => import("./pages/Admin/DojoHiring"));
 const DojoCandidateDetail = lazy(() => import("./pages/Admin/DojoCandidateDetail"));
 const OnJobTraining = lazy(() => import("./pages/Admin/OnJobTraining"));
+const Contractors = lazy(() => import("./pages/Admin/Contractors"));
+const ContractorDetail = lazy(() => import("./pages/Admin/ContractorDetail"));
 
 
 const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
@@ -322,6 +324,8 @@ const App = () => {
                 <EvaluationTestAttemptPage isViewMode={true} />
               </RequireAccess>
             } />
+            <Route path="contractors" element={<Contractors />} />
+            <Route path="contractors/:contractorId" element={<ContractorDetail />} />
             <Route path="settings" element={<AdminSettings />} />
           </Route>
 

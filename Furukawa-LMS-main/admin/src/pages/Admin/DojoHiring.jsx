@@ -14,6 +14,7 @@ import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesBySubSectionQuery } from "@/Redux/AllApi/MachineApi";
+import { useGetAllContractorsQuery } from "@/Redux/AllApi/ContractorApi";
 import { toast } from "sonner";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -159,6 +160,8 @@ const DojoHiring = () => {
     const { data: linesData } = useGetLinesBySectionQuery(formData.sectionId, { skip: !formData.sectionId });
     const { data: subSectionsData } = useGetSubSectionsByLineQuery(formData.lineId, { skip: !formData.lineId });
     const { data: machinesData } = useGetMachinesBySubSectionQuery(formData.subSectionId, { skip: !formData.subSectionId });
+    const { data: contractorsResponse } = useGetAllContractorsQuery();
+    const contractorsList = contractorsResponse?.data || [];
 
     const departments = deptsData?.data?.departments || [];
     const sections = sectionsData?.data || [];
@@ -219,7 +222,8 @@ const DojoHiring = () => {
                 const payload = {
                     id: selectedUser.id,
                     ...formData,
-                    empId: formData.tempId, // Keep using the generated/stored tempId
+                    empId: formData.tempId,
+                    contractorId: formData.contractorId ? Number(formData.contractorId) : null,
                 };
                 await updateUser(payload).unwrap();
                 toast.success("Employee details updated successfully");
@@ -232,8 +236,9 @@ const DojoHiring = () => {
                     isTemporary: true,
                     role: "STUDENT",
                     status: "PRESENT",
-                    password: formData.tempId, // Generated TEMP ID as password
-                    userName: formData.empId // Manual Employee Code as login ID
+                    password: formData.tempId,
+                    userName: formData.empId,
+                    contractorId: formData.contractorId ? Number(formData.contractorId) : null,
                 };
                 await dojoRegister(payload).unwrap();
                 toast.success("Temporary employee registered successfully");
@@ -492,6 +497,7 @@ const DojoHiring = () => {
             leavingDate: user.leavingDate ? String(user.leavingDate).substring(0, 10) : "",
             reasonOfLeaving: user.reasonOfLeaving || "",
             contractor: user.contractor || "",
+            contractorId: user.contractorId ? String(user.contractorId) : "",
             expectedHandover: user.expectedHandover ? String(user.expectedHandover).substring(0, 10) : ""
         });
         setIsAddModalOpen(true);
@@ -506,7 +512,7 @@ const DojoHiring = () => {
             departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
             education: "", email: "", phoneNumber: "", district: "", state: "",
             pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
-            leavingDate: "", reasonOfLeaving: "", contractor: "", expectedHandover: ""
+            leavingDate: "", reasonOfLeaving: "", contractor: "", contractorId: "", expectedHandover: ""
         });
     };
 
@@ -1028,8 +1034,21 @@ const DojoHiring = () => {
                             <Input id="expectedHandover" type="date" name="expectedHandover" value={formData.expectedHandover} onChange={handleInputChange} />
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="contractor">Contractor</Label>
-                            <Input id="contractor" name="contractor" value={formData.contractor} onChange={handleInputChange} placeholder="Contractor name" />
+                            <Label htmlFor="contractorId">Contractor</Label>
+                            <Select
+                                value={formData.contractorId || "none"}
+                                onValueChange={(val) => setFormData(prev => ({ ...prev, contractorId: val === "none" ? "" : val }))}
+                            >
+                                <SelectTrigger id="contractorId">
+                                    <SelectValue placeholder="Select contractor (optional)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {contractorsList.map((c) => (
+                                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         {/* Contact Section */}

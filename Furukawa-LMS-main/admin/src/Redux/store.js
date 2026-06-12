@@ -41,6 +41,7 @@ import { multiSkillingApi } from "./AllApi/MultiSkillingApi";
 import { adminHomeApi } from "./AllApi/AdminHomeApi";
 import { AbnormalConditionApi } from "./AllApi/AbnormalConditionApi";
 import { EvaluationTestApi } from "./AllApi/EvaluationTestApi";
+import { contractorApi } from "./AllApi/ContractorApi";
 
 
 const store = configureStore({
@@ -86,6 +87,7 @@ const store = configureStore({
         [adminHomeApi.reducerPath]: adminHomeApi.reducer,
         [AbnormalConditionApi.reducerPath]: AbnormalConditionApi.reducer,
         [EvaluationTestApi.reducerPath]: EvaluationTestApi.reducer,
+        [contractorApi.reducerPath]: contractorApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(
@@ -122,6 +124,7 @@ const store = configureStore({
             adminHomeApi.middleware,
             AbnormalConditionApi.middleware,
             EvaluationTestApi.middleware,
+            contractorApi.middleware,
         ),
 });
 

@@ -12,32 +12,26 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   IconUsers,
-  IconSchool,
   IconCalendar,
   IconBook,
   IconTrendingUp,
   IconActivity,
   IconPlus,
-  IconEye,
   IconSettings,
   IconChartBar,
-  IconUserCheck,
-  IconBook2,
   IconClipboardCheck,
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import DepartmentQuizChart from "@/components/charts/DepartmentQuizChart";
-import DojoHiringChart from "@/components/charts/DojoHiringChart";
 import DojoHiringTrendChart from "@/components/charts/DojoHiringTrendChart";
-import HandoverComparisonChart from "@/components/charts/HandoverComparisonChart";
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
 import UserStatusDistributionChart from "@/components/charts/UserStatusDistributionChart";
 import EfficiencyChart from "@/components/charts/EfficiencyChart";
 import DojoHandoverComparisonChart from "@/components/charts/DojoHandoverComparisonChart";
+import ContractorWiseOperatorChart from "@/components/charts/ContractorWiseOperatorChart";
 import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
 import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { IconUserPlus } from "@tabler/icons-react";
@@ -222,8 +216,7 @@ const Home = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DojoHiringTrendChart />
         <DojoHandoverComparisonChart />
-        <DojoHiringChart dateRange={dateRange} />
-        <HandoverComparisonChart dateRange={dateRange} />
+        <ContractorWiseOperatorChart />
         <TestPaperPassChart dateRange={dateRange} />
         <UserStatusDistributionChart dateRange={dateRange} />
         <DepartmentQuizChart dateRange={dateRange} />

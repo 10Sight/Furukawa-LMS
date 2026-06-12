@@ -217,7 +217,7 @@ const Home = () => {
         <DojoHiringTrendChart />
         <DojoHandoverComparisonChart />
         <ContractorWiseOperatorChart />
-        <TestPaperPassChart dateRange={dateRange} />
+        <TestPaperPassChart />
         <UserStatusDistributionChart dateRange={dateRange} />
         <DepartmentQuizChart dateRange={dateRange} />
         <EfficiencyChart />

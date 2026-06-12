@@ -115,65 +115,115 @@ export const getAdminHomeHandoverStats = asyncHandler(async (req, res) => {
 
 /**
  * Get Test Paper stats for the Admin Home page
- * Returns distribution of total attempts and pass/fail results
+ * Returns aggregated totals + date-bucketed trend series for charts.
  */
 export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
-    const { startDate, endDate, departmentId, isDojo } = req.query;
-    
-    let whereClause = "WHERE 1=1";
-    let params = [];
+    const { startDate, endDate, departmentId, isDojo, groupBy = 'monthly' } = req.query;
 
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    // Default date window when caller omits explicit range
+    const now = new Date();
+    let start, end;
     if (startDate && endDate) {
-        whereClause += " AND aq.completedAt >= ? AND aq.completedAt <= ?";
-        params.push(startDate, endDate);
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
     }
 
-    if (departmentId && departmentId !== 'all') {
-        whereClause += " AND u.departmentId = ?";
-        params.push(departmentId);
+    const periodFormatMap = {
+        daily:   "FORMAT(CAST(aq.completedAt AS DATE), 'yyyy-MM-dd')",
+        monthly: "FORMAT(CAST(aq.completedAt AS DATE), 'yyyy-MM')",
+        yearly:  "FORMAT(CAST(aq.completedAt AS DATE), 'yyyy')",
+    };
+    const periodExpr = periodFormatMap[safeGroupBy];
+
+    // Build optional filters (department, worker type)
+    let filterClause = '';
+    const baseParams = [start, end];
+
+    if (departmentId && departmentId !== 'all' && departmentId !== '') {
+        filterClause += ' AND u.departmentId = ?';
+        baseParams.push(departmentId);
     }
 
-    if (isDojo !== undefined && isDojo !== 'all') {
-        whereClause += " AND u.isTemporary = ?";
-        params.push(isDojo === 'true' || isDojo === '1' ? 1 : 0);
+    if (isDojo !== undefined && isDojo !== '' && isDojo !== 'all') {
+        filterClause += ' AND u.isTemporary = ?';
+        baseParams.push(isDojo === 'true' || isDojo === '1' ? 1 : 0);
     }
 
-    // Query 1: Total distribution (Theoritical vs Practical)
-    const totalQuery = `
-        SELECT 
-            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END as name,
-            COUNT(*) as value
+    const baseFrom = `
         FROM attempted_quizzes aq
         JOIN quizzes q ON aq.quiz = q.id
         JOIN users u ON aq.student = u.id
-        ${whereClause}
+        WHERE aq.completedAt >= ? AND aq.completedAt <= ?
+        ${filterClause}
+    `;
+
+    // Aggregated totals (used for footer metrics)
+    const totalQuery = `
+        SELECT
+            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END AS name,
+            COUNT(*) AS value
+        ${baseFrom}
         GROUP BY CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END
     `;
 
-    // Query 2: Pass/Fail distribution grouped by type
     const passFailQuery = `
-        SELECT 
-            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END as type,
-            CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END as status,
-            COUNT(*) as value
-        FROM attempted_quizzes aq
-        JOIN quizzes q ON aq.quiz = q.id
-        JOIN users u ON aq.student = u.id
-        ${whereClause}
-        GROUP BY 
-            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END, 
+        SELECT
+            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END AS type,
+            CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END AS status,
+            COUNT(*) AS value
+        ${baseFrom}
+        GROUP BY
+            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END,
             CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END
     `;
 
-    const [totalRows] = await executeQuery(totalQuery, params);
-    const [passFailRows] = await executeQuery(passFailQuery, params);
+    // Time-series for Chart 1: theoretical vs practical counts per period
+    const trendByTypeQuery = `
+        SELECT
+            ${periodExpr} AS period,
+            SUM(CASE WHEN q.isTheoretical = 1 THEN 1 ELSE 0 END) AS theoretical,
+            SUM(CASE WHEN q.isTheoretical = 0 THEN 1 ELSE 0 END) AS practical
+        ${baseFrom}
+        GROUP BY ${periodExpr}
+        ORDER BY period ASC
+    `;
 
-    // Format total distribution
+    // Time-series for Chart 2: pass/fail broken down by test type per period
+    const trendByResultQuery = `
+        SELECT
+            ${periodExpr} AS period,
+            SUM(CASE WHEN aq.status = 'PASSED' AND q.isTheoretical = 1 THEN 1 ELSE 0 END) AS passedTheoretical,
+            SUM(CASE WHEN aq.status != 'PASSED' AND q.isTheoretical = 1 THEN 1 ELSE 0 END) AS failedTheoretical,
+            SUM(CASE WHEN aq.status = 'PASSED' AND q.isTheoretical = 0 THEN 1 ELSE 0 END) AS passedPractical,
+            SUM(CASE WHEN aq.status != 'PASSED' AND q.isTheoretical = 0 THEN 1 ELSE 0 END) AS failedPractical
+        ${baseFrom}
+        GROUP BY ${periodExpr}
+        ORDER BY period ASC
+    `;
+
+    const [totalRows]       = await executeQuery(totalQuery,       baseParams);
+    const [passFailRows]    = await executeQuery(passFailQuery,    baseParams);
+    const [trendTypeRows]   = await executeQuery(trendByTypeQuery, baseParams);
+    const [trendResultRows] = await executeQuery(trendByResultQuery, baseParams);
+
     const totalDistribution = [
         { name: 'Theoretical', value: 0 },
-        { name: 'Practical', value: 0 }
+        { name: 'Practical',   value: 0 },
     ];
-
     totalRows.forEach(row => {
         const item = totalDistribution.find(d => d.name === row.name);
         if (item) item.value = row.value;
@@ -182,7 +232,12 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
     res.status(200).json(
         new ApiResponse(200, {
             totalDistribution,
-            passFailData: passFailRows
+            passFailData:   passFailRows,
+            trendByType:    trendTypeRows,
+            trendByResult:  trendResultRows,
+            groupBy:        safeGroupBy,
+            start,
+            end,
         }, "Test paper stats fetched successfully")
     );
 });

@@ -63,9 +63,6 @@ export default function MailManagementModal({ isOpen, onClose }) {
         }
 
         const activeCc = globalCcEmails.filter(e => e && e.trim() !== "");
-        if (activeCc.length >= 4) {
-            return toast.error("Maximum of 4 Global CC emails allowed");
-        }
 
         if (activeCc.some(e => e.toLowerCase() === trimmed.toLowerCase())) {
             return toast.error("Email is already in the CC list");

@@ -30,6 +30,16 @@ export const register = createAsyncThunk("api/v1/auth/register", async (data, { 
     }
 });
 
+export const dojoRegister = createAsyncThunk("api/v1/auth/dojo-register", async (data, { rejectWithValue }) => {
+    try {
+        const res = await axiosInstance.post("/api/v1/auth/dojo-register", data)
+        return res?.data
+    } catch (err) {
+        const errorMessage = err.response?.data?.message || "Dojo candidate registration failed."
+        return rejectWithValue(errorMessage)
+    }
+});
+
 export const logout = createAsyncThunk("auth/logout", async (_, { rejectWithValue }) => {
     try {
         const res = await axiosInstance.get("/api/v1/auth/logout")
@@ -139,6 +149,32 @@ const authSlice = createSlice({
                 
                 // Show error toast
                 toast.error('Registration Failed', {
+                    description: action.payload || 'An error occurred during registration',
+                    duration: 4000,
+                })
+            })
+            // Dojo Register cases  
+            .addCase(dojoRegister.pending, (state) => {
+                state.isLoading = true
+                state.error = null
+            })
+            .addCase(dojoRegister.fulfilled, (state, action) => {
+                state.isLoading = false
+                state.error = null
+                
+                // Show success toast (do not update user or isLoggedIn state)
+                const candidateName = action?.payload?.data?.user?.fullName || 'Candidate'
+                toast.success('Dojo Candidate Registered Successfully!', {
+                    description: `${candidateName} has been added to the pipeline.`,
+                    duration: 4000,
+                })
+            })
+            .addCase(dojoRegister.rejected, (state, action) => {
+                state.isLoading = false
+                state.error = action.payload
+                
+                // Show error toast
+                toast.error('Dojo Candidate Registration Failed', {
                     description: action.payload || 'An error occurred during registration',
                     duration: 4000,
                 })

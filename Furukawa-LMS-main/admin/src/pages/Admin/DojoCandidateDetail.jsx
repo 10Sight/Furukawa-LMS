@@ -176,6 +176,7 @@ const DojoCandidateDetail = () => {
               </div>
             </div>
             <InfoItem label="Designation" value={candidate.designation || "Candidate"} highlight />
+            <InfoItem label="Contractor" icon={IconBuilding} value={candidate.contractor} />
           </CardContent>
         </Card>
 
@@ -230,9 +231,10 @@ const DojoCandidateDetail = () => {
             </div>
 
             {/* Hiring Timeline Row */}
-            <div className="mt-8 pt-4 border-t grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-lg">
+            <div className="mt-8 pt-4 border-t grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50/50 p-4 rounded-lg">
                <TimelineItem label="Registration Date" value={new Date(candidate.createdAt).toLocaleDateString()} icon={IconCalendar} color="blue" />
                <TimelineItem label="Target Joining" value={candidate.joiningDate && new Date(candidate.joiningDate).toLocaleDateString()} icon={IconCalendar} color="green" />
+               <TimelineItem label="Expected Handover" value={candidate.expectedHandover ? new Date(candidate.expectedHandover).toLocaleDateString() : "—"} icon={IconCalendar} color="amber" />
                <TimelineItem label="Hiring Status" value={candidate.isTemporary ? "Assessment Pending" : "Promoted"} icon={IconCheck} color="amber" />
             </div>
           </CardContent>

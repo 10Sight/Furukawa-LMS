@@ -37,6 +37,7 @@ import HandoverComparisonChart from "@/components/charts/HandoverComparisonChart
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
 import UserStatusDistributionChart from "@/components/charts/UserStatusDistributionChart";
 import EfficiencyChart from "@/components/charts/EfficiencyChart";
+import DojoHandoverComparisonChart from "@/components/charts/DojoHandoverComparisonChart";
 import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
 import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { IconUserPlus } from "@tabler/icons-react";
@@ -220,6 +221,7 @@ const Home = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DojoHiringTrendChart />
+        <DojoHandoverComparisonChart />
         <DojoHiringChart dateRange={dateRange} />
         <HandoverComparisonChart dateRange={dateRange} />
         <TestPaperPassChart dateRange={dateRange} />

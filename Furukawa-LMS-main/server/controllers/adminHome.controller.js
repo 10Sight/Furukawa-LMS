@@ -13,7 +13,7 @@ export const getAdminHomeDojoStats = asyncHandler(async (req, res) => {
     const params = [];
 
     if (startDate && endDate) {
-        whereClause += " AND createdAt >= ? AND createdAt <= ?";
+        whereClause += " AND COALESCE(joiningDate, CAST(createdAt AS DATE)) >= ? AND COALESCE(joiningDate, CAST(createdAt AS DATE)) <= ?";
         params.push(startDate, endDate);
     }
 
@@ -41,6 +41,7 @@ export const getAdminHomeDojoStats = asyncHandler(async (req, res) => {
         }, "Admin home Dojo stats fetched successfully")
     );
 });
+
 
 /**
  * Get Handover Plan vs Actual stats for the Admin Home page
@@ -225,19 +226,21 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
 
     // Dynamic GROUP BY expression — zero-padded so ORDER BY period ASC is chronological
     const formatMap = {
-        daily:   "FORMAT(createdAt, 'yyyy-MM-dd')",
-        monthly: "FORMAT(createdAt, 'yyyy-MM')",
-        yearly:  "FORMAT(createdAt, 'yyyy')",
+        daily:   "FORMAT(COALESCE(joiningDate, CAST(createdAt AS DATE)), 'yyyy-MM-dd')",
+        monthly: "FORMAT(COALESCE(joiningDate, CAST(createdAt AS DATE)), 'yyyy-MM')",
+        yearly:  "FORMAT(COALESCE(joiningDate, CAST(createdAt AS DATE)), 'yyyy')",
     };
     const periodExpr = formatMap[safeGroupBy];
 
-    // Build optional department filter
+    // Build optional department filter — accepts comma-separated IDs for multi-select
     // Temp users store dept in targetDeptId; after handover it moves to departmentId
     const params = [start, end];
     let deptClause = '';
-    if (departmentId && departmentId !== '' && departmentId !== 'all') {
-        deptClause = 'AND (targetDeptId = ? OR departmentId = ?)';
-        params.push(departmentId, departmentId);
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND (targetDeptId IN (${ph}) OR departmentId IN (${ph}))`;
+        params.push(...deptIds, ...deptIds);
     }
 
     const [rows] = await executeQuery(`
@@ -250,8 +253,8 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
         FROM users
         WHERE (empId LIKE 'TEMP%' OR isTemporary = 1)
           AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND createdAt >= ?
-          AND createdAt <= ?
+          AND COALESCE(joiningDate, CAST(createdAt AS DATE)) >= ?
+          AND COALESCE(joiningDate, CAST(createdAt AS DATE)) <= ?
           ${deptClause}
         GROUP BY ${periodExpr}
         ORDER BY period ASC
@@ -261,6 +264,113 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
         new ApiResponse(200, { trend: rows, groupBy: safeGroupBy, start, end }, "Dojo hiring trend fetched successfully")
     );
 });
+
+
+/**
+ * Get Dojo Handover Comparison for Admin Home page
+ * Expected Handover: dojo users grouped by their expectedHandover date
+ * Actual Handover:   handed-over users (empId LIKE 'TEMP%' AND isTemporary=0) grouped by updatedAt
+ */
+export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    const expectedFormatMap = {
+        daily:   "FORMAT(expectedHandover, 'yyyy-MM-dd')",
+        monthly: "FORMAT(expectedHandover, 'yyyy-MM')",
+        yearly:  "FORMAT(expectedHandover, 'yyyy')",
+    };
+    const actualFormatMap = {
+        daily:   "FORMAT(CAST(updatedAt AS DATE), 'yyyy-MM-dd')",
+        monthly: "FORMAT(CAST(updatedAt AS DATE), 'yyyy-MM')",
+        yearly:  "FORMAT(CAST(updatedAt AS DATE), 'yyyy')",
+    };
+
+    // Temp users store their destination in targetDeptId — used for both queries
+    // Accepts comma-separated IDs for multi-select
+    let deptClause = '';
+    const expectedParams = [start, end];
+    const actualParams   = [start, end];
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND targetDeptId IN (${ph})`;
+        expectedParams.push(...deptIds);
+        actualParams.push(...deptIds);
+    }
+
+    const [expectedRows] = await executeQuery(`
+        SELECT
+            ${expectedFormatMap[safeGroupBy]} AS period,
+            COUNT(*)                          AS expected
+        FROM users
+        WHERE (isTemporary = 1 OR empId LIKE 'TEMP%')
+          AND (isDeleted = 0 OR isDeleted IS NULL)
+          AND expectedHandover IS NOT NULL
+          AND expectedHandover >= ?
+          AND expectedHandover <= ?
+          ${deptClause}
+        GROUP BY ${expectedFormatMap[safeGroupBy]}
+        ORDER BY period ASC
+    `, expectedParams);
+
+    const [actualRows] = await executeQuery(`
+        SELECT
+            ${actualFormatMap[safeGroupBy]} AS period,
+            COUNT(*)                        AS actual
+        FROM users
+        WHERE empId LIKE 'TEMP%'
+          AND isTemporary = 0
+          AND (isDeleted = 0 OR isDeleted IS NULL)
+          AND CAST(updatedAt AS DATE) >= ?
+          AND CAST(updatedAt AS DATE) <= ?
+          ${deptClause}
+        GROUP BY ${actualFormatMap[safeGroupBy]}
+        ORDER BY period ASC
+    `, actualParams);
+
+    // Merge both result sets by period key
+    const mergedMap = {};
+    expectedRows.forEach(r => {
+        if (r.period) mergedMap[r.period] = { period: r.period, expected: Number(r.expected), actual: 0 };
+    });
+    actualRows.forEach(r => {
+        if (r.period) {
+            if (mergedMap[r.period]) {
+                mergedMap[r.period].actual = Number(r.actual);
+            } else {
+                mergedMap[r.period] = { period: r.period, expected: 0, actual: Number(r.actual) };
+            }
+        }
+    });
+
+    const trend = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, groupBy: safeGroupBy, start, end }, "Dojo handover comparison fetched successfully")
+    );
+});
+
 
 /**
  * Get User Status stats for the Admin Home page

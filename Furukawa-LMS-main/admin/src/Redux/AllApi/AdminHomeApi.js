@@ -45,6 +45,14 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
+        getDojoHandoverComparison: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/dojo-handover-comparison",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            keepUnusedDataFor: 0,
+        }),
     }),
 });
 
@@ -54,4 +62,5 @@ export const {
     useGetAdminHomeTestPaperStatsQuery,
     useGetAdminHomeUserStatusStatsQuery,
     useGetDojoHiringTrendQuery,
+    useGetDojoHandoverComparisonQuery,
 } = adminHomeApi;

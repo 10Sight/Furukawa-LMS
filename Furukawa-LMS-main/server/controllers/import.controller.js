@@ -4,27 +4,88 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import bcrypt from "bcryptjs";
 import User from "../models/auth.model.js";
+import fs from "fs";
+
+/**
+ * Parse date string in DD-MMM-YY or DD-MMM-YYYY format robustly and timezone-independently
+ */
+const parseDDMMMYY = (str) => {
+    if (!str) return null;
+    const cleanStr = str.toString().trim();
+    // Match DD-MMM-YY or DD-MMM-YYYY (e.g. 01-Jun-26 or 01-Jun-2026)
+    const match = cleanStr.match(/^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{2,4})$/);
+    if (!match) return null;
+
+    const day = parseInt(match[1]);
+    const monthStr = match[2].toLowerCase();
+    let year = parseInt(match[3]);
+
+    if (year < 100) {
+        year = year < 50 ? 2000 + year : 1900 + year;
+    }
+
+    const months = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+    };
+
+    const month = months[monthStr.substring(0, 3)];
+    if (!month) return null;
+
+    const formattedDay = String(day).padStart(2, '0');
+    return `${year}-${month}-${formattedDay}`;
+};
+
+/**
+ * Get row value by checking multiple possible column names case-insensitively and space-normalized
+ */
+const getRowVal = (row, keys) => {
+    if (!row) return null;
+    for (const key of keys) {
+        if (row[key] !== undefined && row[key] !== null) return row[key];
+
+        const normKey = key.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+        for (const rowKey of Object.keys(row)) {
+            const normRowKey = rowKey.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+            if (normKey === normRowKey) {
+                return row[rowKey];
+            }
+        }
+    }
+    return null;
+};
 
 /**
  * Robust date normalization to YYYY-MM-DD
  */
 const normalizeDate = (val) => {
     if (!val) return null;
-    
-    let d;
+
     if (val instanceof Date) {
-        d = val;
-    } else {
-        d = new Date(val);
+        if (isNaN(val.getTime())) return null;
+        const year = val.getFullYear();
+        const month = String(val.getMonth() + 1).padStart(2, '0');
+        const day = String(val.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
-    if (isNaN(d.getTime())) return null;
-    
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const str = val.toString().trim();
+    if (!str) return null;
+
+    const dmmmyy = parseDDMMMYY(str);
+    if (dmmmyy) return dmmmyy;
+
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    return null;
 };
+
 
 /**
  * Helper to sync user ID to department's students array
@@ -32,7 +93,7 @@ const normalizeDate = (val) => {
  */
 const syncDepartmentStudents = async (userId, departmentId) => {
     if (!userId) return;
-    
+
     try {
         // 1. Remove user from all other departments first to ensure consistency
         // (Current requirement is one department per operator)
@@ -104,7 +165,7 @@ const generateNextTempId = async (prefix) => {
         if (seqMatch) {
             nextSeq = parseInt(seqMatch[1]) + 1;
         }
-        
+
         // Try to keep the same random part for same prefix to maintain structure
         const randMatch = lastId.match(/(\d{3})\d{3}$/);
         if (randMatch) {
@@ -144,7 +205,7 @@ export const importEmployees = async (req, res) => {
         const worksheet = workbook.Sheets[sheetName];
         const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
         let hRowIndex = -1;
-        
+
         // Find the header row (look for "EmployeeID" or "Employee Code")
         for (let i = 0; i < Math.min(allRows.length, 15); i++) {
             const row = allRows[i];
@@ -189,7 +250,7 @@ export const importEmployees = async (req, res) => {
         const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
 
         const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
-        
+
         const sectionMap = new Map();
         allSections.forEach(s => {
             const name = s.name.toLowerCase().trim();
@@ -274,10 +335,10 @@ export const importEmployees = async (req, res) => {
 
                 // Resolve hierarchy IDs
                 const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
-                const sectionId = (departmentId && normalizedRow.section) 
-                    ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`) 
+                const sectionId = (departmentId && normalizedRow.section)
+                    ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`)
                     : null;
-                
+
                 // Derive Line, Sub-Section, and Station from Station No. + Section
                 const hierarchyMatch = (sectionId && normalizedRow.stationNo)
                     ? sectionStationMap.get(`${sectionId}|${normalizedRow.stationNo.toLowerCase().trim()}`)
@@ -300,12 +361,12 @@ export const importEmployees = async (req, res) => {
                     }
 
                     if (normalizedRow.phoneNumber && !/^\d{8,15}$/.test(normalizedRow.phoneNumber.replace(/\D/g, ''))) {
-                         continue;
+                        continue;
                     }
 
                     const error = "Missing required fields: EmployeeID, CardNo, and Name are mandatory.";
                     results.failed.push({ row: rowNumber, data: row, error });
-                    
+
                     // Log to DB
                     await executeQuery(
                         "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
@@ -364,7 +425,7 @@ export const importEmployees = async (req, res) => {
                     "LEFT JOIN [lines] l ON u.lineId = l.id " +
                     "LEFT JOIN sub_sections ss ON u.subSectionId = ss.id " +
                     "LEFT JOIN machines st ON u.stationId = st.id " +
-                    "WHERE u.userName = ?", 
+                    "WHERE u.userName = ?",
                     [userData.userName]
                 );
 
@@ -398,11 +459,11 @@ export const importEmployees = async (req, res) => {
                     ];
 
                     const updatedData = {};
-                    
+
                     for (const field of fieldsToCompare) {
                         const newVal = userData[field.key];
                         const oldVal = existingUser[field.key];
-                        
+
                         let isDifferent = false;
                         if (['dob', 'joiningDate', 'leavingDate'].includes(field.key)) {
                             const d1 = safeDate(newVal);
@@ -416,21 +477,21 @@ export const importEmployees = async (req, res) => {
 
                         if (isDifferent) {
                             updatedData[field.key] = userData[field.key];
-                            
+
                             // Handle syncing string columns for hierarchy
-                            if (field.key === 'departmentId') { 
+                            if (field.key === 'departmentId') {
                                 updatedData.department = normalizedRow.department;
                                 changes[field.label] = { from: existingUser.departmentName || "N/A", to: normalizedRow.department || "N/A" };
-                            } else if (field.key === 'sectionId') { 
+                            } else if (field.key === 'sectionId') {
                                 updatedData.section = normalizedRow.section;
                                 changes[field.label] = { from: existingUser.sectionName || "N/A", to: normalizedRow.section || "N/A" };
-                            } else if (field.key === 'lineId') { 
+                            } else if (field.key === 'lineId') {
                                 updatedData.line = normalizedRow.line;
                                 changes[field.label] = { from: existingUser.lineName || "N/A", to: normalizedRow.line || "N/A" };
-                            } else if (field.key === 'subSectionId') { 
+                            } else if (field.key === 'subSectionId') {
                                 updatedData.sub_section = normalizedRow.sub_section; // Check if col name is sub_section or subSection
                                 changes[field.label] = { from: existingUser.subSectionName || "N/A", to: normalizedRow.sub_section || "N/A" };
-                            } else if (field.key === 'stationId') { 
+                            } else if (field.key === 'stationId') {
                                 updatedData.stationNo = normalizedRow.stationNo;
                                 changes[field.label] = { from: existingUser.stationName || "N/A", to: normalizedRow.stationNo || "N/A" };
                             } else {
@@ -447,7 +508,7 @@ export const importEmployees = async (req, res) => {
                     if (Object.keys(updatedData).length > 0) {
                         const updateFields = Object.keys(updatedData).map(k => `${k} = ?`).join(', ');
                         const values = [...Object.values(updatedData), existingUser.id];
-                        
+
                         await executeQuery(`UPDATE users SET ${updateFields}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
 
                         // Sync stationId to machine_assignments if it was updated or already exists
@@ -531,7 +592,7 @@ export const importEmployees = async (req, res) => {
             } catch (error) {
                 const errorMsg = error.message || "Failed to import user";
                 results.failed.push({ row: rowNumber, data: row, error: errorMsg });
-                
+
                 // Log to DB
                 await executeQuery(
                     "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
@@ -678,7 +739,7 @@ export const downloadImportTemplate = async (req, res) => {
 
         // Create workbook
         const worksheet = XLSX.utils.json_to_sheet(templateData);
-        
+
         // Define column widths for better readability (optional but helpful)
         const widths = Object.keys(templateData[0]).map(key => ({ wch: Math.max(key.length, 15) }));
         worksheet["!cols"] = widths;
@@ -715,12 +776,37 @@ export const importDojoUsers = async (req, res) => {
             throw new ApiError(400, "No file uploaded");
         }
 
+        // DEBUG: save the uploaded file and log info
+        try {
+            fs.writeFileSync("d:/10Sight Agency/Sarvagaya Institute/FME/Furukawa-LMS/Furukawa-LMS-main/server/uploaded_debug.xlsx", req.file.buffer);
+            const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
+            const logContent = [
+                `Time: ${new Date().toISOString()}`,
+                `Sheets: ${JSON.stringify(workbook.SheetNames)}`
+            ];
+            workbook.SheetNames.forEach(name => {
+                const ws = workbook.Sheets[name];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
+                logContent.push(`Sheet: ${name}, total rows: ${rows.length}`);
+                if (rows.length > 0) {
+                    logContent.push(`  Row 0: ${JSON.stringify(rows[0])}`);
+                }
+                if (rows.length > 1) {
+                    logContent.push(`  Row 1: ${JSON.stringify(rows[1])}`);
+                }
+            });
+            fs.appendFileSync("d:/10Sight Agency/Sarvagaya Institute/FME/Furukawa-LMS/Furukawa-LMS-main/server/import_debug.log", logContent.join("\n") + "\n\n");
+        } catch (err) {
+            console.error("DEBUG error saving or logging:", err);
+        }
+
         // Read the Excel file
         const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
-        
+
+
         let hRowIndex = -1;
         for (let i = 0; i < Math.min(allRows.length, 15); i++) {
             const row = allRows[i];
@@ -758,8 +844,25 @@ export const importDojoUsers = async (req, res) => {
         const [allSubSections] = await executeQuery("SELECT id, name, lineId FROM sub_sections WHERE isActive = 1");
         const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
 
-        const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
-        const sectionMap = new Map(allSections.map(s => [`${s.departmentId}|${s.name.toLowerCase().trim()}`, s.id]));
+        const deptMap = new Map();
+        allDepts.forEach(d => {
+            const name = d.name.toLowerCase().trim();
+            deptMap.set(name, d.id);
+            if (name.includes(" - ")) {
+                const parts = name.split(" - ");
+                deptMap.set(parts[0].trim(), d.id);
+            }
+        });
+
+        const sectionMap = new Map();
+        allSections.forEach(s => {
+            const name = s.name.toLowerCase().trim();
+            sectionMap.set(`${s.departmentId}|${name}`, s.id);
+            if (name.includes(" - ")) {
+                const parts = name.split(" - ");
+                sectionMap.set(`${s.departmentId}|${parts[0].trim()}`, s.id);
+            }
+        });
 
         const results = { success: [], failed: [], total: data.length, updatedCount: 0 };
 
@@ -775,26 +878,29 @@ export const importDojoUsers = async (req, res) => {
 
             try {
                 const normalizedRow = {
-                    empId: (row["Employee Code"] || row["EmployeeID"] || row["Employee ID"])?.toString().trim(),
-                    fullName: (row["Name"] || row["Full Name"])?.toString().trim(),
-                    gender: (row["Gender"])?.toString().trim() || "MALE",
-                    department: (row["Department"])?.toString().trim(),
-                    section: (row["Section"])?.toString().trim(),
-                    line: (row["Line"])?.toString().trim(),
-                    sub_section: (row["Sub Section"])?.toString().trim(),
-                    stationNo: (row["Station No."])?.toString().trim(),
-                    phoneNumber: (row["Mobile No"] || row["Mobile No."] || row["Mobile Number"])?.toString().trim(),
-                    email: (row["E-Mail ID"] || row["Email"])?.toString().trim(),
-                    designation: (row["Designation"])?.toString().trim(),
-                    dob: normalizeDate(row["DOB"] || row["D.O.B."]),
-                    joiningDate: normalizeDate(row["D.O.J."] || row["DOJ"]),
-                    fatherHusbandName: row["Father / Husband Name"] || row["Father/HusbandName"] || null,
-                    education: row["Education"] || null,
-                    district: row["Distt"] || row["District"] || null,
-                    state: row["State"] || null,
-                    pin: row["PIN"] || null,
-                    busRoute: row["Bus Route"] || null,
+                    contractor: getRowVal(row, ["Contractor", "Contractor Name"])?.toString().trim(),
+                    empId: getRowVal(row, ["Employee Code", "EmployeeID", "Employee ID"])?.toString().trim(),
+                    fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
+                    gender: getRowVal(row, ["Gender"])?.toString().trim() || "MALE",
+                    department: getRowVal(row, ["Department"])?.toString().trim(),
+                    section: getRowVal(row, ["Section"])?.toString().trim(),
+                    line: getRowVal(row, ["Line"])?.toString().trim(),
+                    sub_section: getRowVal(row, ["Sub Section"])?.toString().trim(),
+                    stationNo: getRowVal(row, ["Station No.", "Station No", "Station"])?.toString().trim(),
+                    phoneNumber: getRowVal(row, ["Mobile No", "Mobile No.", "Mobile Number", "Phone", "Phone Number"])?.toString().trim(),
+                    email: getRowVal(row, ["E-Mail ID", "Email", "Email ID"])?.toString().trim(),
+                    designation: getRowVal(row, ["Designation"])?.toString().trim(),
+                    dob: normalizeDate(getRowVal(row, ["DOB", "D.O.B.", "Date of Birth"])),
+                    joiningDate: normalizeDate(getRowVal(row, ["D.O.J.", "DOJ", "Date of Joining", "Date of Join"])),
+                    expectedHandover: normalizeDate(getRowVal(row, ["Expected Handover Date", "Expected handover date", "Expected Handover"])),
+                    fatherHusbandName: getRowVal(row, ["Father / Husband Name", "Father/HusbandName", "Father Name", "Husband Name"]),
+                    education: getRowVal(row, ["Education"]),
+                    district: getRowVal(row, ["Distt", "District"]),
+                    state: getRowVal(row, ["State"]),
+                    pin: getRowVal(row, ["PIN", "Pincode", "Pin Code"]),
+                    busRoute: getRowVal(row, ["Bus Route"]),
                 };
+
 
                 if (!normalizedRow.empId || !normalizedRow.fullName) {
                     if (!normalizedRow.empId && !normalizedRow.fullName) continue;
@@ -840,8 +946,8 @@ export const importDojoUsers = async (req, res) => {
                     gender: (normalizedRow.gender || "").toUpperCase().startsWith('F') ? "FEMALE" : "MALE",
                     email: normalizedRow.email || null,
                     phoneNumber: normalizedRow.phoneNumber || null,
-                    departmentId: departmentId,
-                    sectionId: sectionId,
+                    departmentId: null,
+                    sectionId: null,
                     targetDeptId: departmentId,
                     targetSectionId: sectionId,
                     designation: normalizedRow.designation,
@@ -853,7 +959,9 @@ export const importDojoUsers = async (req, res) => {
                     state: normalizedRow.state,
                     pin: normalizedRow.pin,
                     busRoute: normalizedRow.busRoute,
-                    unit: "UNIT_1"
+                    unit: "UNIT_1",
+                    expectedHandover: normalizedRow.expectedHandover || null,
+                    contractor: normalizedRow.contractor || null,
                 };
 
                 const newUser = await User.create(userData);
@@ -893,19 +1001,19 @@ export const downloadDojoImportTemplate = async (req, res) => {
         const templateData = [
             {
                 "Employee Code": "AS000233",
-                "Card No.": "00C0233",
                 "Name": "SUBHASH SINGH",
                 "Father / Husband Name": "RAM SHARAN",
                 "Gender": "M",
+                "Contractor": "ABC Contractors",
                 "Department": "C&C - Indirect",
                 "Section": "Assembly - Direct",
                 "Line": "AIRBAG",
                 "Sub Section": "YHB FL 1",
                 "Station No.": "LEADER",
-                "Mentor": "",
                 "Designation": "Operator",
                 "DOB": "1990-11-23",
                 "D.O.J.": "2013-03-01",
+                "Expected Handover Date": "2024-06-30",
                 "Education": "10th",
                 "Distt": "REVARI",
                 "State": "Haryana",
@@ -918,6 +1026,8 @@ export const downloadDojoImportTemplate = async (req, res) => {
         ];
 
         const worksheet = XLSX.utils.json_to_sheet(templateData);
+        const widths = Object.keys(templateData[0]).map(key => ({ wch: Math.max(key.length, 15) }));
+        worksheet["!cols"] = widths;
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Candidates");
         const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
@@ -972,7 +1082,7 @@ export const getImportLogs = async (req, res) => {
  */
 export const getImportLogDetails = async (req, res) => {
     const { id } = req.params;
-    
+
     const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [id]);
     if (log.length === 0) throw new ApiError(404, "Log not found");
 

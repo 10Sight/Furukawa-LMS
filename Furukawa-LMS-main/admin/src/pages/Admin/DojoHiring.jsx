@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-    useCreateUserMutation,
+    useDojoRegisterMutation,
     useGetTemporaryUsersQuery,
     useLazyGetTemporaryUsersQuery,
     useLazyGetNextTemporaryIdQuery,
@@ -38,6 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
     IconPlus, 
@@ -121,7 +122,9 @@ const DojoHiring = () => {
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
     const [userToDelete, setUserToDelete] = useState(null);
-    
+    const [selectedRows, setSelectedRows] = useState(new Set());
+    const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+
     const [searchTerm, setSearchTerm] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [activeTab, setActiveTab] = useState("all");
@@ -129,11 +132,11 @@ const DojoHiring = () => {
     
     const [formData, setFormData] = useState({
         fullName: "", empId: "", tempId: "", fatherHusbandName: "", gender: "MALE",
-        designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0], 
-        departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "", 
-        education: "", email: "", phoneNumber: "", district: "", state: "", 
+        designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0],
+        departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
+        education: "", email: "", phoneNumber: "", district: "", state: "",
         pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
-        leavingDate: "", reasonOfLeaving: ""
+        leavingDate: "", reasonOfLeaving: "", contractor: "", expectedHandover: ""
     });
 
     const location = useLocation();
@@ -145,7 +148,7 @@ const DojoHiring = () => {
         today: activeTab === "today" ? "true" : "false"
     });
     const [triggerNextId] = useLazyGetNextTemporaryIdQuery();
-    const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
+    const [dojoRegister, { isLoading: isCreating }] = useDojoRegisterMutation();
     const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation();
     const [deleteUser, { isLoading: isDeleting }] = useDeleteUserMutation();
     const [importDojoCandidates] = useImportDojoCandidatesMutation();
@@ -163,6 +166,10 @@ const DojoHiring = () => {
     const subSections = subSectionsData?.data || [];
     const machines = machinesData?.data || [];
     const fileInputRef = React.useRef(null);
+
+    useEffect(() => {
+        setSelectedRows(new Set());
+    }, [currentPage, searchTerm, genderFilter, activeTab]);
 
     useEffect(() => {
         const generateId = async () => {
@@ -228,7 +235,7 @@ const DojoHiring = () => {
                     password: formData.tempId, // Generated TEMP ID as password
                     userName: formData.empId // Manual Employee Code as login ID
                 };
-                await createUser(payload).unwrap();
+                await dojoRegister(payload).unwrap();
                 toast.success("Temporary employee registered successfully");
             }
             
@@ -249,6 +256,30 @@ const DojoHiring = () => {
             refetch();
         } catch (error) {
             toast.error(error?.data?.message || "Failed to remove candidate");
+        }
+    };
+
+    const allUsers = tempUsersData?.data?.users || [];
+    const isAllSelected = allUsers.length > 0 && selectedRows.size === allUsers.length;
+
+    const toggleSelectAll = () => {
+        if (isAllSelected) {
+            setSelectedRows(new Set());
+        } else {
+            setSelectedRows(new Set(allUsers.map(u => u.id)));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        try {
+            await Promise.all([...selectedRows].map(id => deleteUser(id).unwrap()));
+            toast.success(`Removed ${selectedRows.size} candidates`);
+            setSelectedRows(new Set());
+            setIsBulkDeleteOpen(false);
+            refetch();
+        } catch (error) {
+            toast.error(error?.data?.message || "Failed to remove some candidates");
+            setIsBulkDeleteOpen(false);
         }
     };
 
@@ -372,6 +403,8 @@ const DojoHiring = () => {
                 { header: "Bus Route", key: "busRoute", width: 15 },
                 { header: "Date of Leaving", key: "leavingDate", width: 15 },
                 { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
+                { header: "Contractor", key: "contractor", width: 20 },
+                { header: "Expected Handover Date", key: "expectedHandover", width: 20 },
             ];
 
             allCandidates.forEach((candidate) => {
@@ -399,6 +432,8 @@ const DojoHiring = () => {
                     busRoute: candidate.busRoute || "",
                     leavingDate: safeDateFormat(candidate.leavingDate, "yyyy-MM-dd"),
                     reasonOfLeaving: candidate.reasonOfLeaving || "",
+                    contractor: candidate.contractor || "",
+                    expectedHandover: safeDateFormat(candidate.expectedHandover, "yyyy-MM-dd"),
                 });
             });
 
@@ -425,6 +460,12 @@ const DojoHiring = () => {
 
     const openEditModal = (user) => {
         setSelectedUser(user);
+
+        const getFormId = (id1, id2) => {
+            const val = (id1 !== undefined && id1 !== null && id1 !== "" && id1 !== 0 && id1 !== "0") ? id1 : id2;
+            return (val && val !== 0 && val !== "0") ? String(val) : "";
+        };
+
         setFormData({
             fullName: user.fullName || "",
             empId: user.userName || "", // userName was used as empId in registration
@@ -432,13 +473,13 @@ const DojoHiring = () => {
             fatherHusbandName: user.fatherHusbandName || "",
             gender: user.gender || "MALE",
             designation: user.designation || "",
-            dob: user.dob ? new Date(user.dob).toISOString().split('T')[0] : "",
-            joiningDate: user.joiningDate ? new Date(user.joiningDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            departmentId: (user.departmentId || user.targetDeptId) ? String(user.departmentId || user.targetDeptId) : "",
-            sectionId: (user.sectionId || user.targetSectionId) ? String(user.sectionId || user.targetSectionId) : "",
-            lineId: (user.lineId || user.targetLineId) ? String(user.lineId || user.targetLineId) : "",
-            subSectionId: (user.subSectionId || user.targetSubSectionId) ? String(user.subSectionId || user.targetSubSectionId) : "",
-            stationId: (user.stationId || user.targetStationId) ? String(user.stationId || user.targetStationId) : "",
+            dob: user.dob ? String(user.dob).substring(0, 10) : "",
+            joiningDate: user.joiningDate ? String(user.joiningDate).substring(0, 10) : new Date().toISOString().split('T')[0],
+            departmentId: getFormId(user.departmentId, user.targetDeptId),
+            sectionId: getFormId(user.sectionId, user.targetSectionId),
+            lineId: getFormId(user.lineId, user.targetLineId),
+            subSectionId: getFormId(user.subSectionId, user.targetSubSectionId),
+            stationId: getFormId(user.stationId, user.targetStationId),
             education: user.education || "",
             email: user.email || "",
             phoneNumber: user.phoneNumber || "",
@@ -448,8 +489,10 @@ const DojoHiring = () => {
             busRoute: user.busRoute || "",
             unit: user.unit || "UNIT_1",
             status: user.status || "PRESENT",
-            leavingDate: user.leavingDate ? new Date(user.leavingDate).toISOString().split('T')[0] : "",
-            reasonOfLeaving: user.reasonOfLeaving || ""
+            leavingDate: user.leavingDate ? String(user.leavingDate).substring(0, 10) : "",
+            reasonOfLeaving: user.reasonOfLeaving || "",
+            contractor: user.contractor || "",
+            expectedHandover: user.expectedHandover ? String(user.expectedHandover).substring(0, 10) : ""
         });
         setIsAddModalOpen(true);
     };
@@ -459,11 +502,11 @@ const DojoHiring = () => {
         setSelectedUser(null);
         setFormData({
             fullName: "", empId: "", tempId: "", fatherHusbandName: "", gender: "MALE",
-            designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0], 
-            departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "", 
-            education: "", email: "", phoneNumber: "", district: "", state: "", 
+            designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0],
+            departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
+            education: "", email: "", phoneNumber: "", district: "", state: "",
             pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
-            leavingDate: "", reasonOfLeaving: ""
+            leavingDate: "", reasonOfLeaving: "", contractor: "", expectedHandover: ""
         });
     };
 
@@ -596,13 +639,41 @@ const DojoHiring = () => {
                                 options={genderOptions}
                                 placeholder="Select Gender"
                             />
-                            <SearchInput 
+                            <SearchInput
                                 value={searchTerm}
                                 onChange={setSearchTerm}
                                 placeholder="Search candidates..."
                             />
                         </div>
                     </div>
+                    {selectedRows.size > 0 && (
+                        <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-2 mt-3">
+                            <span className="text-sm font-bold text-blue-800">
+                                {selectedRows.size} candidate{selectedRows.size > 1 ? 's' : ''} selected
+                            </span>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setSelectedRows(new Set())}
+                                    className="text-slate-600 border-slate-200 h-7 text-xs"
+                                >
+                                    <IconX className="w-3.5 h-3.5 mr-1" />
+                                    Deselect All
+                                </Button>
+                                {canDelete && (
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setIsBulkDeleteOpen(true)}
+                                        className="bg-rose-600 hover:bg-rose-700 text-white h-7 text-xs gap-1"
+                                    >
+                                        <IconTrash className="w-3.5 h-3.5" />
+                                        Delete Selected
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </CardHeader>
                 
                 <CardContent className="p-0">
@@ -616,7 +687,14 @@ const DojoHiring = () => {
                             <Table>
                                 <TableHeader className="bg-slate-50/50">
                                     <TableRow className="border-slate-100 h-12">
-                                        <TableHead className="pl-6 font-bold text-slate-500 text-xs uppercase tracking-wider">Candidate Details</TableHead>
+                                        <TableHead className="pl-4 w-12">
+                                            <Checkbox
+                                                checked={isAllSelected}
+                                                onCheckedChange={toggleSelectAll}
+                                                aria-label="Select all"
+                                            />
+                                        </TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Candidate Details</TableHead>
                                         <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Temporary ID</TableHead>
                                         <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Professional Info</TableHead>
                                         <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Status</TableHead>
@@ -628,7 +706,20 @@ const DojoHiring = () => {
                                 <TableBody>
                                     {tempUsersData?.data?.users?.length > 0 ? (
                                         tempUsersData.data.users.map((user) => (
-                                            <TableRow key={user.id} className="group hover:bg-slate-50/80 transition-colors border-slate-50 h-20">
+                                            <TableRow key={user.id} className="group hover:bg-slate-50/80 transition-colors border-slate-50 h-20 cursor-pointer" onClick={() => navigate(`/admin/dojo-hiring/${user.id}`)}>
+                                                <TableCell className="pl-4 w-12" onClick={(e) => e.stopPropagation()}>
+                                                    <Checkbox
+                                                        checked={selectedRows.has(user.id)}
+                                                        onCheckedChange={(checked) => {
+                                                            setSelectedRows(prev => {
+                                                                const next = new Set(prev);
+                                                                checked ? next.add(user.id) : next.delete(user.id);
+                                                                return next;
+                                                            });
+                                                        }}
+                                                        aria-label={`Select ${user.fullName}`}
+                                                    />
+                                                </TableCell>
                                                 <TableCell className="pl-6">
                                                     <div className="flex items-center gap-3">
                                                         <Avatar className="h-10 w-10 border-2 border-white shadow-sm">
@@ -707,21 +798,12 @@ const DojoHiring = () => {
                                                         )}
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="pr-6 text-right">
+                                                <TableCell className="pr-6 text-right" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <Button 
-                                                            variant="ghost" 
-                                                            size="sm" 
-                                                            className="h-8 w-8 p-0 rounded-lg text-blue-600 hover:bg-blue-50"
-                                                            onClick={() => navigate(`/admin/dojo-hiring/${user.id}`)}
-                                                            title="View Details"
-                                                        >
-                                                            <IconEye className="w-4 h-4" />
-                                                        </Button>
                                                         {canUpdate && (
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="sm" 
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
                                                                 className="h-8 w-8 p-0 rounded-lg text-amber-600 hover:bg-amber-50"
                                                                 onClick={() => openEditModal(user)}
                                                                 title="Edit Candidate"
@@ -730,9 +812,9 @@ const DojoHiring = () => {
                                                             </Button>
                                                         )}
                                                         {canDelete && (
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="sm" 
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
                                                                 className="h-8 w-8 p-0 rounded-lg text-rose-600 hover:bg-rose-50"
                                                                 onClick={() => {
                                                                     setUserToDelete(user);
@@ -743,21 +825,13 @@ const DojoHiring = () => {
                                                                 <IconTrash className="w-4 h-4" />
                                                             </Button>
                                                         )}
-                                                        <Button 
-                                                            variant="ghost" 
-                                                            size="sm" 
-                                                            className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                                                            onClick={() => navigate(`/admin/dojo-hiring/${user.id}`)}
-                                                        >
-                                                            <IconArrowRight className="w-4 h-4" />
-                                                        </Button>
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={6} className="text-center py-32">
+                                            <TableCell colSpan={8} className="text-center py-32">
                                                 <div className="flex flex-col items-center gap-3 opacity-30">
                                                     <IconUsers className="w-16 h-16" />
                                                     <div className="space-y-1">
@@ -949,6 +1023,14 @@ const DojoHiring = () => {
                             <Label htmlFor="joiningDate">Date of Joining</Label>
                             <Input id="joiningDate" type="date" name="joiningDate" value={formData.joiningDate} onChange={handleInputChange} />
                         </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="expectedHandover">Expected Handover Date</Label>
+                            <Input id="expectedHandover" type="date" name="expectedHandover" value={formData.expectedHandover} onChange={handleInputChange} />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="contractor">Contractor</Label>
+                            <Input id="contractor" name="contractor" value={formData.contractor} onChange={handleInputChange} placeholder="Contractor name" />
+                        </div>
 
                         {/* Contact Section */}
                         <div className="md:col-span-2 mt-2">
@@ -1073,6 +1155,36 @@ const DojoHiring = () => {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            {/* Bulk Delete Confirmation Dialog */}
+            <Dialog open={isBulkDeleteOpen} onOpenChange={setIsBulkDeleteOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                            <IconAlertCircle className="w-6 h-6 text-red-600" />
+                        </div>
+                        <DialogTitle className="text-center text-xl font-bold">
+                            Remove {selectedRows.size} Candidate{selectedRows.size > 1 ? 's' : ''}?
+                        </DialogTitle>
+                        <DialogDescription className="text-center">
+                            Are you sure you want to remove <span className="font-bold text-slate-900">{selectedRows.size}</span> selected candidate{selectedRows.size > 1 ? 's' : ''} from the hiring pipeline? This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="flex gap-2 sm:justify-center mt-4">
+                        <Button variant="outline" onClick={() => setIsBulkDeleteOpen(false)} className="flex-1">
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleBulkDelete}
+                            disabled={isDeleting}
+                            className="flex-1 gap-2"
+                        >
+                            {isDeleting ? <IconLoader className="w-4 h-4 animate-spin" /> : <IconTrash className="w-4 h-4" />}
+                            {isDeleting ? "Removing..." : "Remove All"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
             {/* Import Candidates Dialog */}
             <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
                 <DialogContent className="sm:max-w-[600px]">
@@ -1099,14 +1211,18 @@ const DojoHiring = () => {
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-blue-700 font-mono bg-white/50 p-2 rounded-lg">
                                     <span>- Employee Code *</span>
                                     <span>- Name *</span>
-                                    <span>- Mobile No *</span>
+                                    <span>- Mobile No</span>
                                     <span>- Gender</span>
+                                    <span>- Contractor</span>
                                     <span>- Department</span>
                                     <span>- Section</span>
-                                    <span>- DOB (YYYY-MM-DD)</span>
                                     <span>- Designation</span>
+                                    <span>- DOB (YYYY-MM-DD)</span>
+                                    <span>- D.O.J. (YYYY-MM-DD)</span>
+                                    <span>- Expected Handover Date</span>
                                     <span>- Father / Husband Name</span>
                                     <span>- Education</span>
+                                    <span>- Status</span>
                                 </div>
                                 <p className="text-[10px] text-blue-600 italic">
                                     * Required fields. Manual Employee Code will be used as login ID.

@@ -243,6 +243,15 @@ export const userApi = createApi({
                 params: { prefix }
             }),
         }),
+
+        dojoRegister: builder.mutation({
+            query: (userData) => ({
+                url: "/api/v1/auth/dojo-register",
+                method: "POST",
+                data: userData
+            }),
+            invalidatesTags: ['User'],
+        }),
     }),
 });
 
@@ -269,4 +278,5 @@ export const {
     useLazyGetTemporaryUsersQuery,
     useLazyGetNextTemporaryIdQuery,
     useChangePasswordMutation,
+    useDojoRegisterMutation,
 } = userApi;

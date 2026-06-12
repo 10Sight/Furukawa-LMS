@@ -78,6 +78,7 @@ class User {
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
         this.ojt = typeof data.ojt === 'string' ? JSON.parse(data.ojt) : (data.ojt || []);
+        this.expectedHandover = data.expectedHandover || null;
 
         // Internal tracking for password changes
         this._originalPassword = data.password;
@@ -156,6 +157,7 @@ class User {
                     isMentor BIT DEFAULT 0,
                     isSupervisor BIT DEFAULT 0,
                     isIncharge BIT DEFAULT 0,
+                    expectedHandover DATE NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     -- Foreign keys will be created if the referenced tables exist.
@@ -203,7 +205,8 @@ class User {
                 { name: 'currentEffeciency', type: 'FLOAT DEFAULT 0' },
                 { name: 'skillEffeciency', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
                 { name: 'ojt', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
-                { name: 'stations', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' }
+                { name: 'stations', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
+                { name: 'expectedHandover', type: 'DATE NULL' }
             ];
 
             for (const col of columnsToAdd) {
@@ -387,7 +390,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt", "ojt"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt", "ojt", "expectedHandover"
         ];
 
         // Apply defaults if fields are missing in userData
@@ -709,7 +712,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt", "expectedHandover"
         ];
 
         if (this.stations && Array.isArray(this.stations) && this.stations.length > 0) {

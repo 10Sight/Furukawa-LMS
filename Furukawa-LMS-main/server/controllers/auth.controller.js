@@ -396,3 +396,74 @@ export const resetPassword = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, null, "Password reset successfully! Please login again."));
 });
+
+// Dojo Register
+export const dojoRegister = asyncHandler(async (req, res) => {
+  let {
+    fullName, userName, password, email, phoneNumber, unit,
+    gender, dob, education, district, state, pin, busRoute, contractor, designation,
+    departmentId, sectionId, expectedHandover, fatherHusbandName, empId
+  } = req.body;
+
+  if (!fullName || !userName || !password || !unit) {
+    throw new ApiError("All fields are required (Name, Username, Password, Unit)", 400);
+  }
+
+  userName = userName.toLowerCase();
+
+  const usernameExists = await User.findOne({ userName });
+  if (usernameExists) throw new ApiError("Username already in use", 400);
+
+  if (phoneNumber) {
+    const phoneExists = await User.findOne({ phoneNumber });
+    if (phoneExists) throw new ApiError("Phone number already in use", 400);
+  }
+
+  const cleanId = (val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);
+
+  const userData = {
+    fullName,
+    userName,
+    password,
+    empId: empId || null,
+    email: email ? email.toLowerCase() : null,
+    phoneNumber: phoneNumber || null,
+    role: "STUDENT",
+    unit,
+    gender: gender || "MALE",
+    dob: dob || null,
+    education: education || null,
+    district: district || null,
+    state: state || null,
+    pin: pin || null,
+    busRoute: busRoute || null,
+    contractor: contractor || null,
+    designation: designation || null,
+    expectedHandover: (expectedHandover === "" || !expectedHandover) ? null : expectedHandover,
+    fatherHusbandName: fatherHusbandName || null,
+    isEmployee: true,
+    isTemporary: true,
+    status: "PRESENT",
+    targetDeptId: cleanId(departmentId),
+    targetSectionId: cleanId(sectionId),
+    departmentId: null,
+    sectionId: null,
+    lineId: null,
+    subSectionId: null,
+    stationId: null
+  };
+
+  const user = await User.create(userData);
+
+  // Sanitize for response
+  const createdUser = sanitizeUser(user);
+
+  if (!createdUser) throw new ApiError("Something went wrong in registering Dojo Candidate!", 400);
+
+  await logAudit(user.id, "REGISTER_DOJO", { role: "STUDENT", isTemporary: true });
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, { user: createdUser }, "Dojo candidate registered successfully!"));
+});
+

@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useGetDojoHiringTrendQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { useGetDojoHandoverComparisonQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { IconUsers, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
+import { IconArrowsTransferDown, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
@@ -16,32 +16,19 @@ const CURRENT_YEAR = _now.getFullYear();
 const TODAY        = _now.toISOString().split('T')[0];
 const MONTH_END    = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-// Convert raw filter inputs to ISO date strings for the API.
-// Returns empty strings when either end is missing — backend falls back to its default window.
 const toApiDates = (timeframe, rawStart, rawEnd) => {
     if (!rawStart || !rawEnd) return { startDate: '', endDate: '' };
-
     if (timeframe === 'monthly') {
-        // rawStart/rawEnd are "YYYY-MM" from <input type="month">
         const [ey, em] = rawEnd.split('-').map(Number);
         const lastDay = new Date(ey, em, 0).getDate();
-        return {
-            startDate: `${rawStart}-01`,
-            endDate: `${rawEnd}-${String(lastDay).padStart(2, '0')}`,
-        };
+        return { startDate: `${rawStart}-01`, endDate: `${rawEnd}-${String(lastDay).padStart(2, '0')}` };
     }
     if (timeframe === 'yearly') {
-        // rawStart/rawEnd are plain year numbers, e.g. "2022" / "2025"
-        return {
-            startDate: `${rawStart}-01-01`,
-            endDate: `${rawEnd}-12-31`,
-        };
+        return { startDate: `${rawStart}-01-01`, endDate: `${rawEnd}-12-31` };
     }
-    // daily: already full "YYYY-MM-DD" strings
     return { startDate: rawStart, endDate: rawEnd };
 };
 
-// Human-readable x-axis label per groupBy
 const formatPeriodLabel = (period, groupBy) => {
     if (!period) return '';
     if (groupBy === 'yearly') return period;
@@ -52,9 +39,7 @@ const formatPeriodLabel = (period, groupBy) => {
     return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 };
 
-// Build the complete list of periods in [start, end] so every slot shows
-// even when the backend returned no rows for that period (zero hires).
-const EMPTY_ROW = { total: 0, maleCount: 0, femaleCount: 0, otherCount: 0 };
+const EMPTY_ROW = { expected: 0, actual: 0 };
 
 const buildFullSeries = (groupBy, start, end, trend) => {
     if (!start || !end) return trend;
@@ -82,7 +67,6 @@ const buildFullSeries = (groupBy, start, end, trend) => {
             if (sm > 12) { sm = 1; sy++; }
         }
     } else {
-        // yearly
         const sy = Number(start.split('-')[0]);
         const ey = Number(end.split('-')[0]);
         for (let y = sy; y <= ey; y++) {
@@ -94,11 +78,10 @@ const buildFullSeries = (groupBy, start, end, trend) => {
     return full;
 };
 
-// Input field config that changes per timeframe
 const INPUT_CONFIG = {
-    daily:   { type: 'date',   min: '2020-01-01', max: MONTH_END,                    placeholder: 'YYYY-MM-DD' },
-    monthly: { type: 'month',  min: '2020-01',    max: `${CURRENT_YEAR}-12`,         placeholder: 'YYYY-MM' },
-    yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1,        placeholder: 'YYYY' },
+    daily:   { type: 'date',   min: '2020-01-01', max: MONTH_END,             placeholder: 'YYYY-MM-DD' },
+    monthly: { type: 'month',  min: '2020-01',    max: `${CURRENT_YEAR}-12`,  placeholder: 'YYYY-MM' },
+    yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
 };
 
 const getDefaultDates = (timeframe) => {
@@ -124,8 +107,7 @@ const getDefaultDates = (timeframe) => {
     };
 };
 
-const DojoHiringTrendChart = () => {
-    const [viewMode,     setViewMode]     = useState('total');
+const DojoHandoverComparisonChart = () => {
     const [timeframe,    setTimeframe]    = useState('daily');
     const [rawStart,     setRawStart]     = useState(() => getDefaultDates('daily').rawStart);
     const [rawEnd,       setRawEnd]       = useState(() => getDefaultDates('daily').rawEnd);
@@ -139,7 +121,7 @@ const DojoHiringTrendChart = () => {
         [timeframe, rawStart, rawEnd]
     );
 
-    const { data, isLoading, error } = useGetDojoHiringTrendQuery({
+    const { data, isLoading, error } = useGetDojoHandoverComparisonQuery({
         groupBy: timeframe,
         startDate,
         endDate,
@@ -151,20 +133,17 @@ const DojoHiringTrendChart = () => {
     const apiStart = data?.data?.start   || '';
     const apiEnd   = data?.data?.end     || '';
 
-    // Pad with zero-rows so every period in the window always has a bar
     const trend = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
     );
 
-    const categories   = trend.map(r => formatPeriodLabel(r.period, groupBy));
-    const totalSeries  = trend.map(r => Number(r.total)       || 0);
-    const maleSeries   = trend.map(r => Number(r.maleCount)   || 0);
-    const femaleSeries = trend.map(r => Number(r.femaleCount) || 0);
-    const otherSeries  = trend.map(r => Number(r.otherCount)  || 0);
-    const grandTotal   = totalSeries.reduce((a, b) => a + b, 0);
-    const totalMale    = maleSeries.reduce((a, b) => a + b, 0);
-    const totalFemale  = femaleSeries.reduce((a, b) => a + b, 0);
+    const categories      = trend.map(r => formatPeriodLabel(r.period, groupBy));
+    const expectedSeries  = trend.map(r => Number(r.expected) || 0);
+    const actualSeries    = trend.map(r => Number(r.actual)   || 0);
+    const totalExpected   = expectedSeries.reduce((a, b) => a + b, 0);
+    const totalActual     = actualSeries.reduce((a, b) => a + b, 0);
+    const achievementRate = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
 
     const handleTimeframeChange = (tf) => {
         const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
@@ -179,7 +158,6 @@ const DojoHiringTrendChart = () => {
         setRawStart(s);
         setRawEnd(e);
         setSelectedDepts([]);
-        setViewMode('total');
     };
 
     const toggleDept = (id, checked) =>
@@ -191,35 +169,19 @@ const DojoHiringTrendChart = () => {
             ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
             : `${selectedDepts.length} Departments`;
 
-    // ── Highcharts shared base ────────────────────────────────────────────────
-    // Each category slot is ~72px wide. When total width exceeds the card (~800px),
-    // scrollablePlotArea makes the inner plot scrollable and scrollPositionX:1 starts
-    // the viewport at the rightmost (most recent) data automatically.
-    const SLOT_WIDTH    = 72;
-    const needsScroll   = categories.length * SLOT_WIDTH > 800;
+    const SLOT_WIDTH     = 72;
+    const needsScroll    = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
-    const basePlotOptions = {
-        column: {
-            borderRadius: 4,
-            borderWidth: 0,
-            groupPadding: 0.2,
-            maxPointWidth: 36,
-        },
-    };
-
-    const baseChart = {
+    const chartOptions = {
         chart: {
+            type: 'column',
             backgroundColor: 'transparent',
             height: 360,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
-            // scrollablePlotArea expands the inner canvas; scrollPositionX:1 = start at right
             ...(needsScroll && {
-                scrollablePlotArea: {
-                    minWidth: scrollMinWidth,
-                    scrollPositionX: 1,
-                },
+                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
             }),
         },
         title:   { text: '' },
@@ -227,11 +189,7 @@ const DojoHiringTrendChart = () => {
         xAxis: {
             categories,
             crosshair: true,
-            labels: {
-                style: { fontSize: '11px', color: '#64748b' },
-                rotation: 0,
-                align: 'center',
-            },
+            labels: { style: { fontSize: '11px', color: '#64748b' }, rotation: 0, align: 'center' },
         },
         yAxis: {
             min: 0,
@@ -239,140 +197,70 @@ const DojoHiringTrendChart = () => {
             title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '11px' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: { enabled: viewMode === 'gender' },
-    };
-
-    // Data labels above each bar (total view)
-    const aboveBarLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        rotation: 0,
-        allowOverlap: true,
-        style: {
-            fontSize: '11px',
-            fontWeight: 'bold',
-            color: '#1e293b',
-            textOutline: '2px white',
-        },
-        verticalAlign: 'top',
-        align: 'center',
-        y: -20,
-    };
-
-    // Data labels inside stacked segments (gender view)
-    const insideSegmentLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        rotation: 0,
-        allowOverlap: true,
-        style: {
-            fontSize: '10px',
-            fontWeight: 'bold',
-            color: '#ffffff',
-            textOutline: 'none',
-        },
-        verticalAlign: 'middle',
-        align: 'center',
-        inside: true,
-    };
-
-    const getTotalOptions = () => ({
-        ...baseChart,
-        plotOptions: {
-            column: {
-                ...basePlotOptions.column,
-                dataLabels: aboveBarLabels,
-            },
-        },
-        tooltip: {
-            shared: true,
-            useHTML: true,
-            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b>',
-        },
-        series: [{
-            type: 'column',
-            name: 'New Hires',
-            data: totalSeries,
-            color: '#3b82f6',
-        }],
-    });
-
-    const getGenderOptions = () => ({
-        ...baseChart,
-        plotOptions: {
-            column: {
-                ...basePlotOptions.column,
-                stacking: 'normal',
-                dataLabels: insideSegmentLabels,
-            },
-        },
+        legend: { enabled: true },
         tooltip: {
             shared: true,
             useHTML: true,
             pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
         },
+        plotOptions: {
+            column: {
+                borderRadius: 4,
+                borderWidth: 0,
+                groupPadding: 0.2,
+                maxPointWidth: 36,
+                dataLabels: {
+                    enabled: true,
+                    formatter() { return this.y > 0 ? this.y : ''; },
+                    style: {
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        color: '#1e293b',
+                        textOutline: '2px white',
+                    },
+                    verticalAlign: 'top',
+                    align: 'center',
+                    y: -20,
+                    allowOverlap: true,
+                },
+            },
+        },
         series: [
-            { type: 'column', name: 'Male',   data: maleSeries,   color: '#3b82f6' },
-            { type: 'column', name: 'Female', data: femaleSeries, color: '#ec4899' },
-            ...(otherSeries.some(v => v > 0)
-                ? [{ type: 'column', name: 'Other', data: otherSeries, color: '#94a3b8' }]
-                : []),
+            { type: 'column', name: 'Expected Handover', data: expectedSeries, color: '#94a3b8' },
+            { type: 'column', name: 'Actual Handover',   data: actualSeries,   color: '#3b82f6' },
         ],
-    });
+    };
 
-    // ── Render ────────────────────────────────────────────────────────────────
-    const cfg = INPUT_CONFIG[timeframe];
-
+    const cfg         = INPUT_CONFIG[timeframe];
+    const hasAnyData  = totalExpected > 0 || totalActual > 0;
 
     return (
         <Card className="col-span-2">
             <CardHeader className="pb-4">
-                {/* Title row */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
-                            <IconUsers className="h-5 w-5 text-blue-600" />
-                            Dojo Hiring Trend
+                            <IconArrowsTransferDown className="h-5 w-5 text-blue-600" />
+                            Dojo Handover Comparison
                         </CardTitle>
                         <CardDescription>
-                            Historical new hires — counts include handed-over &amp; promoted candidates
+                            Expected vs Actual handover counts by date — filtered by target department
                         </CardDescription>
-                    </div>
-
-                    {/* Total / By Gender toggle */}
-                    <div className="flex items-center gap-2 shrink-0">
-                        <Button
-                            variant={viewMode === 'total' ? 'default' : 'outline'}
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => setViewMode('total')}
-                        >
-                            Total
-                        </Button>
-                        <Button
-                            variant={viewMode === 'gender' ? 'default' : 'outline'}
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => setViewMode('gender')}
-                        >
-                            By Gender
-                        </Button>
                     </div>
                 </div>
 
                 {/* Filter bar */}
                 <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
 
-                    {/* Timeframe preset */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
                             Timeframe
                         </Label>
                         <div className="flex gap-1">
                             {[
-                                { key: 'daily',   label: 'Daily (30d)' },
+                                { key: 'daily',   label: 'Daily (30d)'   },
                                 { key: 'monthly', label: 'Monthly (12m)' },
-                                { key: 'yearly',  label: 'Yearly (5y)' },
+                                { key: 'yearly',  label: 'Yearly (5y)'   },
                             ].map(({ key, label }) => (
                                 <Button
                                     key={key}
@@ -387,11 +275,8 @@ const DojoHiringTrendChart = () => {
                         </div>
                     </div>
 
-                    {/* Custom From date */}
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            From
-                        </Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
                         <Input
                             type={cfg.type}
                             value={rawStart}
@@ -404,11 +289,8 @@ const DojoHiringTrendChart = () => {
                         />
                     </div>
 
-                    {/* Custom To date */}
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            To
-                        </Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
                         <Input
                             type={cfg.type}
                             value={rawEnd}
@@ -421,10 +303,9 @@ const DojoHiringTrendChart = () => {
                         />
                     </div>
 
-                    {/* Department */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            Department
+                            Target Department
                         </Label>
                         <Popover>
                             <PopoverTrigger asChild>
@@ -461,7 +342,6 @@ const DojoHiringTrendChart = () => {
                         </Popover>
                     </div>
 
-                    {/* Reset */}
                     <Button
                         variant="ghost"
                         size="sm"
@@ -475,7 +355,6 @@ const DojoHiringTrendChart = () => {
             </CardHeader>
 
             <CardContent>
-                {/* Loading state — logo centred in the chart area; header/filters stay visible */}
                 {isLoading ? (
                     <div className="h-[360px] flex flex-col items-center justify-center gap-4">
                         <img
@@ -489,35 +368,35 @@ const DojoHiringTrendChart = () => {
                     </div>
                 ) : error ? (
                     <div className="h-[360px] flex flex-col items-center justify-center text-red-500 gap-2">
-                        <p className="text-sm font-semibold">Failed to load hiring trend.</p>
+                        <p className="text-sm font-semibold">Failed to load handover comparison.</p>
                     </div>
-                ) : grandTotal === 0 ? (
+                ) : !hasAnyData ? (
                     <div className="h-[360px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">No hiring data found for this period.</p>
+                        <p className="text-sm font-medium">No handover data found for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>
                     </div>
                 ) : (
                     <>
                         <HighchartsReact
-                            key={`${viewMode}-${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}`}
+                            key={`${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}`}
                             highcharts={Highcharts}
-                            options={viewMode === 'total' ? getTotalOptions() : getGenderOptions()}
+                            options={chartOptions}
                         />
 
                         {/* Summary strip */}
                         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                <span className="text-xs font-bold text-blue-700">Total Hired</span>
-                                <span className="text-sm font-black text-blue-900">{grandTotal}</span>
-                            </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                                <span className="text-xs font-bold text-slate-600">Male</span>
-                                <span className="text-sm font-black text-slate-800">{totalMale}</span>
+                                <span className="text-xs font-bold text-slate-600">Total Expected</span>
+                                <span className="text-sm font-black text-slate-800">{totalExpected}</span>
                             </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-pink-50">
-                                <span className="text-xs font-bold text-pink-600">Female</span>
-                                <span className="text-sm font-black text-pink-900">{totalFemale}</span>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
+                                <span className="text-xs font-bold text-blue-700">Total Actual</span>
+                                <span className="text-sm font-black text-blue-900">{totalActual}</span>
+                            </div>
+                            <div className={`flex items-center justify-between p-2.5 rounded-lg ${achievementRate >= 100 ? 'bg-green-50' : 'bg-amber-50'}`}>
+                                <span className={`text-xs font-bold ${achievementRate >= 100 ? 'text-green-600' : 'text-amber-600'}`}>Achievement</span>
+                                <span className={`text-sm font-black ${achievementRate >= 100 ? 'text-green-900' : 'text-amber-900'}`}>{achievementRate}%</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
                                 <span className="text-xs font-bold text-slate-500">
@@ -533,4 +412,4 @@ const DojoHiringTrendChart = () => {
     );
 };
 
-export default DojoHiringTrendChart;
+export default DojoHandoverComparisonChart;

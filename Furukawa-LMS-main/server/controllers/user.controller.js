@@ -530,22 +530,6 @@ export const createUser = asyncHandler(async (req, res) => {
     "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations"
   ];
 
-  // For temporary users, map assignments to target fields and clear actual fields
-  if (data.isTemporary) {
-    data.targetDeptId = data.departmentId;
-    data.targetSectionId = data.sectionId;
-    data.targetLineId = data.lineId;
-    data.targetSubSectionId = data.subSectionId;
-    data.targetStationId = data.stationId;
-
-    data.departmentId = null;
-    data.sectionId = null;
-    data.lineId = null;
-    data.subSectionId = null;
-    data.stationId = null;
-    data.department = null;
-  }
-
   const values = fields.map(f => {
     if (f === 'password') return hashedPassword;
     if (f === 'userName' || f === 'email') return data[f] ? data[f].toLowerCase() : null;
@@ -659,6 +643,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
+    "contractor", "expectedHandover",
     "customRoleId", "currentLevel", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "departments", "stations"
@@ -687,14 +672,26 @@ export const updateUser = asyncHandler(async (req, res) => {
     data.leavingDate = new Date().toISOString().split('T')[0];
   }
 
+  const cleanId = (val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);
+
+  // Clean IDs in request data
+  if (data.departmentId !== undefined) data.departmentId = cleanId(data.departmentId);
+  if (data.sectionId !== undefined) data.sectionId = cleanId(data.sectionId);
+  if (data.lineId !== undefined) data.lineId = cleanId(data.lineId);
+  if (data.subSectionId !== undefined) data.subSectionId = cleanId(data.subSectionId);
+  if (data.stationId !== undefined) data.stationId = cleanId(data.stationId);
+  if (data.expectedHandover !== undefined) {
+    data.expectedHandover = (data.expectedHandover === "" || !data.expectedHandover) ? null : data.expectedHandover;
+  }
+
   // Promotion Logic: If transitioning from temporary to permanent
   if (oldUser.isTemporary && data.isTemporary === false) {
     // Copy target values to actual fields if they are not being explicitly overridden in the request
-    data.departmentId = data.departmentId !== undefined ? data.departmentId : oldUser.targetDeptId;
-    data.sectionId = data.sectionId !== undefined ? data.sectionId : oldUser.targetSectionId;
-    data.lineId = data.lineId !== undefined ? data.lineId : oldUser.targetLineId;
-    data.subSectionId = data.subSectionId !== undefined ? data.subSectionId : oldUser.targetSubSectionId;
-    data.stationId = data.stationId !== undefined ? data.stationId : oldUser.targetStationId;
+    data.departmentId = data.departmentId !== null && data.departmentId !== undefined ? data.departmentId : oldUser.targetDeptId;
+    data.sectionId = data.sectionId !== null && data.sectionId !== undefined ? data.sectionId : oldUser.targetSectionId;
+    data.lineId = data.lineId !== null && data.lineId !== undefined ? data.lineId : oldUser.targetLineId;
+    data.subSectionId = data.subSectionId !== null && data.subSectionId !== undefined ? data.subSectionId : oldUser.targetSubSectionId;
+    data.stationId = data.stationId !== null && data.stationId !== undefined ? data.stationId : oldUser.targetStationId;
 
     // Clear target fields
     data.targetDeptId = null;

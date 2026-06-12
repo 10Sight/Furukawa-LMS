@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { 
-    useGetEvaluationTestByIdQuery, 
+import {
+    useGetEvaluationTestByIdQuery,
     useCreateEvaluationTestAttemptMutation,
     useGetEvaluationTestAttemptByIdQuery,
     useUpdateEvaluationTestAttemptMutation
@@ -10,10 +10,10 @@ import {
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { 
-    IconArrowLeft, 
-    IconPrinter, 
-    IconDeviceFloppy, 
+import {
+    IconArrowLeft,
+    IconPrinter,
+    IconDeviceFloppy,
     IconLoader2,
     IconClipboardCheck
 } from "@tabler/icons-react";
@@ -69,9 +69,9 @@ const normalizeContentStructure = (structure, fallbackTitle) => {
             }
         ];
     }
-    
+
     const isNewFormat = structure.every(item => item && Array.isArray(item.contentSections));
-    
+
     if (isNewFormat) {
         return structure.map(block => ({
             id: block.id || `mt-${Date.now()}-${Math.random()}`,
@@ -79,7 +79,7 @@ const normalizeContentStructure = (structure, fallbackTitle) => {
             contentSections: Array.isArray(block.contentSections) ? block.contentSections : []
         }));
     }
-    
+
     return [
         {
             id: "mt-auto-generated",
@@ -199,9 +199,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             const displayCode = (data.userName || data.employeeNo || "").toUpperCase();
             setEmployeeNo(displayCode);
             setEducatorName(data.educatorName || "");
-            
+
             const rawAttemptData = data.attemptData || {};
-            
+
             // Pad attemptData question results arrays to performDateCount elements
             const paddedAttemptData = { ...rawAttemptData };
             (contentStructure || []).forEach(block => {
@@ -220,7 +220,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                 });
             });
             setAttemptData(paddedAttemptData);
-            
+
             if (rawAttemptData._performDates) {
                 const rawDates = rawAttemptData._performDates || [];
                 const paddedDates = [...rawDates];
@@ -358,7 +358,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         if (!attemptId) return;
 
         const userName = user?.fullName || user?.userName || "Manager";
-        
+
         let updatedAttemptData = { ...attemptData };
         if (type === "approved") {
             updatedAttemptData._approvedStatus = status;
@@ -373,7 +373,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                 id: attemptId,
                 attemptData: updatedAttemptData
             }).unwrap();
-            
+
             setAttemptData(updatedAttemptData);
             alert(`Evaluation attempt sheet ${status === "APPROVED" ? "approved" : "rejected"} successfully by ${userName}!`);
         } catch (error) {
@@ -451,7 +451,8 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         return (
             <div className="bg-white text-black p-6 font-sans border-2 border-black rounded-lg shadow-sm print:border-0 print:p-0 print:shadow-none w-full overflow-x-auto select-none">
                 {/* Print Styles overrides to ensure perfect paper fit */}
-                <style dangerouslySetInnerHTML={{ __html: `
+                <style dangerouslySetInnerHTML={{
+                    __html: `
                     @media print {
                         body * {
                             visibility: hidden;
@@ -517,24 +518,24 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                     {isView ? (
                                         attemptData._approvedStatus === "APPROVED" ? (
                                             <span className="text-[8.5px] text-green-600 font-extrabold uppercase leading-none">
-                                                Approved by:<br/>
+                                                Approved by:<br />
                                                 <span className="text-gray-800 font-bold block truncate max-w-[90px] mt-0.5">{attemptData._approvedBy}</span>
                                             </span>
                                         ) : attemptData._approvedStatus === "REJECTED" ? (
                                             <span className="text-[8.5px] text-red-600 font-extrabold uppercase leading-none">
-                                                Rejected by:<br/>
+                                                Rejected by:<br />
                                                 <span className="text-gray-800 font-bold block truncate max-w-[90px] mt-0.5">{attemptData._approvedBy}</span>
                                             </span>
                                         ) : canApprove ? (
                                             <div className="flex gap-1 print:hidden">
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("approved", "APPROVED")}
                                                     className="bg-green-600 hover:bg-green-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
                                                 >
                                                     Approve
                                                 </button>
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("approved", "REJECTED")}
                                                     className="bg-red-600 hover:bg-red-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
@@ -558,24 +559,24 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                     {isView ? (
                                         attemptData._confirmedStatus === "APPROVED" ? (
                                             <span className="text-[8.5px] text-green-600 font-extrabold uppercase leading-none">
-                                                Approved by:<br/>
+                                                Approved by:<br />
                                                 <span className="text-gray-800 font-bold block truncate max-w-[90px] mt-0.5">{attemptData._confirmedBy}</span>
                                             </span>
                                         ) : attemptData._confirmedStatus === "REJECTED" ? (
                                             <span className="text-[8.5px] text-red-600 font-extrabold uppercase leading-none">
-                                                Rejected by:<br/>
+                                                Rejected by:<br />
                                                 <span className="text-gray-800 font-bold block truncate max-w-[90px] mt-0.5">{attemptData._confirmedBy}</span>
                                             </span>
                                         ) : canConfirm ? (
                                             <div className="flex gap-1 print:hidden">
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("confirmed", "APPROVED")}
                                                     className="bg-green-600 hover:bg-green-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
                                                 >
                                                     Approve
                                                 </button>
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("confirmed", "REJECTED")}
                                                     className="bg-red-600 hover:bg-red-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
@@ -617,7 +618,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                         <span className="font-semibold px-1 text-gray-800">{traineeName || "-"}</span>
                                     ) : (
                                         <div className="relative w-full">
-                                            <input 
+                                            <input
                                                 type="text"
                                                 placeholder="Search Trainee by Name or Emp ID..."
                                                 value={traineeSearch}
@@ -676,7 +677,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                     {(isView || isEdit) ? (
                                         <span className="font-semibold px-1 text-gray-800">{employeeNo || "-"}</span>
                                     ) : (
-                                        <input 
+                                        <input
                                             type="text"
                                             placeholder="Enter Employee Number..."
                                             value={employeeNo}
@@ -693,7 +694,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                     {isView ? (
                                         <span className="font-semibold px-1 text-gray-800">{educatorName || "-"}</span>
                                     ) : (
-                                        <input 
+                                        <input
                                             type="text"
                                             placeholder="Enter Educator Name..."
                                             value={educatorName}
@@ -764,7 +765,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                                 }) : "-"}
                                                             </span>
                                                         ) : (
-                                                            <input 
+                                                            <input
                                                                 type="date"
                                                                 value={performDates[idx] || ""}
                                                                 onChange={(e) => {
@@ -792,8 +793,8 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                 <tr key={row.qId} className="border-b border-black hover:bg-gray-50/40 transition-colors">
                                                     {/* Content Column Cell (Merged) */}
                                                     {row.isFirstInContent && (
-                                                        <td 
-                                                            rowSpan={row.contentSpan} 
+                                                        <td
+                                                            rowSpan={row.contentSpan}
                                                             className="border-r border-black p-2 font-bold text-center align-middle uppercase text-gray-800 bg-gray-50/20 text-[10px] break-words whitespace-normal leading-normal"
                                                         >
                                                             {row.contentTitle}
@@ -802,8 +803,8 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
 
                                                     {/* Category Column Cell (Merged) - Omitted if category title is blank */}
                                                     {row.isFirstInCat && row.catTitle?.trim() && (
-                                                        <td 
-                                                            rowSpan={row.catSpan} 
+                                                        <td
+                                                            rowSpan={row.catSpan}
                                                             className="border-r border-black p-2 font-semibold text-center align-middle text-gray-700 text-[10px] break-words whitespace-normal leading-normal bg-gray-50/10"
                                                         >
                                                             {row.catTitle}
@@ -816,7 +817,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                     </td>
 
                                                     {/* Checking Question Description Cell - Spans 2 columns if category is blank */}
-                                                    <td 
+                                                    <td
                                                         colSpan={!row.catTitle?.trim() ? 2 : 1}
                                                         className="border-r border-black p-2.5 align-middle leading-relaxed text-[10.5px] text-gray-900 font-medium whitespace-pre-line"
                                                     >
@@ -826,10 +827,10 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                     {/* Evaluation Columns Cells (ACTIVE GRADING INPUTS OR STATIC VIEWS) */}
                                                     {Array.from({ length: performDateCount }).map((_, colIdx) => {
                                                         const cellVal = attemptData[row.qId]?.results?.[colIdx] || "";
-                                                        const cellColorClass = cellVal === "✓" 
-                                                            ? "text-green-600 font-extrabold text-[14px]" 
-                                                            : cellVal === "X" 
-                                                                ? "text-red-600 font-extrabold text-[14px]" 
+                                                        const cellColorClass = cellVal === "✓"
+                                                            ? "text-green-600 font-extrabold text-[14px]"
+                                                            : cellVal === "X"
+                                                                ? "text-red-600 font-extrabold text-[14px]"
                                                                 : "text-gray-400";
 
                                                         return (
@@ -860,7 +861,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                                 {attemptData[row.qId]?.comment || ""}
                                                             </p>
                                                         ) : (
-                                                            <input 
+                                                            <input
                                                                 type="text"
                                                                 placeholder="Write comment..."
                                                                 value={attemptData[row.qId]?.comment || ""}
@@ -899,9 +900,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                 {/* Print Controls overlay */}
                 <div className="flex justify-between items-center gap-4 bg-gray-900 text-white p-4 rounded-xl shadow-lg border border-gray-800 print:hidden">
                     <div className="flex items-center gap-3">
-                        <Button 
-                            variant="ghost" 
-                            size="icon" 
+                        <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => {
                                 if (isPrintModeUrl) navigate("/admin/evaluation-test");
                                 else setIsPrintMode(false);
@@ -916,7 +917,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <Button 
+                        <Button
                             onClick={handlePrint}
                             className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 font-medium"
                         >
@@ -924,8 +925,8 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                             Print Sheet (Ctrl+P)
                         </Button>
                         {!isPrintModeUrl && (
-                            <Button 
-                                variant="outline" 
+                            <Button
+                                variant="outline"
                                 onClick={() => setIsPrintMode(false)}
                                 className="border-gray-700 bg-transparent text-gray-300 hover:bg-gray-800 hover:text-white"
                             >
@@ -947,9 +948,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-gray-100">
                 <div className="flex items-start gap-3">
-                    <Button 
-                        variant="outline" 
-                        size="icon" 
+                    <Button
+                        variant="outline"
+                        size="icon"
                         onClick={() => navigate("/admin/evaluation-test")}
                         className="h-9 w-9 border-gray-200 text-gray-600 hover:text-gray-800"
                     >
@@ -961,15 +962,15 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                             {isView ? "View DOJO Evaluation Sheet" : "Trainee Practical DOJO Evaluation"}
                         </h1>
                         <p className="text-gray-500 text-sm mt-1">
-                            {isView 
-                                ? "Inspect completed practical DOJO evaluation sheet scores, dates, and educator sign-offs." 
+                            {isView
+                                ? "Inspect completed practical DOJO evaluation sheet scores, dates, and educator sign-offs."
                                 : "Fill out trainee details and record performance grades in real-time on the dynamic Excel sheet."
                             }
                         </p>
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <Button 
+                    <Button
                         variant="outline"
                         onClick={() => setIsPrintMode(true)}
                         className="border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center gap-2 font-semibold shadow-sm"
@@ -978,7 +979,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                         Print Preview / PDF
                     </Button>
                     {!isView && (
-                        <Button 
+                        <Button
                             onClick={handleSubmit}
                             disabled={isSubmitting}
                             className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 font-semibold shadow-md shadow-blue-200"
@@ -1001,9 +1002,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                         {isView ? "Completed Practical DOJO Sheet" : "Active Practical DOJO Grading Sheet"}
                     </CardTitle>
                     <CardDescription>
-                        {isView 
+                        {isView
                             ? "Below is the submitted DOJO evaluation sheet. Click Print to export a physical copy."
-                            : "Record the evaluation dates, passed (O) or failed (X) status in the perform columns below."
+                            : "Record the evaluation dates, passed (✓) or failed (X) status in the perform columns below."
                         }
                     </CardDescription>
                 </CardHeader>

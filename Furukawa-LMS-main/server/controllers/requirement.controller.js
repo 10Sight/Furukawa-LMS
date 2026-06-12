@@ -599,10 +599,11 @@ ${showButtons ? `
 
         const ccPromises = [];
         if (ccEmails) {
+            const senderEmail = req.user?.email || "admin@furukawa.com";
             const ccRecipientName = heads[0]?.name || "Section Head";
             const htmlMsgWithoutButtons = getHtmlMsg(ccRecipientName, false);
             ccPromises.push(
-                sendMail(ccEmails, subject, htmlMsgWithoutButtons, [], "")
+                sendMail(senderEmail, subject, htmlMsgWithoutButtons, [], ccEmails)
             );
         }
 
@@ -1522,7 +1523,8 @@ ${showButtons ? `
                 if (ccEmails) {
                     const ccRecipientName = secHeads[0]?.name || "Section Head";
                     const htmlMsgWithoutButtons = getHtmlMsg(ccRecipientName, false);
-                    await sendMail(ccEmails, subject, htmlMsgWithoutButtons, [], "")
+                    const senderEmail = req.user?.email || "admin@furukawa.com";
+                    await sendMail(senderEmail, subject, htmlMsgWithoutButtons, [], ccEmails)
                         .then(() =>
                             console.log(
                                 `[UPLOAD-EMAIL-CC] Sent to CC recipients: ${ccEmails} for section: ${secName}`

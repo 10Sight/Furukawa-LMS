@@ -1,6 +1,26 @@
 import { executeQuery as executeSql } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 
+const normalizeSectionHeadKeys = (head) => {
+    if (!head) return head;
+    const normalized = {};
+    for (const key of Object.keys(head)) {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey === "id") normalized.id = head[key];
+        else if (lowerKey === "sectionid") normalized.sectionId = head[key];
+        else if (lowerKey === "subsectionid") normalized.subSectionId = head[key];
+        else if (lowerKey === "email") normalized.email = head[key];
+        else if (lowerKey === "name") normalized.name = head[key];
+        else if (lowerKey === "ccmail") normalized.CCMail = head[key];
+        else if (lowerKey === "created_at") normalized.created_at = head[key];
+        else if (lowerKey === "sectionname") normalized.sectionName = head[key];
+        else if (lowerKey === "sectioncategory") normalized.sectionCategory = head[key];
+        else if (lowerKey === "subsectionname") normalized.subSectionName = head[key];
+        else normalized[key] = head[key];
+    }
+    return normalized;
+};
+
 class SectionHead {
     static async init() {
         // Init mssql server table
@@ -16,7 +36,7 @@ class SectionHead {
                     CCMail NVARCHAR(2000) NULL,
                     created_at DATETIME DEFAULT GETDATE(),
                     CONSTRAINT FK_sh_Section FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE,
-                    CONSTRAINT FK_sh_SubSection FOREIGN KEY (subSectionId) REFERENCES [lines](id) ON DELETE CASCADE
+                    CONSTRAINT FK_sh_SubSection FOREIGN KEY (subSectionId) REFERENCES [lines](id) ON DELETE NO ACTION
                 )
             END
             ELSE
@@ -27,7 +47,6 @@ class SectionHead {
                     ALTER TABLE [dbo].[section_heads] DROP CONSTRAINT FK_SectionHead_Section;
                     
                     -- Before adding new constraint, clear data to prevent conflict if IDs mismatch
-                    TRUNCATE TABLE [dbo].[section_heads];
                     
                     ALTER TABLE [dbo].[section_heads] ADD CONSTRAINT FK_sh_Section FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE;
                 END
@@ -63,13 +82,13 @@ class SectionHead {
             ORDER BY sh.id DESC
         `;
         const [rows] = await executeSql(query);
-        return rows;
+        return (rows || []).map(normalizeSectionHeadKeys);
     }
 
     static async findById(id) {
         const query = "SELECT * FROM section_heads WHERE id = ?";
         const [rows] = await executeSql(query, [id]);
-        return rows[0] || null;
+        return rows[0] ? normalizeSectionHeadKeys(rows[0]) : null;
     }
 
     static async findByContext(sectionId, subSectionId) {
@@ -86,7 +105,7 @@ class SectionHead {
         }
 
         const [rows] = await executeSql(query, params);
-        return rows;
+        return (rows || []).map(normalizeSectionHeadKeys);
     }
 
     static async create(data) {
@@ -99,7 +118,7 @@ class SectionHead {
         // OUTPUT INSERTED.id puts the new id into result.recordset[0].id (not meta.insertId which is always null in mssqlHelper)
         const [rows] = await executeSql(query, [sectionId || null, subSectionId || null, email, name || null, CCMail || null]);
         const insertedId = rows?.[0]?.id ?? null;
-        return { id: insertedId, ...data };
+        return normalizeSectionHeadKeys({ id: insertedId, ...data });
     }
 
     static async update(id, updates) {
@@ -131,3 +150,4 @@ class SectionHead {
 SectionHead.init();
 
 export default SectionHead;
+

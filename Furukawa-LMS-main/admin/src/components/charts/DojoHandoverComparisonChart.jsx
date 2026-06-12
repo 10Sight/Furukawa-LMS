@@ -41,6 +41,13 @@ const formatPeriodLabel = (period, groupBy) => {
 
 const EMPTY_ROW = { expected: 0, actual: 0 };
 
+// Distinct colors for per-department Expected bars (Actual blue #3b82f6 is reserved)
+const DEPT_COLORS = [
+    '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4',
+    '#84cc16', '#f97316', '#6366f1', '#ef4444', '#14b8a6',
+    '#a855f7', '#eab308', '#0ea5e9', '#f43f5e', '#22c55e',
+];
+
 const buildFullSeries = (groupBy, start, end, trend) => {
     if (!start || !end) return trend;
 
@@ -128,21 +135,52 @@ const DojoHandoverComparisonChart = () => {
         departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
     });
 
-    const rawTrend = data?.data?.trend   || [];
-    const groupBy  = data?.data?.groupBy || timeframe;
-    const apiStart = data?.data?.start   || '';
-    const apiEnd   = data?.data?.end     || '';
+    const rawTrend     = data?.data?.trend        || [];
+    const deptBreakdown = data?.data?.deptBreakdown || [];
+    const groupBy      = data?.data?.groupBy      || timeframe;
+    const apiStart     = data?.data?.start        || '';
+    const apiEnd       = data?.data?.end          || '';
 
     const trend = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
     );
 
-    const categories      = trend.map(r => formatPeriodLabel(r.period, groupBy));
-    const expectedSeries  = trend.map(r => Number(r.expected) || 0);
-    const actualSeries    = trend.map(r => Number(r.actual)   || 0);
-    const totalExpected   = expectedSeries.reduce((a, b) => a + b, 0);
-    const totalActual     = actualSeries.reduce((a, b) => a + b, 0);
+    const categories  = trend.map(r => formatPeriodLabel(r.period, groupBy));
+    const actualSeries = trend.map(r => Number(r.actual) || 0);
+    const totalActual  = actualSeries.reduce((a, b) => a + b, 0);
+
+    // Build per-department Expected series
+    const deptSeries = useMemo(() => {
+        if (!deptBreakdown.length) return [];
+
+        // Collect unique deptIds in stable order (first appearance)
+        const seen = new Set();
+        const orderedDeptIds = [];
+        deptBreakdown.forEach(r => {
+            if (r.deptId && !seen.has(r.deptId)) {
+                seen.add(r.deptId);
+                orderedDeptIds.push(r.deptId);
+            }
+        });
+
+        // Map: deptId → { period → count }
+        const deptMap = {};
+        deptBreakdown.forEach(r => {
+            if (!deptMap[r.deptId]) deptMap[r.deptId] = {};
+            deptMap[r.deptId][r.period] = Number(r.expected);
+        });
+
+        return orderedDeptIds.map((deptId, i) => ({
+            type:  'column',
+            name:  departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`,
+            data:  trend.map(r => deptMap[deptId]?.[r.period] || 0),
+            color: DEPT_COLORS[i % DEPT_COLORS.length],
+        }));
+    }, [deptBreakdown, trend, departments]);
+
+    // Total expected: sum the first series or fall back to trend totals
+    const totalExpected   = trend.reduce((a, r) => a + (Number(r.expected) || 0), 0);
     const achievementRate = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
 
     const handleTimeframeChange = (tf) => {
@@ -169,7 +207,7 @@ const DojoHandoverComparisonChart = () => {
             ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
             : `${selectedDepts.length} Departments`;
 
-    const SLOT_WIDTH     = 72;
+    const SLOT_WIDTH     = 110;
     const needsScroll    = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
@@ -189,31 +227,36 @@ const DojoHandoverComparisonChart = () => {
         xAxis: {
             categories,
             crosshair: true,
-            labels: { style: { fontSize: '11px', color: '#64748b' }, rotation: 0, align: 'center' },
+            labels: { style: { fontSize: '13px', color: '#64748b' }, rotation: 0, align: 'center' },
         },
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '11px' } },
+            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: { enabled: true },
+        legend: {
+            enabled: true,
+            itemStyle: { fontSize: '13px', fontWeight: 'normal', color: '#475569' },
+            maxHeight: 72,
+        },
         tooltip: {
             shared: true,
             useHTML: true,
+            style: { fontSize: '13px' },
             pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
         },
         plotOptions: {
             column: {
-                borderRadius: 4,
+                borderRadius: 5,
                 borderWidth: 0,
-                groupPadding: 0.2,
-                maxPointWidth: 36,
+                groupPadding: 0.12,
+                maxPointWidth: 48,
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? this.y : ''; },
                     style: {
-                        fontSize: '11px',
+                        fontSize: '13px',
                         fontWeight: 'bold',
                         color: '#1e293b',
                         textOutline: '2px white',
@@ -226,13 +269,14 @@ const DojoHandoverComparisonChart = () => {
             },
         },
         series: [
-            { type: 'column', name: 'Expected Handover', data: expectedSeries, color: '#94a3b8' },
-            { type: 'column', name: 'Actual Handover',   data: actualSeries,   color: '#3b82f6' },
+            ...deptSeries,
+            { type: 'column', name: 'Total Expected', data: trend.map(r => Number(r.expected) || 0), color: '#94a3b8' },
+            { type: 'column', name: 'Actual Handover', data: actualSeries, color: '#3b82f6' },
         ],
     };
 
-    const cfg         = INPUT_CONFIG[timeframe];
-    const hasAnyData  = totalExpected > 0 || totalActual > 0;
+    const cfg        = INPUT_CONFIG[timeframe];
+    const hasAnyData = totalExpected > 0 || totalActual > 0;
 
     return (
         <Card className="col-span-2">

@@ -334,6 +334,24 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         ORDER BY period ASC
     `, expectedParams);
 
+    // Per-department expected breakdown (same filters, grouped by period + targetDeptId)
+    const [deptExpectedRows] = await executeQuery(`
+        SELECT
+            ${expectedFormatMap[safeGroupBy]} AS period,
+            CAST(targetDeptId AS NVARCHAR(20)) AS deptId,
+            COUNT(*)                           AS expected
+        FROM users
+        WHERE (isTemporary = 1 OR empId LIKE 'TEMP%')
+          AND (isDeleted = 0 OR isDeleted IS NULL)
+          AND expectedHandover IS NOT NULL
+          AND targetDeptId IS NOT NULL
+          AND expectedHandover >= ?
+          AND expectedHandover <= ?
+          ${deptClause}
+        GROUP BY ${expectedFormatMap[safeGroupBy]}, targetDeptId
+        ORDER BY period ASC
+    `, expectedParams);
+
     const [actualRows] = await executeQuery(`
         SELECT
             ${actualFormatMap[safeGroupBy]} AS period,
@@ -349,7 +367,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         ORDER BY period ASC
     `, actualParams);
 
-    // Merge both result sets by period key
+    // Merge total expected + actual by period
     const mergedMap = {};
     expectedRows.forEach(r => {
         if (r.period) mergedMap[r.period] = { period: r.period, expected: Number(r.expected), actual: 0 };
@@ -364,10 +382,15 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         }
     });
 
-    const trend = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
+    const trend        = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
+    const deptBreakdown = deptExpectedRows.map(r => ({
+        period:   r.period,
+        deptId:   String(r.deptId),
+        expected: Number(r.expected),
+    }));
 
     res.status(200).json(
-        new ApiResponse(200, { trend, groupBy: safeGroupBy, start, end }, "Dojo handover comparison fetched successfully")
+        new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, "Dojo handover comparison fetched successfully")
     );
 });
 

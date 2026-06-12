@@ -11,28 +11,6 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import ENV from "../configs/env.config.js";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const GLOBAL_CC_FILE_PATH = path.join(__dirname, "../global_cc_emails.json");
-
-const getGlobalCcEmailsList = () => {
-    try {
-        if (fs.existsSync(GLOBAL_CC_FILE_PATH)) {
-            const data = fs.readFileSync(GLOBAL_CC_FILE_PATH, "utf8");
-            const parsed = JSON.parse(data);
-            if (Array.isArray(parsed.ccEmails)) {
-                return parsed.ccEmails.filter(Boolean).join(", ");
-            }
-        }
-    } catch (error) {
-        console.error("Error reading global CC emails:", error);
-    }
-    return "";
-};
 
 /* ============================================================
    SQL HELPER
@@ -348,10 +326,12 @@ const autoApproveExpiredRequirements = async () => {
                 );
             }
 
-            await updateRequirementToken(token, { status: 'approved' });
+            await updateRequirementToken(token, {
+                status: "system_approved",
+            });
         }
-    } catch (err) {
-        console.error("[AUTO-APPROVE] Error:", err.message);
+    } catch (e) {
+        console.error("[AUTO-APPROVE] Error:", e.message);
     }
 };
 
@@ -386,6 +366,8 @@ const findSectionHeadsForRequirement = async (reqRow) => {
     return heads || [];
 };
 
+
+
 const sendRequirementEditApprovalMail = async ({
     req,
     requirementId,
@@ -394,7 +376,19 @@ const sendRequirementEditApprovalMail = async ({
 }) => {
     try {
         const heads = await findSectionHeadsForRequirement(newReq);
-        const ccEmails = getGlobalCcEmailsList();
+        const ccEmails = heads.map((h) => h.CCMail).filter(Boolean).join(", ");
+        console.log("BASE_URL =", process.env.BASE_URL);
+        console.log("APP_BASE_URL =", process.env.APP_BASE_URL);
+        console.log("HOST =", `${req.protocol}://${req.get("host")}`);
+
+        console.log("[REQ-EDIT-MAIL] Looking for section head:", {
+            requirementId,
+            sectionCode: newReq.sectionCode,
+            sectionName: newReq.sectionName,
+            lineCode: newReq.lineCode,
+            lineDescription: newReq.lineDescription,
+            found: heads.length,
+        });
 
         if (!heads || heads.length === 0) {
             const [sampleHeads] = await executeSql(
@@ -480,7 +474,7 @@ const sendRequirementEditApprovalMail = async ({
 
         const subject = `Requirement Approval Required — ${sectionName || sectionCode}`;
 
-        const htmlMsg = `
+        const getHtmlMsg = (recipientName, showButtons) => `
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"/></head>
@@ -503,7 +497,7 @@ const sendRequirementEditApprovalMail = async ({
 <tr>
 <td style="padding:26px 36px 8px;">
     <p style="font-size:15px;color:#334155;margin:0 0 8px;">
-        Dear <strong>${heads[0]?.name || "Section Head"}</strong>,
+        Dear <strong>${recipientName}</strong>,
     </p>
     <p style="font-size:14px;color:#64748b;line-height:1.6;margin:0;">
         A manpower requirement has been edited for your section.
@@ -569,6 +563,7 @@ const sendRequirementEditApprovalMail = async ({
 </td>
 </tr>
 
+${showButtons ? `
 <tr>
 <td style="padding:8px 36px 28px;text-align:center;">
     <a href="${approveUrl}" style="background:#16a34a;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;margin-right:10px;">
@@ -579,6 +574,7 @@ const sendRequirementEditApprovalMail = async ({
     </a>
 </td>
 </tr>
+` : ''}
 
 <tr>
 <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 36px;text-align:center;">
@@ -595,15 +591,37 @@ const sendRequirementEditApprovalMail = async ({
 </body>
 </html>`;
 
-        const results = await Promise.allSettled(
-            heads.map((h) => sendMail(h.email, subject, htmlMsg, [], ccEmails))
-        );
+        const headPromises = heads.map((h) => {
+            const recipientName = h.name || "Section Head";
+            const htmlMsgWithButtons = getHtmlMsg(recipientName, true);
+            return sendMail(h.email, subject, htmlMsgWithButtons, [], "");
+        });
+
+        const ccPromises = [];
+        if (ccEmails) {
+            const ccRecipientName = heads[0]?.name || "Section Head";
+            const htmlMsgWithoutButtons = getHtmlMsg(ccRecipientName, false);
+            ccPromises.push(
+                sendMail(ccEmails, subject, htmlMsgWithoutButtons, [], "")
+            );
+        }
+
+        const results = await Promise.allSettled([...headPromises, ...ccPromises]);
 
         results.forEach((r, i) => {
-            if (r.status === "fulfilled") {
-                console.log(`[REQ-EDIT-MAIL] Sent to ${heads[i].email}`);
+            if (i < heads.length) {
+                const email = heads[i].email;
+                if (r.status === "fulfilled") {
+                    console.log(`[REQ-EDIT-MAIL] Sent to head: ${email}`);
+                } else {
+                    console.error(`[REQ-EDIT-MAIL] Failed for head ${email}:`, r.reason?.message);
+                }
             } else {
-                console.error(`[REQ-EDIT-MAIL] Failed for ${heads[i].email}:`, r.reason?.message);
+                if (r.status === "fulfilled") {
+                    console.log(`[REQ-EDIT-MAIL] Sent to CC recipients: ${ccEmails}`);
+                } else {
+                    console.error(`[REQ-EDIT-MAIL] Failed for CC recipients ${ccEmails}:`, r.reason?.message);
+                }
             }
         });
 
@@ -626,7 +644,6 @@ const sendRequirementEditApprovalMail = async ({
 
 export const createRequirement = asyncHandler(async (req, res) => {
     const {
-
         srNo,
         sectionCode,
         sectionName,
@@ -1300,7 +1317,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     continue;
                 }
 
-                const ccEmails = getGlobalCcEmailsList();
+                const ccEmails = secHeads.map((h) => h.CCMail).filter(Boolean).join(", ");
 
                 await executeSql(
                     `
@@ -1343,14 +1360,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         (s, r) => s + (Number(r.prodPlan) || 0),
                         0
                     );
-                    const totalFN01 = monthRows_.reduce(
-                        (s, r) => s + (Number(r.prodPlanFN01) || 0),
-                        0
-                    );
-                    const totalFN02 = monthRows_.reduce(
-                        (s, r) => s + (Number(r.prodPlanFN02) || 0),
-                        0
-                    );
 
                     monthRows += `
                     <tr>
@@ -1358,9 +1367,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">${totalSP}</td>
                         <td style="padding:8px 14px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:700;">
                             ${totalPP}
-                            <div style="font-size:11px;color:#64748b;font-weight:normal;margin-top:2px;">
-                                (FN01: ${totalFN01} / FN02: ${totalFN02})
-                            </div>
                         </td>
                     </tr>`;
                 });
@@ -1392,10 +1398,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 const approveUrl = `${BASE_URL}/api/requirements/approve-batch?token=${tkn}&action=approve`;
                 const rejectUrl = `${BASE_URL}/api/requirements/approve-batch?token=${tkn}&action=reject`;
 
-                for (const head of secHeads) {
-                    const recipientName = head.name || "Section Head";
-
-                    const htmlMsg = `
+                const getHtmlMsg = (recipientName, showButtons) => `
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"/></head>
@@ -1447,6 +1450,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
     </table>
 </td>
 </tr>
+${showButtons ? `
 <tr>
 <td style="padding:10px 36px 24px;text-align:center;">
     <a href="${approveUrl}" style="background:#16a34a;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;margin-right:10px;">
@@ -1457,6 +1461,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
     </a>
 </td>
 </tr>
+` : ''}
 <tr>
 <td style="padding:0 36px 24px;">
     <p style="font-size:14px;font-weight:700;color:#1e293b;margin:0 0 10px;">Month-wise Breakdown:</p>
@@ -1496,7 +1501,11 @@ export const addRequirements = asyncHandler(async (req, res) => {
 </body>
 </html>`;
 
-                    await sendMail(head.email, subject, htmlMsg, [], ccEmails)
+                for (const head of secHeads) {
+                    const recipientName = head.name || "Section Head";
+                    const htmlMsgWithButtons = getHtmlMsg(recipientName, true);
+
+                    await sendMail(head.email, subject, htmlMsgWithButtons, [], "")
                         .then(() =>
                             console.log(
                                 `[UPLOAD-EMAIL] Sent to ${head.email} for section: ${secName}`
@@ -1505,6 +1514,23 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         .catch((e) =>
                             console.error(
                                 `[UPLOAD-EMAIL] Failed for ${head.email}:`,
+                                e.message
+                            )
+                        );
+                }
+
+                if (ccEmails) {
+                    const ccRecipientName = secHeads[0]?.name || "Section Head";
+                    const htmlMsgWithoutButtons = getHtmlMsg(ccRecipientName, false);
+                    await sendMail(ccEmails, subject, htmlMsgWithoutButtons, [], "")
+                        .then(() =>
+                            console.log(
+                                `[UPLOAD-EMAIL-CC] Sent to CC recipients: ${ccEmails} for section: ${secName}`
+                            )
+                        )
+                        .catch((e) =>
+                            console.error(
+                                `[UPLOAD-EMAIL-CC] Failed for CC recipients ${ccEmails}:`,
                                 e.message
                             )
                         );

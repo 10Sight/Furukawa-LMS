@@ -682,6 +682,16 @@ export const uploadAttendance = async (req, res, next) => {
 
         logger.info(`Users mapped: ${userMapByEmpId.size} by empId, ${userMapByIdCard.size} by idCard.`);
 
+        // 1. Delete existing unmapped logs for this date
+        try {
+            const deleteReq = pool.request();
+            deleteReq.input("date", sql.Date, attendanceDate);
+            await deleteReq.query("DELETE FROM attendance_unmapped_logs WHERE CONVERT(date, [date]) = @date");
+            logger.info(`Cleared old unmapped logs for date: ${attendanceDate}`);
+        } catch (delErr) {
+            logger.error(`Error deleting from attendance_unmapped_logs: ${delErr.message}`);
+        }
+
         const mergeSql = `
             MERGE attendance_logs AS target
             USING (SELECT @userId AS userId, @date AS [date]) AS source
@@ -719,8 +729,25 @@ export const uploadAttendance = async (req, res, next) => {
                 );
         `;
 
-        let inserted = 0;
-        let skipped = 0;
+        const insertUnmappedSql = `
+            INSERT INTO attendance_unmapped_logs (
+                payCode, cardNo, employeeName, [date],
+                department, designation, shift, startTime,
+                inTime, outTime, hrsWorked, status,
+                lateArrival, earlyDeparture, otHrs, otAmount, reason, createdAt
+            ) VALUES (
+                @payCode, @cardNo, @employeeName, @date,
+                @department, @designation, @shift, @startTime,
+                @inTime, @outTime, @hrsWorked, @status,
+                @lateArrival, @earlyDeparture, @otHrs, @otAmount, @reason, GETDATE()
+            );
+        `;
+
+        let matchedRowsSaved = 0;
+        let unmappedRowsSaved = 0;
+        let skippedRows = 0;
+        let presentInAttendanceLogs = 0;
+        let presentInUnmappedLogs = 0;
         const skippedLog = [];
 
         for (let index = 0; index < dataRows.length; index++) {
@@ -737,58 +764,104 @@ export const uploadAttendance = async (req, res, next) => {
             if (normalizedPayCode) userId = userMapByEmpId.get(normalizedPayCode);
             if (!userId && normalizedCardNo) userId = userMapByIdCard.get(normalizedCardNo);
 
-            if (!userId) {
-                skipped++;
-                if (skippedLog.length < 50) {
-                    skippedLog.push({
-                        row: headerRowIndex + index + 2,
-                        payCode: rawPayCode,
-                        cardNo: rawCardNo,
-                        reason: "User not found in database"
-                    });
+            const rowStatus = columnMap.status !== -1 ? normalizeStatus(row[columnMap.status]) : "Present";
+
+            if (userId) {
+                // Matched user -> upsert into attendance_logs
+                const reqDB = pool.request();
+                reqDB.input("userId", sql.Int, userId);
+                reqDB.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
+                reqDB.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
+                reqDB.input("empName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
+                reqDB.input("date", sql.Date, attendanceDate);
+                reqDB.input("dept", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
+                reqDB.input("desig", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
+                reqDB.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
+                reqDB.input("startTime", sql.VarChar, columnMap.startTime !== -1 ? parseTime(row[columnMap.startTime]) : null);
+                reqDB.input("inT", sql.VarChar, columnMap.inTime !== -1 ? parseTime(row[columnMap.inTime]) : null);
+                reqDB.input("outT", sql.VarChar, columnMap.outTime !== -1 ? parseTime(row[columnMap.outTime]) : null);
+                reqDB.input("hrs", sql.Float, columnMap.hrsWorked !== -1 ? parseHours(row[columnMap.hrsWorked]) : 0);
+                reqDB.input("status", sql.VarChar, rowStatus);
+                reqDB.input("late", sql.Float, columnMap.lateArrival !== -1 ? parseHours(row[columnMap.lateArrival]) : 0);
+                reqDB.input("early", sql.Float, columnMap.earlyDeparture !== -1 ? parseHours(row[columnMap.earlyDeparture]) : 0);
+                reqDB.input("otH", sql.Float, columnMap.otHrs !== -1 ? parseHours(row[columnMap.otHrs]) : 0);
+                reqDB.input("otA", sql.Float, columnMap.otAmount !== -1 ? parseHours(row[columnMap.otAmount]) : 0);
+
+                try {
+                    await reqDB.query(mergeSql);
+                    matchedRowsSaved++;
+                    if (rowStatus === "Present") {
+                        presentInAttendanceLogs++;
+                    }
+                } catch (err) {
+                    logger.error(`Error processing matched row ${index + 1}: ${err.message}`);
+                    skippedRows++;
+                    if (skippedLog.length < 50) {
+                        skippedLog.push({
+                            row: headerRowIndex + index + 2,
+                            payCode: rawPayCode,
+                            cardNo: rawCardNo,
+                            reason: `Database error on merge: ${err.message}`
+                        });
+                    }
                 }
-                continue;
-            }
+            } else {
+                // Unmatched user -> insert into attendance_unmapped_logs
+                const reqUnmapped = pool.request();
+                reqUnmapped.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
+                reqUnmapped.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
+                reqUnmapped.input("employeeName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
+                reqUnmapped.input("date", sql.Date, attendanceDate);
+                reqUnmapped.input("department", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
+                reqUnmapped.input("designation", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
+                reqUnmapped.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
+                reqUnmapped.input("startTime", sql.VarChar, columnMap.startTime !== -1 ? parseTime(row[columnMap.startTime]) : null);
+                reqUnmapped.input("inTime", sql.VarChar, columnMap.inTime !== -1 ? parseTime(row[columnMap.inTime]) : null);
+                reqUnmapped.input("outTime", sql.VarChar, columnMap.outTime !== -1 ? parseTime(row[columnMap.outTime]) : null);
+                reqUnmapped.input("hrsWorked", sql.Float, columnMap.hrsWorked !== -1 ? parseHours(row[columnMap.hrsWorked]) : 0);
+                reqUnmapped.input("status", sql.VarChar, rowStatus);
+                reqUnmapped.input("lateArrival", sql.Float, columnMap.lateArrival !== -1 ? parseHours(row[columnMap.lateArrival]) : 0);
+                reqUnmapped.input("earlyDeparture", sql.Float, columnMap.earlyDeparture !== -1 ? parseHours(row[columnMap.earlyDeparture]) : 0);
+                reqUnmapped.input("otHrs", sql.Float, columnMap.otHrs !== -1 ? parseHours(row[columnMap.otHrs]) : 0);
+                reqUnmapped.input("otAmount", sql.Float, columnMap.otAmount !== -1 ? parseHours(row[columnMap.otAmount]) : 0);
+                reqUnmapped.input("reason", sql.VarChar, 'User not found in master');
 
-            const reqDB = pool.request();
-            reqDB.input("userId", sql.Int, userId);
-            reqDB.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
-            reqDB.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
-            reqDB.input("empName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
-            reqDB.input("date", sql.Date, attendanceDate);
-            reqDB.input("dept", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
-            reqDB.input("desig", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
-            reqDB.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
-            reqDB.input("startTime", sql.VarChar, columnMap.startTime !== -1 ? parseTime(row[columnMap.startTime]) : null);
-            reqDB.input("inT", sql.VarChar, columnMap.inTime !== -1 ? parseTime(row[columnMap.inTime]) : null);
-            reqDB.input("outT", sql.VarChar, columnMap.outTime !== -1 ? parseTime(row[columnMap.outTime]) : null);
-            reqDB.input("hrs", sql.Float, columnMap.hrsWorked !== -1 ? parseHours(row[columnMap.hrsWorked]) : 0);
-            reqDB.input("status", sql.VarChar, columnMap.status !== -1 ? normalizeStatus(row[columnMap.status]) : "Present");
-            reqDB.input("late", sql.Float, columnMap.lateArrival !== -1 ? parseHours(row[columnMap.lateArrival]) : 0);
-            reqDB.input("early", sql.Float, columnMap.earlyDeparture !== -1 ? parseHours(row[columnMap.earlyDeparture]) : 0);
-            reqDB.input("otH", sql.Float, columnMap.otHrs !== -1 ? parseHours(row[columnMap.otHrs]) : 0);
-            reqDB.input("otA", sql.Float, columnMap.otAmount !== -1 ? parseHours(row[columnMap.otAmount]) : 0);
-
-            try {
-                await reqDB.query(mergeSql);
-                inserted++;
-            } catch (err) {
-                logger.error(`Error processing row ${index + 1}: ${err.message}`);
-                skipped++;
+                try {
+                    await reqUnmapped.query(insertUnmappedSql);
+                    unmappedRowsSaved++;
+                    if (rowStatus === "Present") {
+                        presentInUnmappedLogs++;
+                    }
+                } catch (err) {
+                    logger.error(`Error processing unmapped row ${index + 1}: ${err.message}`);
+                    skippedRows++;
+                    if (skippedLog.length < 50) {
+                        skippedLog.push({
+                            row: headerRowIndex + index + 2,
+                            payCode: rawPayCode,
+                            cardNo: rawCardNo,
+                            reason: `Database error on unmapped insert: ${err.message}`
+                        });
+                    }
+                }
             }
         }
 
-        logger.info(`Upload complete: ${inserted} inserted/updated, ${skipped} skipped.`);
+        logger.info(`Upload complete: ${matchedRowsSaved} matched, ${unmappedRowsSaved} unmapped, ${skippedRows} skipped.`);
 
         return res.status(200).json({
             success: true,
-            message: `Successfully processed ${inserted} records for ${attendanceDate}.`,
+            message: `Successfully processed attendance for ${attendanceDate}.`,
             data: {
                 attendanceDate,
-                inserted,
-                skipped,
-                total: dataRows.length,
-                skippedLog: skipped > 0 ? skippedLog : undefined
+                totalRows: dataRows.length,
+                matchedRowsSaved,
+                unmappedRowsSaved,
+                skippedRows,
+                presentInAttendanceLogs,
+                presentInUnmappedLogs,
+                totalPresentUploaded: presentInAttendanceLogs + presentInUnmappedLogs,
+                skippedLog: skippedRows > 0 ? skippedLog : undefined
             }
         });
 
@@ -936,6 +1009,213 @@ export const getFilters = async (req, res, next) => {
         });
     } catch (error) {
         console.error("Get filters error:", error);
+        next(error);
+    }
+};
+
+export const getMissingAttendance = async (req, res, next) => {
+    try {
+        const { date, departmentId, sectionId, lineId, search, page = 1, limit = 10 } = req.query;
+
+        if (!date) {
+            return res.status(400).json({ success: false, message: "Date is required" });
+        }
+
+        const pool = await poolPromise;
+
+        let whereClauses = [
+            "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
+            "(u.status IS NULL OR u.status NOT IN ('LEFT', 'SUSPENDED', 'BANNED'))",
+            "al.id IS NULL"
+        ];
+
+        const countRequest = pool.request();
+        const dataRequest = pool.request();
+
+        countRequest.input('date', sql.VarChar, date);
+        dataRequest.input('date', sql.VarChar, date);
+
+        if (departmentId && departmentId !== 'all') {
+            whereClauses.push("u.departmentId = @deptId");
+            countRequest.input('deptId', sql.Int, departmentId);
+            dataRequest.input('deptId', sql.Int, departmentId);
+        }
+
+        if (sectionId && sectionId !== 'all') {
+            whereClauses.push("u.sectionId = @sectionId");
+            countRequest.input('sectionId', sql.Int, sectionId);
+            dataRequest.input('sectionId', sql.Int, sectionId);
+        }
+
+        if (lineId && lineId !== 'all') {
+            whereClauses.push("u.lineId = @lineId");
+            countRequest.input('lineId', sql.Int, lineId);
+            dataRequest.input('lineId', sql.Int, lineId);
+        }
+
+        if (search) {
+            whereClauses.push("(u.fullName LIKE @search OR u.empId LIKE @search OR u.idCard LIKE @search)");
+            countRequest.input('search', sql.VarChar, `%${search}%`);
+            dataRequest.input('search', sql.VarChar, `%${search}%`);
+        }
+
+        const whereSql = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
+
+        const countQuery = `
+            SELECT COUNT(DISTINCT u.id) as total
+            FROM users u
+            LEFT JOIN attendance_logs al
+                ON al.userId = u.id
+                AND CONVERT(date, al.[date]) = @date
+            ${whereSql}
+        `;
+
+        const countResult = await countRequest.query(countQuery);
+        const totalCount = countResult.recordset[0].total;
+
+        const parsedPage = parseInt(page) || 1;
+        const parsedLimit = parseInt(limit) || 10;
+        const offset = (parsedPage - 1) * parsedLimit;
+
+        dataRequest.input('offset', sql.Int, offset);
+        dataRequest.input('limit', sql.Int, parsedLimit);
+
+        const dataQuery = `
+            SELECT DISTINCT
+                u.id,
+                u.empId,
+                u.idCard as cardNo,
+                u.fullName,
+                COALESCE(d.name, u.department) as department,
+                COALESCE(s.name, u.section) as section,
+                COALESCE(l.name, u.line) as line,
+                u.designation,
+                u.shift
+            FROM users u
+            LEFT JOIN departments d ON u.departmentId = d.id
+            LEFT JOIN sections s ON u.sectionId = s.id
+            LEFT JOIN [lines] l ON u.lineId = l.id
+            LEFT JOIN attendance_logs al
+                ON al.userId = u.id
+                AND CONVERT(date, al.[date]) = @date
+            ${whereSql}
+            ORDER BY u.fullName ASC
+            OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+        `;
+
+        logger.info(`Missing Attendance SQL Query: ${dataQuery}`);
+        const dataResult = await dataRequest.query(dataQuery);
+        const rows = dataResult.recordset;
+
+        res.status(200).json({
+            success: true,
+            data: rows,
+            pagination: {
+                totalCount,
+                currentPage: parsedPage,
+                limit: parsedLimit,
+                totalPages: Math.ceil(totalCount / parsedLimit)
+            }
+        });
+
+    } catch (error) {
+        console.error("Get missing attendance error:", error);
+        next(error);
+    }
+};
+
+export const getUnmappedPresent = async (req, res, next) => {
+    try {
+        const { date, search, page = 1, limit = 25 } = req.query;
+
+        if (!date) {
+            return res.status(400).json({ success: false, message: "Date is required" });
+        }
+
+        const pool = await poolPromise;
+
+        let whereClauses = [
+            "CONVERT(date, [date]) = @date",
+            "UPPER(LTRIM(RTRIM(status))) = 'PRESENT'"
+        ];
+
+        const countRequest = pool.request();
+        const dataRequest = pool.request();
+
+        countRequest.input('date', sql.VarChar, date);
+        dataRequest.input('date', sql.VarChar, date);
+
+        if (search) {
+            whereClauses.push("(payCode LIKE @search OR cardNo LIKE @search OR employeeName LIKE @search OR department LIKE @search OR designation LIKE @search OR shift LIKE @search)");
+            countRequest.input('search', sql.VarChar, `%${search}%`);
+            dataRequest.input('search', sql.VarChar, `%${search}%`);
+        }
+
+        const whereSql = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
+
+        const countQuery = `
+            SELECT COUNT(DISTINCT payCode) as total
+            FROM attendance_unmapped_logs
+            ${whereSql}
+        `;
+
+        const countResult = await countRequest.query(countQuery);
+        const totalCount = countResult.recordset[0].total;
+
+        const parsedPage = parseInt(page) || 1;
+        const parsedLimit = parseInt(limit) || 25;
+        const offset = (parsedPage - 1) * parsedLimit;
+
+        dataRequest.input('offset', sql.Int, offset);
+        dataRequest.input('limit', sql.Int, parsedLimit);
+
+        const dataQuery = `
+            SELECT DISTINCT
+                payCode,
+                cardNo,
+                employeeName,
+                department,
+                designation,
+                shift,
+                status,
+                inTime,
+                outTime,
+                hrsWorked,
+                reason
+            FROM attendance_unmapped_logs
+            ${whereSql}
+            ORDER BY employeeName ASC
+            OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+        `;
+
+        logger.info(`Unmapped Present SQL Query: ${dataQuery}`);
+        const dataResult = await dataRequest.query(dataQuery);
+        const rows = dataResult.recordset;
+
+        const formatMssqlTime = (val) => {
+            if (!val || !(val instanceof Date)) return val;
+            return val.toISOString().substr(11, 5);
+        };
+
+        const formattedRows = rows.map(row => ({
+            ...row,
+            inTime: formatMssqlTime(row.inTime),
+            outTime: formatMssqlTime(row.outTime)
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: formattedRows,
+            pagination: {
+                totalCount,
+                currentPage: parsedPage,
+                limit: parsedLimit,
+                totalPages: Math.ceil(totalCount / parsedLimit)
+            }
+        });
+
+    } catch (error) {
+        console.error("Get unmapped present error:", error);
         next(error);
     }
 };

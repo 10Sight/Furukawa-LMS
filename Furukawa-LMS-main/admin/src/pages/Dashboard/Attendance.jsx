@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { RefreshCcw, Fingerprint, Upload, FileSpreadsheet, Loader2, Search } from 'lucide-react';
+import { RefreshCcw, Upload, FileSpreadsheet, Loader2, Search, UserMinus } from 'lucide-react';
 import axiosInstance from '../../Helper/axiosInstance';
+import UnmappedPresentModal from './UnmappedPresentModal';
 import { toast } from 'sonner'; // Assuming sonner is used, or I'll use simple alert if not found. I'll check imports elsewhere if needed, but for now generic toast or alert.
 
 // Fallback toast if sonner not available in project, but usually shadcn uses it.
@@ -38,6 +39,7 @@ const Attendance = () => {
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [isUnmappedModalOpen, setIsUnmappedModalOpen] = useState(false);
 
     const fileInputRef = useRef(null);
 
@@ -120,7 +122,18 @@ const Attendance = () => {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             if (res.data.success) {
-                alert(`Upload Successful: ${res.data.message || "File uploaded."}`);
+                const summary = res.data.data || {};
+                alert(
+                    `Upload Successful!\n\n` +
+                    `Date: ${summary.attendanceDate || "N/A"}\n` +
+                    `Total rows in Excel: ${summary.totalRows || 0}\n` +
+                    `Matched rows saved (in master): ${summary.matchedRowsSaved || 0}\n` +
+                    `Unmapped rows saved (not in master): ${summary.unmappedRowsSaved || 0}\n` +
+                    `Skipped/Failed rows: ${summary.skippedRows || 0}\n\n` +
+                    `Present count in Attendance logs: ${summary.presentInAttendanceLogs || 0}\n` +
+                    `Present count in Unmapped logs: ${summary.presentInUnmappedLogs || 0}\n` +
+                    `Total Present Uploaded: ${summary.totalPresentUploaded || 0}`
+                );
                 fetchAttendance();
                 if (fileInputRef.current) fileInputRef.current.value = "";
             } else {
@@ -277,6 +290,18 @@ const Attendance = () => {
                             <RefreshCcw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
                         </Button>
                     </div>
+
+
+                    {/* Unmapped Present Button */}
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-slate-300 hover:bg-slate-50 text-slate-700 text-xs h-8 shadow-sm flex items-center gap-1.5"
+                        onClick={() => setIsUnmappedModalOpen(true)}
+                    >
+                        <UserMinus className="w-3.5 h-3.5 text-orange-500" />
+                        Unmapped Present
+                    </Button>
 
                     {/* Upload Button */}
                     {canUpload && (
@@ -486,6 +511,13 @@ const Attendance = () => {
                     </div>
                 </CardContent>
             </Card>
+
+
+            <UnmappedPresentModal
+                open={isUnmappedModalOpen}
+                onOpenChange={setIsUnmappedModalOpen}
+                initialDate={filters.date}
+            />
         </div>
     );
 };

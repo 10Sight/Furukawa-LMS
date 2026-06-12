@@ -230,14 +230,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     if (hasSelectedDateForDashboard) {
         try {
             let attendanceGateSql = `
-                SELECT COUNT(*) AS cnt
+                SELECT COUNT(DISTINCT al.payCode) AS cnt
                 FROM attendance_logs al
+                LEFT JOIN users u
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                 LEFT JOIN user_hierarchy_snapshots uhs
                     ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-                INNER JOIN users u
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                 WHERE CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
                   AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
                   ${hierCondition}
@@ -503,16 +503,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             SELECT
                 CONVERT(VARCHAR, al.[date], 23) AS fullDate,
                 DAY(al.[date]) AS dayNum,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS presentCount,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','HALF DAY','LEAVE') THEN 1 ELSE 0 END) AS absentCount,
-                COUNT(*) AS totalCount
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' AND u.id IS NOT NULL THEN al.payCode END) AS mappedPresentCount,
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' AND u.id IS NULL THEN al.payCode END) AS unmappedPresentCount,
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN al.payCode END) AS totalPresentCount,
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absentCount,
+                COUNT(DISTINCT al.payCode) AS totalCount
             FROM attendance_logs al
+            LEFT JOIN users u
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
             LEFT JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
-                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
-            INNER JOIN users u
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
-                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
@@ -531,6 +533,28 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         console.warn("[DASHBOARD] Daily attendance query failed:", e.message);
     }
 
+    let dailyUnmapped = [];
+    try {
+        let unmappedSql = `
+            SELECT
+                CONVERT(VARCHAR, unm.[date], 23) AS fullDate,
+                COUNT(DISTINCT unm.payCode) AS unmappedCount
+            FROM attendance_unmapped_logs unm
+            WHERE UPPER(LTRIM(RTRIM(unm.status))) = 'PRESENT'
+              AND CONVERT(DATE, unm.[date]) >= '${sqlStartDate}'
+              AND CONVERT(DATE, unm.[date]) <= '${sqlEndDate}'
+        `;
+        const unmappedParams = [];
+        unmappedSql = addShiftFilter(unmappedSql, unmappedParams, "unm");
+        unmappedSql += `
+            GROUP BY unm.[date]
+        `;
+        const [unmappedRows] = await executeQuery(unmappedSql, unmappedParams);
+        dailyUnmapped = unmappedRows;
+    } catch (e) {
+        console.warn("[DASHBOARD] Daily unmapped query failed:", e.message);
+    }
+
     const manpowerData = loopDates.map((iterDateRaw) => {
         const iterDate = new Date(iterDateRaw);
         const day = iterDate.getDate();
@@ -538,9 +562,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         const dateStr = formatDateLocal(iterDate);
 
         const attItem = dailyAttendance.find((a) => a.fullDate === dateStr);
+        const unmappedItem = dailyUnmapped.find((u) => u.fullDate === dateStr);
+
+        const hasHierFilter = departmentNames.length > 0 || sectionNames.length > 0 || lineNames.length > 0;
+        const unmappedCount = (!hasHierFilter && unmappedItem) ? Number(unmappedItem.unmappedCount) || 0 : 0;
 
         iterDate.setHours(0, 0, 0, 0);
         const isFuture = iterDate > today;
+
+        const mappedPresent = attItem ? Number(attItem.mappedPresentCount) || 0 : 0;
 
         return {
             month: `${day} ${monthShort}`,
@@ -551,7 +581,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             current: isFuture ? null : snapshotTotal,
 
             // Actual / Present = attendance present count
-            present: attItem ? Number(attItem.presentCount) || 0 : isFuture ? null : 0,
+            present: isFuture ? null : mappedPresent,
+            unmappedPresent: isFuture ? null : unmappedCount,
+            totalPresent: isFuture ? null : (mappedPresent + unmappedCount),
 
             // Absent = attendance absent/leave/half day count
             absent: attItem ? Number(attItem.absentCount) || 0 : isFuture ? null : 0,
@@ -649,15 +681,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             SELECT
                 CONVERT(VARCHAR, al.[date], 23) AS fullDate,
                 DAY(al.[date]) AS dayNum,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN 1 ELSE 0 END) AS absent_count,
-                COUNT(*) AS total_count
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absent_count,
+                COUNT(DISTINCT al.payCode) AS total_count
             FROM attendance_logs al
+            LEFT JOIN users u
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
             LEFT JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
-                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS VARCHAR))))
-            INNER JOIN users u
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS VARCHAR))))
-                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS VARCHAR))))
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
@@ -848,7 +880,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const attendanceMasterBaseFrom = `
         FROM attendance_logs al
-        INNER JOIN users u
+        LEFT JOIN users u
             ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
         LEFT JOIN user_hierarchy_snapshots uhs
@@ -856,9 +888,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
              = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
         WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
           AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
-          AND ISNULL(u.isDeleted, 0) = 0
-          AND u.empId IS NOT NULL
-          AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
     `;
 
     const shouldUseAttendanceMaster = true;
@@ -866,7 +896,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const getAttendanceMasterTotal = async () => {
         try {
             let sqlText = `
-                SELECT COUNT(DISTINCT u.empId) AS total
+                SELECT COUNT(DISTINCT al.payCode) AS total
                 ${attendanceMasterBaseFrom}
             `;
             const params = [];
@@ -915,7 +945,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let sqlText = `
                 SELECT
                     ${columnSql} AS rawName,
-                    COUNT(DISTINCT u.empId) AS total
+                    COUNT(DISTINCT al.payCode) AS total
                 ${attendanceMasterBaseFrom}
             `;
             const params = [];
@@ -1086,7 +1116,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let attendanceSql = `
                 SELECT
                     ${columnSql} AS rawName,
-                    COUNT(DISTINCT u.empId) AS total
+                    COUNT(DISTINCT al.payCode) AS total
                 ${attendanceMasterBaseFrom}
                 ${extraWhere}
             `;
@@ -1265,44 +1295,44 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         console.warn("[DASHBOARD] Pie/comparison charts failed:", e.message);
     }
 
-try {
-    const contractorMap = {};
+    try {
+        const contractorMap = {};
 
-    const contractorColumnSql = `
+        const contractorColumnSql = `
         ISNULL(
             NULLIF(LTRIM(RTRIM(CAST(u.contractor AS NVARCHAR(510)))), ''),
             LEFT(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))), 3)
         )
     `;
 
-    const addContractor = (prefix, key, value) => {
-        const cleanPrefix = normalizeChartName(prefix);
+        const addContractor = (prefix, key, value) => {
+            const cleanPrefix = normalizeChartName(prefix);
 
-        if (!contractorMap[cleanPrefix]) {
-            contractorMap[cleanPrefix] = {
-                name: cleanPrefix,
-                value: 0,
-                attendanceValue: 0,
-                masterValue: 0,
-                rawValue: 0,
-                percentage: 0,
-            };
-        }
+            if (!contractorMap[cleanPrefix]) {
+                contractorMap[cleanPrefix] = {
+                    name: cleanPrefix,
+                    value: 0,
+                    attendanceValue: 0,
+                    masterValue: 0,
+                    rawValue: 0,
+                    percentage: 0,
+                };
+            }
 
-        contractorMap[cleanPrefix][key] = Number(value || 0);
-    };
+            contractorMap[cleanPrefix][key] = Number(value || 0);
+        };
 
-    // ============================================================
-    // 1) ATTENDANCE BAR: attendance_logs se aayega
-    // Agar attendance query fail/zero ho jaye, graph blank nahi hoga.
-    // ============================================================
-    try {
-        let contractorAttendanceSql = `
+        // ============================================================
+        // 1) ATTENDANCE BAR: attendance_logs se aayega
+        // Agar attendance query fail/zero ho jaye, graph blank nahi hoga.
+        // ============================================================
+        try {
+            let contractorAttendanceSql = `
             SELECT
                 ${contractorColumnSql} AS prefix,
                 COUNT(DISTINCT al.payCode) AS total
             FROM attendance_logs al
-            INNER JOIN users u
+            LEFT JOIN users u
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
             LEFT JOIN user_hierarchy_snapshots uhs
@@ -1314,38 +1344,38 @@ try {
               AND LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))) != ''
         `;
 
-        const contractorAttendanceParams = [];
+            const contractorAttendanceParams = [];
 
-        contractorAttendanceSql = addUserMasterFilters(contractorAttendanceSql, contractorAttendanceParams, "u");
-        contractorAttendanceSql = addStateDistrictFilters(contractorAttendanceSql, contractorAttendanceParams);
+            contractorAttendanceSql = addUserMasterFilters(contractorAttendanceSql, contractorAttendanceParams, "u");
+            contractorAttendanceSql = addStateDistrictFilters(contractorAttendanceSql, contractorAttendanceParams);
 
-        // Attendance shift attendance_logs.shift se hi filter hoga
-        contractorAttendanceSql = addShiftFilter(contractorAttendanceSql, contractorAttendanceParams, "al");
+            // Attendance shift attendance_logs.shift se hi filter hoga
+            contractorAttendanceSql = addShiftFilter(contractorAttendanceSql, contractorAttendanceParams, "al");
 
-        contractorAttendanceSql += `
+            contractorAttendanceSql += `
             GROUP BY ${contractorColumnSql}
             ORDER BY total DESC
         `;
 
-        const [contractorAttendanceRows] = await executeQuery(
-            contractorAttendanceSql,
-            contractorAttendanceParams
-        );
+            const [contractorAttendanceRows] = await executeQuery(
+                contractorAttendanceSql,
+                contractorAttendanceParams
+            );
 
-        contractorAttendanceRows.forEach(row => {
-            addContractor(row.prefix, "attendanceValue", row.total);
-        });
-    } catch (e) {
-        console.warn("[DASHBOARD] Contractor attendance query failed:", e.message);
-    }
+            contractorAttendanceRows.forEach(row => {
+                addContractor(row.prefix, "attendanceValue", row.total);
+            });
+        } catch (e) {
+            console.warn("[DASHBOARD] Contractor attendance query failed:", e.message);
+        }
 
-    // ============================================================
-    // 2) USERS TOTAL BAR: direct users table se aayega
-    // IMPORTANT: Isme attendance_logs ka join bilkul nahi hoga.
-    // Shift users.shift se filter hoga.
-    // ============================================================
-    try {
-        let contractorMasterSql = `
+        // ============================================================
+        // 2) USERS TOTAL BAR: direct users table se aayega
+        // IMPORTANT: Isme attendance_logs ka join bilkul nahi hoga.
+        // Shift users.shift se filter hoga.
+        // ============================================================
+        try {
+            let contractorMasterSql = `
             SELECT
                 ${contractorColumnSql} AS prefix,
                 COUNT(DISTINCT u.empId) AS total
@@ -1358,77 +1388,77 @@ try {
               AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
         `;
 
-        const contractorMasterParams = [];
+            const contractorMasterParams = [];
 
-        contractorMasterSql = addUserMasterFilters(contractorMasterSql, contractorMasterParams, "u");
-        contractorMasterSql = addStateDistrictFilters(contractorMasterSql, contractorMasterParams);
+            contractorMasterSql = addUserMasterFilters(contractorMasterSql, contractorMasterParams, "u");
+            contractorMasterSql = addStateDistrictFilters(contractorMasterSql, contractorMasterParams);
 
-        // IMPORTANT:
-        // Users Total / dark yellow bar par shift filter apply nahi hoga.
-        // Department, section, line, state, district filters apply rahenge.
-        // Shift filter sirf Attendance / purple bar par apply hoga.
+            // IMPORTANT:
+            // Users Total / dark yellow bar par shift filter apply nahi hoga.
+            // Department, section, line, state, district filters apply rahenge.
+            // Shift filter sirf Attendance / purple bar par apply hoga.
 
-        contractorMasterSql += `
+            contractorMasterSql += `
             GROUP BY ${contractorColumnSql}
             ORDER BY total DESC
         `;
 
-        const [contractorMasterRows] = await executeQuery(
-            contractorMasterSql,
-            contractorMasterParams
+            const [contractorMasterRows] = await executeQuery(
+                contractorMasterSql,
+                contractorMasterParams
+            );
+
+            contractorMasterRows.forEach(row => {
+                addContractor(row.prefix, "masterValue", row.total);
+            });
+        } catch (e) {
+            console.warn("[DASHBOARD] Contractor users total query failed:", e.message);
+        }
+
+        const totalMasterEmployees = Object.values(contractorMap).reduce(
+            (sum, item) => sum + Number(item.masterValue || 0),
+            0
         );
 
-        contractorMasterRows.forEach(row => {
-            addContractor(row.prefix, "masterValue", row.total);
-        });
+        const contractorDenominator =
+            totalMasterEmployees > 0
+                ? totalMasterEmployees
+                : await getUsersTotalDenominator();
+
+        pieCharts.contractorPrefix = Object.values(contractorMap)
+            .map(item => {
+                const attendanceCount = Number(item.attendanceValue || 0);
+                const masterCount = Number(item.masterValue || 0);
+
+                return {
+                    ...item,
+                    value: attendanceCount,
+                    rawValue: attendanceCount,
+                    percentage:
+                        contractorDenominator > 0
+                            ? Number(((attendanceCount / contractorDenominator) * 100).toFixed(1))
+                            : 0,
+                    attendancePercentage:
+                        contractorDenominator > 0
+                            ? Number(((attendanceCount / contractorDenominator) * 100).toFixed(1))
+                            : 0,
+                    masterPercentage:
+                        contractorDenominator > 0
+                            ? Number(((masterCount / contractorDenominator) * 100).toFixed(1))
+                            : 0,
+                    totalEmployees: contractorDenominator,
+                    denominatorTotal: contractorDenominator,
+                };
+            })
+            .filter(item => Number(item.attendanceValue || 0) > 0 || Number(item.masterValue || 0) > 0)
+            .sort((a, b) => {
+                const attendanceDiff = Number(b.attendanceValue || 0) - Number(a.attendanceValue || 0);
+                if (attendanceDiff !== 0) return attendanceDiff;
+                return Number(b.masterValue || 0) - Number(a.masterValue || 0);
+            });
     } catch (e) {
-        console.warn("[DASHBOARD] Contractor users total query failed:", e.message);
+        console.warn("[DASHBOARD] Contractor prefix comparison chart failed:", e.message);
     }
-
-    const totalMasterEmployees = Object.values(contractorMap).reduce(
-        (sum, item) => sum + Number(item.masterValue || 0),
-        0
-    );
-
-    const contractorDenominator =
-        totalMasterEmployees > 0
-            ? totalMasterEmployees
-            : await getUsersTotalDenominator();
-
-    pieCharts.contractorPrefix = Object.values(contractorMap)
-        .map(item => {
-            const attendanceCount = Number(item.attendanceValue || 0);
-            const masterCount = Number(item.masterValue || 0);
-
-            return {
-                ...item,
-                value: attendanceCount,
-                rawValue: attendanceCount,
-                percentage:
-                    contractorDenominator > 0
-                        ? Number(((attendanceCount / contractorDenominator) * 100).toFixed(1))
-                        : 0,
-                attendancePercentage:
-                    contractorDenominator > 0
-                        ? Number(((attendanceCount / contractorDenominator) * 100).toFixed(1))
-                        : 0,
-                masterPercentage:
-                    contractorDenominator > 0
-                        ? Number(((masterCount / contractorDenominator) * 100).toFixed(1))
-                        : 0,
-                totalEmployees: contractorDenominator,
-                denominatorTotal: contractorDenominator,
-            };
-        })
-        .filter(item => Number(item.attendanceValue || 0) > 0 || Number(item.masterValue || 0) > 0)
-        .sort((a, b) => {
-            const attendanceDiff = Number(b.attendanceValue || 0) - Number(a.attendanceValue || 0);
-            if (attendanceDiff !== 0) return attendanceDiff;
-            return Number(b.masterValue || 0) - Number(a.masterValue || 0);
-        });
-} catch (e) {
-    console.warn("[DASHBOARD] Contractor prefix comparison chart failed:", e.message);
-}
 
     return res.status(200).json(
         new ApiResponse(
@@ -1583,11 +1613,11 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS fullDate,
             DAY(al.[date]) AS dayNum,
-            SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS present,
-            SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN 1 ELSE 0 END) AS absent,
-            COUNT(*) AS total
+            COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN al.payCode END) AS present,
+            COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absent,
+            COUNT(DISTINCT al.payCode) AS total
         FROM attendance_logs al
-        INNER JOIN users u
+        LEFT JOIN users u
             ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
         LEFT JOIN user_hierarchy_snapshots uhs
@@ -2244,4 +2274,4 @@ export const getDashboardLines = asyncHandler(async (req, res) => {
     return res.status(200).json(
         new ApiResponse(200, { lines }, "Lines fetched successfully")
     );
-});
+}); 

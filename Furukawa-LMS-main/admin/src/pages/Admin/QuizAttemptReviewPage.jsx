@@ -37,8 +37,8 @@ const QuizAttemptReviewPage = () => {
   // Authorize: Admin and Trainer can grade/override
   const canEdit = useMemo(() => {
     return (
-      currentUser?.isAdmin || 
-      currentUser?.isTrainer || 
+      currentUser?.isAdmin ||
+      currentUser?.isTrainer ||
       ['ADMIN', 'SUPERADMIN', 'TRAINER', 'INSTRUCTOR'].includes(currentUser?.role) ||
       (currentUser?.role === 'CUSTOM' && ['admin', 'superadmin', 'trainer', 'instructor'].includes(String(currentUser?.customRole?.targetLayout).toLowerCase()))
     );
@@ -46,7 +46,7 @@ const QuizAttemptReviewPage = () => {
 
   const { data, isLoading, isError, refetch } = useGetAttemptByIdQuery(attemptId, { skip: !attemptId });
   const attempt = data?.data;
-  
+
   const [answersOverride, setAnswersOverride] = useState({});
   const [notes, setNotes] = useState("");
   const [updateAttempt, { isLoading: isSaving }] = useAdminUpdateAttemptMutation();
@@ -85,9 +85,9 @@ const QuizAttemptReviewPage = () => {
       const qId = String(q._id || q.id);
       let ans = answersMap.get(qId) || answersMap.get(`index-${idx}`) || {};
       const override = answersOverride[qId] || {};
-      
-      const marks = override.marksObtained !== undefined && override.marksObtained !== "" 
-        ? Number(override.marksObtained) 
+
+      const marks = override.marksObtained !== undefined && override.marksObtained !== ""
+        ? Number(override.marksObtained)
         : (ans.marksObtained ?? 0);
       return sum + marks;
     }, 0);
@@ -135,7 +135,7 @@ const QuizAttemptReviewPage = () => {
       }));
 
       await updateAttempt({ attemptId, answersOverride: payload, adjustmentNotes: notes || undefined }).unwrap();
-      
+
       toast.success("Attempt grades and overrides updated successfully!");
       setAnswersOverride({});
       setNotes("");
@@ -219,15 +219,15 @@ const QuizAttemptReviewPage = () => {
         </Alert>
       ) : attempt ? (
         <div className="space-y-6">
-          
+
           {/* Standardized Graded Test Paper Worksheet Container */}
           <div className="print-worksheet bg-white border-[3px] border-black text-black font-serif shadow-xl overflow-hidden">
-            
+
             {/* HEADER TABLE */}
             <div className="grid grid-cols-12 border-b-[3px] border-black">
               {/* Logo box */}
               <div className="col-span-3 border-r-[3px] border-black flex flex-col items-center justify-center p-3 bg-white text-center">
-                <span className="text-4xl font-extrabold italic tracking-tight text-black font-sans leading-none">Fme</span>
+                <img src="/fme_transparent.png" alt="FME Logo" className="h-10 w-auto object-contain" />
                 <span className="text-[8px] font-black text-black mt-1.5 uppercase tracking-tight leading-none text-center">
                   FURUKAWA MINDA<br />ELECTRIC PVT. LTD.
                 </span>
@@ -264,11 +264,6 @@ const QuizAttemptReviewPage = () => {
               </div>
             </div>
 
-            {/* QUARTER SUB-HEADER */}
-            <div className="border-b-[3px] border-black flex justify-end px-6 py-2 bg-white">
-              <span className="font-bold text-xs tracking-widest uppercase">{getCurrentQuarter()}</span>
-            </div>
-
             {/* METADATA SECTION */}
             <div className="grid grid-cols-12 border-b-[3px] border-black text-xs uppercase font-bold">
               {/* Left box */}
@@ -296,6 +291,12 @@ const QuizAttemptReviewPage = () => {
               {/* Right box */}
               <div className="col-span-5 p-4 space-y-2 bg-white text-[11px]">
                 <div className="flex gap-2 items-center">
+                  <span className="text-black">Conducted By :</span>
+                  <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold font-sans">
+                    {attempt.quiz?.conductedBy || attempt.quiz?.createdBy?.fullName || attempt.quiz?.createdBy?.userName || "—"}
+                  </span>
+                </div>
+                <div className="flex gap-2 items-center">
                   <span className="text-black">Marks Of Each Question :</span>
                   <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
                     {getMarksOfEachQuestion()}
@@ -321,9 +322,8 @@ const QuizAttemptReviewPage = () => {
                 </div>
                 <div className="flex gap-2 items-center">
                   <span className="text-black">Result Status :</span>
-                  <span className={`border-b border-dashed border-black flex-1 pb-0.5 text-center font-black text-xs uppercase ${
-                    currentPassed ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <span className={`border-b border-dashed border-black flex-1 pb-0.5 text-center font-black text-xs uppercase ${currentPassed ? 'text-green-600' : 'text-red-600'
+                    }`}>
                     {currentPassed ? 'PASS' : 'FAIL'}
                   </span>
                 </div>
@@ -348,11 +348,11 @@ const QuizAttemptReviewPage = () => {
                   {attempt.quiz?.questions?.map((question, questionIndex) => {
                     const qId = question._id || question.id ? String(question._id || question.id) : String(questionIndex);
                     const ans = answersMap.get(qId) || answersMap.get(String(questionIndex)) || answersMap.get(`index-${questionIndex}`) || {};
-                    
+
                     const override = answersOverride[qId] || {};
                     const isCorrect = override.isCorrect ?? ans.isCorrect;
                     const marksObtained = override.marksObtained ?? ans.marksObtained;
-                    
+
                     // Get student's answer text (prioritize dynamic overrides over submitted answers)
                     const studentAnswerText = override.selectedOptions?.[0] ?? ans.selectedOptions?.[0] ?? "";
 
@@ -373,11 +373,10 @@ const QuizAttemptReviewPage = () => {
                               )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0 mt-1">
-                              <span className={`text-xs font-black shrink-0 border px-2 py-1 rounded uppercase tracking-wider leading-none shadow-sm ${
-                                isCorrect 
-                                  ? 'bg-green-100 border-green-300 text-green-800' 
+                              <span className={`text-xs font-black shrink-0 border px-2 py-1 rounded uppercase tracking-wider leading-none shadow-sm ${isCorrect
+                                  ? 'bg-green-100 border-green-300 text-green-800'
                                   : 'bg-red-100 border-red-300 text-red-800'
-                              }`}>
+                                }`}>
                                 Score: {marksObtained} / {question.marks || 1}
                               </span>
                             </div>
@@ -398,12 +397,12 @@ const QuizAttemptReviewPage = () => {
                           {(!question.type || question.type === "mcq") && (
                             <div className="flex flex-wrap gap-x-8 gap-y-4 pt-2">
                               {(question.options || []).map((option, optionIndex) => {
-                                const isCorrectOption = option.isCorrect === true || 
-                                                        option.isCorrect === 1 || 
-                                                        String(option.isCorrect).toLowerCase() === 'true' ||
-                                                        (question.correctOption && option.text === question.correctOption);
+                                const isCorrectOption = option.isCorrect === true ||
+                                  option.isCorrect === 1 ||
+                                  String(option.isCorrect).toLowerCase() === 'true' ||
+                                  (question.correctOption && option.text === question.correctOption);
                                 const isUserSelected = option.text === studentAnswerText;
-                                
+
                                 let optionBg = 'hover:bg-gray-50 text-gray-800 border-transparent';
                                 let badgeColor = 'border-black text-black bg-white';
                                 let indicatorIcon = null;
@@ -431,9 +430,8 @@ const QuizAttemptReviewPage = () => {
                                         handleChange(qId, 'marksObtained', isCorrectOption ? (question.marks || 1) : 0);
                                       }
                                     }}
-                                    className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all ${
-                                      canEdit ? 'cursor-pointer hover:border-slate-400 hover:shadow-md' : ''
-                                    } ${optionBg}`}
+                                    className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all ${canEdit ? 'cursor-pointer hover:border-slate-400 hover:shadow-md' : ''
+                                      } ${optionBg}`}
                                   >
                                     <span className={`w-7 h-7 rounded-full flex items-center justify-center border-2 font-bold text-sm ${badgeColor}`}>
                                       {optionIndex + 1}
@@ -468,11 +466,10 @@ const QuizAttemptReviewPage = () => {
                             <div className="pt-2 space-y-2">
                               <div className="flex items-center gap-3">
                                 <span className="text-sm font-black text-gray-800 shrink-0">Candidate Answer:</span>
-                                <div className={`flex-1 border-b-2 py-1 font-bold text-base px-2 uppercase tracking-wide flex items-center justify-between ${
-                                  isCorrect 
-                                    ? 'border-green-600 text-green-700 bg-green-50/20' 
+                                <div className={`flex-1 border-b-2 py-1 font-bold text-base px-2 uppercase tracking-wide flex items-center justify-between ${isCorrect
+                                    ? 'border-green-600 text-green-700 bg-green-50/20'
                                     : 'border-red-600 text-red-700 bg-red-50/20'
-                                }`}>
+                                  }`}>
                                   {canEdit ? (
                                     <Input
                                       type="text"
@@ -498,7 +495,7 @@ const QuizAttemptReviewPage = () => {
                                   )}
                                 </div>
                               </div>
-                              
+
                               <div className="flex items-center gap-3 text-sm text-green-700 font-bold bg-green-50/50 p-2 border border-green-200">
                                 <span>Set Correct Answer:</span>
                                 <span className="uppercase tracking-wide">{question.correctAnswer || "Not set (manual audit)"}</span>
@@ -515,29 +512,28 @@ const QuizAttemptReviewPage = () => {
                               <div className="bg-gray-50 border border-gray-300 p-2 text-xs font-bold text-gray-700 uppercase tracking-wider">
                                 Candidate Matching Selections:
                               </div>
-                              
+
                               {(() => {
                                 let userMatches = {};
                                 try {
                                   if (studentAnswerText) {
                                     userMatches = JSON.parse(studentAnswerText);
                                   }
-                                } catch (e) {}
+                                } catch (e) { }
 
                                 return (
                                   <div className="space-y-4">
                                     {(question.pairs || []).map((pair, pIdx) => {
                                       const userSelectedRight = userMatches[pair.leftText] || "";
                                       const isPairCorrect = String(userSelectedRight).trim().toLowerCase() === String(pair.rightText).trim().toLowerCase();
-                                      
+
                                       return (
-                                        <div 
-                                          key={pIdx} 
-                                          className={`flex flex-col md:flex-row md:items-center gap-4 p-4 border-2 shadow-sm ${
-                                            isPairCorrect 
-                                              ? 'border-green-300 bg-green-50/10' 
+                                        <div
+                                          key={pIdx}
+                                          className={`flex flex-col md:flex-row md:items-center gap-4 p-4 border-2 shadow-sm ${isPairCorrect
+                                              ? 'border-green-300 bg-green-50/10'
                                               : 'border-red-300 bg-red-50/10'
-                                          }`}
+                                            }`}
                                         >
                                           <div className="flex-1 space-y-1">
                                             <div className="font-bold text-base text-black">
@@ -562,11 +558,10 @@ const QuizAttemptReviewPage = () => {
                                           <div className="text-black font-black text-xl hidden md:block">➔</div>
 
                                           <div className="w-full md:w-[350px] space-y-2">
-                                            <div className={`p-3 rounded-lg border flex items-center justify-between ${
-                                              isPairCorrect 
-                                                ? 'bg-green-50 border-green-300 text-green-950 font-bold' 
+                                            <div className={`p-3 rounded-lg border flex items-center justify-between ${isPairCorrect
+                                                ? 'bg-green-50 border-green-300 text-green-950 font-bold'
                                                 : 'bg-red-50 border-red-300 text-red-950 font-bold'
-                                            }`}>
+                                              }`}>
                                               <div className="flex flex-col text-sm flex-1">
                                                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Candidate Match:</span>
                                                 {canEdit ? (
@@ -576,9 +571,9 @@ const QuizAttemptReviewPage = () => {
                                                       const newVal = e.target.value;
                                                       const updatedMatches = { ...userMatches, [pair.leftText]: newVal };
                                                       const serialized = JSON.stringify(updatedMatches);
-                                                      
+
                                                       handleChange(qId, 'selectedOptions', [serialized]);
-                                                      
+
                                                       // Auto-grade: all pairs must match
                                                       let allCorrect = true;
                                                       (question.pairs || []).forEach(p => {
@@ -586,7 +581,7 @@ const QuizAttemptReviewPage = () => {
                                                         const isMatch = String(userRight).trim().toLowerCase() === String(p.rightText).trim().toLowerCase();
                                                         if (!isMatch) allCorrect = false;
                                                       });
-                                                      
+
                                                       handleChange(qId, 'isCorrect', allCorrect);
                                                       handleChange(qId, 'marksObtained', allCorrect ? (question.marks || 1) : 0);
                                                     }}

@@ -490,7 +490,10 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                 <div className="print-sheet-area w-full max-w-full space-y-4">
                     {/* Top metadata tags */}
                     <div className="flex justify-between items-start text-xs border-b border-black pb-2">
-                        <div className="font-semibold text-[10px] sm:text-xs">FURUKAWA ELECTRICAL INDIA PVT. LTD.</div>
+                        <div className="flex flex-col items-start gap-1">
+                            <img src="/fme_transparent.png" alt="FME Logo" className="h-8 w-auto object-contain" />
+                            <div className="font-semibold text-[10px] sm:text-xs">FURUKAWA ELECTRICAL INDIA PVT. LTD.</div>
+                        </div>
                         <div className="text-right text-[10px] sm:text-xs leading-tight font-mono">
                             <div>ST-S16-01 FORMAT 4 -E</div>
                             <div>Revision No. 01</div>

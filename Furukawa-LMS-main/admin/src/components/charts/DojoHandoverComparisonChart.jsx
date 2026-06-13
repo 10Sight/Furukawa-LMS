@@ -214,21 +214,17 @@ const DojoHandoverComparisonChart = () => {
         [flatItems, deptRanges]
     );
 
-    // Primary axis: date labels (one per flat item)
-    const categories = flatItems.map(item => formatPeriodLabel(item.period, groupBy));
-
-    // Secondary axis: dept name at each dept's midpoint index
-    const deptLabelMap = useMemo(() => {
-        const map = {};
-        deptRanges.forEach(r => {
-            map[Math.round((r.startIdx + r.endIdx) / 2)] = r.deptName;
-        });
-        return map;
-    }, [deptRanges]);
-
-    const secondaryTickPositions = deptRanges.map(
-        r => Math.round((r.startIdx + r.endIdx) / 2)
-    );
+    // HTML label per slot: dept name (colored, each word on its own line) above date
+    const categories = flatItems.map(item => {
+        const range    = deptRanges.find(r => r.deptId === item.deptId);
+        const name     = range?.deptName || '';
+        const color    = range?.color    || '#64748b';
+        const nameHtml = name.split(' ').join('<br/>');
+        return (
+            `<span style="font-weight:700;font-size:13px;color:${color}">${nameHtml}</span>` +
+            `<br/><span style="font-size:12px;color:#64748b">${formatPeriodLabel(item.period, groupBy)}</span>`
+        );
+    });
 
     // Vertical dividers between dept groups
     const deptDividers = deptRanges.slice(0, -1).map(r => ({
@@ -259,44 +255,19 @@ const DojoHandoverComparisonChart = () => {
         },
         title:   { text: '' },
         credits: { enabled: false },
-        xAxis: [
-            {
-                // Primary: date labels — pushed down to make room for dept labels above
-                categories,
-                crosshair: true,
-                plotLines: deptDividers,
-                lineWidth: 1,
-                lineColor: '#e9ecef',
-                offset: 32,
-                labels: {
-                    style: { fontSize: '13px', color: '#64748b' },
-                    rotation: 0,
-                    align: 'center',
-                    y: 15,
-                },
+        xAxis: {
+            categories,
+            crosshair: true,
+            plotLines: deptDividers,
+            lineWidth: 1,
+            lineColor: '#e9ecef',
+            labels: {
+                useHTML:  true,
+                rotation: 0,
+                align:    'center',
+                style:    { lineHeight: '1.4' },
             },
-            {
-                // Secondary: dept name labels — sits between the plot area and date labels
-                linkedTo: 0,
-                opposite: false,
-                offset: 0,
-                tickPositions: secondaryTickPositions,
-                tickLength: 0,
-                lineWidth: 2,
-                lineColor: '#94a3b8',
-                gridLineWidth: 0,
-                labels: {
-                    useHTML: true,
-                    style: { fontSize: '13px', fontWeight: 'bold', color: '#334155', lineHeight: '1.4' },
-                    y: 15,
-                    formatter() {
-                        const name = deptLabelMap[this.pos];
-                        if (!name) return '';
-                        return name.split(' ').join('<br/>');
-                    },
-                },
-            },
-        ],
+        },
         yAxis: {
             min: 0,
             allowDecimals: false,

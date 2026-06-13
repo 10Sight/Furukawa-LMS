@@ -239,7 +239,7 @@ const DojoHandoverComparisonChart = () => {
         dashStyle: 'Dash',
     }));
 
-    const SLOT_WIDTH     = 80;
+    const SLOT_WIDTH     = 96;
     const needsScroll    = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
@@ -249,8 +249,8 @@ const DojoHandoverComparisonChart = () => {
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
-            height: 420,
-            marginBottom: 80,
+            height: 460,
+            marginBottom: 130,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
             ...(needsScroll && {
@@ -269,7 +269,7 @@ const DojoHandoverComparisonChart = () => {
                 lineColor: '#e9ecef',
                 offset: 32,
                 labels: {
-                    style: { fontSize: '11px', color: '#64748b' },
+                    style: { fontSize: '13px', color: '#64748b' },
                     rotation: 0,
                     align: 'center',
                     y: 15,
@@ -286,10 +286,13 @@ const DojoHandoverComparisonChart = () => {
                 lineColor: '#94a3b8',
                 gridLineWidth: 0,
                 labels: {
-                    style: { fontSize: '11px', fontWeight: 'bold', color: '#334155' },
+                    useHTML: true,
+                    style: { fontSize: '13px', fontWeight: 'bold', color: '#334155', lineHeight: '1.4' },
                     y: 15,
                     formatter() {
-                        return deptLabelMap[this.pos] ?? '';
+                        const name = deptLabelMap[this.pos];
+                        if (!name) return '';
+                        return name.split(' ').join('<br/>');
                     },
                 },
             },
@@ -322,19 +325,19 @@ const DojoHandoverComparisonChart = () => {
                 borderRadius: 5,
                 borderWidth: 0,
                 groupPadding: 0.06,
-                maxPointWidth: 64,
+                maxPointWidth: 80,
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? this.y : ''; },
                     style: {
-                        fontSize: '11px',
+                        fontSize: '14px',
                         fontWeight: 'bold',
                         color: '#1e293b',
                         textOutline: '2px white',
                     },
                     verticalAlign: 'top',
                     align: 'center',
-                    y: -20,
+                    y: -24,
                     allowOverlap: true,
                 },
             },
@@ -489,7 +492,7 @@ const DojoHandoverComparisonChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[420px] flex flex-col items-center justify-center gap-4">
+                    <div className="h-[460px] flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -500,11 +503,11 @@ const DojoHandoverComparisonChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[420px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div className="h-[460px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load handover comparison.</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[420px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div className="h-[460px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">No handover data found for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>

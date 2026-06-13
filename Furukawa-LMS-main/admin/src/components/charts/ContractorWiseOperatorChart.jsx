@@ -122,9 +122,9 @@ const ContractorWiseOperatorChart = () => {
         [timeframe, rawStart, rawEnd]
     );
 
-    const { periods, contractorNames, seriesData } = useMemo(() => {
+    const { periods, contractorNames, flatPoints } = useMemo(() => {
         if (!allUsers.length || !startDate || !endDate)
-            return { periods: [], contractorNames: [], seriesData: [] };
+            return { periods: [], contractorNames: [], flatPoints: [] };
 
         const start = new Date(`${startDate}T00:00:00`);
         const end   = new Date(`${endDate}T23:59:59`);
@@ -137,7 +137,6 @@ const ContractorWiseOperatorChart = () => {
 
         const periods = buildPeriodList(timeframe, startDate, endDate);
 
-        // Resolve contractor name: prefer string field, fall back to id lookup
         const resolveName = (u) =>
             u.contractor?.trim() ||
             (u.contractorId ? contractorIdToName[String(u.contractorId)] : null) ||
@@ -161,23 +160,37 @@ const ContractorWiseOperatorChart = () => {
             matrix[key][name] = (matrix[key][name] || 0) + 1;
         });
 
-        const seriesData = contractorNames.map((name, i) => ({
-            name,
-            type:  'column',
-            data:  periods.map(p => matrix[p]?.[name] || 0),
-            color: CONTRACTOR_COLORS[i % CONTRACTOR_COLORS.length],
-        }));
+        // Flat list: one entry per (period × contractor) that has count > 0
+        // Each point carries its own color so bars are visually distinct per contractor
+        const flatPoints = [];
+        periods.forEach(period => {
+            const periodLabel = formatPeriodLabel(period, timeframe);
+            contractorNames.forEach((name, ci) => {
+                const count = matrix[period]?.[name] || 0;
+                if (count > 0) {
+                    flatPoints.push({
+                        y:           count,
+                        color:       CONTRACTOR_COLORS[ci % CONTRACTOR_COLORS.length],
+                        contractor:  name,
+                        periodLabel,
+                    });
+                }
+            });
+        });
 
-        return { periods, contractorNames, seriesData };
+        return { periods, contractorNames, flatPoints };
     }, [allUsers, contractorIdToName, timeframe, startDate, endDate]);
 
-    const totalOperators = seriesData.reduce((acc, s) => acc + s.data.reduce((a, b) => a + b, 0), 0);
-    const topContractor  = seriesData.reduce((best, s) => {
-        const sum = s.data.reduce((a, b) => a + b, 0);
-        return sum > (best?.sum || 0) ? { name: s.name, sum } : best;
-    }, null);
+    const totalOperators = flatPoints.reduce((sum, p) => sum + p.y, 0);
 
-    const categories = periods.map(p => formatPeriodLabel(p, timeframe));
+    const contractorTotals = {};
+    flatPoints.forEach(p => {
+        contractorTotals[p.contractor] = (contractorTotals[p.contractor] || 0) + p.y;
+    });
+    const topContractor = Object.entries(contractorTotals).reduce(
+        (best, [name, sum]) => sum > (best?.sum || 0) ? { name, sum } : best,
+        null
+    );
 
     const handleTimeframeChange = (tf) => {
         const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
@@ -193,70 +206,92 @@ const ContractorWiseOperatorChart = () => {
         setRawEnd(e);
     };
 
-    const SLOT_WIDTH     = 72;
-    const needsScroll    = categories.length * SLOT_WIDTH > 800;
-    const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
+    // Each bar gets its own x-axis slot; two-line HTML label: contractor name (colored) + date
+    const flatCategories = flatPoints.map(p =>
+        `<span style="font-weight:700;font-size:13px;color:${p.color}">${p.contractor}</span>` +
+        `<br/><span style="font-size:12px;color:#64748b">${p.periodLabel}</span>`
+    );
+
+    const SLOT_WIDTH     = 96;
+    const needsScroll    = flatPoints.length * SLOT_WIDTH > 800;
+    const scrollMinWidth = needsScroll ? flatPoints.length * SLOT_WIDTH : undefined;
 
     const chartOptions = {
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
-            height: 360,
+            height: 460,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
+            marginBottom: 90,
             ...(needsScroll && { scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 } }),
         },
         title:   { text: '' },
         credits: { enabled: false },
         xAxis: {
-            categories,
-            crosshair: true,
-            labels: { style: { fontSize: '13px', color: '#64748b' }, rotation: 0, align: 'center' },
+            categories: flatCategories,
+            crosshair:  true,
+            labels: {
+                useHTML:  true,
+                rotation: 0,
+                align:    'center',
+                style:    { lineHeight: '1.4' },
+            },
         },
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: 'Operators', style: { color: '#94a3b8', fontSize: '13px' } },
+            title: { text: 'Operators', style: { color: '#94a3b8', fontSize: '14px' } },
+            labels: { style: { fontSize: '13px' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: {
-            enabled: true,
-            itemStyle: { fontSize: '13px', fontWeight: 'normal', color: '#475569' },
-            maxHeight: 72,
-        },
+        legend: { enabled: false },
         tooltip: {
-            shared: true,
             useHTML: true,
-            style: { fontSize: '13px' },
-            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
+            style:   { fontSize: '14px' },
+            formatter() {
+                return (
+                    `<span style="color:${this.point.color}">●</span> ` +
+                    `<b>${this.point.contractor}</b><br/>` +
+                    `Date: <b>${this.point.periodLabel}</b><br/>` +
+                    `Operators: <b>${this.y}</b>`
+                );
+            },
         },
         plotOptions: {
             column: {
-                borderRadius: 4,
-                borderWidth: 0,
-                groupPadding: 0.12,
-                maxPointWidth: 48,
+                colorByPoint:   true,
+                borderRadius:   5,
+                borderWidth:    0,
+                pointPadding:   0.06,
+                groupPadding:   0,
+                maxPointWidth:  80,
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? this.y : ''; },
                     style: {
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        color: '#1e293b',
+                        fontSize:    '14px',
+                        fontWeight:  'bold',
+                        color:       '#1e293b',
                         textOutline: '2px white',
                     },
                     verticalAlign: 'top',
-                    align: 'center',
-                    y: -20,
-                    allowOverlap: true,
+                    align:         'center',
+                    y:             -24,
+                    allowOverlap:  true,
                 },
             },
         },
-        series: seriesData,
+        series: [{
+            type: 'column',
+            name: 'Operators',
+            data: flatPoints,
+            showInLegend: false,
+        }],
     };
 
     const cfg        = INPUT_CONFIG[timeframe];
-    const hasAnyData = totalOperators > 0;
+    const hasAnyData = flatPoints.length > 0;
 
     return (
         <Card className="col-span-2">
@@ -341,7 +376,7 @@ const ContractorWiseOperatorChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center gap-4">
+                    <div className="h-[460px] flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -352,11 +387,11 @@ const ContractorWiseOperatorChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div className="h-[460px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load contractor data.</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div className="h-[460px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">No operator joining data for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or date range above.</p>

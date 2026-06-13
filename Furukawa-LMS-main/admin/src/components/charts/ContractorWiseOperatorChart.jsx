@@ -160,32 +160,39 @@ const ContractorWiseOperatorChart = () => {
             matrix[key][name] = (matrix[key][name] || 0) + 1;
         });
 
-        // Flat list: one entry per (period × contractor) that has count > 0
-        // Each point carries its own color so bars are visually distinct per contractor
+        // Flat list: one entry per (period × contractor) with count > 0.
+        // Periods with no data get a single null placeholder so every date appears on the axis.
         const flatPoints = [];
         periods.forEach(period => {
             const periodLabel = formatPeriodLabel(period, timeframe);
-            contractorNames.forEach((name, ci) => {
-                const count = matrix[period]?.[name] || 0;
-                if (count > 0) {
-                    flatPoints.push({
-                        y:           count,
-                        color:       CONTRACTOR_COLORS[ci % CONTRACTOR_COLORS.length],
-                        contractor:  name,
-                        periodLabel,
-                    });
-                }
-            });
+            const hasData = contractorNames.some(n => (matrix[period]?.[n] || 0) > 0);
+
+            if (hasData) {
+                contractorNames.forEach((name, ci) => {
+                    const count = matrix[period]?.[name] || 0;
+                    if (count > 0) {
+                        flatPoints.push({
+                            y:           count,
+                            color:       CONTRACTOR_COLORS[ci % CONTRACTOR_COLORS.length],
+                            contractor:  name,
+                            periodLabel,
+                        });
+                    }
+                });
+            } else {
+                flatPoints.push({ y: null, color: 'transparent', contractor: '', periodLabel, isEmpty: true });
+            }
         });
 
         return { periods, contractorNames, flatPoints };
     }, [allUsers, contractorIdToName, timeframe, startDate, endDate]);
 
-    const totalOperators = flatPoints.reduce((sum, p) => sum + p.y, 0);
+    const totalOperators = flatPoints.reduce((sum, p) => sum + (p.y || 0), 0);
 
     const contractorTotals = {};
     flatPoints.forEach(p => {
-        contractorTotals[p.contractor] = (contractorTotals[p.contractor] || 0) + p.y;
+        if (!p.isEmpty && p.contractor)
+            contractorTotals[p.contractor] = (contractorTotals[p.contractor] || 0) + p.y;
     });
     const topContractor = Object.entries(contractorTotals).reduce(
         (best, [name, sum]) => sum > (best?.sum || 0) ? { name, sum } : best,
@@ -206,8 +213,11 @@ const ContractorWiseOperatorChart = () => {
         setRawEnd(e);
     };
 
-    // Each bar gets its own x-axis slot; two-line HTML label: contractor name (colored) + date
+    // Each bar gets its own x-axis slot; two-line HTML label: contractor name (colored) + date.
+    // Empty periods show just the date so every date remains visible on the axis.
     const flatCategories = flatPoints.map(p => {
+        if (p.isEmpty)
+            return `<span style="font-size:12px;color:#94a3b8">${p.periodLabel}</span>`;
         const nameHtml = p.contractor.split(' ').join('<br/>');
         return (
             `<span style="font-weight:700;font-size:13px;color:${p.color}">${nameHtml}</span>` +
@@ -253,6 +263,8 @@ const ContractorWiseOperatorChart = () => {
             useHTML: true,
             style:   { fontSize: '14px' },
             formatter() {
+                if (this.point.isEmpty)
+                    return `<b>${this.point.periodLabel}</b>: No data`;
                 return (
                     `<span style="color:${this.point.color}">●</span> ` +
                     `<b>${this.point.contractor}</b><br/>` +

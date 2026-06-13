@@ -422,6 +422,24 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         ORDER BY period ASC
     `, actualParams);
 
+    // Per-department actual breakdown (grouped by period + targetDeptId)
+    const [deptActualRows] = await executeQuery(`
+        SELECT
+            ${actualFormatMap[safeGroupBy]}            AS period,
+            CAST(targetDeptId AS NVARCHAR(20))         AS deptId,
+            COUNT(*)                                   AS actual
+        FROM users
+        WHERE empId LIKE 'TEMP%'
+          AND isTemporary = 0
+          AND (isDeleted = 0 OR isDeleted IS NULL)
+          AND targetDeptId IS NOT NULL
+          AND CAST(updatedAt AS DATE) >= ?
+          AND CAST(updatedAt AS DATE) <= ?
+          ${deptClause}
+        GROUP BY ${actualFormatMap[safeGroupBy]}, targetDeptId
+        ORDER BY period ASC
+    `, actualParams);
+
     // Merge total expected + actual by period
     const mergedMap = {};
     expectedRows.forEach(r => {
@@ -437,12 +455,38 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         }
     });
 
-    const trend        = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
-    const deptBreakdown = deptExpectedRows.map(r => ({
-        period:   r.period,
-        deptId:   String(r.deptId),
-        expected: Number(r.expected),
-    }));
+    const trend = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
+
+    // Build per-dept breakdown merging expected + actual per (deptId, period)
+    const deptExpMap = {};
+    deptExpectedRows.forEach(r => {
+        if (!deptExpMap[r.deptId]) deptExpMap[r.deptId] = {};
+        deptExpMap[r.deptId][r.period] = Number(r.expected);
+    });
+
+    const deptActMap = {};
+    deptActualRows.forEach(r => {
+        if (!deptActMap[r.deptId]) deptActMap[r.deptId] = {};
+        deptActMap[r.deptId][r.period] = Number(r.actual);
+    });
+
+    // Collect all unique (deptId, period) pairs from both expected and actual rows
+    const deptPeriodPairs = new Map();
+    deptExpectedRows.forEach(r => {
+        const key = `${r.deptId}__${r.period}`;
+        if (!deptPeriodPairs.has(key)) deptPeriodPairs.set(key, { deptId: String(r.deptId), period: r.period });
+    });
+    deptActualRows.forEach(r => {
+        const key = `${r.deptId}__${r.period}`;
+        if (!deptPeriodPairs.has(key)) deptPeriodPairs.set(key, { deptId: String(r.deptId), period: r.period });
+    });
+
+    const deptBreakdown = [...deptPeriodPairs.values()].map(({ deptId, period }) => ({
+        period,
+        deptId,
+        expected: deptExpMap[deptId]?.[period] || 0,
+        actual:   deptActMap[deptId]?.[period]  || 0,
+    })).sort((a, b) => Number(a.deptId) - Number(b.deptId) || a.period.localeCompare(b.period));
 
     res.status(200).json(
         new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, "Dojo handover comparison fetched successfully")

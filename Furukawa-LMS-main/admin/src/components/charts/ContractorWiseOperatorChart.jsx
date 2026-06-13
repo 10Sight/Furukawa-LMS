@@ -232,7 +232,6 @@ const ContractorWiseOperatorChart = () => {
         },
         plotOptions: {
             column: {
-                stacking: 'normal',
                 borderRadius: 4,
                 borderWidth: 0,
                 groupPadding: 0.12,

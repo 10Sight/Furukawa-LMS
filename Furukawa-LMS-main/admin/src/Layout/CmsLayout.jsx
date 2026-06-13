@@ -208,7 +208,7 @@ export function CmsLayout() {
                             onClick={() => navigate('/')}
                         >
                             <IconUser className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"}`} />
-                            {!collapsed && <span className="ml-3 text-sm font-medium">Back to Main Menu</span>}
+                            {!collapsed && <span className="ml-3 text-sm font-medium">{t("nav.backToMainMenu")}</span>}
                         </div>
                     </div>
                 )}

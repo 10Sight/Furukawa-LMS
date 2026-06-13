@@ -293,7 +293,7 @@ export function StudentLayout() {
                 className={`shrink-0 transition-all duration-300 group-hover:scale-110 ${(collapsed && !isMobile) ? "w-6 h-6" : "w-5 h-5"}`}
               />
               {((!collapsed && !isMobile) || isMobile) && (
-                <span className="ml-3 truncate transition-all duration-300">Back to Main Menu</span>
+                <span className="ml-3 truncate transition-all duration-300">{t("nav.backToMainMenu")}</span>
               )}
             </button>
           </div>

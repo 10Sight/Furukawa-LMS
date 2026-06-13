@@ -222,14 +222,14 @@ export const getFirstAllowedPage = (layout, user, t) => {
 export const PAGE_REGISTRY = [
     // Admin layout
     { key: "dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "admin", link: "/admin", icon: "IconLayoutDashboardFilled" },
-    { key: "dojo-hiring", label: "DOJO Hiring", layout: "admin", link: "/admin/dojo-hiring", icon: "IconUserPlus" },
+    { key: "dojo-hiring", label: "DOJO Hiring", labelKey: "nav.dojoHiring", layout: "admin", link: "/admin/dojo-hiring", icon: "IconUserPlus" },
     // { key: "trainers", label: "Instructors", labelKey: "nav.instructors", layout: "admin", link: "/admin/trainers", icon: "IconUser" },
     { key: "courses", layout: "admin", link: "/admin/courses" },
     { key: "departments", label: "Departments", labelKey: "nav.departments", layout: "admin", link: "/admin/departments", icon: "IconFolder" },
     { key: "skill-matrix", label: "Skill Evaluation", labelKey: "nav.skillMatrix", layout: "admin", link: "/admin/skill-matrix", icon: "IconStars" },
     { key: "multi-skilling", label: "Multi Skilling", labelKey: "nav.multiSkilling", layout: "admin", link: "/admin/multi-skilling", icon: "IconStars" },
     { key: "employees", label: "Operator", labelKey: "nav.trainees", layout: "admin", link: "/admin/employees", icon: "IconUsers" },
-    { key: "contractors", label: "Contractors", layout: "admin", link: "/admin/contractors", icon: "IconBuilding" },
+    { key: "contractors", label: "Contractors", labelKey: "nav.contractors", layout: "admin", link: "/admin/contractors", icon: "IconBuilding" },
     { key: "student-levels", layout: "admin", link: "/admin/student-levels" },
     { key: "quiz-monitoring", layout: "admin", link: "/admin/quiz-monitoring" },
     { key: "test-paper", label: "Test Paper", labelKey: "nav.testPaper", layout: "admin", link: "/admin/test-paper", icon: "IconFileText" },

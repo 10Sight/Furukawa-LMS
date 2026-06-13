@@ -11,9 +11,8 @@ import { IconArrowsTransferDown, IconCalendar, IconRefresh, IconChevronDown } fr
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
-const _now        = new Date();
+const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
-const TODAY        = _now.toISOString().split('T')[0];
 const MONTH_END    = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
 
 const toApiDates = (timeframe, rawStart, rawEnd) => {
@@ -41,48 +40,45 @@ const formatPeriodLabel = (period, groupBy) => {
 
 const EMPTY_ROW = { expected: 0, actual: 0 };
 
-// Distinct colors for per-department Expected bars (Actual blue #3b82f6 is reserved)
+// Distinct colors for per-department Expected bars (blue #3b82f6 is reserved for Actual)
 const DEPT_COLORS = [
     '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4',
     '#84cc16', '#f97316', '#6366f1', '#ef4444', '#14b8a6',
     '#a855f7', '#eab308', '#0ea5e9', '#f43f5e', '#22c55e',
 ];
 
-const buildFullSeries = (groupBy, start, end, trend) => {
-    if (!start || !end) return trend;
-
-    const dataMap = {};
-    trend.forEach(r => { dataMap[r.period] = r; });
-
+const buildFullPeriods = (groupBy, start, end) => {
+    if (!start || !end) return [];
     const full = [];
-
     if (groupBy === 'daily') {
         const cur = new Date(`${start}T00:00:00`);
         const last = new Date(`${end}T00:00:00`);
         while (cur <= last) {
-            const key = cur.toISOString().split('T')[0];
-            full.push(dataMap[key] ?? { ...EMPTY_ROW, period: key });
+            full.push(cur.toISOString().split('T')[0]);
             cur.setDate(cur.getDate() + 1);
         }
     } else if (groupBy === 'monthly') {
         let [sy, sm] = start.split('-').map(Number);
         const [ey, em] = end.split('-').map(Number);
         while (sy < ey || (sy === ey && sm <= em)) {
-            const key = `${sy}-${String(sm).padStart(2, '0')}`;
-            full.push(dataMap[key] ?? { ...EMPTY_ROW, period: key });
+            full.push(`${sy}-${String(sm).padStart(2, '0')}`);
             sm++;
             if (sm > 12) { sm = 1; sy++; }
         }
     } else {
         const sy = Number(start.split('-')[0]);
         const ey = Number(end.split('-')[0]);
-        for (let y = sy; y <= ey; y++) {
-            const key = String(y);
-            full.push(dataMap[key] ?? { ...EMPTY_ROW, period: key });
-        }
+        for (let y = sy; y <= ey; y++) full.push(String(y));
     }
-
     return full;
+};
+
+// Used only for summary strip totals
+const buildFullSeries = (groupBy, start, end, trend) => {
+    if (!start || !end) return trend;
+    const dataMap = {};
+    trend.forEach(r => { dataMap[r.period] = r; });
+    return buildFullPeriods(groupBy, start, end).map(key => dataMap[key] ?? { ...EMPTY_ROW, period: key });
 };
 
 const INPUT_CONFIG = {
@@ -115,9 +111,9 @@ const getDefaultDates = (timeframe) => {
 };
 
 const DojoHandoverComparisonChart = () => {
-    const [timeframe,    setTimeframe]    = useState('daily');
-    const [rawStart,     setRawStart]     = useState(() => getDefaultDates('daily').rawStart);
-    const [rawEnd,       setRawEnd]       = useState(() => getDefaultDates('daily').rawEnd);
+    const [timeframe,     setTimeframe]     = useState('daily');
+    const [rawStart,      setRawStart]      = useState(() => getDefaultDates('daily').rawStart);
+    const [rawEnd,        setRawEnd]        = useState(() => getDefaultDates('daily').rawEnd);
     const [selectedDepts, setSelectedDepts] = useState([]);
 
     const { data: deptsData } = useGetAllDepartmentsQuery();
@@ -135,53 +131,223 @@ const DojoHandoverComparisonChart = () => {
         departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
     });
 
-    const rawTrend     = data?.data?.trend        || [];
+    const rawTrend      = data?.data?.trend        || [];
     const deptBreakdown = data?.data?.deptBreakdown || [];
-    const groupBy      = data?.data?.groupBy      || timeframe;
-    const apiStart     = data?.data?.start        || '';
-    const apiEnd       = data?.data?.end          || '';
+    const groupBy       = data?.data?.groupBy       || timeframe;
+    const apiStart      = data?.data?.start         || '';
+    const apiEnd        = data?.data?.end           || '';
 
+    // Summary strip totals from global trend
     const trend = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
     );
-
-    const categories  = trend.map(r => formatPeriodLabel(r.period, groupBy));
-    const actualSeries = trend.map(r => Number(r.actual) || 0);
-    const totalActual  = actualSeries.reduce((a, b) => a + b, 0);
-
-    // Build per-department Expected series
-    const deptSeries = useMemo(() => {
-        if (!deptBreakdown.length) return [];
-
-        // Collect unique deptIds in stable order (first appearance)
-        const seen = new Set();
-        const orderedDeptIds = [];
-        deptBreakdown.forEach(r => {
-            if (r.deptId && !seen.has(r.deptId)) {
-                seen.add(r.deptId);
-                orderedDeptIds.push(r.deptId);
-            }
-        });
-
-        // Map: deptId → { period → count }
-        const deptMap = {};
-        deptBreakdown.forEach(r => {
-            if (!deptMap[r.deptId]) deptMap[r.deptId] = {};
-            deptMap[r.deptId][r.period] = Number(r.expected);
-        });
-
-        return orderedDeptIds.map((deptId, i) => ({
-            type:  'column',
-            name:  departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`,
-            data:  trend.map(r => deptMap[deptId]?.[r.period] || 0),
-            color: DEPT_COLORS[i % DEPT_COLORS.length],
-        }));
-    }, [deptBreakdown, trend, departments]);
-
-    // Total expected: sum the first series or fall back to trend totals
+    const totalActual     = trend.reduce((a, r) => a + (Number(r.actual)   || 0), 0);
     const totalExpected   = trend.reduce((a, r) => a + (Number(r.expected) || 0), 0);
     const achievementRate = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
+
+    // All periods in the selected range (for filling zero-gaps per dept)
+    const fullPeriods = useMemo(
+        () => buildFullPeriods(groupBy, apiStart, apiEnd),
+        [groupBy, apiStart, apiEnd]
+    );
+
+    // Build flat (dept × period) data — every dept shows every period
+    const { flatItems, deptRanges } = useMemo(() => {
+        if (!deptBreakdown.length || !fullPeriods.length) return { flatItems: [], deptRanges: [] };
+
+        // Group breakdown by deptId (preserve server sort order)
+        const deptDataMap = {};
+        const orderedDeptIds = [];
+        deptBreakdown.forEach(r => {
+            if (!deptDataMap[r.deptId]) {
+                deptDataMap[r.deptId] = {};
+                orderedDeptIds.push(r.deptId);
+            }
+            deptDataMap[r.deptId][r.period] = {
+                expected: Number(r.expected) || 0,
+                actual:   Number(r.actual)   || 0,
+            };
+        });
+
+        const items  = [];
+        const ranges = [];
+
+        orderedDeptIds.forEach((deptId, i) => {
+            const startIdx = items.length;
+            fullPeriods.forEach(period => {
+                const vals = deptDataMap[deptId]?.[period] || { expected: 0, actual: 0 };
+                items.push({ deptId, period, expected: vals.expected, actual: vals.actual });
+            });
+            ranges.push({
+                deptId,
+                deptName: departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`,
+                color:    DEPT_COLORS[i % DEPT_COLORS.length],
+                startIdx,
+                endIdx: items.length - 1,
+            });
+        });
+
+        return { flatItems: items, deptRanges: ranges };
+    }, [deptBreakdown, fullPeriods, departments]);
+
+    // Per-dept Expected + Actual series (nulls outside each dept's index range)
+    const chartSeries = useMemo(() =>
+        deptRanges.flatMap(({ deptName, color, startIdx, endIdx }) => [
+            {
+                type: 'column',
+                name: `${deptName} – Expected`,
+                data: flatItems.map((item, idx) =>
+                    idx >= startIdx && idx <= endIdx ? item.expected : null
+                ),
+                color,
+            },
+            {
+                type: 'column',
+                name: `${deptName} – Actual`,
+                data: flatItems.map((item, idx) =>
+                    idx >= startIdx && idx <= endIdx ? item.actual : null
+                ),
+                color: '#3b82f6',
+            },
+        ]),
+        [flatItems, deptRanges]
+    );
+
+    // Primary axis: date labels (one per flat item)
+    const categories = flatItems.map(item => formatPeriodLabel(item.period, groupBy));
+
+    // Secondary axis: dept name at each dept's midpoint index
+    const deptLabelMap = useMemo(() => {
+        const map = {};
+        deptRanges.forEach(r => {
+            map[Math.round((r.startIdx + r.endIdx) / 2)] = r.deptName;
+        });
+        return map;
+    }, [deptRanges]);
+
+    const secondaryTickPositions = deptRanges.map(
+        r => Math.round((r.startIdx + r.endIdx) / 2)
+    );
+
+    // Vertical dividers between dept groups
+    const deptDividers = deptRanges.slice(0, -1).map(r => ({
+        value:     r.endIdx + 0.5,
+        color:     '#cbd5e1',
+        width:     1,
+        zIndex:    5,
+        dashStyle: 'Dash',
+    }));
+
+    const SLOT_WIDTH     = 80;
+    const needsScroll    = categories.length * SLOT_WIDTH > 800;
+    const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
+
+    const hasAnyData = totalExpected > 0 || totalActual > 0;
+
+    const chartOptions = {
+        chart: {
+            type: 'column',
+            backgroundColor: 'transparent',
+            height: 420,
+            marginBottom: 80,
+            style: { fontFamily: 'inherit' },
+            animation: { duration: 400 },
+            ...(needsScroll && {
+                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
+            }),
+        },
+        title:   { text: '' },
+        credits: { enabled: false },
+        xAxis: [
+            {
+                // Primary: date labels — pushed down to make room for dept labels above
+                categories,
+                crosshair: true,
+                plotLines: deptDividers,
+                lineWidth: 1,
+                lineColor: '#e9ecef',
+                offset: 32,
+                labels: {
+                    style: { fontSize: '11px', color: '#64748b' },
+                    rotation: 0,
+                    align: 'center',
+                    y: 15,
+                },
+            },
+            {
+                // Secondary: dept name labels — sits between the plot area and date labels
+                linkedTo: 0,
+                opposite: false,
+                offset: 0,
+                tickPositions: secondaryTickPositions,
+                tickLength: 0,
+                lineWidth: 2,
+                lineColor: '#94a3b8',
+                gridLineWidth: 0,
+                labels: {
+                    style: { fontSize: '11px', fontWeight: 'bold', color: '#334155' },
+                    y: 15,
+                    formatter() {
+                        return deptLabelMap[this.pos] ?? '';
+                    },
+                },
+            },
+        ],
+        yAxis: {
+            min: 0,
+            allowDecimals: false,
+            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
+            gridLineColor: '#f1f5f9',
+        },
+        legend: {
+            enabled: true,
+            align: 'right',
+            verticalAlign: 'top',
+            layout: 'vertical',
+            x: 0,
+            y: 0,
+            itemStyle: { fontSize: '12px', fontWeight: 'normal', color: '#475569' },
+            itemMarginBottom: 4,
+            symbolRadius: 3,
+        },
+        tooltip: {
+            shared: true,
+            useHTML: true,
+            style: { fontSize: '13px' },
+            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
+        },
+        plotOptions: {
+            column: {
+                borderRadius: 5,
+                borderWidth: 0,
+                groupPadding: 0.06,
+                maxPointWidth: 64,
+                dataLabels: {
+                    enabled: true,
+                    formatter() { return this.y > 0 ? this.y : ''; },
+                    style: {
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        color: '#1e293b',
+                        textOutline: '2px white',
+                    },
+                    verticalAlign: 'top',
+                    align: 'center',
+                    y: -20,
+                    allowOverlap: true,
+                },
+            },
+        },
+        series: chartSeries,
+    };
+
+    const cfg       = INPUT_CONFIG[timeframe];
+    const deptLabel = selectedDepts.length === 0
+        ? 'All Departments'
+        : selectedDepts.length === 1
+            ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
+            : `${selectedDepts.length} Departments`;
 
     const handleTimeframeChange = (tf) => {
         const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
@@ -201,83 +367,6 @@ const DojoHandoverComparisonChart = () => {
     const toggleDept = (id, checked) =>
         setSelectedDepts(prev => checked ? [...prev, id] : prev.filter(x => x !== id));
 
-    const deptLabel = selectedDepts.length === 0
-        ? 'All Departments'
-        : selectedDepts.length === 1
-            ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
-            : `${selectedDepts.length} Departments`;
-
-    const SLOT_WIDTH     = 110;
-    const needsScroll    = categories.length * SLOT_WIDTH > 800;
-    const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
-
-    const chartOptions = {
-        chart: {
-            type: 'column',
-            backgroundColor: 'transparent',
-            height: 360,
-            style: { fontFamily: 'inherit' },
-            animation: { duration: 400 },
-            ...(needsScroll && {
-                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
-            }),
-        },
-        title:   { text: '' },
-        credits: { enabled: false },
-        xAxis: {
-            categories,
-            crosshair: true,
-            labels: { style: { fontSize: '13px', color: '#64748b' }, rotation: 0, align: 'center' },
-        },
-        yAxis: {
-            min: 0,
-            allowDecimals: false,
-            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
-            gridLineColor: '#f1f5f9',
-        },
-        legend: {
-            enabled: true,
-            itemStyle: { fontSize: '13px', fontWeight: 'normal', color: '#475569' },
-            maxHeight: 72,
-        },
-        tooltip: {
-            shared: true,
-            useHTML: true,
-            style: { fontSize: '13px' },
-            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
-        },
-        plotOptions: {
-            column: {
-                borderRadius: 5,
-                borderWidth: 0,
-                groupPadding: 0.12,
-                maxPointWidth: 48,
-                dataLabels: {
-                    enabled: true,
-                    formatter() { return this.y > 0 ? this.y : ''; },
-                    style: {
-                        fontSize: '13px',
-                        fontWeight: 'bold',
-                        color: '#1e293b',
-                        textOutline: '2px white',
-                    },
-                    verticalAlign: 'top',
-                    align: 'center',
-                    y: -20,
-                    allowOverlap: true,
-                },
-            },
-        },
-        series: [
-            ...deptSeries,
-            { type: 'column', name: 'Total Expected', data: trend.map(r => Number(r.expected) || 0), color: '#94a3b8' },
-            { type: 'column', name: 'Actual Handover', data: actualSeries, color: '#3b82f6' },
-        ],
-    };
-
-    const cfg        = INPUT_CONFIG[timeframe];
-    const hasAnyData = totalExpected > 0 || totalActual > 0;
-
     return (
         <Card className="col-span-2">
             <CardHeader className="pb-4">
@@ -288,7 +377,7 @@ const DojoHandoverComparisonChart = () => {
                             Dojo Handover Comparison
                         </CardTitle>
                         <CardDescription>
-                            Expected vs Actual handover counts by date — filtered by target department
+                            Expected vs Actual handover counts by date — grouped by target department
                         </CardDescription>
                     </div>
                 </div>
@@ -400,7 +489,7 @@ const DojoHandoverComparisonChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center gap-4">
+                    <div className="h-[420px] flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -411,11 +500,11 @@ const DojoHandoverComparisonChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div className="h-[420px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load handover comparison.</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div className="h-[420px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">No handover data found for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>
@@ -446,7 +535,7 @@ const DojoHandoverComparisonChart = () => {
                                 <span className="text-xs font-bold text-slate-500">
                                     {timeframe === 'daily' ? 'Days' : timeframe === 'monthly' ? 'Months' : 'Years'} Tracked
                                 </span>
-                                <span className="text-sm font-black text-slate-800">{trend.length}</span>
+                                <span className="text-sm font-black text-slate-800">{fullPeriods.length}</span>
                             </div>
                         </div>
                     </>

@@ -41,6 +41,9 @@ export const translations = {
     "nav.supervisor": "Supervisor",
     "nav.incharge": "Incharge",
     "nav.settings": "Settings",
+    "nav.backToMainMenu": "Back to Main Menu",
+    "nav.dojoHiring": "DOJO Hiring",
+    "nav.contractors": "Contractors",
 
     "nav.profile": "Profile",
     "nav.department": "Department",
@@ -181,6 +184,11 @@ export const translations = {
     "nav.skillMatrix": "कौशल मैट्रिक्स",
     "nav.multiSkilling": "मल्टी स्किलिंग",
     "nav.learning": "लर्निंग",
+    "nav.settings": "सेटिंग्स",
+    "nav.lineRequirements": "लाइन आवश्यकताएं",
+    "nav.backToMainMenu": "मुख्य मेनू पर वापस",
+    "nav.dojoHiring": "DOJO भर्ती",
+    "nav.contractors": "ठेकेदार",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "प्रशासक जानकारी",
@@ -280,6 +288,11 @@ export const translations = {
     "nav.skillMatrix": "スキルマトリックス",
     "nav.multiSkilling": "マルチスキリング",
     "nav.learning": "ラーニング",
+    "nav.settings": "設定",
+    "nav.lineRequirements": "ライン要件",
+    "nav.backToMainMenu": "メインメニューに戻る",
+    "nav.dojoHiring": "DOJO採用",
+    "nav.contractors": "コントラクター",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理者情報",
@@ -379,6 +392,11 @@ export const translations = {
     "nav.skillMatrix": "技能矩阵",
     "nav.multiSkilling": "多技能",
     "nav.learning": "学习",
+    "nav.settings": "设置",
+    "nav.lineRequirements": "线体要求",
+    "nav.backToMainMenu": "返回主菜单",
+    "nav.dojoHiring": "DOJO招聘",
+    "nav.contractors": "承包商",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理员信息",
@@ -478,6 +496,11 @@ export const translations = {
     "nav.skillMatrix": "Матрица навыков",
     "nav.multiSkilling": "Мультискиллинг",
     "nav.learning": "Обучение",
+    "nav.settings": "Настройки",
+    "nav.lineRequirements": "Требования к линии",
+    "nav.backToMainMenu": "Назад в главное меню",
+    "nav.dojoHiring": "Наем в DOJO",
+    "nav.contractors": "Подрядчики",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "Информация об администраторе",

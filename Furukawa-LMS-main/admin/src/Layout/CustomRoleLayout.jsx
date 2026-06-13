@@ -173,7 +173,7 @@ export function CustomRoleLayout() {
             >
               <IconUser size={22} className="shrink-0 transition-transform group-hover:scale-110" />
               {(!collapsed || isMobile) && (
-                <span className="ml-3 text-sm font-medium truncate">Back to Main Menu</span>
+                <span className="ml-3 text-sm font-medium truncate">{t("nav.backToMainMenu")}</span>
               )}
             </div>
           </div>

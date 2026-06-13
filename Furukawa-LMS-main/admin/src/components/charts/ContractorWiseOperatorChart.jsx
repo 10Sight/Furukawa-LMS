@@ -207,10 +207,13 @@ const ContractorWiseOperatorChart = () => {
     };
 
     // Each bar gets its own x-axis slot; two-line HTML label: contractor name (colored) + date
-    const flatCategories = flatPoints.map(p =>
-        `<span style="font-weight:700;font-size:13px;color:${p.color}">${p.contractor}</span>` +
-        `<br/><span style="font-size:12px;color:#64748b">${p.periodLabel}</span>`
-    );
+    const flatCategories = flatPoints.map(p => {
+        const nameHtml = p.contractor.split(' ').join('<br/>');
+        return (
+            `<span style="font-weight:700;font-size:13px;color:${p.color}">${nameHtml}</span>` +
+            `<br/><span style="font-size:12px;color:#64748b">${p.periodLabel}</span>`
+        );
+    });
 
     const SLOT_WIDTH     = 96;
     const needsScroll    = flatPoints.length * SLOT_WIDTH > 800;
@@ -223,7 +226,7 @@ const ContractorWiseOperatorChart = () => {
             height: 460,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
-            marginBottom: 90,
+            marginBottom: 130,
             ...(needsScroll && { scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 } }),
         },
         title:   { text: '' },

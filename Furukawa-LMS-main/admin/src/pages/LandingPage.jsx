@@ -137,7 +137,7 @@ const LandingPage = () => {
                             <div className="space-y-2">
                                 <h3 className="text-xl font-bold text-slate-900">MPS Portal</h3>
                                 <p className="text-sm text-slate-500 leading-relaxed px-2">
-                                    Manpower Plaining System.
+                                    Manpower Planing System.
                                 </p>
                             </div>
                         </CardContent>

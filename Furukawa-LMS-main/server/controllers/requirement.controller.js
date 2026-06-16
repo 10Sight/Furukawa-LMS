@@ -397,30 +397,27 @@ const autoApproveExpiredRequirements = async () => {
 
 const findSectionHeadsForRequirement = async (reqRow) => {
     const sectionCode = safeTrim(reqRow.sectionCode);
-    const sectionName = safeTrim(reqRow.sectionName);
-    const lineCode = safeTrim(reqRow.lineCode);
-    const lineDescription = safeTrim(reqRow.lineDescription);
+
+    if (!sectionCode) return [];
 
     const [heads] = await executeSql(
         `
         SELECT DISTINCT
             sh.email,
             sh.name,
-            sh.CCMail
+            sh.CCMail,
+            s.id AS sectionId,
+            s.name AS dbSectionName,
+            s.uniCode AS dbSectionCode
         FROM section_heads sh
-        LEFT JOIN sections s
+        INNER JOIN sections s
             ON sh.sectionId = s.id
         WHERE
             sh.email IS NOT NULL
             AND LTRIM(RTRIM(sh.email)) != ''
-            AND (
-                UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(?)))
-                OR UPPER(LTRIM(RTRIM(s.name))) = UPPER(LTRIM(RTRIM(?)))
-                OR UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(?)))
-                OR UPPER(LTRIM(RTRIM(s.name))) = UPPER(LTRIM(RTRIM(?)))
-            )
+            AND UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(?)))
         `,
-        [sectionCode, sectionName, lineCode, lineDescription]
+        [sectionCode]
     );
 
     return heads || [];
@@ -528,8 +525,8 @@ const sendRequirementEditApprovalMail = async ({
         const newFN01 = newReq.prodPlanFN01 ?? "—";
         const newFN02 = newReq.prodPlanFN02 ?? "—";
 
-        const sectionName = safeTrim(newReq.sectionName);
         const sectionCode = safeTrim(newReq.sectionCode);
+        const sectionName = safeTrim(getValueIgnoreCase(heads[0], ["dbSectionName", "DBSECTIONNAME"]) || newReq.sectionName);
         const lineDescription = safeTrim(newReq.lineDescription);
 
         const subject = `Requirement Approval Required — ${sectionName || sectionCode}`;
@@ -571,11 +568,15 @@ const sendRequirementEditApprovalMail = async ({
 <td style="padding:18px 36px;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
         <tr>
-            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Section</strong></td>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Section Code</strong></td>
+            <td style="padding:10px 14px;font-size:13px;color:#1e293b;font-weight:700;">${sectionCode || "-"}</td>
+        </tr>
+        <tr>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Section Name</strong></td>
             <td style="padding:10px 14px;font-size:13px;color:#1e293b;font-weight:700;">${sectionName || "-"}</td>
         </tr>
         <tr>
-            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Line</strong></td>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Section Description</strong></td>
             <td style="padding:10px 14px;font-size:13px;color:#1e293b;font-weight:700;">${lineDescription || "-"}</td>
         </tr>
         <tr>
@@ -915,8 +916,9 @@ export const addRequirements = asyncHandler(async (req, res) => {
         srNo: colOf("sr. no.", "sr. no", "sr no", "sr"),
         sectionCode: colOf("section code"),
         sectionName: colOf("section"),
-        sectionDescUnicode: colOf("sectiondescunicode", "section desc unicode", "line code/sub section", "line code", "sub section"),
-        descriptionLine: colOf("description line", "description"),
+        // New format: line code is removed. This column is treated as section description only.
+        sectionDescUnicode: colOf("section description", "sectiondescunicode", "section desc unicode", "description line", "description"),
+        descriptionLine: colOf("section description", "description line", "description"),
         year: colOf("year"),
         category: colOf("category"),
     };
@@ -1003,8 +1005,9 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 srNo,
                 sectionCode: safeTrim(sectionCode) || null,
                 sectionName: safeTrim(sectionName) || null,
-                lineCode: safeTrim(sectionDescUnicode) || null,
-                lineDescription: safeTrim(descriptionLine) || null,
+                // New format has no line code. Keep lineCode blank so upload depends only on Section Code.
+                lineCode: "",
+                lineDescription: safeTrim(descriptionLine || sectionDescUnicode) || null,
                 category: safeTrim(category) || null,
                 monthName: MONTH_FULL[mk],
                 monthNumber: MONTH_KEYS.indexOf(mk) + 1,
@@ -1039,42 +1042,43 @@ export const addRequirements = asyncHandler(async (req, res) => {
     const validSectionsMap = new Map();
 
     dbSections.forEach((s) => {
-        if (s.name) {
-            const nameKey = normalizeUnicode(s.name);
-            const uniKey = normalizeUnicode(s.uniCode);
+        const codeKey = normalizeUnicode(s.uniCode);
+        if (!codeKey) return;
 
-            validSectionsMap.set(`${nameKey}|${uniKey}`, s.id);
-
-            if (!validSectionsMap.has(`FALLBACK|${nameKey}`)) {
-                validSectionsMap.set(`FALLBACK|${nameKey}`, s.id);
-            }
-        }
+        validSectionsMap.set(codeKey, {
+            id: s.id,
+            name: safeTrim(s.name),
+            uniCode: safeTrim(s.uniCode),
+        });
     });
 
     const validRowsToProcess = [];
     const invalidSections = new Set();
 
     for (const row of rowsToProcess) {
-        const nameKey = normalizeUnicode(row.sectionName);
-        const uniKey = normalizeUnicode(row.lineCode);
-        const comboKey = `${nameKey}|${uniKey}`;
-        const fallbackKey = `FALLBACK|${nameKey}`;
+        const codeKey = normalizeUnicode(row.sectionCode);
+        const matchedSection = validSectionsMap.get(codeKey);
 
-        if (validSectionsMap.has(comboKey) || validSectionsMap.has(fallbackKey)) {
+        if (matchedSection) {
+            // IMPORTANT: Excel section name can be wrong. Always use DB section name/code after Unicode match.
+            row.sectionId = matchedSection.id;
+            row.sectionCode = matchedSection.uniCode;
+            row.sectionName = matchedSection.name;
+            row.lineCode = "";
             validRowsToProcess.push(row);
         } else {
-            invalidSections.add(`${row.sectionName} (${row.lineCode})`);
+            invalidSections.add(`${row.sectionCode || "Blank Section Code"}`);
         }
     }
 
     if (invalidSections.size > 0) {
         const ignoredList = Array.from(invalidSections).slice(0, 10).join("', '");
-        console.log(`Skipped requirement rows for non-existent sections (unicodes): '${ignoredList}'`);
+        console.log(`Skipped requirement rows because Section Code was not found in sections.uniCode: '${ignoredList}'`);
     }
 
     if (validRowsToProcess.length === 0) {
         throw new ApiError(
-            "Validation Failed: None of the sections in the Excel file exist in the system. No data was uploaded.",
+            "Validation Failed: None of the Section Codes in the Excel file exist in the system. No data was uploaded.",
             400
         );
     }
@@ -1097,31 +1101,16 @@ export const addRequirements = asyncHandler(async (req, res) => {
         const sectionCodesToReplace = [
             ...new Set(rowsToProcess.map((r) => safeTrim(r.sectionCode)).filter(Boolean)),
         ];
-        const sectionNamesToReplace = [
-            ...new Set(rowsToProcess.map((r) => safeTrim(r.sectionName)).filter(Boolean)),
-        ];
-
         const placeholdersYears = yearsToUpdate.map(() => "?").join(",");
 
-        if (yearsToUpdate.length > 0 && (sectionCodesToReplace.length > 0 || sectionNamesToReplace.length > 0)) {
-            const replaceConditions = [];
-            const replaceParams = [...yearsToUpdate];
-
-            if (sectionCodesToReplace.length > 0) {
-                replaceConditions.push(`sectionCode IN (${sectionCodesToReplace.map(() => "?").join(",")})`);
-                replaceParams.push(...sectionCodesToReplace);
-            }
-
-            if (sectionNamesToReplace.length > 0) {
-                replaceConditions.push(`sectionName IN (${sectionNamesToReplace.map(() => "?").join(",")})`);
-                replaceParams.push(...sectionNamesToReplace);
-            }
+        if (yearsToUpdate.length > 0 && sectionCodesToReplace.length > 0) {
+            const replaceParams = [...yearsToUpdate, ...sectionCodesToReplace];
 
             await executeSql(
                 `
                 DELETE FROM requirements
                 WHERE year IN (${placeholdersYears})
-                  AND (${replaceConditions.join(" OR ")})
+                  AND sectionCode IN (${sectionCodesToReplace.map(() => "?").join(",")})
                 `,
                 replaceParams,
                 transaction
@@ -1163,10 +1152,9 @@ export const addRequirements = asyncHandler(async (req, res) => {
             }
         });
 
-        const getSectionId = (sectionName, lineCode) => {
-            const nameKey = normalizeUnicode(sectionName);
-            const uniKey = normalizeUnicode(lineCode);
-            return validSectionsMap.get(`${nameKey}|${uniKey}`) || validSectionsMap.get(`FALLBACK|${nameKey}`) || null;
+        const getSectionId = (sectionCode) => {
+            const codeKey = normalizeUnicode(sectionCode);
+            return validSectionsMap.get(codeKey)?.id || null;
         };
 
         const chunkSize = 50;
@@ -1235,7 +1223,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 try {
                     await RequirementLog.create({
                         requirement_id: insertedRow.id,
-                        section_id: getSectionId(insertedRow.sectionName, insertedRow.lineCode),
+                        section_id: getSectionId(insertedRow.sectionCode),
                         old_values: null,
                         new_values: insertedRow,
                         employee_id: req.user?._id || req.user?.id || null,
@@ -1355,6 +1343,8 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 if (!sectionDataMap.has(secCode)) {
                     sectionDataMap.set(secCode, {
                         sectionName: secName,
+                        sectionCode: secCode,
+                        descriptions: new Set(),
                         rows: [],
                         months: new Set(),
                         salesCount: 0,
@@ -1364,6 +1354,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
                 const entry = sectionDataMap.get(secCode);
                 entry.rows.push(r);
+                if (safeTrim(r.lineDescription)) entry.descriptions.add(safeTrim(r.lineDescription));
 
                 if (r.monthName) entry.months.add(r.monthName);
                 if (r.salesPlan !== null && r.salesPlan !== undefined) entry.salesCount++;
@@ -1379,21 +1370,27 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
             for (const [secCode, secData] of sectionDataMap.entries()) {
                 const secName = secData.sectionName;
+                const sectionDescription = Array.from(secData.descriptions || [])
+                    .filter(Boolean)
+                    .join(", ") || "-";
 
                 const [secHeads] = await executeSql(
                     `
-                    SELECT sh.email, sh.name, sh.CCMail
+                    SELECT DISTINCT
+                        sh.email,
+                        sh.name,
+                        sh.CCMail,
+                        s.id AS sectionId,
+                        s.name AS dbSectionName,
+                        s.uniCode AS dbSectionCode
                     FROM section_heads sh
-                    LEFT JOIN sections s ON sh.sectionId = s.id
+                    INNER JOIN sections s ON sh.sectionId = s.id
                     WHERE
                         sh.email IS NOT NULL
                         AND LTRIM(RTRIM(sh.email)) != ''
-                        AND (
-                            UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(?)))
-                            OR UPPER(LTRIM(RTRIM(s.name))) = UPPER(LTRIM(RTRIM(?)))
-                        )
+                        AND UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(?)))
                     `,
-                    [secCode, secName]
+                    [secCode]
                 );
 
                 if (!secHeads || secHeads.length === 0) {
@@ -1511,10 +1508,29 @@ export const addRequirements = asyncHandler(async (req, res) => {
         Dear <strong>${recipientName}</strong>,
     </p>
     <p style="font-size:14px;color:#64748b;line-height:1.6;margin:0;">
-        New <strong>${uploadTypeLabel}</strong> manpower requirements have been uploaded for section <strong>${secName}</strong>.
+        New <strong>${uploadTypeLabel}</strong> manpower requirements have been uploaded for section <strong>${secName}</strong>
+        <span style="color:#475569;">(${secCode})</span>.
         These requirements are currently <strong style="color:#dc2626;">pending approval</strong>.
         If no action is taken within 24 hours, they will be marked as <strong>Approved by System</strong>.
     </p>
+</td>
+</tr>
+<tr>
+<td style="padding:14px 36px 6px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+        <tr>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Section Code</strong></td>
+            <td style="padding:10px 14px;font-size:13px;color:#1e293b;font-weight:700;">${secCode}</td>
+        </tr>
+        <tr>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Section Name</strong></td>
+            <td style="padding:10px 14px;font-size:13px;color:#1e293b;font-weight:700;">${secName}</td>
+        </tr>
+        <tr>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;"><strong>Section Description</strong></td>
+            <td style="padding:10px 14px;font-size:13px;color:#1e293b;font-weight:700;">${sectionDescription}</td>
+        </tr>
+    </table>
 </td>
 </tr>
 <tr>
@@ -2020,25 +2036,13 @@ export const updateRequirement = asyncHandler(async (req, res) => {
     try {
         const [sectionRows] = await executeSql(
             `
-            SELECT id FROM sections 
-            WHERE name = ? AND uniCode = ?
+            SELECT id FROM sections
+            WHERE UPPER(LTRIM(RTRIM(uniCode))) = UPPER(LTRIM(RTRIM(?)))
             `,
-            [newReq.sectionName, newReq.lineCode]
+            [newReq.sectionCode]
         );
         if (sectionRows.length > 0) {
             sectionIdToLog = sectionRows[0].id;
-        } else {
-            // fallback
-            const [fallbackRows] = await executeSql(
-                `
-                SELECT id FROM sections 
-                WHERE name = ?
-                `,
-                [newReq.sectionName]
-            );
-            if (fallbackRows.length > 0) {
-                sectionIdToLog = fallbackRows[0].id;
-            }
         }
     } catch (err) {
         console.error("Failed to find section for log:", err.message);

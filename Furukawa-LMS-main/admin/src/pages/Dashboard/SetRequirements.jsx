@@ -595,14 +595,14 @@ export default function SetRequirements() {
         if (!row || row.length === 0) continue;
 
         const rawSectionCode = row[sectionCodeIdx] ? String(row[sectionCodeIdx]).trim() : "";
-        const rawSectionName = sectionNameIdx !== -1 && row[sectionNameIdx] ? String(row[sectionNameIdx]).trim() : "";
 
         if (rawSectionCode && rawSectionCode.toLowerCase() === "section code") continue;
-        if (!rawSectionCode && !rawSectionName) continue;
 
         const hasData = row.some(
-          (val, idx) => idx !== sectionCodeIdx && val !== null && val !== "" && val !== undefined
+          (val) => val !== null && val !== "" && val !== undefined
         );
+
+        // New requirement format validates only Section Code. Section name can be wrong in Excel.
         if (hasData && !rawSectionCode) {
           clientErrors.push(`Row ${i + 1}: Missing Section Code for data row.`);
         }

@@ -1093,9 +1093,40 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
 
         const uploadBatchId = `BATCH_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-        const yearsToUpdate = [...new Set(rowsToProcess.map((r) => r.year))];
+        const yearsToUpdate = [...new Set(rowsToProcess.map((r) => r.year).filter(Boolean))];
+        const sectionCodesToReplace = [
+            ...new Set(rowsToProcess.map((r) => safeTrim(r.sectionCode)).filter(Boolean)),
+        ];
+        const sectionNamesToReplace = [
+            ...new Set(rowsToProcess.map((r) => safeTrim(r.sectionName)).filter(Boolean)),
+        ];
 
         const placeholdersYears = yearsToUpdate.map(() => "?").join(",");
+
+        if (yearsToUpdate.length > 0 && (sectionCodesToReplace.length > 0 || sectionNamesToReplace.length > 0)) {
+            const replaceConditions = [];
+            const replaceParams = [...yearsToUpdate];
+
+            if (sectionCodesToReplace.length > 0) {
+                replaceConditions.push(`sectionCode IN (${sectionCodesToReplace.map(() => "?").join(",")})`);
+                replaceParams.push(...sectionCodesToReplace);
+            }
+
+            if (sectionNamesToReplace.length > 0) {
+                replaceConditions.push(`sectionName IN (${sectionNamesToReplace.map(() => "?").join(",")})`);
+                replaceParams.push(...sectionNamesToReplace);
+            }
+
+            await executeSql(
+                `
+                DELETE FROM requirements
+                WHERE year IN (${placeholdersYears})
+                  AND (${replaceConditions.join(" OR ")})
+                `,
+                replaceParams,
+                transaction
+            );
+        }
 
         const [existingReqs] = await executeSql(
             `

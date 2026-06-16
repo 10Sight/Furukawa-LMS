@@ -425,7 +425,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             SELECT 
                 [year] AS yearVal,
                 monthName AS month,
-                CAST(SUM(ISNULL(salesPlan,0) + ISNULL(prodPlan,0)) AS BIGINT) AS required_count
+                CAST(SUM(ISNULL(prodPlanFN01, 0)) AS BIGINT) AS required_fn01,
+                CAST(SUM(ISNULL(prodPlanFN02, 0)) AS BIGINT) AS required_fn02
             FROM requirements
             WHERE [year] IN (${yearsInRange.join(",")}) ${filter}
             AND ISNULL(is_active, 0) = 1
@@ -443,7 +444,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT 
                     year_val AS yearVal,
                     month_name AS month,
-                    CAST(SUM(ISNULL(sales_plan,0) + ISNULL(prod_plan,0)) AS BIGINT) AS required_count
+                    CAST(SUM(ISNULL(prod_plan_fn01, 0)) AS BIGINT) AS required_fn01,
+                    CAST(SUM(ISNULL(prod_plan_fn02, 0)) AS BIGINT) AS required_fn02
                 FROM requirements
                 WHERE year_val IN (${yearsInRange.join(",")}) ${filter}
                 GROUP BY year_val, month_name
@@ -466,7 +468,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 String(r.month || "").trim().toLowerCase() === monthName.toLowerCase()
         );
 
-        return currentReqItem ? Number(currentReqItem.required_count) || 0 : 0;
+        if (!currentReqItem) return 0;
+
+        const day = dateObj.getDate();
+        if (day <= 15) {
+            return Number(currentReqItem.required_fn01) || 0;
+        } else {
+            return Number(currentReqItem.required_fn02) || 0;
+        }
     };
 
     let snapshotTotal = 0;

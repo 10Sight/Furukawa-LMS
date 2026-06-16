@@ -63,7 +63,7 @@ const MONTHS_SHORT = {
   December: "Dec",
 };
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 5;
 
 const safeNum = (v) => {
   if (v === null || v === undefined || v === "") return null;
@@ -126,8 +126,22 @@ const getProdPlanClass = (cell) => {
   return "text-red-600";
 };
 
+const hasMonthRequirementData = (row, month) => {
+  const cell = row?.monthData?.[month] || {};
+  const ids = row?.monthIds?.[month] || [];
+
+  return (
+    ids.length > 0 ||
+    safeNum(cell?.salesPlan) !== null ||
+    safeNum(cell?.prodPlan) !== null ||
+    safeNum(cell?.prodPlanFN01) !== null ||
+    safeNum(cell?.prodPlanFN02) !== null
+  );
+};
+
 const getRowApprovalSummary = (row) => {
   const statuses = MONTHS
+    .filter((m) => hasMonthRequirementData(row, m))
     .map((m) => normalizeApprovalStatus(row?.monthData?.[m]?.approvalStatus, row?.monthData?.[m]?.isActive))
     .filter(Boolean);
 
@@ -515,6 +529,25 @@ export default function SetRequirements() {
     const start = (page - 1) * PAGE_SIZE;
     return rows.slice(start, start + PAGE_SIZE);
   }, [rows, page]);
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      pending: 0,
+      approved: 0,
+      system_approved: 0,
+      rejected: 0,
+    };
+
+    rows.forEach((row) => {
+      const status = normalizeApprovalStatus(row?.approvalStatus, row?.isActive);
+
+      if (counts[status] !== undefined) {
+        counts[status] += 1;
+      }
+    });
+
+    return counts;
+  }, [rows]);
 
   const handleFileChange = (e) => {
     if (e.target.files?.[0]) setSelectedFile(e.target.files[0]);
@@ -911,28 +944,28 @@ export default function SetRequirements() {
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
           <div className="text-xs font-bold text-slate-500 uppercase">Pending</div>
           <div className="text-2xl font-bold text-red-600 mt-1">
-            {rows.filter((r) => r.approvalStatus === "pending").length}
+            {statusCounts.pending}
           </div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
           <div className="text-xs font-bold text-slate-500 uppercase">Approved</div>
           <div className="text-2xl font-bold text-emerald-600 mt-1">
-            {rows.filter((r) => r.approvalStatus === "approved").length}
+            {statusCounts.approved}
           </div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
           <div className="text-xs font-bold text-slate-500 uppercase">System Approved</div>
           <div className="text-2xl font-bold text-amber-600 mt-1">
-            {rows.filter((r) => r.approvalStatus === "system_approved").length}
+            {statusCounts.system_approved}
           </div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
           <div className="text-xs font-bold text-slate-500 uppercase">Rejected</div>
           <div className="text-2xl font-bold text-red-700 mt-1">
-            {rows.filter((r) => r.approvalStatus === "rejected").length}
+            {statusCounts.rejected}
           </div>
         </div>
       </div>
@@ -966,13 +999,13 @@ export default function SetRequirements() {
           className="overflow-x-auto w-full"
           style={{ maxWidth: tableMaxWidth }}
         >
-          <table className="text-left text-sm text-slate-500 w-full">
+          <table className="text-left text-sm text-slate-500 w-full min-w-max">
             <thead className="bg-slate-50 text-xs uppercase font-medium text-slate-500">
               <tr>
                 <th className="px-3 py-3 sticky left-0 z-40 bg-slate-50 border-r border-slate-200" style={{ width: "140px", minWidth: "140px" }}>Section Code</th>
-                <th className="px-3 py-3 sticky left-[140px] z-40 bg-slate-50 border-r border-slate-200" style={{ width: "180px", minWidth: "180px" }}>Section Name</th>
-                <th className="px-3 py-3 sticky left-[320px] z-40 bg-slate-50 border-r border-slate-200" style={{ width: "140px", minWidth: "140px" }}>Line Code</th>
-                <th className="px-3 py-3 sticky left-[460px] z-40 bg-slate-50 border-r-2 border-slate-300" style={{ width: "220px", minWidth: "220px" }}>Line Description</th>
+                <th className="px-3 py-3 sticky left-[140px] z-40 bg-slate-50 border-r-2 border-slate-300" style={{ width: "180px", minWidth: "180px" }}>Section Name</th>
+                <th className="px-3 py-3 border-r border-slate-200" style={{ width: "140px", minWidth: "140px" }}>Line Code</th>
+                <th className="px-3 py-3 border-r border-slate-200" style={{ width: "220px", minWidth: "220px" }}>Line Description</th>
                 <th className="px-3 py-3 text-center" style={{ width: "90px", minWidth: "90px" }}>Year</th>
                 <th className="px-3 py-3 text-center border-l border-slate-200" style={{ width: "160px", minWidth: "160px" }}>Approval</th>
 
@@ -1046,7 +1079,7 @@ export default function SetRequirements() {
                         <div className="font-medium text-xs truncate">{r.sectionCode || "-"}</div>
                       </td>
 
-                      <td className={`px-3 py-3 sticky left-[140px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      <td className={`px-3 py-3 sticky left-[140px] z-30 group-hover:bg-slate-50 transition-colors border-r-2 border-slate-300 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700"
@@ -1065,21 +1098,11 @@ export default function SetRequirements() {
                         )}
                       </td>
 
-                      <td className={`px-3 py-3 sticky left-[320px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
-                          ? "bg-red-50 text-red-700"
-                          : r.approvalStatus === "system_approved"
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-white"
-                        }`}>
+                      <td className="px-3 py-3 border-r border-slate-200">
                         <span className="text-xs truncate block">{r.lineCode || "-"}</span>
                       </td>
 
-                      <td className={`px-3 py-3 sticky left-[460px] z-30 group-hover:bg-slate-50 transition-colors border-r-2 border-slate-300 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
-                          ? "bg-red-50 text-red-700"
-                          : r.approvalStatus === "system_approved"
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-white"
-                        }`}>
+                      <td className="px-3 py-3 border-r border-slate-200">
                         <span className="text-xs truncate block">{r.lineDescription || "-"}</span>
                       </td>
 

@@ -89,7 +89,7 @@ class NotificationService {
                 htmlMessage = `
                     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                         <p>Dear All,</p>
-                        <p style="font-weight: bold; color: #d32f2f;">Safety First!</p>
+                        <p style="font-weight: bold; color: #000000;">Safety First!</p>
                         <p><strong>Sub:</strong> (Daily 5M Recording - ${deptName} (${date}))</p>
                         <p>Please find the attached Daily 5M Recording sheet for <strong>${deptName}</strong> on <strong>${date}</strong>.</p>
                         

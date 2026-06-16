@@ -64,6 +64,13 @@ const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, classNam
 
 const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const hasHandoverBypass = authUser?.customRole?.permissions?.includes('dojo:handover_sheet');
+    const canAccessAll = isAdmin || hasHandoverBypass;
+
+    const canManage = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:manage');
+    const canApprove = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:approve');
+    const canEditLayout = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_layout');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -605,6 +612,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.docNo}
                                         onChange={(e) => handleMetadataChange('docNo', e.target.value)}
+                                        disabled={!canManage}
                                     />
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
@@ -613,6 +621,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.revNo}
                                         onChange={(e) => handleMetadataChange('revNo', e.target.value)}
+                                        disabled={!canManage}
                                     />
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
@@ -621,6 +630,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.revDate}
                                         onChange={(e) => handleMetadataChange('revDate', e.target.value)}
+                                        disabled={!canManage}
                                     />
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
@@ -629,6 +639,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.issueDate}
                                         onChange={(e) => handleMetadataChange('issueDate', e.target.value)}
+                                        disabled={!canManage}
                                     />
                                 </div>
                             </div>
@@ -664,14 +675,18 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                             SUBMITTED {submittedAt && `ON ${format(new Date(submittedAt), "PP")}`}
                                         </div>
                                     )}
-                                    <Button variant="outline" onClick={fetchHistory}>
-                                        <IconHistory className="h-4 w-4 mr-2" />
-                                        History
-                                    </Button>
-                                    <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
-                                        <IconSettings className="h-4 w-4 mr-2" />
-                                        Edit Layout
-                                    </Button>
+                                    {canEditLayout && (
+                                        <>
+                                            <Button variant="outline" onClick={fetchHistory}>
+                                                <IconHistory className="h-4 w-4 mr-2" />
+                                                History
+                                            </Button>
+                                            <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
+                                                <IconSettings className="h-4 w-4 mr-2" />
+                                                Edit Layout
+                                            </Button>
+                                        </>
+                                    )}
                                     <Button
                                         variant="outline"
                                         className="border-green-600 text-green-600 hover:bg-green-50"
@@ -684,22 +699,26 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         <IconPrinter className="h-4 w-4 mr-2" />
                                         Print
                                     </Button>
-                                    <Button
-                                        className="bg-green-600 hover:bg-green-700 text-white border-green-700"
-                                        onClick={() => handleSave(false)}
-                                        disabled={saving}
-                                    >
-                                        <IconDeviceFloppy className="h-4 w-4 mr-2" />
-                                        {saving ? "Saving..." : "Save Progress"}
-                                    </Button>
-                                    <Button
-                                        className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all"
-                                        onClick={() => handleSave(true)}
-                                        disabled={saving}
-                                    >
-                                        <Save className="h-4 w-4 mr-2" />
-                                        {saving ? "Submitting..." : "Submit & Email"}
-                                    </Button>
+                                    {canManage && (
+                                        <>
+                                            <Button
+                                                className="bg-green-600 hover:bg-green-700 text-white border-green-700"
+                                                onClick={() => handleSave(false)}
+                                                disabled={saving}
+                                            >
+                                                <IconDeviceFloppy className="h-4 w-4 mr-2" />
+                                                {saving ? "Saving..." : "Save Progress"}
+                                            </Button>
+                                            <Button
+                                                className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all"
+                                                onClick={() => handleSave(true)}
+                                                disabled={saving}
+                                            >
+                                                <Save className="h-4 w-4 mr-2" />
+                                                {saving ? "Submitting..." : "Submit & Email"}
+                                            </Button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -739,7 +758,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                     <td key={colIdx} className="border p-1">
                                                         {col.field === 'sn' ? (
                                                             <div className="text-center">{index + 1}</div>
-                                                        ) : col.field === 'employeeName' && !col.readOnly ? (
+                                                        ) : col.field === 'employeeName' && !col.readOnly && canManage ? (
                                                             <UserAutocomplete
                                                                 mode="all"
                                                                 excludeAdmins={true}
@@ -754,7 +773,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 className="w-full"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                             />
-                                                        ) : col.field === 'mentor' && !col.readOnly ? (
+                                                        ) : col.field === 'mentor' && !col.readOnly && canManage ? (
                                                             <UserAutocomplete
                                                                 mode="all"
                                                                 excludeAdmins={true}
@@ -770,7 +789,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             <div className="text-center text-xs font-medium text-blue-600 px-1">
                                                                 {departmentName}
                                                             </div>
-                                                        ) : col.field === 'process' ? (
+                                                        ) : col.field === 'process' && canManage ? (
                                                             <ProcessSelect
                                                                 key={`process-select-${index}`}
                                                                 departmentId={departmentId}
@@ -778,12 +797,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 value={entry.process || ""}
                                                                 onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                             />
-                                                        ) : (col.field === 'interview1' || col.field === 'interview2') ? (
+                                                        ) : (col.field === 'interview1' || col.field === 'interview2') && canManage ? (
                                                             <InterviewSelect
                                                                 value={entry[col.field] || ""}
                                                                 onChange={(val) => handleEntryChange(index, col.field, val)}
                                                             />
-                                                        ) : col.readOnly ? (
+                                                        ) : (col.readOnly || !canManage) ? (
                                                             <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
                                                                 {(col.field === 'interview1' || col.field === 'interview2')
                                                                     ? (INTERVIEW_OPTIONS.find(o => o.value === entry[col.field])?.label || entry[col.field])
@@ -805,36 +824,50 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         {index + 1}
                                                     </td>
                                                     <td className="border p-1">
-                                                        <UserAutocomplete
-                                                            mode="all"
-                                                            excludeAdmins={true}
-                                                            excludeTrainers={true}
-                                                            value={entry.employeeName}
-                                                            onChange={(user) => handleUserSelect(index, user)}
-                                                            onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
-                                                            placeholder="Search Employee..."
-                                                            compact={true}
-                                                            includeTemporary="only"
-                                                            dojoHandoverPassedOnly={dojoHandoverPassedOnly}
-                                                            className="min-w-[150px]"
-                                                            inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
-                                                        />
+                                                        {canManage ? (
+                                                            <UserAutocomplete
+                                                                mode="all"
+                                                                excludeAdmins={true}
+                                                                excludeTrainers={true}
+                                                                value={entry.employeeName}
+                                                                onChange={(user) => handleUserSelect(index, user)}
+                                                                onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
+                                                                placeholder="Search Employee..."
+                                                                compact={true}
+                                                                includeTemporary="only"
+                                                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
+                                                                className="min-w-[150px]"
+                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
+                                                            />
+                                                        ) : (
+                                                            <div className="p-1 font-medium text-blue-600">
+                                                                {entry.employeeName}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <Input
-                                                            value={entry.empCode || ""}
-                                                            onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
-                                                            className="h-7 min-w-[40px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                            size={Math.max((entry.empCode || "").length || 1, 8)}
-                                                        />
+                                                        {canManage ? (
+                                                            <Input
+                                                                value={entry.empCode || ""}
+                                                                onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
+                                                                className="h-7 min-w-[40px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                                size={Math.max((entry.empCode || "").length || 1, 8)}
+                                                            />
+                                                        ) : (
+                                                            <div className="p-1 text-center">{entry.empCode}</div>
+                                                        )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <Input
-                                                            value={entry.marks}
-                                                            onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
-                                                            className="h-7 min-w-[30px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                            size={Math.max((entry.marks || "").toString().length || 1, 4)}
-                                                        />
+                                                        {canManage ? (
+                                                            <Input
+                                                                value={entry.marks}
+                                                                onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
+                                                                className="h-7 min-w-[30px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
+                                                                size={Math.max((entry.marks || "").toString().length || 1, 4)}
+                                                            />
+                                                        ) : (
+                                                            <div className="p-1 text-center">{entry.marks}</div>
+                                                        )}
                                                     </td>
                                                     <td className="border p-1 text-center">
                                                         <div className="text-xs font-medium text-blue-600 px-1">
@@ -842,57 +875,83 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         </div>
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <ProcessSelect
-                                                            key={`process-select-def-${index}`}
-                                                            departmentId={departmentId}
-                                                            sectionId={sectionId}
-                                                            value={entry.process || ""}
-                                                            onValueChange={(val) => handleEntryChange(index, 'process', val)}
-                                                        />
+                                                        {canManage ? (
+                                                            <ProcessSelect
+                                                                key={`process-select-def-${index}`}
+                                                                departmentId={departmentId}
+                                                                sectionId={sectionId}
+                                                                value={entry.process || ""}
+                                                                onValueChange={(val) => handleEntryChange(index, 'process', val)}
+                                                            />
+                                                        ) : (
+                                                            <div className="p-1 text-center">{entry.process}</div>
+                                                        )}
                                                     </td>
                                                     <td className="border p-1">
-                                                        <UserAutocomplete
-                                                            mode="all"
-                                                            excludeAdmins={true}
-                                                            value={entry.mentor}
-                                                            onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
-                                                            onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
-                                                            placeholder="Search Mentor..."
-                                                            compact={true}
-                                                            className="min-w-[120px]"
-                                                            inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
-                                                        />
+                                                        {canManage ? (
+                                                            <UserAutocomplete
+                                                                mode="all"
+                                                                excludeAdmins={true}
+                                                                value={entry.mentor}
+                                                                onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
+                                                                onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
+                                                                placeholder="Search Mentor..."
+                                                                compact={true}
+                                                                className="min-w-[120px]"
+                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
+                                                            />
+                                                        ) : (
+                                                            <div className="p-1 text-center">{entry.mentor}</div>
+                                                        )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <InterviewSelect
-                                                            value={entry.interview1}
-                                                            onChange={(val) => handleEntryChange(index, 'interview1', val)}
-                                                        />
+                                                        {canManage ? (
+                                                            <InterviewSelect
+                                                                value={entry.interview1}
+                                                                onChange={(val) => handleEntryChange(index, 'interview1', val)}
+                                                            />
+                                                        ) : (
+                                                            <div className="p-1 text-center">
+                                                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview1)?.label || entry.interview1 || "—"}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        <InterviewSelect
-                                                            value={entry.interview2}
-                                                            onChange={(val) => handleEntryChange(index, 'interview2', val)}
-                                                        />
+                                                        {canManage ? (
+                                                            <InterviewSelect
+                                                                value={entry.interview2}
+                                                                onChange={(val) => handleEntryChange(index, 'interview2', val)}
+                                                            />
+                                                        ) : (
+                                                            <div className="p-1 text-center">
+                                                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview2)?.label || entry.interview2 || "—"}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="border p-1">
                                                         {!entry.interviewStatus ? (
-                                                            <div className="flex items-center justify-center gap-2">
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
-                                                                    onClick={() => handleStatusAction(index, 'APPROVE')}
-                                                                >
-                                                                    APPROVE
-                                                                </Button>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    className="h-7 px-2 text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200"
-                                                                    onClick={() => handleStatusAction(index, 'REJECT')}
-                                                                >
-                                                                    REJECT
-                                                                </Button>
-                                                            </div>
+                                                            canApprove ? (
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
+                                                                        onClick={() => handleStatusAction(index, 'APPROVE')}
+                                                                    >
+                                                                        APPROVE
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        className="h-7 px-2 text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200"
+                                                                        onClick={() => handleStatusAction(index, 'REJECT')}
+                                                                    >
+                                                                        REJECT
+                                                                    </Button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-center text-slate-400 italic text-[10px]">
+                                                                    Pending Approval
+                                                                </div>
+                                                            )
                                                         ) : (
                                                             <div className="flex flex-col items-center justify-center py-1">
                                                                 <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
@@ -901,12 +960,14 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 <div className="text-[9px] text-gray-500 leading-tight text-center">
                                                                     by: {entry.statusActionBy}
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => handleStatusAction(index, "")}
-                                                                    className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
-                                                                >
-                                                                    Reset
-                                                                </button>
+                                                                {canApprove && (
+                                                                    <button
+                                                                        onClick={() => handleStatusAction(index, "")}
+                                                                        className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
+                                                                    >
+                                                                        Reset
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </td>
@@ -918,16 +979,18 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
                                 </tbody>
                             </table>
-                            <div className="mt-2 flex justify-start no-print">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={addRow}
-                                    className="flex items-center gap-1 text-xs border-dashed"
-                                >
-                                    <IconPlus size={14} /> Add Row
-                                </Button>
-                            </div>
+                            {canManage && (
+                                <div className="mt-2 flex justify-start no-print">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={addRow}
+                                        className="flex items-center gap-1 text-xs border-dashed"
+                                    >
+                                        <IconPlus size={14} /> Add Row
+                                    </Button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Footer Notes */}
@@ -965,19 +1028,23 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                             >
                                 Export to Excel
                             </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => handleSave(false)}
-                                disabled={saving}
-                                className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
-                            >
-                                <IconDeviceFloppy className="h-4 w-4" />
-                                Save Progress
-                            </Button>
-                            <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
-                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                Submit & Email Sheet
-                            </Button>
+                            {canManage && (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => handleSave(false)}
+                                        disabled={saving}
+                                        className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
+                                    >
+                                        <IconDeviceFloppy className="h-4 w-4" />
+                                        Save Progress
+                                    </Button>
+                                    <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                        Submit & Email Sheet
+                                    </Button>
+                                </>
+                            )}
                         </div>
                     </CardContent>
                 </div>

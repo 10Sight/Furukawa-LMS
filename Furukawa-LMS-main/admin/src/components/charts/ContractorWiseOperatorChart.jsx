@@ -110,7 +110,6 @@ const ContractorWiseOperatorChart = () => {
     const { data: contractorsData } = useGetAllContractorsQuery();
     const allUsers = usersData?.data?.users || [];
 
-    // id → name lookup so contractorId-only users still resolve correctly
     const contractorIdToName = useMemo(() => {
         const map = {};
         (contractorsData?.data || []).forEach(c => { map[String(c.id)] = c.name; });
@@ -122,9 +121,9 @@ const ContractorWiseOperatorChart = () => {
         [timeframe, rawStart, rawEnd]
     );
 
-    const { periods, contractorNames, flatPoints } = useMemo(() => {
+    const { periods, contractorNames, flatPoints, categories, groupSeparators } = useMemo(() => {
         if (!allUsers.length || !startDate || !endDate)
-            return { periods: [], contractorNames: [], flatPoints: [] };
+            return { periods: [], contractorNames: [], flatPoints: [], categories: [], groupSeparators: [] };
 
         const start = new Date(`${startDate}T00:00:00`);
         const end   = new Date(`${endDate}T23:59:59`);
@@ -142,7 +141,6 @@ const ContractorWiseOperatorChart = () => {
             (u.contractorId ? contractorIdToName[String(u.contractorId)] : null) ||
             'No Contractor';
 
-        // Collect unique contractor names in order of first appearance
         const contractorMap = new Map();
         filtered.forEach(u => {
             const name = resolveName(u);
@@ -150,7 +148,6 @@ const ContractorWiseOperatorChart = () => {
         });
         const contractorNames = [...contractorMap.keys()];
 
-        // period → contractorName → count
         const matrix = {};
         filtered.forEach(u => {
             const key  = getPeriodKey(String(u.joiningDate).substring(0, 10), timeframe);
@@ -160,39 +157,92 @@ const ContractorWiseOperatorChart = () => {
             matrix[key][name] = (matrix[key][name] || 0) + 1;
         });
 
-        // Flat list: one entry per (period × contractor) with count > 0.
-        // Periods with no data get a single null placeholder so every date appears on the axis.
+        // Flat points — one per contractor per period that has data,
+        // plus a null placeholder for periods with no data so every date
+        // still appears on the x-axis.
         const flatPoints = [];
+
         periods.forEach(period => {
             const periodLabel = formatPeriodLabel(period, timeframe);
-            const hasData = contractorNames.some(n => (matrix[period]?.[n] || 0) > 0);
+            const present = contractorNames.filter(n => (matrix[period]?.[n] || 0) > 0);
 
-            if (hasData) {
-                contractorNames.forEach((name, ci) => {
-                    const count = matrix[period]?.[name] || 0;
-                    if (count > 0) {
-                        flatPoints.push({
-                            y:           count,
-                            color:       CONTRACTOR_COLORS[ci % CONTRACTOR_COLORS.length],
-                            contractor:  name,
-                            periodLabel,
-                        });
-                    }
+            if (!present.length) {
+                flatPoints.push({
+                    y:          null,
+                    color:      'transparent',
+                    contractor: '',
+                    periodLabel,
+                    isDateSlot: true,
+                    isEmpty:    true,
                 });
-            } else {
-                flatPoints.push({ y: null, color: 'transparent', contractor: '', periodLabel, isEmpty: true });
+                return;
             }
+
+            const midIdx = Math.floor(present.length / 2);
+
+            present.forEach((name, gi) => {
+                const ci = contractorMap.get(name);
+                flatPoints.push({
+                    y:          matrix[period][name],
+                    color:      CONTRACTOR_COLORS[ci % CONTRACTOR_COLORS.length],
+                    contractor: name,
+                    periodLabel,
+                    isDateSlot: gi === midIdx,
+                    isEmpty:    false,
+                });
+            });
         });
 
-        return { periods, contractorNames, flatPoints };
+        // x-axis HTML label per bar:
+        //   • empty period  → just the date, greyed out
+        //   • data period   → contractor name (each word on its own line, in contractor colour)
+        //                     + date line visible only on the middle bar of the group;
+        //                       hidden placeholder on other bars keeps all label heights equal
+        const categories = flatPoints.map(p => {
+            if (p.isEmpty) {
+                return `<span style="color:#94a3b8;font-size:11px;font-weight:600">${p.periodLabel}</span>`;
+            }
+
+            const nameHtml = p.contractor
+                .split(' ')
+                .map(w => `<span style="color:${p.color};font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
+                .join('<br/>');
+
+            const dateLine = p.isDateSlot
+                ? `<br/><span style="color:#64748b;font-size:11px;font-weight:600">${p.periodLabel}</span>`
+                : `<br/><span style="visibility:hidden;font-size:11px">${p.periodLabel}</span>`;
+
+            return nameHtml + dateLine;
+        });
+
+        // Dashed vertical separator between date groups (after last bar of each group)
+        const groupSeparators = [];
+        let i = 0;
+        while (i < flatPoints.length) {
+            const label = flatPoints[i].periodLabel;
+            let j = i;
+            while (j < flatPoints.length && flatPoints[j].periodLabel === label) j++;
+            if (j < flatPoints.length) {
+                groupSeparators.push({
+                    value:     j - 0.5,
+                    width:     1,
+                    dashStyle: 'Dash',
+                    color:     '#cbd5e1',
+                    zIndex:    3,
+                });
+            }
+            i = j;
+        }
+
+        return { periods, contractorNames, flatPoints, categories, groupSeparators };
     }, [allUsers, contractorIdToName, timeframe, startDate, endDate]);
 
+    // Summary
     const totalOperators = flatPoints.reduce((sum, p) => sum + (p.y || 0), 0);
-
     const contractorTotals = {};
     flatPoints.forEach(p => {
-        if (!p.isEmpty && p.contractor)
-            contractorTotals[p.contractor] = (contractorTotals[p.contractor] || 0) + p.y;
+        if (p.isEmpty || !p.contractor) return;
+        contractorTotals[p.contractor] = (contractorTotals[p.contractor] || 0) + (p.y || 0);
     });
     const topContractor = Object.entries(contractorTotals).reduce(
         (best, [name, sum]) => sum > (best?.sum || 0) ? { name, sum } : best,
@@ -213,18 +263,6 @@ const ContractorWiseOperatorChart = () => {
         setRawEnd(e);
     };
 
-    // Each bar gets its own x-axis slot; two-line HTML label: contractor name (colored) + date.
-    // Empty periods show just the date so every date remains visible on the axis.
-    const flatCategories = flatPoints.map(p => {
-        if (p.isEmpty)
-            return `<span style="font-size:12px;color:#94a3b8">${p.periodLabel}</span>`;
-        const nameHtml = p.contractor.split(' ').join('<br/>');
-        return (
-            `<span style="font-weight:700;font-size:13px;color:${p.color}">${nameHtml}</span>` +
-            `<br/><span style="font-size:12px;color:#64748b">${p.periodLabel}</span>`
-        );
-    });
-
     const SLOT_WIDTH     = 96;
     const needsScroll    = flatPoints.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? flatPoints.length * SLOT_WIDTH : undefined;
@@ -233,38 +271,39 @@ const ContractorWiseOperatorChart = () => {
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
-            height: 460,
+            height: 480,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
-            marginBottom: 130,
+            marginBottom: 140,
+            marginTop: 60,
             ...(needsScroll && { scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 } }),
         },
         title:   { text: '' },
         credits: { enabled: false },
         xAxis: {
-            categories: flatCategories,
-            crosshair:  true,
+            categories,
+            crosshair: true,
             labels: {
                 useHTML:  true,
                 rotation: 0,
                 align:    'center',
-                style:    { lineHeight: '1.4' },
+                style:    { textAlign: 'center', lineHeight: '1.6' },
             },
+            gridLineWidth: 0,
+            plotLines:     groupSeparators,
         },
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: 'Operators', style: { color: '#94a3b8', fontSize: '14px' } },
+            title:  { text: 'Operators', style: { color: '#94a3b8', fontSize: '14px' } },
             labels: { style: { fontSize: '13px' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: { enabled: false },
+        legend:  { enabled: false },
         tooltip: {
             useHTML: true,
             style:   { fontSize: '14px' },
             formatter() {
-                if (this.point.isEmpty)
-                    return `<b>${this.point.periodLabel}</b>: No data`;
                 return (
                     `<span style="color:${this.point.color}">●</span> ` +
                     `<b>${this.point.contractor}</b><br/>` +
@@ -275,32 +314,27 @@ const ContractorWiseOperatorChart = () => {
         },
         plotOptions: {
             column: {
-                colorByPoint:   true,
-                borderRadius:   5,
-                borderWidth:    0,
-                pointPadding:   0.06,
-                groupPadding:   0,
-                maxPointWidth:  80,
+                colorByPoint:  true,
+                borderRadius:  5,
+                borderWidth:   0,
+                pointPadding:  0.06,
+                groupPadding:  0,
+                maxPointWidth: 80,
                 dataLabels: {
-                    enabled: true,
-                    formatter() { return this.y > 0 ? this.y : ''; },
-                    style: {
-                        fontSize:    '14px',
-                        fontWeight:  'bold',
-                        color:       '#1e293b',
-                        textOutline: '2px white',
-                    },
+                    enabled:      true,
+                    formatter()   { return this.y > 0 ? String(this.y) : ''; },
+                    style:        { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
                     align:         'center',
-                    y:             -24,
+                    y:             -20,
                     allowOverlap:  true,
                 },
             },
         },
         series: [{
-            type: 'column',
-            name: 'Operators',
-            data: flatPoints,
+            type:  'column',
+            name:  'Operators',
+            data:  flatPoints,
             showInLegend: false,
         }],
     };
@@ -391,7 +425,7 @@ const ContractorWiseOperatorChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[460px] flex flex-col items-center justify-center gap-4">
+                    <div className="h-[480px] flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -402,11 +436,11 @@ const ContractorWiseOperatorChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[460px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div className="h-[480px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load contractor data.</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[460px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div className="h-[480px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">No operator joining data for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or date range above.</p>

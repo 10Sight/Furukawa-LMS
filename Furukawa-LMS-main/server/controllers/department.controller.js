@@ -1084,6 +1084,49 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
     const { date, entries, signatures, metadata, sectionId, isSubmitted } = req.body;
 
     let sheet = await HandoverSheet.findSpecific(departmentId, sectionId || null, date);
+
+    // Permission check for approvals
+    const userPermissions = req.user?.customRole?.permissions || [];
+    const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+    const canApprove = isAdmin || userPermissions.includes('handover_sheet:approve');
+
+    if (!canApprove) {
+        // Prevent setting or changing HOD signature
+        const existingHod = sheet?.signatures?.hod || "";
+        const requestedHod = signatures?.hod || "";
+        if (requestedHod !== existingHod) {
+            throw new ApiError("You do not have permission to approve/reject handover sheets (HOD signature restriction)", 403);
+        }
+
+        // Prevent setting or changing interviewStatus/statusActionBy for any entry
+        const existingEntriesMap = new Map();
+        if (sheet && Array.isArray(sheet.entries)) {
+            sheet.entries.forEach(e => {
+                if (e.studentId) {
+                    existingEntriesMap.set(String(e.studentId), e);
+                }
+            });
+        }
+
+        for (const entry of entries || []) {
+            if (entry.studentId) {
+                const existingEntry = existingEntriesMap.get(String(entry.studentId));
+                const existingStatus = existingEntry?.interviewStatus || "";
+                const requestedStatus = entry.interviewStatus || "";
+                const existingActionBy = existingEntry?.statusActionBy || "";
+                const requestedActionBy = entry.statusActionBy || "";
+                if (requestedStatus !== existingStatus || requestedActionBy !== existingActionBy) {
+                    throw new ApiError("You do not have permission to approve/reject handover sheet entries", 403);
+                }
+            } else {
+                // If there's no studentId yet, they can't submit an approved/rejected row
+                if (entry.interviewStatus || entry.statusActionBy) {
+                    throw new ApiError("You do not have permission to approve/reject handover sheet entries", 403);
+                }
+            }
+        }
+    }
+
     let newStudents = [];
 
     // Identify new students (kept for potential audit/logging if needed)

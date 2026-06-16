@@ -582,10 +582,10 @@ const DailyProductionReport = () => {
         if (configResp?.data && !configResp.data.isDefault && configResp.data.config) {
             return configResp.data.config;
         }
-        return lineConfigResp?.data?.config || 
-               globalConfigResp?.data?.config || 
-               configResp?.data?.config || 
-               tableConfig;
+        return lineConfigResp?.data?.config ||
+            globalConfigResp?.data?.config ||
+            configResp?.data?.config ||
+            tableConfig;
     }, [lineConfigResp, globalConfigResp, configResp, tableConfig]);
 
     // Daily Stats & Reports List
@@ -1215,312 +1215,110 @@ const DailyProductionReport = () => {
                 </TabsList>
 
                 <TabsContent value="dpr-report">
-            <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className={`text-2xl font-bold tracking-tight ${theme.textMain}`}>
-                            Daily Production Reports
-                        </h1>
-                        <p className={`text-sm ${theme.textMuted}`}>
-                            Manage and track daily production reports across departments.
-                        </p>
-                    </div>
-                    <Button onClick={() => setCreateOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Create DPR Report
-                    </Button>
-                </div>
-
-                {/* Filters */}
-                <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end`}>
-                    <div className="space-y-1.5 md:col-span-1 lg:col-span-1">
-                        <Label>Date</Label>
-                        <Input
-                            type="date"
-                            value={dashboardDate}
-                            onChange={(e) => setDashboardDate(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <Label>Department</Label>
-                        <Select
-                            value={selectedDepartment}
-                            onValueChange={(val) => {
-                                setSelectedDepartment(val);
-                                setSelectedSection("all");
-                                setSelectedLine("all");
-                            }}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="All Departments" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Departments</SelectItem>
-                                {departments.map((dept) => (
-                                    <SelectItem key={dept.id || dept._id} value={dept.id || dept._id}>
-                                        {dept.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <Label>Section</Label>
-                        <Select
-                            value={selectedSection}
-                            onValueChange={(val) => {
-                                setSelectedSection(val);
-                                setSelectedLine("all");
-                            }}
-                            disabled={!selectedDepartment || selectedDepartment === 'all'}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="All Sections" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Sections</SelectItem>
-                                {sections.map((sec) => (
-                                    <SelectItem key={sec.id || sec._id} value={sec.id || sec._id}>
-                                        {sec.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <Label>Line</Label>
-                        <Select
-                            value={selectedLine}
-                            onValueChange={setSelectedLine}
-                            disabled={!selectedSection || selectedSection === 'all'}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="All Lines" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Lines</SelectItem>
-                                {lines.map((l) => (
-                                    <SelectItem key={l.id || l._id} value={l.id || l._id}>
-                                        {l.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <Label>Shift</Label>
-                        <Select value={selectedShift} onValueChange={setSelectedShift}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="All Shifts" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Shifts</SelectItem>
-                                <SelectItem value="A">A-Shift</SelectItem>
-                                <SelectItem value="B">B-Shift</SelectItem>
-                                <SelectItem value="C">C-Shift</SelectItem>
-                                <SelectItem value="G">G-Shift</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="md:col-span-3 lg:col-span-6 flex justify-end">
-                        <Button variant="outline" size="sm" onClick={() => {
-                            setDashboardDate("");
-                            setSelectedDepartment("all");
-                            setSelectedSection("all");
-                            setSelectedLine("all");
-                            setSelectedShift("all");
-                            setCurrentPage(1);
-                        }}>
-                            Clear Filters
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Stats Summary */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm`}>
-                        <div className="text-xs text-gray-500 uppercase font-bold mb-1">Total Reports</div>
-                        <div className="text-2xl font-black">{dailyStats.total}</div>
-                    </div>
-                    <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/30">
-                        <div className="text-xs text-blue-500 uppercase font-bold mb-1">Submitted</div>
-                        <div className="text-2xl font-black text-blue-600">{dailyStats.submitted}</div>
-                    </div>
-                    <div className="p-4 rounded-xl border border-green-100 bg-green-50/30">
-                        <div className="text-xs text-green-500 uppercase font-bold mb-1">Approved</div>
-                        <div className="text-2xl font-black text-green-600">{dailyStats.approved}</div>
-                    </div>
-                    <div className="p-4 rounded-xl border border-red-100 bg-red-50/30">
-                        <div className="text-xs text-red-500 uppercase font-bold mb-1">Rejected</div>
-                        <div className="text-2xl font-black text-red-600">{dailyStats.rejected}</div>
-                    </div>
-                    <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/30">
-                        <div className="text-xs text-orange-500 uppercase font-bold mb-1">In Draft</div>
-                        <div className="text-2xl font-black text-orange-600">{dailyStats.draft}</div>
-                    </div>
-                </div>
-
-                {/* Charts Section */}
-                <div className="grid grid-cols-1 gap-6">
-                    <DPREfficiencyChart data={efficiencyData} theme={theme} />
-                    <DPRQualityChart data={qualityData} theme={theme} />
-                    <DPRManualChartsContainer dashboardDate={dashboardDate} theme={theme} />
-                </div>
-
-                {/* Reports List Table */}
-                <div className={`rounded-xl border ${theme.border} ${theme.card} shadow-sm overflow-hidden`}>
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
-                            <tr>
-                                <th className="p-4 border-b">Date</th>
-                                <th className="p-4 border-b">Department</th>
-                                <th className="p-4 border-b">Section</th>
-                                <th className="p-4 border-b">Line</th>
-                                <th className="p-4 border-b">Shift</th>
-                                <th className="p-4 border-b">Status</th>
-                                <th className="p-4 border-b">Made By</th>
-                                <th className="p-4 border-b">Submitted By</th>
-                                <th className="p-4 border-b">Last Updated</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {isListFetching ? (
-                                <tr><td colSpan={8} className="p-8 text-center text-gray-500">Loading reports...</td></tr>
-                            ) : reports.length === 0 ? (
-                                <tr><td colSpan={8} className="p-8 text-center text-gray-500">No reports found for the selected criteria.</td></tr>
-                            ) : (
-                                reports.map((report, idx) => (
-                                    <tr
-                                        key={report._id || idx}
-                                        className="hover:bg-gray-50 cursor-pointer border-b last:border-0 transition-colors"
-                                        onClick={() => handleOpenReport(report)}
-                                    >
-                                        <td className="p-4 font-medium">{report.date}</td>
-                                        <td className="p-4">{report.departmentName || departments.find(d => (d._id || d.id) === report.department)?.name || report.department}</td>
-                                        <td className="p-4">{report.sectionName || "-"}</td>
-                                        <td className="p-4">{report.lineName || report.line}</td>
-                                        <td className="p-4 text-center">
-                                            <span className="bg-gray-100 px-2 py-0.5 rounded text-[10px] font-bold">Shift {report.shift}</span>
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${report.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                                                    report.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                                                        report.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' :
-                                                            'bg-gray-100 text-gray-700'
-                                                }`}>
-                                                {report.status || 'DRAFT'}
-                                            </span>
-                                        </td>
-                                        <td className="p-4">{report.madeBy || '-'}</td>
-                                        <td className="p-4">{report.submittedBy || '-'}</td>
-                                        <td className="p-4 text-xs text-gray-500">
-                                            {report.updatedAt ? format(new Date(report.updatedAt), "dd MMM yyyy HH:mm") : '-'}
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Pagination Controls */}
-                <div className="flex items-center justify-between mt-4 px-1">
-                    <div className={`text-xs ${theme.textMuted}`}>
-                        Showing <span className="font-bold">{reports.length}</span> of <span className="font-bold">{totalCount}</span> reports
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                                setCurrentPage(prev => Math.max(1, prev - 1));
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            disabled={currentPage === 1 || isListFetching}
-                            className="h-8 w-8 p-0"
-                        >
-                            <ChevronRight className="w-4 h-4 rotate-180" />
-                        </Button>
-                        <div className="flex items-center gap-1 text-xs">
-                            <span className={theme.textMuted}>Page</span>
-                            <span className="font-bold">{currentPage}</span>
-                            <span className={theme.textMuted}>of</span>
-                            <span className="font-bold">{totalPages || 1}</span>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                                setCurrentPage(prev => Math.min(totalPages, prev + 1));
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            disabled={currentPage >= totalPages || isListFetching}
-                            className="h-8 w-8 p-0"
-                        >
-                            <ChevronRight className="w-4 h-4" />
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Create Dialog */}
-                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                    <DialogContent className="max-w-md bg-white">
-                        <DialogHeader>
-                            <DialogTitle>Create New DPR Report</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                                <Label>Date</Label>
-                                <Input type="date" value={createDate} onChange={e => setCreateDate(e.target.value)} />
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h1 className={`text-2xl font-bold tracking-tight ${theme.textMain}`}>
+                                    Daily Production Reports
+                                </h1>
+                                <p className={`text-sm ${theme.textMuted}`}>
+                                    Manage and track daily production reports across departments.
+                                </p>
                             </div>
-                            <div className="space-y-2">
+                            <Button onClick={() => setCreateOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+                                <Plus className="w-4 h-4 mr-2" />
+                                Create DPR Report
+                            </Button>
+                        </div>
+
+                        {/* Filters */}
+                        <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end`}>
+                            <div className="space-y-1.5 md:col-span-1 lg:col-span-1">
+                                <Label>Date</Label>
+                                <Input
+                                    type="date"
+                                    value={dashboardDate}
+                                    onChange={(e) => setDashboardDate(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
                                 <Label>Department</Label>
-                                <Select value={createDepartment} onValueChange={val => {
-                                    setCreateDepartment(val);
-                                    setCreateSection("");
-                                    setCreateLine("");
-                                }}>
-                                    <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
+                                <Select
+                                    value={selectedDepartment}
+                                    onValueChange={(val) => {
+                                        setSelectedDepartment(val);
+                                        setSelectedSection("all");
+                                        setSelectedLine("all");
+                                    }}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="All Departments" />
+                                    </SelectTrigger>
                                     <SelectContent>
-                                        {departments.map(d => <SelectItem key={d.id || d._id} value={d.id || d._id}>{d.name}</SelectItem>)}
+                                        <SelectItem value="all">All Departments</SelectItem>
+                                        {departments.map((dept) => (
+                                            <SelectItem key={dept.id || dept._id} value={dept.id || dept._id}>
+                                                {dept.name}
+                                            </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-2">
+
+                            <div className="space-y-1.5">
                                 <Label>Section</Label>
                                 <Select
-                                    value={createSection}
-                                    onValueChange={val => {
-                                        setCreateSection(val);
-                                        setCreateLine("");
+                                    value={selectedSection}
+                                    onValueChange={(val) => {
+                                        setSelectedSection(val);
+                                        setSelectedLine("all");
                                     }}
-                                    disabled={!createDepartment}
+                                    disabled={!selectedDepartment || selectedDepartment === 'all'}
                                 >
-                                    <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="All Sections" />
+                                    </SelectTrigger>
                                     <SelectContent>
-                                        {createSections.map(s => <SelectItem key={s.id || s._id} value={s.id || s._id}>{s.name}</SelectItem>)}
+                                        <SelectItem value="all">All Sections</SelectItem>
+                                        {sections.map((sec) => (
+                                            <SelectItem key={sec.id || sec._id} value={sec.id || sec._id}>
+                                                {sec.name} ({sec.category})
+                                            </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-2">
+
+                            <div className="space-y-1.5">
                                 <Label>Line</Label>
-                                <Select value={createLine} onValueChange={setCreateLine} disabled={!createSection}>
-                                    <SelectTrigger><SelectValue placeholder="Select Line" /></SelectTrigger>
+                                <Select
+                                    value={selectedLine}
+                                    onValueChange={setSelectedLine}
+                                    disabled={!selectedSection || selectedSection === 'all'}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="All Lines" />
+                                    </SelectTrigger>
                                     <SelectContent>
-                                        {createLines.map(l => <SelectItem key={l.id || l._id} value={l.id || l._id}>{l.name}</SelectItem>)}
+                                        <SelectItem value="all">All Lines</SelectItem>
+                                        {lines.map((l) => (
+                                            <SelectItem key={l.id || l._id} value={l.id || l._id}>
+                                                {l.name}
+                                            </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-2">
+
+                            <div className="space-y-1.5">
                                 <Label>Shift</Label>
-                                <Select value={createShift} onValueChange={setCreateShift}>
-                                    <SelectTrigger><SelectValue placeholder="Select Shift" /></SelectTrigger>
+                                <Select value={selectedShift} onValueChange={setSelectedShift}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="All Shifts" />
+                                    </SelectTrigger>
                                     <SelectContent>
+                                        <SelectItem value="all">All Shifts</SelectItem>
                                         <SelectItem value="A">A-Shift</SelectItem>
                                         <SelectItem value="B">B-Shift</SelectItem>
                                         <SelectItem value="C">C-Shift</SelectItem>
@@ -1528,14 +1326,216 @@ const DailyProductionReport = () => {
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            <div className="md:col-span-3 lg:col-span-6 flex justify-end">
+                                <Button variant="outline" size="sm" onClick={() => {
+                                    setDashboardDate("");
+                                    setSelectedDepartment("all");
+                                    setSelectedSection("all");
+                                    setSelectedLine("all");
+                                    setSelectedShift("all");
+                                    setCurrentPage(1);
+                                }}>
+                                    Clear Filters
+                                </Button>
+                            </div>
                         </div>
-                        <div className="flex justify-end gap-3">
-                            <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                            <Button onClick={handleCreateReport} disabled={!createLine}>Create Report</Button>
+
+                        {/* Stats Summary */}
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                            <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm`}>
+                                <div className="text-xs text-gray-500 uppercase font-bold mb-1">Total Reports</div>
+                                <div className="text-2xl font-black">{dailyStats.total}</div>
+                            </div>
+                            <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/30">
+                                <div className="text-xs text-blue-500 uppercase font-bold mb-1">Submitted</div>
+                                <div className="text-2xl font-black text-blue-600">{dailyStats.submitted}</div>
+                            </div>
+                            <div className="p-4 rounded-xl border border-green-100 bg-green-50/30">
+                                <div className="text-xs text-green-500 uppercase font-bold mb-1">Approved</div>
+                                <div className="text-2xl font-black text-green-600">{dailyStats.approved}</div>
+                            </div>
+                            <div className="p-4 rounded-xl border border-red-100 bg-red-50/30">
+                                <div className="text-xs text-red-500 uppercase font-bold mb-1">Rejected</div>
+                                <div className="text-2xl font-black text-red-600">{dailyStats.rejected}</div>
+                            </div>
+                            <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/30">
+                                <div className="text-xs text-orange-500 uppercase font-bold mb-1">In Draft</div>
+                                <div className="text-2xl font-black text-orange-600">{dailyStats.draft}</div>
+                            </div>
                         </div>
-                    </DialogContent>
-                </Dialog>
-            </div>
+
+                        {/* Charts Section */}
+                        <div className="grid grid-cols-1 gap-6">
+                            <DPREfficiencyChart data={efficiencyData} theme={theme} />
+                            <DPRQualityChart data={qualityData} theme={theme} />
+                            <DPRManualChartsContainer dashboardDate={dashboardDate} theme={theme} />
+                        </div>
+
+                        {/* Reports List Table */}
+                        <div className={`rounded-xl border ${theme.border} ${theme.card} shadow-sm overflow-hidden`}>
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                    <tr>
+                                        <th className="p-4 border-b">Date</th>
+                                        <th className="p-4 border-b">Department</th>
+                                        <th className="p-4 border-b">Section</th>
+                                        <th className="p-4 border-b">Line</th>
+                                        <th className="p-4 border-b">Shift</th>
+                                        <th className="p-4 border-b">Status</th>
+                                        <th className="p-4 border-b">Made By</th>
+                                        <th className="p-4 border-b">Submitted By</th>
+                                        <th className="p-4 border-b">Last Updated</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {isListFetching ? (
+                                        <tr><td colSpan={8} className="p-8 text-center text-gray-500">Loading reports...</td></tr>
+                                    ) : reports.length === 0 ? (
+                                        <tr><td colSpan={8} className="p-8 text-center text-gray-500">No reports found for the selected criteria.</td></tr>
+                                    ) : (
+                                        reports.map((report, idx) => (
+                                            <tr
+                                                key={report._id || idx}
+                                                className="hover:bg-gray-50 cursor-pointer border-b last:border-0 transition-colors"
+                                                onClick={() => handleOpenReport(report)}
+                                            >
+                                                <td className="p-4 font-medium">{report.date}</td>
+                                                <td className="p-4">{report.departmentName || departments.find(d => (d._id || d.id) === report.department)?.name || report.department}</td>
+                                                <td className="p-4">{report.sectionName || "-"}</td>
+                                                <td className="p-4">{report.lineName || report.line}</td>
+                                                <td className="p-4 text-center">
+                                                    <span className="bg-gray-100 px-2 py-0.5 rounded text-[10px] font-bold">Shift {report.shift}</span>
+                                                </td>
+                                                <td className="p-4">
+                                                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${report.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                                        report.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                                            report.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' :
+                                                                'bg-gray-100 text-gray-700'
+                                                        }`}>
+                                                        {report.status || 'DRAFT'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4">{report.madeBy || '-'}</td>
+                                                <td className="p-4">{report.submittedBy || '-'}</td>
+                                                <td className="p-4 text-xs text-gray-500">
+                                                    {report.updatedAt ? format(new Date(report.updatedAt), "dd MMM yyyy HH:mm") : '-'}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination Controls */}
+                        <div className="flex items-center justify-between mt-4 px-1">
+                            <div className={`text-xs ${theme.textMuted}`}>
+                                Showing <span className="font-bold">{reports.length}</span> of <span className="font-bold">{totalCount}</span> reports
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        setCurrentPage(prev => Math.max(1, prev - 1));
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                    disabled={currentPage === 1 || isListFetching}
+                                    className="h-8 w-8 p-0"
+                                >
+                                    <ChevronRight className="w-4 h-4 rotate-180" />
+                                </Button>
+                                <div className="flex items-center gap-1 text-xs">
+                                    <span className={theme.textMuted}>Page</span>
+                                    <span className="font-bold">{currentPage}</span>
+                                    <span className={theme.textMuted}>of</span>
+                                    <span className="font-bold">{totalPages || 1}</span>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        setCurrentPage(prev => Math.min(totalPages, prev + 1));
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                    disabled={currentPage >= totalPages || isListFetching}
+                                    className="h-8 w-8 p-0"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Create Dialog */}
+                        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                            <DialogContent className="max-w-md bg-white">
+                                <DialogHeader>
+                                    <DialogTitle>Create New DPR Report</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-4 py-4">
+                                    <div className="space-y-2">
+                                        <Label>Date</Label>
+                                        <Input type="date" value={createDate} onChange={e => setCreateDate(e.target.value)} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Department</Label>
+                                        <Select value={createDepartment} onValueChange={val => {
+                                            setCreateDepartment(val);
+                                            setCreateSection("");
+                                            setCreateLine("");
+                                        }}>
+                                            <SelectTrigger><SelectValue placeholder="Select Department" /></SelectTrigger>
+                                            <SelectContent>
+                                                {departments.map(d => <SelectItem key={d.id || d._id} value={d.id || d._id}>{d.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Section</Label>
+                                        <Select
+                                            value={createSection}
+                                            onValueChange={val => {
+                                                setCreateSection(val);
+                                                setCreateLine("");
+                                            }}
+                                            disabled={!createDepartment}
+                                        >
+                                            <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
+                                            <SelectContent>
+                                                {createSections.map(s => <SelectItem key={s.id || s._id} value={s.id || s._id}>{s.name} ({s.category})</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Line</Label>
+                                        <Select value={createLine} onValueChange={setCreateLine} disabled={!createSection}>
+                                            <SelectTrigger><SelectValue placeholder="Select Line" /></SelectTrigger>
+                                            <SelectContent>
+                                                {createLines.map(l => <SelectItem key={l.id || l._id} value={l.id || l._id}>{l.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Shift</Label>
+                                        <Select value={createShift} onValueChange={setCreateShift}>
+                                            <SelectTrigger><SelectValue placeholder="Select Shift" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="A">A-Shift</SelectItem>
+                                                <SelectItem value="B">B-Shift</SelectItem>
+                                                <SelectItem value="C">C-Shift</SelectItem>
+                                                <SelectItem value="G">G-Shift</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-3">
+                                    <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
+                                    <Button onClick={handleCreateReport} disabled={!createLine}>Create Report</Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
                 </TabsContent>
 
                 <TabsContent value="dpr-setup">
@@ -2048,7 +2048,7 @@ const DailyProductionReport = () => {
                                             <td className="border border-black text-blue-600">
                                                 {(() => {
                                                     const totalPresent = formData.moral.reduce((s, i) => s + (i.present || 0), 0);
-                                                    const totalAbsent  = formData.moral.reduce((s, i) => s + (i.absent  || 0), 0);
+                                                    const totalAbsent = formData.moral.reduce((s, i) => s + (i.absent || 0), 0);
                                                     const total = totalPresent + totalAbsent;
                                                     return total === 0 ? '0%' : `${(totalPresent / total * 100).toFixed(1)}%`;
                                                 })()}
@@ -2079,15 +2079,15 @@ const DailyProductionReport = () => {
                         <table className="w-full border-collapse border border-black font-bold mt-1 text-[11px]">
                             <tbody>
                                 <tr>
-                                     <td className="border border-black p-1 text-center w-[50%]">Direct Efficiency</td>
-                                     <td className="border border-black p-0 w-[25%] bg-gray-100 text-center border-b">Target</td>
-                                     <td className="border border-black p-0 w-[25%] border-b"><NumberCell value={formData.directEfficiency?.target ?? 0} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...(formData.directEfficiency || {}), target: v } })} disabled={!canEdit} /></td>
-                                 </tr>
-                                 <tr>
-                                     <td className="border border-transparent"></td>
-                                     <td className="border border-black p-0 bg-gray-100 text-center">Actual</td>
-                                     <td className="border border-black p-0"><NumberCell value={formData.directEfficiency?.actual ?? 0} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...(formData.directEfficiency || {}), actual: v } })} disabled={!canEdit} /></td>
-                                 </tr>
+                                    <td className="border border-black p-1 text-center w-[50%]">Direct Efficiency</td>
+                                    <td className="border border-black p-0 w-[25%] bg-gray-100 text-center border-b">Target</td>
+                                    <td className="border border-black p-0 w-[25%] border-b"><NumberCell value={formData.directEfficiency?.target ?? 0} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...(formData.directEfficiency || {}), target: v } })} disabled={!canEdit} /></td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-transparent"></td>
+                                    <td className="border border-black p-0 bg-gray-100 text-center">Actual</td>
+                                    <td className="border border-black p-0"><NumberCell value={formData.directEfficiency?.actual ?? 0} onChange={(v) => setFormData({ ...formData, directEfficiency: { ...(formData.directEfficiency || {}), actual: v } })} disabled={!canEdit} /></td>
+                                </tr>
                             </tbody>
                         </table>
 
@@ -2185,9 +2185,9 @@ const DailyProductionReport = () => {
                         <div className="flex gap-2 items-center">
                             {formData.status && (
                                 <div className={`px-4 py-2 rounded-full font-bold text-sm ${formData.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                                        formData.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                                            formData.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' :
-                                                'bg-gray-100 text-gray-700'
+                                    formData.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                        formData.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' :
+                                            'bg-gray-100 text-gray-700'
                                     }`}>
                                     Status: {formData.status}
                                 </div>

@@ -33,7 +33,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { IconPlus, IconPencil, IconTrash, IconLoader, IconBuilding, IconUsers } from "@tabler/icons-react";
+import { useSelector } from "react-redux";
+import { IconPlus, IconPencil, IconTrash, IconLoader, IconBuilding, IconUsers, IconAlertTriangle } from "@tabler/icons-react";
 import { toast } from "sonner";
 
 const emptyForm = {
@@ -46,7 +47,25 @@ const emptyForm = {
 
 const Contractors = () => {
     const navigate = useNavigate();
-    const { data: response, isLoading, refetch } = useGetAllContractorsQuery();
+    const authUser = useSelector((state) => state.auth.user);
+
+    // Permission evaluation
+    const isMasterAdmin =
+        authUser?.role === "SUPERADMIN" ||
+        authUser?.role === "ADMIN" ||
+        authUser?.isAdmin === 1 ||
+        authUser?.isAdmin === true;
+
+    // Granular Permissions
+    const userPermissions = authUser?.customRole?.permissions || [];
+    const canView = isMasterAdmin || userPermissions.includes("contractor:read");
+    const canCreate = isMasterAdmin || userPermissions.includes("contractor:create");
+    const canUpdate = isMasterAdmin || userPermissions.includes("contractor:update");
+    const canDelete = isMasterAdmin || userPermissions.includes("contractor:delete");
+
+    const { data: response, isLoading, refetch } = useGetAllContractorsQuery(undefined, {
+        skip: !canView
+    });
     const [createContractor, { isLoading: isCreating }] = useCreateContractorMutation();
     const [updateContractor, { isLoading: isUpdating }] = useUpdateContractorMutation();
     const [deleteContractor, { isLoading: isDeleting }] = useDeleteContractorMutation();
@@ -123,6 +142,18 @@ const Contractors = () => {
 
     const handleRowClick = (id) => navigate(`/admin/contractors/${id}`);
 
+    if (!canView) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6 bg-white border border-gray-100 rounded-3xl m-6">
+                <IconAlertTriangle className="w-16 h-16 text-red-500 mb-4 opacity-75" />
+                <h3 className="text-xl font-bold text-gray-800">Access Denied</h3>
+                <p className="text-sm text-gray-500 mt-2 max-w-sm">
+                    You do not have page read permissions for Contractor Management. Please check with your supervisor or administrator.
+                </p>
+            </div>
+        );
+    }
+
     return (
         <div className="p-6 space-y-6">
             {/* Header */}
@@ -134,10 +165,12 @@ const Contractors = () => {
                         <p className="text-sm text-gray-500">{contractors.length} total contractor{contractors.length !== 1 ? "s" : ""}</p>
                     </div>
                 </div>
-                <Button onClick={openAdd} className="flex items-center gap-2">
-                    <IconPlus size={16} />
-                    Add Contractor
-                </Button>
+                {canCreate && (
+                    <Button onClick={openAdd} className="flex items-center gap-2">
+                        <IconPlus size={16} />
+                        Add Contractor
+                    </Button>
+                )}
             </div>
 
             {/* Table */}
@@ -165,7 +198,7 @@ const Contractors = () => {
                                 <TableHead className="text-center">
                                     <span className="flex items-center justify-center gap-1"><IconUsers size={14} /> Users</span>
                                 </TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
+                                {(canUpdate || canDelete) && <TableHead className="text-right">Actions</TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -200,24 +233,30 @@ const Contractors = () => {
                                             {c.userCount ?? 0}
                                         </span>
                                     </TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={(e) => openEdit(e, c)}
-                                                className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
-                                                title="Edit"
-                                            >
-                                                <IconPencil size={16} />
-                                            </button>
-                                            <button
-                                                onClick={(e) => openDelete(e, c)}
-                                                className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
-                                                title="Delete"
-                                            >
-                                                <IconTrash size={16} />
-                                            </button>
-                                        </div>
-                                    </TableCell>
+                                    {(canUpdate || canDelete) && (
+                                        <TableCell className="text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                {canUpdate && (
+                                                    <button
+                                                        onClick={(e) => openEdit(e, c)}
+                                                        className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <IconPencil size={16} />
+                                                    </button>
+                                                )}
+                                                {canDelete && (
+                                                    <button
+                                                        onClick={(e) => openDelete(e, c)}
+                                                        className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <IconTrash size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                    )}
                                 </TableRow>
                             ))}
                         </TableBody>

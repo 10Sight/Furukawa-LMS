@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
-import { IconClipboardList, IconHierarchy2, IconInfoCircle, IconUsersGroup } from "@tabler/icons-react";
+import { IconClipboardList, IconHierarchy2, IconInfoCircle, IconUsersGroup, IconAlertTriangle } from "@tabler/icons-react";
 import { useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
 import HandoverSheet from '@/components/departments/HandoverSheet';
 
@@ -23,8 +23,21 @@ const HandoverSheetPage = () => {
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const hasHandoverBypass = authUser?.customRole?.permissions?.includes('dojo:handover_sheet');
     const canAccessAll = isAdmin || hasHandoverBypass;
+    const hasReadPermission = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:read') || hasHandoverBypass;
 
     const [searchParams, setSearchParams] = useSearchParams();
+
+    if (!hasReadPermission) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6 bg-white border border-slate-100 rounded-3xl max-w-xl mx-auto my-12 shadow-sm">
+                <IconAlertTriangle className="w-16 h-16 text-red-500 mb-4 opacity-75 animate-bounce" />
+                <h3 className="text-xl font-bold text-slate-800">Access Denied</h3>
+                <p className="text-sm text-slate-500 mt-2 max-w-sm">
+                    You do not have permission to view the Handover Sheet. Please check with your supervisor or administrator.
+                </p>
+            </div>
+        );
+    }
 
     // Selections
     const [dept, setDept] = useState(searchParams.get('dept') || "");

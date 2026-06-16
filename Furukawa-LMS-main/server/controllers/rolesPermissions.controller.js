@@ -131,6 +131,7 @@ const SYSTEM_PERMISSIONS = {
   HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
   HANDOVER_SHEET_READ: "handover_sheet:read",
   HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
+  HANDOVER_SHEET_APPROVE: "handover_sheet:approve",
   DOJO_HANDOVER_SHEET: "dojo:handover_sheet",
   DOJO_SIXTEENDAY_MONITORING: "dojo:sixteenday_monitoring",
 
@@ -202,6 +203,12 @@ const SYSTEM_PERMISSIONS = {
   // Settings Management
   SETTINGS_CHANGE_PASSWORD: "settings:change_password",
   SETTINGS_EMAIL_CONFIG: "settings:email_config",
+
+  // Contractor Management
+  CONTRACTOR_CREATE: "contractor:create",
+  CONTRACTOR_READ: "contractor:read",
+  CONTRACTOR_UPDATE: "contractor:update",
+  CONTRACTOR_DELETE: "contractor:delete",
 };
 
 // Define default role permissions
@@ -456,6 +463,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE, name: "Manage Skill Upgradation", description: "Fill out and manage skill upgradation training plans" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT, name: "Edit Skill Upgradation Layout", description: "Modify the table configuration and structure of skill upgradation sheets" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, name: "View Handover Sheet", description: "View handover sheet records" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE, name: "Manage Handover Sheet", description: "Fill out, save, and submit handover sheets" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_APPROVE, name: "Approve Handover Sheet", description: "Approve or Reject handover sheet entries" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
         { id: SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, name: "Access All in Handover Sheet", description: "Allows unrestricted access to all departments, sections, sub-sections, and stations in Handover Sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet", description: "Fill out, save, and submit 10-cycle sheets" },
@@ -523,6 +533,12 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
       "Settings Management": [
         { id: SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD, name: "Change Password", description: "Allow user to change their own login password from the Settings page" },
         { id: SYSTEM_PERMISSIONS.SETTINGS_EMAIL_CONFIG, name: "Email Configuration", description: "View and modify system email configuration settings" }
+      ],
+      "Contractor Management": [
+        { id: SYSTEM_PERMISSIONS.CONTRACTOR_READ, name: "View Contractors", description: "Access and view the list of contractors" },
+        { id: SYSTEM_PERMISSIONS.CONTRACTOR_CREATE, name: "Create Contractors", description: "Create new contractor records" },
+        { id: SYSTEM_PERMISSIONS.CONTRACTOR_UPDATE, name: "Update Contractors", description: "Edit existing contractor records" },
+        { id: SYSTEM_PERMISSIONS.CONTRACTOR_DELETE, name: "Delete Contractors", description: "Delete contractor records" }
       ]
     };
 

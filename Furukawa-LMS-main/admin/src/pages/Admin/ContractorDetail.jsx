@@ -1,6 +1,7 @@
 import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
+import { useSelector } from "react-redux";
 import { useGetContractorByIdQuery } from "@/Redux/AllApi/ContractorApi";
 import {
     Table,
@@ -13,15 +14,42 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { IconArrowLeft, IconLoader, IconUsers, IconBuilding, IconPhone, IconMail, IconMapPin, IconCalendar } from "@tabler/icons-react";
+import { IconArrowLeft, IconLoader, IconUsers, IconBuilding, IconPhone, IconMail, IconMapPin, IconCalendar, IconAlertTriangle } from "@tabler/icons-react";
 
 const ContractorDetail = () => {
     const { contractorId } = useParams();
     const navigate = useNavigate();
-    const { data: response, isLoading } = useGetContractorByIdQuery(contractorId);
+    const authUser = useSelector((state) => state.auth.user);
+
+    // Permission evaluation
+    const isMasterAdmin =
+        authUser?.role === "SUPERADMIN" ||
+        authUser?.role === "ADMIN" ||
+        authUser?.isAdmin === 1 ||
+        authUser?.isAdmin === true;
+
+    // Granular Permissions
+    const userPermissions = authUser?.customRole?.permissions || [];
+    const canView = isMasterAdmin || userPermissions.includes("contractor:read");
+
+    const { data: response, isLoading } = useGetContractorByIdQuery(contractorId, {
+        skip: !canView
+    });
 
     const contractor = response?.data?.contractor || null;
     const users = response?.data?.users || [];
+
+    if (!canView) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6 bg-white border border-gray-100 rounded-3xl m-6">
+                <IconAlertTriangle className="w-16 h-16 text-red-500 mb-4 opacity-75" />
+                <h3 className="text-xl font-bold text-gray-800">Access Denied</h3>
+                <p className="text-sm text-gray-500 mt-2 max-w-sm">
+                    You do not have page read permissions for Contractor Details. Please check with your supervisor or administrator.
+                </p>
+            </div>
+        );
+    }
 
     if (isLoading) {
         return (

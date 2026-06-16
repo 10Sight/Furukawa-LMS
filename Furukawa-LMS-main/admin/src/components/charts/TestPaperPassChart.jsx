@@ -14,15 +14,14 @@ import {
 } from "@/components/ui/select";
 import {
     IconCertificate,
-    IconCalendar,
     IconRefresh,
     IconClipboardCheck,
-    IconChartBar,
+    IconSchool,
 } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
-const _now        = new Date();
+const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
 const MONTH_END    = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
 
@@ -53,15 +52,12 @@ const formatPeriodLabel = (period, groupBy) => {
         .toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 };
 
-const EMPTY_TYPE   = { theoretical: 0, practical: 0 };
 const EMPTY_RESULT = { passedTheoretical: 0, failedTheoretical: 0, passedPractical: 0, failedPractical: 0 };
 
-const buildFullSeries = (groupBy, start, end, typeData, resultData) => {
-    if (!start || !end) return { periods: [], typeRows: typeData, resultRows: resultData };
+const buildFullSeries = (groupBy, start, end, resultData) => {
+    if (!start || !end) return { periods: [], resultRows: resultData };
 
-    const typeMap   = {};
     const resultMap = {};
-    typeData.forEach(r   => { typeMap[r.period]   = r; });
     resultData.forEach(r => { resultMap[r.period] = r; });
 
     const periods = [];
@@ -90,15 +86,14 @@ const buildFullSeries = (groupBy, start, end, typeData, resultData) => {
 
     return {
         periods,
-        typeRows:   periods.map(p => typeMap[p]   ?? { ...EMPTY_TYPE,   period: p }),
         resultRows: periods.map(p => resultMap[p] ?? { ...EMPTY_RESULT, period: p }),
     };
 };
 
 const INPUT_CONFIG = {
-    daily:   { type: 'date',   min: '2020-01-01', max: MONTH_END,              placeholder: 'YYYY-MM-DD' },
-    monthly: { type: 'month',  min: '2020-01',    max: `${CURRENT_YEAR}-12`,   placeholder: 'YYYY-MM'    },
-    yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1,  placeholder: 'YYYY'       },
+    daily:   { type: 'date',   min: '2020-01-01', max: MONTH_END,             placeholder: 'YYYY-MM-DD' },
+    monthly: { type: 'month',  min: '2020-01',    max: `${CURRENT_YEAR}-12`,  placeholder: 'YYYY-MM'    },
+    yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1, placeholder: 'YYYY'       },
 };
 
 const getDefaultDates = (timeframe) => {
@@ -124,13 +119,126 @@ const getDefaultDates = (timeframe) => {
     };
 };
 
+/* ── Reusable sub-chart ── */
+const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSeries, categories, chartKey, needsScroll, scrollMinWidth }) => {
+    const totalPassed   = passedSeries.reduce((a, b) => a + b, 0);
+    const totalFailed   = failedSeries.reduce((a, b) => a + b, 0);
+    const totalAttempts = totalPassed + totalFailed;
+    const passRate      = totalAttempts > 0 ? Math.round((totalPassed / totalAttempts) * 100) : 0;
+
+    const options = {
+        chart: {
+            type: 'column',
+            backgroundColor: 'transparent',
+            height: 320,
+            marginTop: 50,
+            style: { fontFamily: 'inherit' },
+            animation: { duration: 400 },
+            ...(needsScroll && {
+                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
+            }),
+        },
+        title:   { text: '' },
+        credits: { enabled: false },
+        xAxis: {
+            categories,
+            crosshair:     true,
+            lineWidth:     1,
+            lineColor:     '#e9ecef',
+            gridLineWidth: 0,
+            labels: {
+                style:    { fontSize: '11px', color: '#64748b' },
+                rotation: 0,
+                align:    'center',
+            },
+        },
+        yAxis: {
+            min:           0,
+            allowDecimals: false,
+            title:         { text: 'Attempts', style: { color: '#94a3b8', fontSize: '11px' } },
+            gridLineColor: '#f1f5f9',
+            labels:        { style: { fontSize: '11px' } },
+        },
+        legend: {
+            enabled:      true,
+            itemStyle:    { fontSize: '13px', fontWeight: '600', color: '#374151' },
+            symbolRadius: 3,
+            symbolHeight: 12,
+            symbolWidth:  12,
+        },
+        tooltip: {
+            shared:  true,
+            useHTML: true,
+            formatter() {
+                const p = this.points;
+                const passed = p.find(x => x.series.name === 'Passed')?.y ?? 0;
+                const failed = p.find(x => x.series.name === 'Failed')?.y ?? 0;
+                return (
+                    `<b style="color:#0f172a">${this.x}</b><br/>` +
+                    `<span style="color:#16a34a">●</span> Passed: <b>${passed}</b><br/>` +
+                    `<span style="color:#dc2626">●</span> Failed: <b>${failed}</b><br/>` +
+                    `<span style="color:#6b7280">Total: <b style="color:#0f172a">${passed + failed}</b></span>`
+                );
+            },
+        },
+        plotOptions: {
+            column: {
+                borderRadius:  4,
+                borderWidth:   0,
+                groupPadding:  0.2,
+                maxPointWidth: 40,
+                dataLabels: {
+                    enabled:      true,
+                    formatter()   { return this.y > 0 ? String(this.y) : ''; },
+                    allowOverlap: true,
+                    style:        { fontSize: '11px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    verticalAlign: 'top',
+                    align:         'center',
+                    y:             -18,
+                },
+            },
+        },
+        series: [
+            { type: 'column', name: 'Passed', data: passedSeries, color: '#16a34a' },
+            { type: 'column', name: 'Failed', data: failedSeries, color: '#dc2626' },
+        ],
+    };
+
+    return (
+        <div className="space-y-3">
+            <div className="flex items-center gap-2 px-1">
+                <Icon className={`h-4 w-4 ${iconColor}`} />
+                <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+            </div>
+
+            <HighchartsReact key={chartKey} highcharts={Highcharts} options={options} />
+
+            <div className="grid grid-cols-3 gap-3">
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
+                    <span className="text-xs font-bold text-green-700">Passed</span>
+                    <span className="text-sm font-black text-green-900">{totalPassed}</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-50">
+                    <span className="text-xs font-bold text-red-700">Failed</span>
+                    <span className="text-sm font-black text-red-900">{totalFailed}</span>
+                </div>
+                <div className={`flex items-center justify-between p-2.5 rounded-lg ${passRate >= 70 ? 'bg-green-50' : 'bg-amber-50'}`}>
+                    <span className={`text-xs font-bold ${passRate >= 70 ? 'text-green-600' : 'text-amber-600'}`}>Pass Rate</span>
+                    <span className={`text-sm font-black ${passRate >= 70 ? 'text-green-900' : 'text-amber-900'}`}>{passRate > 0 ? `${passRate}%` : '—'}</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+/* ══════════════════════════════════════════════════════════════ */
+
 const TestPaperPassChart = () => {
-    const [timeframe,      setTimeframe]      = useState('daily');
-    const [rawStart,       setRawStart]       = useState(() => getDefaultDates('daily').rawStart);
-    const [rawEnd,         setRawEnd]         = useState(() => getDefaultDates('daily').rawEnd);
-    const [departmentId,   setDepartmentId]   = useState('all');
-    const [isDojo,         setIsDojo]         = useState('all');
-    const [testTypeFilter, setTestTypeFilter] = useState('all');
+    const [timeframe,    setTimeframe]    = useState('daily');
+    const [rawStart,     setRawStart]     = useState(() => getDefaultDates('daily').rawStart);
+    const [rawEnd,       setRawEnd]       = useState(() => getDefaultDates('daily').rawEnd);
+    const [departmentId, setDepartmentId] = useState('all');
+    const [isDojo,       setIsDojo]       = useState('all');
 
     const { data: deptsData } = useGetAllDepartmentsQuery();
     const departments = deptsData?.data?.departments || [];
@@ -148,41 +256,22 @@ const TestPaperPassChart = () => {
         isDojo:       isDojo       === 'all' ? '' : isDojo,
     });
 
-    const rawTrendByType   = statsData?.data?.trendByType   || [];
     const rawTrendByResult = statsData?.data?.trendByResult || [];
-    const passFailRaw      = statsData?.data?.passFailData  || [];
     const groupBy          = statsData?.data?.groupBy       || timeframe;
     const apiStart         = statsData?.data?.start         || '';
     const apiEnd           = statsData?.data?.end           || '';
 
-    const { periods, typeRows, resultRows } = useMemo(
-        () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrendByType, rawTrendByResult),
-        [groupBy, apiStart, apiEnd, rawTrendByType, rawTrendByResult]
+    const { periods, resultRows } = useMemo(
+        () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrendByResult),
+        [groupBy, apiStart, apiEnd, rawTrendByResult]
     );
 
-    const categories       = periods.map(p => formatPeriodLabel(p, groupBy));
-    const theoreticalSeries = typeRows.map(r => Number(r.theoretical) || 0);
-    const practicalSeries   = typeRows.map(r => Number(r.practical)   || 0);
+    const categories = periods.map(p => formatPeriodLabel(p, groupBy));
 
-    const passedSeries = resultRows.map(r => {
-        if (testTypeFilter === 'Theoretical') return Number(r.passedTheoretical) || 0;
-        if (testTypeFilter === 'Practical')   return Number(r.passedPractical)   || 0;
-        return (Number(r.passedTheoretical) || 0) + (Number(r.passedPractical) || 0);
-    });
-    const failedSeries = resultRows.map(r => {
-        if (testTypeFilter === 'Theoretical') return Number(r.failedTheoretical) || 0;
-        if (testTypeFilter === 'Practical')   return Number(r.failedPractical)   || 0;
-        return (Number(r.failedTheoretical) || 0) + (Number(r.failedPractical) || 0);
-    });
-
-    const grandTotalType   = theoreticalSeries.reduce((a, b) => a + b, 0) + practicalSeries.reduce((a, b) => a + b, 0);
-    const totalPassedChart = passedSeries.reduce((a, b) => a + b, 0);
-    const totalFailedChart = failedSeries.reduce((a, b) => a + b, 0);
-    const grandTotalResult = totalPassedChart + totalFailedChart;
-
-    // Overall aggregated totals for the footer (unaffected by testTypeFilter)
-    const totalPassedAll = passFailRaw.filter(r => r.status === 'Passed').reduce((a, b) => a + b.value, 0);
-    const totalFailedAll = passFailRaw.filter(r => r.status === 'Failed').reduce((a, b) => a + b.value, 0);
+    const theoreticalPassedSeries = resultRows.map(r => Number(r.passedTheoretical) || 0);
+    const theoreticalFailedSeries = resultRows.map(r => Number(r.failedTheoretical) || 0);
+    const practicalPassedSeries   = resultRows.map(r => Number(r.passedPractical)   || 0);
+    const practicalFailedSeries   = resultRows.map(r => Number(r.failedPractical)   || 0);
 
     const handleTimeframeChange = (tf) => {
         const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
@@ -198,107 +287,14 @@ const TestPaperPassChart = () => {
         setRawEnd(e);
         setDepartmentId('all');
         setIsDojo('all');
-        setTestTypeFilter('all');
     };
 
-    // Scrollable plot area — each slot ~72px; start viewport at rightmost (most recent)
-    const SLOT_WIDTH    = 72;
-    const needsScroll   = categories.length * SLOT_WIDTH > 800;
+    const SLOT_WIDTH     = 72;
+    const needsScroll    = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
-    const baseChart = {
-        chart: {
-            backgroundColor: 'transparent',
-            height: 320,
-            style: { fontFamily: 'inherit' },
-            animation: { duration: 400 },
-            ...(needsScroll && {
-                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
-            }),
-        },
-        title:   { text: '' },
-        credits: { enabled: false },
-        xAxis: {
-            categories,
-            crosshair: true,
-            labels: { style: { fontSize: '11px', color: '#64748b' }, rotation: 0, align: 'center' },
-        },
-        yAxis: {
-            min: 0,
-            allowDecimals: false,
-            title: { text: 'Tests', style: { color: '#94a3b8', fontSize: '11px' } },
-            gridLineColor: '#f1f5f9',
-        },
-    };
-
-    const aboveBarLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        allowOverlap: true,
-        style: { fontSize: '10px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
-        verticalAlign: 'top',
-        align: 'center',
-        y: -18,
-    };
-
-    const insideSegmentLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        allowOverlap: true,
-        style: { fontSize: '10px', fontWeight: 'bold', color: '#ffffff', textOutline: 'none' },
-        verticalAlign: 'middle',
-        align: 'center',
-        inside: true,
-    };
-
-    const getTypeChartOptions = () => ({
-        ...baseChart,
-        legend: { enabled: true },
-        plotOptions: {
-            column: {
-                borderRadius: 4,
-                borderWidth: 0,
-                groupPadding: 0.2,
-                maxPointWidth: 36,
-                dataLabels: aboveBarLabels,
-            },
-        },
-        tooltip: {
-            shared: true,
-            useHTML: true,
-            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
-        },
-        series: [
-            { type: 'column', name: 'Theoretical', data: theoreticalSeries, color: '#3b82f6' },
-            { type: 'column', name: 'Practical',   data: practicalSeries,   color: '#f97316' },
-        ],
-    });
-
-    const getResultChartOptions = () => ({
-        ...baseChart,
-        legend: { enabled: true },
-        plotOptions: {
-            column: {
-                borderRadius: 4,
-                borderWidth: 0,
-                groupPadding: 0.2,
-                maxPointWidth: 36,
-                stacking: 'normal',
-                dataLabels: insideSegmentLabels,
-            },
-        },
-        tooltip: {
-            shared: true,
-            useHTML: true,
-            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
-        },
-        series: [
-            { type: 'column', name: 'Passed', data: passedSeries, color: '#10b981' },
-            { type: 'column', name: 'Failed', data: failedSeries, color: '#ef4444' },
-        ],
-    });
-
     const cfg = INPUT_CONFIG[timeframe];
+    const chartKeyBase = `${timeframe}-${startDate}-${endDate}-${departmentId}-${isDojo}`;
 
     return (
         <Card className="col-span-2">
@@ -310,14 +306,13 @@ const TestPaperPassChart = () => {
                             Comprehensive Test Analytics
                         </CardTitle>
                         <CardDescription>
-                            Date-wise distribution of tests taken and pass/fail performance
+                            Date-wise pass / fail performance for Theoretical and Practical tests
                         </CardDescription>
                     </div>
                 </div>
 
                 {/* Filter bar */}
                 <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
-                    {/* Timeframe */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
                             Timeframe
@@ -341,7 +336,6 @@ const TestPaperPassChart = () => {
                         </div>
                     </div>
 
-                    {/* From */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
                         <Input
@@ -356,7 +350,6 @@ const TestPaperPassChart = () => {
                         />
                     </div>
 
-                    {/* To */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
                         <Input
@@ -371,7 +364,6 @@ const TestPaperPassChart = () => {
                         />
                     </div>
 
-                    {/* Department */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Department</Label>
                         <Select value={departmentId} onValueChange={setDepartmentId}>
@@ -387,7 +379,6 @@ const TestPaperPassChart = () => {
                         </Select>
                     </div>
 
-                    {/* Worker Type */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Worker Type</Label>
                         <Select value={isDojo} onValueChange={setIsDojo}>
@@ -402,7 +393,6 @@ const TestPaperPassChart = () => {
                         </Select>
                     </div>
 
-                    {/* Reset */}
                     <Button
                         variant="ghost"
                         size="sm"
@@ -433,102 +423,31 @@ const TestPaperPassChart = () => {
                     </div>
                 ) : (
                     <>
-                        {/* Chart 1 — Test Type Distribution */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between px-1">
-                                <h3 className="text-sm font-semibold text-slate-600 flex items-center gap-2">
-                                    <IconChartBar className="h-4 w-4 text-blue-500" />
-                                    Test Type Distribution
-                                </h3>
-                                <span className="text-xs text-slate-500 bg-slate-100 rounded px-2 py-0.5">
-                                    Total: {grandTotalType}
-                                </span>
-                            </div>
+                        <PassFailChart
+                            title="Theoretical Test Performance"
+                            icon={IconSchool}
+                            iconColor="text-blue-500"
+                            passedSeries={theoreticalPassedSeries}
+                            failedSeries={theoreticalFailedSeries}
+                            categories={categories}
+                            chartKey={`theoretical-${chartKeyBase}`}
+                            needsScroll={needsScroll}
+                            scrollMinWidth={scrollMinWidth}
+                        />
 
-                            {grandTotalType > 0 ? (
-                                <>
-                                    <HighchartsReact
-                                        key={`type-${timeframe}-${startDate}-${endDate}-${departmentId}-${isDojo}`}
-                                        highcharts={Highcharts}
-                                        options={getTypeChartOptions()}
-                                    />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                            <span className="text-xs font-bold text-blue-700">Theoretical</span>
-                                            <span className="text-sm font-black text-blue-900">
-                                                {theoreticalSeries.reduce((a, b) => a + b, 0)}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-orange-50">
-                                            <span className="text-xs font-bold text-orange-700">Practical</span>
-                                            <span className="text-sm font-black text-orange-900">
-                                                {practicalSeries.reduce((a, b) => a + b, 0)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="h-[280px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
-                                    <IconCalendar className="h-10 w-10 opacity-20" />
-                                    <p className="text-sm font-medium">No test data found for this period.</p>
-                                    <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>
-                                </div>
-                            )}
-                        </div>
+                        <div className="border-t border-slate-100" />
 
-                        {/* Chart 2 — Pass / Fail */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between px-1">
-                                <h3 className="text-sm font-semibold text-slate-600 flex items-center gap-2">
-                                    <IconClipboardCheck className="h-4 w-4 text-green-500" />
-                                    Result Performance
-                                </h3>
-                                <Select value={testTypeFilter} onValueChange={setTestTypeFilter}>
-                                    <SelectTrigger className="h-7 w-[130px] text-xs bg-white">
-                                        <SelectValue placeholder="All Tests" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Tests</SelectItem>
-                                        <SelectItem value="Theoretical">Theoretical</SelectItem>
-                                        <SelectItem value="Practical">Practical</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            {grandTotalResult > 0 ? (
-                                <>
-                                    <HighchartsReact
-                                        key={`result-${timeframe}-${startDate}-${endDate}-${departmentId}-${isDojo}-${testTypeFilter}`}
-                                        highcharts={Highcharts}
-                                        options={getResultChartOptions()}
-                                    />
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
-                                            <span className="text-xs font-bold text-green-700">Passed</span>
-                                            <span className="text-sm font-black text-green-900">{totalPassedChart}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-50">
-                                            <span className="text-xs font-bold text-red-700">Failed</span>
-                                            <span className="text-sm font-black text-red-900">{totalFailedChart}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                                            <span className="text-xs font-bold text-slate-600">Pass Rate</span>
-                                            <span className="text-sm font-black text-slate-800">
-                                                {grandTotalResult > 0
-                                                    ? `${Math.round((totalPassedChart / grandTotalResult) * 100)}%`
-                                                    : '—'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="h-[280px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
-                                    <IconCalendar className="h-10 w-10 opacity-20" />
-                                    <p className="text-sm font-medium">No result data for this selection.</p>
-                                    <p className="text-xs opacity-60">Try changing the test type filter or date range.</p>
-                                </div>
-                            )}
-                        </div>
+                        <PassFailChart
+                            title="Practical Test Performance"
+                            icon={IconClipboardCheck}
+                            iconColor="text-orange-500"
+                            passedSeries={practicalPassedSeries}
+                            failedSeries={practicalFailedSeries}
+                            categories={categories}
+                            chartKey={`practical-${chartKeyBase}`}
+                            needsScroll={needsScroll}
+                            scrollMinWidth={scrollMinWidth}
+                        />
                     </>
                 )}
             </CardContent>

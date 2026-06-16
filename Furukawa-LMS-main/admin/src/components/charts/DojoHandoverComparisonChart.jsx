@@ -40,12 +40,13 @@ const formatPeriodLabel = (period, groupBy) => {
 
 const EMPTY_ROW = { expected: 0, actual: 0 };
 
-// Distinct colors for per-department Expected bars (blue #3b82f6 is reserved for Actual)
 const DEPT_COLORS = [
     '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4',
     '#84cc16', '#f97316', '#6366f1', '#ef4444', '#14b8a6',
     '#a855f7', '#eab308', '#0ea5e9', '#f43f5e', '#22c55e',
 ];
+
+const ACTUAL_COLOR = '#3b82f6';
 
 const buildFullPeriods = (groupBy, start, end) => {
     if (!start || !end) return [];
@@ -73,7 +74,6 @@ const buildFullPeriods = (groupBy, start, end) => {
     return full;
 };
 
-// Used only for summary strip totals
 const buildFullSeries = (groupBy, start, end, trend) => {
     if (!start || !end) return trend;
     const dataMap = {};
@@ -137,7 +137,6 @@ const DojoHandoverComparisonChart = () => {
     const apiStart      = data?.data?.start         || '';
     const apiEnd        = data?.data?.end           || '';
 
-    // Summary strip totals from global trend
     const trend = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
@@ -146,18 +145,21 @@ const DojoHandoverComparisonChart = () => {
     const totalExpected   = trend.reduce((a, r) => a + (Number(r.expected) || 0), 0);
     const achievementRate = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
 
-    // All periods in the selected range (for filling zero-gaps per dept)
     const fullPeriods = useMemo(
         () => buildFullPeriods(groupBy, apiStart, apiEnd),
         [groupBy, apiStart, apiEnd]
     );
 
-    // Build flat (dept × period) data — every dept shows every period
-    const { flatItems, deptRanges } = useMemo(() => {
-        if (!deptBreakdown.length || !fullPeriods.length) return { flatItems: [], deptRanges: [] };
+    // Flat single-series approach (mirrors ContractorWiseOperatorChart):
+    // For each date: [Dept1-Exp, Dept1-Act, Dept2-Exp, Dept2-Act, ...]
+    // x-axis label per slot → dept name (word-wrapped) for Expected, "Act" for Actual.
+    // Date shown once per group on the middle slot; hidden placeholder on all others.
+    const { flatPoints, categories, groupSeparators } = useMemo(() => {
+        if (!deptBreakdown.length || !fullPeriods.length)
+            return { flatPoints: [], categories: [], groupSeparators: [] };
 
-        // Group breakdown by deptId (preserve server sort order)
-        const deptDataMap = {};
+        // Build lookup maps
+        const deptDataMap  = {};
         const orderedDeptIds = [];
         deptBreakdown.forEach(r => {
             if (!deptDataMap[r.deptId]) {
@@ -170,74 +172,119 @@ const DojoHandoverComparisonChart = () => {
             };
         });
 
-        const items  = [];
-        const ranges = [];
-
+        const deptNameMap  = {};
+        const deptColorMap = {};
         orderedDeptIds.forEach((deptId, i) => {
-            const startIdx = items.length;
-            fullPeriods.forEach(period => {
-                const vals = deptDataMap[deptId]?.[period] || { expected: 0, actual: 0 };
-                items.push({ deptId, period, expected: vals.expected, actual: vals.actual });
+            deptNameMap[deptId]  = departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`;
+            deptColorMap[deptId] = DEPT_COLORS[i % DEPT_COLORS.length];
+        });
+
+        const flatPoints = [];
+
+        fullPeriods.forEach(period => {
+            const periodLabel   = formatPeriodLabel(period, groupBy);
+            const deptsPresent  = orderedDeptIds.filter(id => {
+                const v = deptDataMap[id]?.[period];
+                return v && (v.expected > 0 || v.actual > 0);
             });
-            ranges.push({
-                deptId,
-                deptName: departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`,
-                color:    DEPT_COLORS[i % DEPT_COLORS.length],
-                startIdx,
-                endIdx: items.length - 1,
+
+            if (!deptsPresent.length) {
+                flatPoints.push({
+                    y: null, color: 'transparent',
+                    deptName: '', periodLabel,
+                    isExpected: true, isDateSlot: true, isEmpty: true,
+                });
+                return;
+            }
+
+            const totalSlots = deptsPresent.length * 2;
+            const midSlotIdx = Math.floor(totalSlots / 2);
+            let slotIdx = 0;
+
+            deptsPresent.forEach(deptId => {
+                const color    = deptColorMap[deptId];
+                const deptName = deptNameMap[deptId];
+                const vals     = deptDataMap[deptId][period];
+
+                flatPoints.push({
+                    y:          vals.expected > 0 ? vals.expected : null,
+                    color,
+                    deptName,
+                    periodLabel,
+                    isExpected: true,
+                    isDateSlot: slotIdx === midSlotIdx,
+                    isEmpty:    false,
+                });
+                slotIdx++;
+
+                flatPoints.push({
+                    y:          vals.actual > 0 ? vals.actual : null,
+                    color:      ACTUAL_COLOR,
+                    deptName,
+                    periodLabel,
+                    isExpected: false,
+                    isDateSlot: slotIdx === midSlotIdx,
+                    isEmpty:    false,
+                });
+                slotIdx++;
             });
         });
 
-        return { flatItems: items, deptRanges: ranges };
-    }, [deptBreakdown, fullPeriods, departments]);
+        // x-axis HTML label per slot:
+        //   • empty period   → greyed date
+        //   • Expected slot  → dept name word-wrapped (dept color) + date line
+        //   • Actual slot    → "Act" in blue, padded with invisible lines to match
+        //                      Expected slot height so all bars stay on same baseline
+        const categories = flatPoints.map(p => {
+            if (p.isEmpty) {
+                return `<span style="color:#94a3b8;font-size:11px;font-weight:600">${p.periodLabel}</span>`;
+            }
 
-    // Per-dept Expected + Actual series (nulls outside each dept's index range)
-    const chartSeries = useMemo(() =>
-        deptRanges.flatMap(({ deptName, color, startIdx, endIdx }) => [
-            {
-                type: 'column',
-                name: `${deptName} – Expected`,
-                data: flatItems.map((item, idx) =>
-                    idx >= startIdx && idx <= endIdx ? item.expected : null
-                ),
-                color,
-            },
-            {
-                type: 'column',
-                name: `${deptName} – Actual`,
-                data: flatItems.map((item, idx) =>
-                    idx >= startIdx && idx <= endIdx ? item.actual : null
-                ),
-                color: '#3b82f6',
-            },
-        ]),
-        [flatItems, deptRanges]
-    );
+            const wordCount = p.deptName.split(' ').length;
+            let topHtml;
 
-    // HTML label per slot: dept name (colored, each word on its own line) above date
-    const categories = flatItems.map(item => {
-        const range    = deptRanges.find(r => r.deptId === item.deptId);
-        const name     = range?.deptName || '';
-        const color    = range?.color    || '#64748b';
-        const nameHtml = name.split(' ').join('<br/>');
-        return (
-            `<span style="font-weight:700;font-size:13px;color:${color}">${nameHtml}</span>` +
-            `<br/><span style="font-size:12px;color:#64748b">${formatPeriodLabel(item.period, groupBy)}</span>`
-        );
-    });
+            if (p.isExpected) {
+                topHtml = p.deptName
+                    .split(' ')
+                    .map(w => `<span style="color:${p.color};font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
+                    .join('<br/>');
+            } else {
+                // Invisible lines to match Expected bar label height, then "Act" on last line
+                const pad = Array(wordCount - 1)
+                    .fill(`<span style="visibility:hidden;font-size:11px;line-height:1.6">M</span>`)
+                    .join('<br/>');
+                const act = `<span style="color:${ACTUAL_COLOR};font-size:11px;font-weight:700;line-height:1.6">Act</span>`;
+                topHtml = wordCount > 1 ? `${pad}<br/>${act}` : act;
+            }
 
-    // Vertical dividers between dept groups
-    const deptDividers = deptRanges.slice(0, -1).map(r => ({
-        value:     r.endIdx + 0.5,
-        color:     '#cbd5e1',
-        width:     1,
-        zIndex:    5,
-        dashStyle: 'Dash',
-    }));
+            const dateLine = p.isDateSlot
+                ? `<br/><span style="color:#64748b;font-size:11px;font-weight:600">${p.periodLabel}</span>`
+                : `<br/><span style="visibility:hidden;font-size:11px">${p.periodLabel}</span>`;
+
+            return topHtml + dateLine;
+        });
+
+        // Dashed separator after the last slot of each date group
+        const groupSeparators = [];
+        let i = 0;
+        while (i < flatPoints.length) {
+            const label = flatPoints[i].periodLabel;
+            let j = i;
+            while (j < flatPoints.length && flatPoints[j].periodLabel === label) j++;
+            if (j < flatPoints.length) {
+                groupSeparators.push({
+                    value: j - 0.5, width: 1, dashStyle: 'Dash', color: '#cbd5e1', zIndex: 3,
+                });
+            }
+            i = j;
+        }
+
+        return { flatPoints, categories, groupSeparators };
+    }, [deptBreakdown, fullPeriods, groupBy, departments]);
 
     const SLOT_WIDTH     = 96;
-    const needsScroll    = categories.length * SLOT_WIDTH > 800;
-    const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
+    const needsScroll    = flatPoints.length * SLOT_WIDTH > 800;
+    const scrollMinWidth = needsScroll ? flatPoints.length * SLOT_WIDTH : undefined;
 
     const hasAnyData = totalExpected > 0 || totalActual > 0;
 
@@ -245,8 +292,9 @@ const DojoHandoverComparisonChart = () => {
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
-            height: 460,
-            marginBottom: 130,
+            height: 480,
+            marginBottom: 140,
+            marginTop: 60,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
             ...(needsScroll && {
@@ -257,63 +305,64 @@ const DojoHandoverComparisonChart = () => {
         credits: { enabled: false },
         xAxis: {
             categories,
-            crosshair: true,
-            plotLines: deptDividers,
-            lineWidth: 1,
-            lineColor: '#e9ecef',
+            crosshair:  true,
+            lineWidth:  1,
+            lineColor:  '#e9ecef',
             labels: {
                 useHTML:  true,
                 rotation: 0,
                 align:    'center',
-                style:    { lineHeight: '1.4' },
+                style:    { textAlign: 'center', lineHeight: '1.6' },
             },
+            gridLineWidth: 0,
+            plotLines:     groupSeparators,
         },
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
+            title:  { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
+            labels: { style: { fontSize: '13px' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: {
-            enabled: true,
-            align: 'right',
-            verticalAlign: 'top',
-            layout: 'vertical',
-            x: 0,
-            y: 0,
-            itemStyle: { fontSize: '12px', fontWeight: 'normal', color: '#475569' },
-            itemMarginBottom: 4,
-            symbolRadius: 3,
-        },
+        legend: { enabled: false },
         tooltip: {
-            shared: true,
             useHTML: true,
-            style: { fontSize: '13px' },
-            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
+            style:   { fontSize: '13px' },
+            formatter() {
+                if (!this.point.deptName) return `<b>${this.point.periodLabel}</b>: No data`;
+                return (
+                    `<span style="color:${this.point.color}">●</span> ` +
+                    `<b>${this.point.deptName}</b> — ${this.point.isExpected ? 'Expected' : 'Actual'}<br/>` +
+                    `Date: <b>${this.point.periodLabel}</b><br/>` +
+                    `Count: <b>${this.y}</b>`
+                );
+            },
         },
         plotOptions: {
             column: {
-                borderRadius: 5,
-                borderWidth: 0,
-                groupPadding: 0.06,
+                colorByPoint:  true,
+                borderRadius:  5,
+                borderWidth:   0,
+                pointPadding:  0.06,
+                groupPadding:  0,
                 maxPointWidth: 80,
                 dataLabels: {
-                    enabled: true,
-                    formatter() { return this.y > 0 ? this.y : ''; },
-                    style: {
-                        fontSize: '14px',
-                        fontWeight: 'bold',
-                        color: '#1e293b',
-                        textOutline: '2px white',
-                    },
+                    enabled:      true,
+                    formatter()   { return this.y > 0 ? String(this.y) : ''; },
+                    style:        { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
-                    align: 'center',
-                    y: -24,
-                    allowOverlap: true,
+                    align:         'center',
+                    y:             -20,
+                    allowOverlap:  true,
                 },
             },
         },
-        series: chartSeries,
+        series: [{
+            type:         'column',
+            name:         'Handover',
+            data:         flatPoints,
+            showInLegend: false,
+        }],
     };
 
     const cfg       = INPUT_CONFIG[timeframe];
@@ -463,7 +512,7 @@ const DojoHandoverComparisonChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[460px] flex flex-col items-center justify-center gap-4">
+                    <div className="h-[480px] flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -474,11 +523,11 @@ const DojoHandoverComparisonChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[460px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div className="h-[480px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load handover comparison.</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[460px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div className="h-[480px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">No handover data found for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>

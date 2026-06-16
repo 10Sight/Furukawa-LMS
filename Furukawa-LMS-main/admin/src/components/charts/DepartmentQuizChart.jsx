@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query/react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -8,114 +8,45 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-    Legend, ResponsiveContainer, LabelList,
-} from 'recharts';
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { useGetDepartmentQuizStatsQuery } from '@/Redux/AllApi/AnalyticsApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
-import { useGetLinesBySectionQuery, useGetLinesQuery } from '@/Redux/AllApi/LineApi';
-import { useGetSubSectionsQuery } from '@/Redux/AllApi/SubSectionApi';
-import { Skeleton } from "@/components/ui/skeleton";
-import { IconChartBar, IconFilter } from "@tabler/icons-react";
+import { IconChartBar, IconRefresh } from "@tabler/icons-react";
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
 
-/* ── Custom X-axis tick: horizontal, wraps at first space ── */
-const CustomXAxisTick = ({ x, y, payload }) => {
-    const name = (payload.value || '').trim();
-    const parts = name.split(' ');
-    const mid = Math.ceil(parts.length / 2);
-    const line1 = parts.slice(0, mid).join(' ');
-    const line2 = parts.slice(mid).join(' ');
-
-    return (
-        <g transform={`translate(${x},${y})`}>
-            <text textAnchor="middle" fill="#334155" fontWeight={600} fontFamily="inherit">
-                <tspan x={0} dy={16} fontSize={12}>{line1}</tspan>
-                {line2 ? <tspan x={0} dy={14} fontSize={12}>{line2}</tspan> : null}
-            </text>
-        </g>
-    );
-};
-
-/* ── Bold value label rendered above each bar ── */
-const ValueLabel = ({ x, y, width, value }) => {
-    if (!value) return null;
-    return (
-        <text
-            x={x + width / 2}
-            y={y - 8}
-            fill="#0f172a"
-            textAnchor="middle"
-            fontSize={14}
-            fontWeight="700"
-            fontFamily="inherit"
-        >
-            {value}
-        </text>
-    );
-};
-
-/* ── Custom tooltip ── */
-const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload?.length) return null;
-    const passed = payload.find(p => p.dataKey === 'passedCount');
-    const failed = payload.find(p => p.dataKey === 'failedCount');
-    const total = (passed?.value || 0) + (failed?.value || 0);
-    return (
-        <div style={{
-            background: '#fff',
-            borderRadius: 14,
-            boxShadow: '0 10px 30px -5px rgba(0,0,0,0.18)',
-            padding: '14px 20px',
-            minWidth: 190,
-            border: 'none',
-        }}>
-            <p style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', marginBottom: 8 }}>{label}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#16a34a' }} />
-                <span style={{ fontSize: 13, color: '#374151' }}>Passed: <strong>{passed?.value ?? 0}</strong></span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#dc2626' }} />
-                <span style={{ fontSize: 13, color: '#374151' }}>Failed: <strong>{failed?.value ?? 0}</strong></span>
-            </div>
-            <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 6 }}>
-                <span style={{ fontSize: 13, color: '#6b7280' }}>
-                    Total: <strong style={{ color: '#0f172a' }}>{total}</strong>
-                </span>
-            </div>
-        </div>
-    );
-};
+const PASS_COLOR = '#16a34a';
+const FAIL_COLOR = '#dc2626';
 
 /* ── Filter Select helper ── */
-const FilterSelect = ({ placeholder, value, onChange, items, disabled, allLabel }) => (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className="h-8 text-xs min-w-[130px] max-w-[160px]">
-            <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-            <SelectItem value="all" className="text-xs">{allLabel || "All"}</SelectItem>
-            {(items || []).map(item => {
-                const itemId = String(item.id || item._id || '');
-                return (
-                    <SelectItem key={itemId} value={itemId} className="text-xs">
-                        {item.name}
-                    </SelectItem>
-                );
-            })}
-        </SelectContent>
-    </Select>
+const FilterSelect = ({ label, placeholder, value, onChange, items, disabled, allLabel }) => (
+    <div className="flex flex-col gap-1.5">
+        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{label}</Label>
+        <Select value={value} onValueChange={onChange} disabled={disabled}>
+            <SelectTrigger className="h-8 text-xs w-44">
+                <SelectValue placeholder={placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="all" className="text-xs">{allLabel || 'All'}</SelectItem>
+                {(items || []).map(item => {
+                    const itemId = String(item.id || item._id || '');
+                    return (
+                        <SelectItem key={itemId} value={itemId} className="text-xs">
+                            {item.name}
+                        </SelectItem>
+                    );
+                })}
+            </SelectContent>
+        </Select>
+    </div>
 );
 
 /* ══════════════════════════════════════════════════════════════ */
 
 const DepartmentQuizChart = ({ dateRange }) => {
-    const [filters, setFilters] = useState({
-        departmentId: '',
-        sectionId: '',
-    });
+    const [filters, setFilters] = useState({ departmentId: '', sectionId: '' });
 
     const set = (key) => (val) => {
         const cleared = val === 'all' ? '' : val;
@@ -125,6 +56,8 @@ const DepartmentQuizChart = ({ dateRange }) => {
             setFilters(prev => ({ ...prev, [key]: cleared }));
         }
     };
+
+    const handleReset = () => setFilters({ departmentId: '', sectionId: '' });
 
     /* ── API: chart data ── */
     const { data: statsData, isLoading, error } = useGetDepartmentQuizStatsQuery({
@@ -140,157 +73,219 @@ const DepartmentQuizChart = ({ dateRange }) => {
     );
 
     const departments = deptData?.data?.departments || [];
-    const formattedSections = React.useMemo(() => {
+    const formattedSections = useMemo(() => {
         const rawSections = sectionData?.data || sectionData || [];
         return rawSections.map(s => ({
             ...s,
-            name: s.category ? `${s.name} (${s.category})` : s.name
+            name: s.category ? `${s.name} (${s.category})` : s.name,
         }));
     }, [sectionData]);
 
     const chartData = statsData?.data || [];
 
-    /* ── Loading state ── */
-    if (isLoading) {
-        return (
-            <Card className="col-span-1 md:col-span-2">
-                <CardHeader>
-                    <Skeleton className="h-6 w-48 mb-2" />
-                    <Skeleton className="h-4 w-32" />
-                </CardHeader>
-                <CardContent>
-                    <Skeleton className="h-[480px] w-full" />
-                </CardContent>
-            </Card>
-        );
-    }
+    /* ── Summary totals ── */
+    const totalPassed   = chartData.reduce((a, d) => a + (Number(d.passedCount) || 0), 0);
+    const totalFailed   = chartData.reduce((a, d) => a + (Number(d.failedCount) || 0), 0);
+    const totalAttempts = totalPassed + totalFailed;
+    const passRate      = totalAttempts > 0 ? Math.round((totalPassed / totalAttempts) * 100) : 0;
+    const hasAnyData    = totalAttempts > 0;
 
-    if (error) {
-        return (
-            <Card className="col-span-1 md:col-span-2 border-red-200">
-                <CardContent className="p-6 text-center text-red-500">
-                    Failed to load department test statistics.
-                </CardContent>
-            </Card>
-        );
-    }
+    /* ── Scroll ── */
+    const SLOT_WIDTH     = 96;
+    const needsScroll    = chartData.length * 2 * SLOT_WIDTH > 800;
+    const scrollMinWidth = needsScroll ? chartData.length * 2 * SLOT_WIDTH : undefined;
+
+    /* ── Highcharts config ── */
+    const chartOptions = useMemo(() => ({
+        chart: {
+            type: 'column',
+            backgroundColor: 'transparent',
+            height: 480,
+            marginBottom: 100,
+            marginTop: 60,
+            style: { fontFamily: 'inherit' },
+            animation: { duration: 400 },
+            ...(needsScroll && {
+                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 0 },
+            }),
+        },
+        title:   { text: '' },
+        credits: { enabled: false },
+        xAxis: {
+            categories:    chartData.map(d => d.departmentName),
+            crosshair:     true,
+            lineWidth:     1,
+            lineColor:     '#e9ecef',
+            gridLineWidth: 0,
+            labels: {
+                style:    { fontSize: '12px', fontWeight: '600', color: '#334155' },
+                rotation: chartData.length > 6 ? -30 : 0,
+            },
+        },
+        yAxis: {
+            min:           0,
+            allowDecimals: false,
+            title:         { text: 'Attempts', style: { color: '#94a3b8', fontSize: '13px' } },
+            labels:        { style: { fontSize: '13px' } },
+            gridLineColor: '#f1f5f9',
+        },
+        legend: {
+            enabled:      true,
+            itemStyle:    { fontSize: '13px', fontWeight: '600', color: '#374151' },
+            symbolRadius: 3,
+            symbolHeight: 12,
+            symbolWidth:  12,
+        },
+        tooltip: {
+            useHTML: true,
+            style:   { fontSize: '13px' },
+            formatter() {
+                const series  = this.point.series.chart.series;
+                const passed  = series[0]?.data[this.point.index]?.y ?? 0;
+                const failed  = series[1]?.data[this.point.index]?.y ?? 0;
+                const total   = passed + failed;
+                return (
+                    `<b style="font-size:14px;color:#0f172a">${this.x}</b>` +
+                    `<div style="margin-top:6px">` +
+                    `<span style="color:${PASS_COLOR}">●</span> Passed: <b>${passed}</b><br/>` +
+                    `<span style="color:${FAIL_COLOR}">●</span> Failed: <b>${failed}</b><br/>` +
+                    `<span style="color:#6b7280">Total: <b style="color:#0f172a">${total}</b></span>` +
+                    `</div>`
+                );
+            },
+        },
+        plotOptions: {
+            column: {
+                borderRadius:  5,
+                borderWidth:   0,
+                pointPadding:  0.1,
+                groupPadding:  0.2,
+                maxPointWidth: 60,
+                dataLabels: {
+                    enabled:      true,
+                    formatter()   { return this.y > 0 ? String(this.y) : ''; },
+                    style:        { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    verticalAlign: 'top',
+                    align:         'center',
+                    y:             -20,
+                    allowOverlap:  true,
+                },
+            },
+        },
+        series: [
+            {
+                name:  'Passed',
+                color: PASS_COLOR,
+                data:  chartData.map(d => Number(d.passedCount) || 0),
+            },
+            {
+                name:  'Failed',
+                color: FAIL_COLOR,
+                data:  chartData.map(d => Number(d.failedCount) || 0),
+            },
+        ],
+    }), [chartData, needsScroll, scrollMinWidth]);
 
     return (
         <Card className="col-span-1 md:col-span-2 shadow-md border border-gray-200">
-            <CardHeader className="pb-3">
-                <div className="flex flex-col gap-3">
-                    {/* Title row */}
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div>
-                            <CardTitle className="flex items-center gap-2 text-lg">
-                                <IconChartBar className="h-6 w-6 text-blue-600" />
-                                Department Test Performance
-                            </CardTitle>
-                            <CardDescription className="text-sm mt-0.5">
-                                Pass vs Fail attempts by department
-                            </CardDescription>
-                        </div>
+            <CardHeader className="pb-4">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                    <div className="space-y-1">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                            <IconChartBar className="h-5 w-5 text-blue-600" />
+                            Department Test Performance
+                        </CardTitle>
+                        <CardDescription>
+                            Pass vs Fail attempts by department — grouped bar view
+                        </CardDescription>
                     </div>
+                </div>
 
-                    {/* Filter row */}
-                    <div className="flex items-center flex-wrap gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                        <IconFilter className="h-4 w-4 text-slate-500 shrink-0" />
-                        <span className="text-xs font-semibold text-slate-500 mr-1">Filter:</span>
+                {/* Filter bar */}
+                <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
+                    <FilterSelect
+                        label="Department"
+                        placeholder="Department"
+                        value={filters.departmentId || 'all'}
+                        onChange={set('departmentId')}
+                        items={departments}
+                        allLabel="All Departments"
+                    />
 
-                        <FilterSelect
-                            placeholder="Department"
-                            value={filters.departmentId || 'all'}
-                            onChange={set('departmentId')}
-                            items={departments}
-                            allLabel="All Department"
-                        />
+                    <FilterSelect
+                        label="Section"
+                        placeholder="Section"
+                        value={filters.sectionId || 'all'}
+                        onChange={set('sectionId')}
+                        items={formattedSections}
+                        disabled={!filters.departmentId}
+                        allLabel="All Sections"
+                    />
 
-                        <FilterSelect
-                            placeholder="Section"
-                            value={filters.sectionId || 'all'}
-                            onChange={set('sectionId')}
-                            items={formattedSections}
-                            disabled={!filters.departmentId}
-                            allLabel="All Section"
-                        />
+                    <div className="self-end">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800"
+                            onClick={handleReset}
+                        >
+                            <IconRefresh className="h-3.5 w-3.5 mr-1" />
+                            Reset
+                        </Button>
                     </div>
                 </div>
             </CardHeader>
 
-            <CardContent className="pt-0">
-                {chartData.length > 0 ? (
-                    <div className="h-[500px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                                data={chartData}
-                                margin={{ top: 44, right: 30, left: 10, bottom: 70 }}
-                                barCategoryGap="28%"
-                                barGap={5}
-                            >
-                                <defs>
-                                    <linearGradient id="passGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#16a34a" stopOpacity={1} />
-                                        <stop offset="100%" stopColor="#4ade80" stopOpacity={0.88} />
-                                    </linearGradient>
-                                    <linearGradient id="failGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#dc2626" stopOpacity={1} />
-                                        <stop offset="100%" stopColor="#f87171" stopOpacity={0.88} />
-                                    </linearGradient>
-                                </defs>
-
-                                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" />
-
-                                <XAxis
-                                    dataKey="departmentName"
-                                    tick={<CustomXAxisTick />}
-                                    interval={0}
-                                    height={60}
-                                    tickLine={false}
-                                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1.5 }}
-                                />
-
-                                <YAxis
-                                    tick={{ fontSize: 13, fill: '#64748b', fontWeight: 500 }}
-                                    axisLine={false}
-                                    tickLine={false}
-                                    width={36}
-                                />
-
-                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148,163,184,0.08)' }} />
-
-                                <Legend
-                                    wrapperStyle={{ paddingTop: 10, fontSize: 14, fontWeight: 600, color: '#374151' }}
-                                    iconType="square"
-                                    iconSize={14}
-                                />
-
-                                <Bar
-                                    dataKey="passedCount"
-                                    name="Passed"
-                                    fill="url(#passGrad)"
-                                    stackId="a"
-                                    barSize={46}
-                                >
-                                    <LabelList content={<ValueLabel />} />
-                                </Bar>
-
-                                <Bar
-                                    dataKey="failedCount"
-                                    name="Failed"
-                                    fill="url(#failGrad)"
-                                    stackId="a"
-                                    barSize={46}
-                                >
-                                    <LabelList content={<ValueLabel />} />
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
+            <CardContent>
+                {isLoading ? (
+                    <div className="h-[480px] flex flex-col items-center justify-center gap-4">
+                        <img
+                            src="/fme_transparent.png"
+                            alt="FME"
+                            className="w-20 h-20 object-contain animate-pulse"
+                        />
+                        <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
+                            Loading
+                        </p>
+                    </div>
+                ) : error ? (
+                    <div className="h-[480px] flex flex-col items-center justify-center text-red-500 gap-2">
+                        <p className="text-sm font-semibold">Failed to load department test statistics.</p>
+                    </div>
+                ) : !hasAnyData ? (
+                    <div className="h-[480px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                        <IconChartBar className="h-10 w-10 opacity-20" />
+                        <p className="text-sm font-medium">No test attempt data available.</p>
+                        <p className="text-xs opacity-60">Try adjusting the date range or filters above.</p>
                     </div>
                 ) : (
-                    <div className="h-[300px] flex flex-col items-center justify-center text-gray-400 gap-3">
-                        <IconChartBar className="h-14 w-14 text-gray-200" />
-                        <p className="text-base font-medium">No test attempt data available.</p>
-                    </div>
+                    <>
+                        <HighchartsReact
+                            key={`${filters.departmentId}-${filters.sectionId}`}
+                            highcharts={Highcharts}
+                            options={chartOptions}
+                        />
+
+                        {/* Summary strip */}
+                        <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
+                                <span className="text-xs font-bold text-green-700">Total Passed</span>
+                                <span className="text-sm font-black text-green-900">{totalPassed}</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-50">
+                                <span className="text-xs font-bold text-red-700">Total Failed</span>
+                                <span className="text-sm font-black text-red-900">{totalFailed}</span>
+                            </div>
+                            <div className={`flex items-center justify-between p-2.5 rounded-lg ${passRate >= 70 ? 'bg-green-50' : 'bg-amber-50'}`}>
+                                <span className={`text-xs font-bold ${passRate >= 70 ? 'text-green-600' : 'text-amber-600'}`}>Pass Rate</span>
+                                <span className={`text-sm font-black ${passRate >= 70 ? 'text-green-900' : 'text-amber-900'}`}>{passRate}%</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
+                                <span className="text-xs font-bold text-slate-500">Total Attempts</span>
+                                <span className="text-sm font-black text-slate-800">{totalAttempts}</span>
+                            </div>
+                        </div>
+                    </>
                 )}
             </CardContent>
         </Card>

@@ -88,6 +88,7 @@ const EvaluationTestBuilder = () => {
     const [performDateCount, setPerformDateCount] = useState(4);
     const [contentStructure, setContentStructure] = useState(() => normalizeContentStructure(DEFAULT_STRUCTURE, "1. Taping operation"));
     const [isPrintMode, setIsPrintMode] = useState(isPrintModeUrl);
+    const [educatorName, setEducatorName] = useState("");
 
     // RTK Query API Hooks
     const { data: fetchResponse, isLoading: isFetching } = useGetEvaluationTestByIdQuery(id, { skip: !isEditMode });
@@ -502,7 +503,9 @@ const EvaluationTestBuilder = () => {
                             </div>
                             <div className="flex flex-col">
                                 <span className="border-b border-black py-0.5 bg-gray-100 text-[9px] uppercase">Planned</span>
-                                <span className="flex-1"></span>
+                                <div className="flex-1 flex items-center justify-center bg-white font-extrabold text-blue-700 text-[10px] p-1 truncate">
+                                    {educatorName || "-"}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -523,7 +526,15 @@ const EvaluationTestBuilder = () => {
                             </tr>
                             <tr className="border-x border-b border-black text-xs font-semibold text-left">
                                 <td className="border border-black bg-gray-100 p-2 text-[10px] uppercase font-bold leading-tight align-middle" colSpan={1}>Education giving person</td>
-                                <td className="border border-black p-2 bg-white" colSpan={3}></td>
+                                <td className="border border-black p-2 bg-white" colSpan={3}>
+                                    <input
+                                        type="text"
+                                        placeholder="Enter Educator Name..."
+                                        value={educatorName}
+                                        onChange={(e) => setEducatorName(e.target.value)}
+                                        className="w-full px-1 border-0 focus:ring-0 focus:outline-none bg-transparent font-semibold text-gray-800 text-xs"
+                                    />
+                                </td>
                                 <td className="border border-black p-2 bg-white" colSpan={performDateCount + 1}></td>
                             </tr>
                         </thead>

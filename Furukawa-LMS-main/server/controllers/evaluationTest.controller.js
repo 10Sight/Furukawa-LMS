@@ -84,8 +84,8 @@ export const deleteEvaluationTest = asyncHandler(async (req, res) => {
 
 // Student Evaluation Attempt APIs
 export const createEvaluationTestAttempt = asyncHandler(async (req, res) => {
-    const { testId, traineeName, employeeNo, educatorName, attemptData } = req.body;
-    const createdBy = req.user?.fullName || req.user?.userName || "Admin";
+    const { testId, traineeName, employeeNo, educatorName, attemptData, createdBy: reqCreatedBy } = req.body;
+    const createdBy = reqCreatedBy || req.user?.fullName || req.user?.userName || "Admin";
 
     if (!testId) {
         throw new ApiError("Test ID is required for registering an attempt", 400);
@@ -135,7 +135,7 @@ export const getEvaluationTestAttemptsByTestId = asyncHandler(async (req, res) =
 
 export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { attemptData, traineeName, employeeNo, educatorName } = req.body;
+    const { attemptData, traineeName, employeeNo, educatorName, createdBy } = req.body;
 
     const existingAttempt = await EvaluationTestAttempt.findById(id);
     if (!existingAttempt) {
@@ -146,7 +146,8 @@ export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
         attemptData,
         traineeName,
         employeeNo,
-        educatorName
+        educatorName,
+        createdBy
     });
 
     res.json(

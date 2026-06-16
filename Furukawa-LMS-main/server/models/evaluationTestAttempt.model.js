@@ -196,6 +196,10 @@ class EvaluationTestAttempt {
             fields.push("educatorName = ?");
             values.push(data.educatorName);
         }
+        if (data.createdBy !== undefined) {
+            fields.push("createdBy = ?");
+            values.push(data.createdBy);
+        }
 
         if (fields.length === 0) return await this.findById(id);
 

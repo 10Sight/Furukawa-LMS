@@ -76,6 +76,7 @@ import {
   IconHistory,
   IconUserX,
   IconUserMinus,
+  IconCalendar,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -189,9 +190,20 @@ const Students = () => {
     contractorId: "",
   });
   const [formErrors, setFormErrors] = useState({});
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [departmentFilter, setDepartmentFilter] = useState("ALL");
-  const [unitFilter, setUnitFilter] = useState("ALL");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    status: "",
+    dateFrom: "",
+    dateTo: "",
+    departmentId: "",
+    sectionId: "",
+    lineId: "",
+    subSectionId: "",
+    stationId: "",
+    unit: "",
+    shift: "",
+    date: "",
+  });
   const [activeTab, setActiveTab] = useState("all");
 
 
@@ -261,8 +273,17 @@ const Students = () => {
       page: currentPage,
       limit: 10,
       search: debouncedSearchTerm || "",
-      status: statusFilter !== "ALL" ? statusFilter : "",
-      unit: unitFilter !== "ALL" ? unitFilter : "",
+      status: filters.status,
+      unit: filters.unit,
+      departmentId: filters.departmentId,
+      sectionId: filters.sectionId,
+      lineId: filters.lineId,
+      subSectionId: filters.subSectionId,
+      stationId: filters.stationId,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      shift: filters.shift,
+      date: filters.date,
       includeLeft: "true",
     },
     {
@@ -295,7 +316,7 @@ const Students = () => {
   const { data: importLogsData, isLoading: isLoadingLogs } = useGetImportLogsQuery();
   const importLogs = importLogsData?.data || [];
 
-  // Hierarchy Hooks
+  // Hierarchy Hooks for Dialog Form
   const { data: sectionsData } = useGetSectionsByDepartmentQuery(formData.departments.join(','), { skip: !formData.departments.length });
   const { data: linesData } = useGetLinesBySectionQuery(formData.sections.join(','), { skip: !formData.sections.length });
   const { data: subSectionsData } = useGetSubSectionsByLineQuery(formData.lines.join(','), { skip: !formData.lines.length });
@@ -307,6 +328,17 @@ const Students = () => {
   const lines = linesData?.data || [];
   const subSections = subSectionsData?.data || [];
   const machines = machinesData?.data || [];
+
+  // Hierarchy Hooks for Filtering
+  const { data: filterSectionData } = useGetSectionsByDepartmentQuery(filters.departmentId, { skip: !filters.departmentId });
+  const { data: filterLineData } = useGetLinesBySectionQuery(filters.sectionId, { skip: !filters.sectionId });
+  const { data: filterSubSectionData } = useGetSubSectionsByLineQuery(filters.lineId, { skip: !filters.lineId });
+  const { data: filterMachineData } = useGetMachinesBySubSectionQuery(filters.subSectionId, { skip: !filters.subSectionId });
+
+  const filterSections = filterSectionData?.data || [];
+  const filterLines = filterLineData?.data || [];
+  const filterSubSections = filterSubSectionData?.data || [];
+  const filterStations = filterMachineData?.data || [];
   const fileInputRef = useRef(null);
 
   const students = studentsData?.data?.users || [];
@@ -360,48 +392,45 @@ const Students = () => {
 
   // Active filters for FilterBar
   const activeFilters = useMemo(() => {
-    const filters = [];
-
-    if (statusFilter !== "ALL") {
-      const statusLabel = statusOptions.find(
-        (opt) => opt.value === statusFilter
-      )?.label;
-      filters.push({ label: "Status", value: statusLabel });
+    const list = [];
+    if (filters.dateFrom) list.push({ label: "From", value: filters.dateFrom });
+    if (filters.dateTo) list.push({ label: "To", value: filters.dateTo });
+    if (filters.departmentId) {
+      const d = availableDepartments.find(item => String(item._id || item.id) === filters.departmentId);
+      list.push({ label: "Department", value: d ? d.name : filters.departmentId });
     }
-
-    if (departmentFilter !== "ALL") {
-      const departmentLabel = departmentOptions.find(
-        (opt) => opt.value === departmentFilter
-      )?.label;
-      filters.push({ label: "Department", value: departmentLabel });
+    if (filters.sectionId) {
+      const s = filterSections.find(item => String(item.id) === filters.sectionId);
+      list.push({ label: "Section", value: s ? s.name : filters.sectionId });
     }
-
-    if (unitFilter !== "ALL") {
-      const unitLabel = unitOptions.find((opt) => opt.value === unitFilter)?.label;
-      filters.push({ label: "Unit", value: unitLabel });
+    if (filters.lineId) {
+      const l = filterLines.find(item => String(item.id) === filters.lineId);
+      list.push({ label: "Line", value: l ? l.name : filters.lineId });
     }
-
+    if (filters.subSectionId) {
+      const ss = filterSubSections.find(item => String(item.id) === filters.subSectionId);
+      list.push({ label: "Sub-Section", value: ss ? ss.name : filters.subSectionId });
+    }
+    if (filters.stationId) {
+      const st = filterStations.find(item => String(item.id) === filters.stationId);
+      list.push({ label: "Station", value: st ? st.name : filters.stationId });
+    }
+    if (filters.shift) list.push({ label: "Shift", value: filters.shift });
+    if (filters.unit) list.push({ label: "Unit", value: filters.unit });
+    if (filters.status) {
+      const displayVal = filters.status === "Present" ? "Present (Attendance)" : filters.status === "Absent" ? "Absent (Attendance)" : filters.status;
+      list.push({ label: "Status", value: displayVal });
+    }
     if (searchTerm) {
-      filters.push({ label: "Search", value: searchTerm });
+      list.push({ label: "Search", value: searchTerm });
     }
+    return list;
+  }, [filters, searchTerm, availableDepartments, filterSections, filterLines, filterSubSections, filterStations]);
 
-    return filters;
-  }, [statusFilter, departmentFilter, searchTerm, statusOptions, departmentOptions]);
-
-  // Filter students based on department and unit (status handled by API)
+  // Filtered students (handled directly by API query)
   const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
-      const departmentMatch =
-        departmentFilter === "ALL" ||
-        (departmentFilter === "HAS_DEPARTMENT" && student.department) ||
-        (departmentFilter === "NO_DEPARTMENT" && !student.department);
-
-      const unitMatch =
-        unitFilter === "ALL" || student.unit === unitFilter;
-
-      return departmentMatch && unitMatch;
-    });
-  }, [students, departmentFilter, unitFilter]);
+    return students;
+  }, [students]);
 
   // Toast helpers to prevent spam
   const showToast = useCallback(
@@ -689,7 +718,23 @@ const Students = () => {
     setIsSubmitting(true);
     try {
       const payload = isAllSelectedAcrossPages
-        ? { isAllSelected: true, filters: { search: debouncedSearchTerm, status: statusFilter !== "ALL" ? statusFilter : "", unit: unitFilter !== "ALL" ? unitFilter : "", departmentId: departmentFilter !== "ALL" ? departmentFilter : "" } }
+        ? {
+            isAllSelected: true,
+            filters: {
+              search: debouncedSearchTerm,
+              status: filters.status,
+              unit: filters.unit,
+              departmentId: filters.departmentId,
+              sectionId: filters.sectionId,
+              lineId: filters.lineId,
+              subSectionId: filters.subSectionId,
+              stationId: filters.stationId,
+              dateFrom: filters.dateFrom,
+              dateTo: filters.dateTo,
+              shift: filters.shift,
+              date: filters.date,
+            }
+          }
         : { ids: selectedIds };
 
       await bulkDeleteUsers(payload).unwrap();
@@ -832,8 +877,17 @@ const Students = () => {
           page,
           limit: PAGE_SIZE,
           search: debouncedSearchTerm || "",
-          status: statusFilter !== "ALL" ? statusFilter : "",
-          unit: unitFilter !== "ALL" ? unitFilter : "",
+          status: filters.status,
+          unit: filters.unit,
+          departmentId: filters.departmentId,
+          sectionId: filters.sectionId,
+          lineId: filters.lineId,
+          subSectionId: filters.subSectionId,
+          stationId: filters.stationId,
+          dateFrom: filters.dateFrom,
+          dateTo: filters.dateTo,
+          shift: filters.shift,
+          date: filters.date,
           includeLeft: "true",
         }).unwrap();
 
@@ -843,15 +897,6 @@ const Students = () => {
 
         if (batch.length === 0) break;
         page++;
-      }
-
-      // Filter locally by department filter to match UI view
-      if (departmentFilter !== "ALL") {
-        allStudents = allStudents.filter((student) => {
-          if (departmentFilter === "HAS_DEPARTMENT") return !!student.department;
-          if (departmentFilter === "NO_DEPARTMENT") return !student.department;
-          return String(student.department?._id || student.department?.id) === String(departmentFilter);
-        });
       }
 
       if (allStudents.length === 0) {
@@ -1153,9 +1198,19 @@ const Students = () => {
   };
 
   const clearFilters = () => {
-    setStatusFilter("ALL");
-    setDepartmentFilter("ALL");
-    setUnitFilter("ALL");
+    setFilters({
+      status: "",
+      dateFrom: "",
+      dateTo: "",
+      departmentId: "",
+      sectionId: "",
+      lineId: "",
+      subSectionId: "",
+      stationId: "",
+      unit: "",
+      shift: "",
+      date: "",
+    });
     setSearchTerm("");
     setActiveTab("all");
   };
@@ -1331,25 +1386,44 @@ const Students = () => {
             </TabsTrigger>
             <TabsTrigger
               value="active"
-              onClick={() => setStatusFilter("PRESENT")}
+              onClick={() => {
+                clearFilters();
+                setFilters(prev => ({ ...prev, status: "Present" }));
+                setActiveTab("active");
+              }}
             >
               Present
             </TabsTrigger>
             <TabsTrigger
               value="assigned"
-              onClick={() => setDepartmentFilter("HAS_DEPARTMENT")}
+              onClick={() => {
+                clearFilters();
+                setActiveTab("assigned");
+              }}
             >
               Assigned
             </TabsTrigger>
             <TabsTrigger
               value="unassigned"
-              onClick={() => setDepartmentFilter("NO_DEPARTMENT")}
+              onClick={() => {
+                clearFilters();
+                setActiveTab("unassigned");
+              }}
             >
               Unassigned
             </TabsTrigger>
           </TabsList>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+              className={`${showFilters ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" : ""} h-9`}
+            >
+              <IconFilter className="h-4 w-4 mr-2" />
+              Filters
+            </Button>
+
             {/* Hidden file input */}
             <input
               type="file"
@@ -1403,7 +1477,218 @@ const Students = () => {
         </div>
       </Tabs>
 
-      {/* Search and Filters using reusable components */}
+      {/* Collapsible Filters */}
+      {showFilters && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-in fade-in duration-200">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Date From</label>
+              <div className="relative">
+                <IconCalendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <Input
+                  type="date"
+                  value={filters.dateFrom}
+                  onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+                  className="pl-9 h-9"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Date To</label>
+              <div className="relative">
+                <IconCalendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <Input
+                  type="date"
+                  value={filters.dateTo}
+                  onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+                  className="pl-9 h-9"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Department</label>
+              <Select
+                value={filters.departmentId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  departmentId: val === "all" ? "" : val,
+                  sectionId: "", lineId: "", subSectionId: "", stationId: ""
+                })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {availableDepartments.map(d => (
+                    <SelectItem key={d._id || d.id} value={String(d._id || d.id)}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Section</label>
+              <Select
+                value={filters.sectionId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  sectionId: val === "all" ? "" : val,
+                  lineId: "", subSectionId: "", stationId: ""
+                })}
+                disabled={!filters.departmentId}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Sections" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sections</SelectItem>
+                  {filterSections.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Line</label>
+              <Select
+                value={filters.lineId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  lineId: val === "all" ? "" : val,
+                  subSectionId: "", stationId: ""
+                })}
+                disabled={!filters.sectionId}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Lines" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Lines</SelectItem>
+                  {filterLines.map(l => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Sub-Section</label>
+              <Select
+                value={filters.subSectionId || "all"}
+                onValueChange={(val) => setFilters({ 
+                  ...filters, 
+                  subSectionId: val === "all" ? "" : val,
+                  stationId: ""
+                })}
+                disabled={!filters.lineId}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Sub-Sections" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sub-Sections</SelectItem>
+                  {filterSubSections.map(ss => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Station</label>
+              <Select
+                value={filters.stationId || "all"}
+                onValueChange={(val) => setFilters({ ...filters, stationId: val === "all" ? "" : val })}
+                disabled={!filters.subSectionId}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Stations" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Stations</SelectItem>
+                  {filterStations.map(st => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Shift</label>
+              <Select
+                value={filters.shift || "all"}
+                onValueChange={(val) => setFilters({ ...filters, shift: val === "all" ? "" : val })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Shifts" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Shifts</SelectItem>
+                  <SelectItem value="A">A-Shift</SelectItem>
+                  <SelectItem value="B">B-Shift</SelectItem>
+                  <SelectItem value="G">G-Shift</SelectItem>
+                  <SelectItem value="C">C-Shift</SelectItem>
+                  <SelectItem value="D">D-Shift</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Unit</label>
+              <Select
+                value={filters.unit || "all"}
+                onValueChange={(val) => setFilters({ ...filters, unit: val === "all" ? "" : val })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Units" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Units</SelectItem>
+                  <SelectItem value="UNIT_1">Unit 1</SelectItem>
+                  <SelectItem value="UNIT_2">Unit 2</SelectItem>
+                  <SelectItem value="UNIT_3">Unit 3</SelectItem>
+                  <SelectItem value="UNIT_4">Unit 4</SelectItem>
+                  <SelectItem value="UNIT_5">Unit 5</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Status</label>
+              <Select
+                value={filters.status || "all"}
+                onValueChange={(val) => setFilters({ ...filters, status: val === "all" ? "" : val })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="Present">Present (Attendance)</SelectItem>
+                  <SelectItem value="Absent">Absent (Attendance)</SelectItem>
+                  <SelectItem value="PRESENT">System: Present</SelectItem>
+                  <SelectItem value="ON_LEAVE">System: On Leave</SelectItem>
+                  <SelectItem value="LEFT">System: Left</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-end sm:col-span-2 md:col-span-4 lg:col-span-5 justify-end">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-9 w-fit"
+                onClick={() => setFilters({
+                  status: "", dateFrom: "", dateTo: "",
+                  departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
+                  unit: "", shift: "", date: ""
+                })}
+              >
+                <IconX className="w-4 h-4 mr-2" />
+                Reset Filters
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search and Filters */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1414,48 +1699,16 @@ const Students = () => {
               className="w-full sm:w-96"
             />
 
-            <div className="flex flex-wrap gap-2">
-              <FilterSelect
-                value={statusFilter}
-                onValueChange={setStatusFilter}
-                options={statusOptions}
-                placeholder="Status"
-                icon={IconFilter}
-              />
-
-              <FilterSelect
-                value={departmentFilter}
-                onValueChange={setDepartmentFilter}
-                options={departmentOptions}
-                placeholder="Department"
-                icon={IconSchool}
-                className="w-[160px]"
-              />
-
-              <FilterSelect
-                value={unitFilter}
-                onValueChange={setUnitFilter}
-                options={unitOptions}
-                placeholder="Unit"
-                icon={IconUsers}
-                className="w-[140px]"
-              />
-
-              {(statusFilter !== "ALL" ||
-                departmentFilter !== "ALL" ||
-                unitFilter !== "ALL" ||
-                searchTerm) && (
-                  <Button
-                    variant="outline"
-                    onClick={clearFilters}
-                    className="gap-1"
-                  >
-                    <IconX className="h-4 w-4" />
-                    Clear
-                  </Button>
-                )}
-            </div>
-
+            {activeFilters.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={clearFilters}
+                className="gap-1 h-9"
+              >
+                <IconX className="h-4 w-4" />
+                Clear All
+              </Button>
+            )}
           </div>
 
           {/* Filter bar showing active filters */}

@@ -115,7 +115,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     const isStudent = user?.isEmployee || user?.role === 'STUDENT';
     const defaultTrainee = queryTrainee || (isStudent ? (user?.fullName || "") : "");
     const defaultEmpId = queryEmpId || (isStudent ? (user?.empId || "") : "");
-    const defaultEducator = !isStudent ? (user?.fullName || user?.userName || "") : "";
+    const defaultEducator = "";
 
     // Student attempt metadata states
     const [traineeName, setTraineeName] = useState(defaultTrainee);
@@ -138,9 +138,6 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             if (!employeeNo && isUserStudent) {
                 const displayCode = (user.userName || user.empId || "").toUpperCase();
                 setEmployeeNo(displayCode);
-            }
-            if (!educatorName && !isUserStudent) {
-                setEducatorName(user.fullName || user.userName || "");
             }
         }
     }, [user, isView, isEdit]);
@@ -324,6 +321,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             traineeName,
             employeeNo,
             educatorName,
+            createdBy: educatorName,
             attemptData: {
                 ...attemptData,
                 _performDates: performDates
@@ -337,6 +335,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                     traineeName,
                     employeeNo,
                     educatorName,
+                    createdBy: educatorName,
                     attemptData: {
                         ...attemptData,
                         _performDates: performDates
@@ -600,7 +599,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                     {isView ? (
                                         attemptResponse?.data?.createdBy || "Admin"
                                     ) : (
-                                        user?.fullName || user?.userName || "Admin"
+                                        educatorName || "-"
                                     )}
                                 </div>
                             </div>

@@ -178,7 +178,9 @@ const ContractorWiseOperatorChart = () => {
                 return;
             }
 
-            const midIdx = Math.floor(present.length / 2);
+            const totalSlots = present.length;
+            const isEven    = totalSlots % 2 === 0;
+            const midIdx    = Math.floor(totalSlots / 2);
 
             present.forEach((name, gi) => {
                 const ci = contractorMap.get(name);
@@ -188,6 +190,7 @@ const ContractorWiseOperatorChart = () => {
                     contractor: name,
                     periodLabel,
                     isDateSlot: gi === midIdx,
+                    shiftDate:  isEven && gi === midIdx,
                     isEmpty:    false,
                 });
             });
@@ -209,8 +212,8 @@ const ContractorWiseOperatorChart = () => {
                 .join('<br/>');
 
             const dateLine = p.isDateSlot
-                ? `<br/><span style="color:#64748b;font-size:11px;font-weight:600">${p.periodLabel}</span>`
-                : `<br/><span style="visibility:hidden;font-size:11px">${p.periodLabel}</span>`;
+                ? `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px${p.shiftDate ? ';margin-right:96px' : ''}">${p.periodLabel}</span>`
+                : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${p.periodLabel}</span>`;
 
             return nameHtml + dateLine;
         });
@@ -271,10 +274,10 @@ const ContractorWiseOperatorChart = () => {
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
-            height: 480,
+            height: 560,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
-            marginBottom: 140,
+            marginBottom: 170,
             marginTop: 60,
             ...(needsScroll && { scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 } }),
         },
@@ -425,7 +428,7 @@ const ContractorWiseOperatorChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[480px] flex flex-col items-center justify-center gap-4">
+                    <div className="h-[560px] flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -436,11 +439,11 @@ const ContractorWiseOperatorChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[480px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div className="h-[560px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load contractor data.</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[480px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div className="h-[560px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">No operator joining data for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or date range above.</p>

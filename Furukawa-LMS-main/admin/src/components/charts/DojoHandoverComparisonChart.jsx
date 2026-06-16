@@ -11,9 +11,9 @@ import { IconArrowsTransferDown, IconCalendar, IconRefresh, IconChevronDown } fr
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
-const _now         = new Date();
+const _now = new Date();
 const CURRENT_YEAR = _now.getFullYear();
-const MONTH_END    = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
+const MONTH_END = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
 
 const toApiDates = (timeframe, rawStart, rawEnd) => {
     if (!rawStart || !rawEnd) return { startDate: '', endDate: '' };
@@ -82,38 +82,38 @@ const buildFullSeries = (groupBy, start, end, trend) => {
 };
 
 const INPUT_CONFIG = {
-    daily:   { type: 'date',   min: '2020-01-01', max: MONTH_END,             placeholder: 'YYYY-MM-DD' },
-    monthly: { type: 'month',  min: '2020-01',    max: `${CURRENT_YEAR}-12`,  placeholder: 'YYYY-MM' },
-    yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
+    daily: { type: 'date', min: '2020-01-01', max: MONTH_END, placeholder: 'YYYY-MM-DD' },
+    monthly: { type: 'month', min: '2020-01', max: `${CURRENT_YEAR}-12`, placeholder: 'YYYY-MM' },
+    yearly: { type: 'number', min: 2020, max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
 };
 
 const getDefaultDates = (timeframe) => {
     const now = new Date();
     if (timeframe === 'daily') {
         const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         return {
             rawStart: firstOfMonth.toISOString().split('T')[0],
-            rawEnd:   lastOfMonth.toISOString().split('T')[0],
+            rawEnd: lastOfMonth.toISOString().split('T')[0],
         };
     }
     if (timeframe === 'monthly') {
         const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
         return {
             rawStart: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}`,
-            rawEnd:   `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+            rawEnd: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
         };
     }
     return {
         rawStart: String(now.getFullYear() - 4),
-        rawEnd:   String(now.getFullYear()),
+        rawEnd: String(now.getFullYear()),
     };
 };
 
 const DojoHandoverComparisonChart = () => {
-    const [timeframe,     setTimeframe]     = useState('daily');
-    const [rawStart,      setRawStart]      = useState(() => getDefaultDates('daily').rawStart);
-    const [rawEnd,        setRawEnd]        = useState(() => getDefaultDates('daily').rawEnd);
+    const [timeframe, setTimeframe] = useState('daily');
+    const [rawStart, setRawStart] = useState(() => getDefaultDates('daily').rawStart);
+    const [rawEnd, setRawEnd] = useState(() => getDefaultDates('daily').rawEnd);
     const [selectedDepts, setSelectedDepts] = useState([]);
 
     const { data: deptsData } = useGetAllDepartmentsQuery();
@@ -131,18 +131,18 @@ const DojoHandoverComparisonChart = () => {
         departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
     });
 
-    const rawTrend      = data?.data?.trend        || [];
+    const rawTrend = data?.data?.trend || [];
     const deptBreakdown = data?.data?.deptBreakdown || [];
-    const groupBy       = data?.data?.groupBy       || timeframe;
-    const apiStart      = data?.data?.start         || '';
-    const apiEnd        = data?.data?.end           || '';
+    const groupBy = data?.data?.groupBy || timeframe;
+    const apiStart = data?.data?.start || '';
+    const apiEnd = data?.data?.end || '';
 
     const trend = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
     );
-    const totalActual     = trend.reduce((a, r) => a + (Number(r.actual)   || 0), 0);
-    const totalExpected   = trend.reduce((a, r) => a + (Number(r.expected) || 0), 0);
+    const totalActual = trend.reduce((a, r) => a + (Number(r.actual) || 0), 0);
+    const totalExpected = trend.reduce((a, r) => a + (Number(r.expected) || 0), 0);
     const achievementRate = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
 
     const fullPeriods = useMemo(
@@ -159,7 +159,7 @@ const DojoHandoverComparisonChart = () => {
             return { flatPoints: [], categories: [], groupSeparators: [] };
 
         // Build lookup maps
-        const deptDataMap  = {};
+        const deptDataMap = {};
         const orderedDeptIds = [];
         deptBreakdown.forEach(r => {
             if (!deptDataMap[r.deptId]) {
@@ -168,22 +168,22 @@ const DojoHandoverComparisonChart = () => {
             }
             deptDataMap[r.deptId][r.period] = {
                 expected: Number(r.expected) || 0,
-                actual:   Number(r.actual)   || 0,
+                actual: Number(r.actual) || 0,
             };
         });
 
-        const deptNameMap  = {};
+        const deptNameMap = {};
         const deptColorMap = {};
         orderedDeptIds.forEach((deptId, i) => {
-            deptNameMap[deptId]  = departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`;
+            deptNameMap[deptId] = departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`;
             deptColorMap[deptId] = DEPT_COLORS[i % DEPT_COLORS.length];
         });
 
         const flatPoints = [];
 
         fullPeriods.forEach(period => {
-            const periodLabel   = formatPeriodLabel(period, groupBy);
-            const deptsPresent  = orderedDeptIds.filter(id => {
+            const periodLabel = formatPeriodLabel(period, groupBy);
+            const deptsPresent = orderedDeptIds.filter(id => {
                 const v = deptDataMap[id]?.[period];
                 return v && (v.expected > 0 || v.actual > 0);
             });
@@ -197,34 +197,41 @@ const DojoHandoverComparisonChart = () => {
                 return;
             }
 
-            const totalSlots = deptsPresent.length * 2;
-            const midSlotIdx = Math.floor(totalSlots / 2);
+            const N = deptsPresent.length;
+            // Target the Expected slot nearest to the group center so the date
+            // always renders below a dept name (never below "Act").
+            // Even N → slot N   (Expected of dept N/2+1), needs -48px left shift.
+            // Odd  N → slot N-1 (Expected of dept ⌈N/2⌉),  needs +48px right shift.
+            const midSlotIdx  = N % 2 === 0 ? N : N - 1;
+            const dateLabelPx = N % 2 === 0 ? -48 : 48;
             let slotIdx = 0;
 
             deptsPresent.forEach(deptId => {
-                const color    = deptColorMap[deptId];
+                const color = deptColorMap[deptId];
                 const deptName = deptNameMap[deptId];
-                const vals     = deptDataMap[deptId][period];
+                const vals = deptDataMap[deptId][period];
 
                 flatPoints.push({
-                    y:          vals.expected > 0 ? vals.expected : null,
+                    y: vals.expected > 0 ? vals.expected : null,
                     color,
                     deptName,
                     periodLabel,
-                    isExpected: true,
-                    isDateSlot: slotIdx === midSlotIdx,
-                    isEmpty:    false,
+                    isExpected:     true,
+                    isDateSlot:     slotIdx === midSlotIdx,
+                    dateLabelShift: slotIdx === midSlotIdx ? dateLabelPx : 0,
+                    isEmpty:        false,
                 });
                 slotIdx++;
 
                 flatPoints.push({
-                    y:          vals.actual > 0 ? vals.actual : null,
-                    color:      ACTUAL_COLOR,
+                    y: vals.actual > 0 ? vals.actual : null,
+                    color: ACTUAL_COLOR,
                     deptName,
                     periodLabel,
-                    isExpected: false,
-                    isDateSlot: slotIdx === midSlotIdx,
-                    isEmpty:    false,
+                    isExpected:     false,
+                    isDateSlot:     slotIdx === midSlotIdx,
+                    dateLabelShift: slotIdx === midSlotIdx ? dateLabelPx : 0,
+                    isEmpty:        false,
                 });
                 slotIdx++;
             });
@@ -257,9 +264,18 @@ const DojoHandoverComparisonChart = () => {
                 topHtml = wordCount > 1 ? `${pad}<br/>${act}` : act;
             }
 
+            // margin-left/right expand the label container instead of clipping like position:relative would.
+            // element_center = tick_x + (margin-left - margin-right) / 2
+            // For shift +48: margin-left:96px → center shifts +48px right.
+            // For shift -48: margin-right:96px → center shifts -48px left.
+            const shiftStyle = p.dateLabelShift > 0
+                ? 'margin-left:96px;'
+                : p.dateLabelShift < 0
+                    ? 'margin-right:96px;'
+                    : '';
             const dateLine = p.isDateSlot
-                ? `<br/><span style="color:#64748b;font-size:11px;font-weight:600">${p.periodLabel}</span>`
-                : `<br/><span style="visibility:hidden;font-size:11px">${p.periodLabel}</span>`;
+                ? `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px;${shiftStyle}">${p.periodLabel}</span>`
+                : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${p.periodLabel}</span>`;
 
             return topHtml + dateLine;
         });
@@ -282,8 +298,8 @@ const DojoHandoverComparisonChart = () => {
         return { flatPoints, categories, groupSeparators };
     }, [deptBreakdown, fullPeriods, groupBy, departments]);
 
-    const SLOT_WIDTH     = 96;
-    const needsScroll    = flatPoints.length * SLOT_WIDTH > 800;
+    const SLOT_WIDTH = 96;
+    const needsScroll = flatPoints.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? flatPoints.length * SLOT_WIDTH : undefined;
 
     const hasAnyData = totalExpected > 0 || totalActual > 0;
@@ -292,8 +308,8 @@ const DojoHandoverComparisonChart = () => {
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
-            height: 480,
-            marginBottom: 140,
+            height: 560,
+            marginBottom: 170,
             marginTop: 60,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
@@ -301,33 +317,33 @@ const DojoHandoverComparisonChart = () => {
                 scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
             }),
         },
-        title:   { text: '' },
+        title: { text: '' },
         credits: { enabled: false },
         xAxis: {
             categories,
-            crosshair:  true,
-            lineWidth:  1,
-            lineColor:  '#e9ecef',
+            crosshair: true,
+            lineWidth: 1,
+            lineColor: '#e9ecef',
             labels: {
-                useHTML:  true,
+                useHTML: true,
                 rotation: 0,
-                align:    'center',
-                style:    { textAlign: 'center', lineHeight: '1.6' },
+                align: 'center',
+                style: { textAlign: 'center', lineHeight: '1.6' },
             },
             gridLineWidth: 0,
-            plotLines:     groupSeparators,
+            plotLines: groupSeparators,
         },
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title:  { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
+            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
             labels: { style: { fontSize: '13px' } },
             gridLineColor: '#f1f5f9',
         },
         legend: { enabled: false },
         tooltip: {
             useHTML: true,
-            style:   { fontSize: '13px' },
+            style: { fontSize: '13px' },
             formatter() {
                 if (!this.point.deptName) return `<b>${this.point.periodLabel}</b>: No data`;
                 return (
@@ -340,32 +356,32 @@ const DojoHandoverComparisonChart = () => {
         },
         plotOptions: {
             column: {
-                colorByPoint:  true,
-                borderRadius:  5,
-                borderWidth:   0,
-                pointPadding:  0.06,
-                groupPadding:  0,
+                colorByPoint: true,
+                borderRadius: 5,
+                borderWidth: 0,
+                pointPadding: 0.06,
+                groupPadding: 0,
                 maxPointWidth: 80,
                 dataLabels: {
-                    enabled:      true,
-                    formatter()   { return this.y > 0 ? String(this.y) : ''; },
-                    style:        { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    enabled: true,
+                    formatter() { return this.y > 0 ? String(this.y) : ''; },
+                    style: { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
-                    align:         'center',
-                    y:             -20,
-                    allowOverlap:  true,
+                    align: 'center',
+                    y: -20,
+                    allowOverlap: true,
                 },
             },
         },
         series: [{
-            type:         'column',
-            name:         'Handover',
-            data:         flatPoints,
+            type: 'column',
+            name: 'Handover',
+            data: flatPoints,
             showInLegend: false,
         }],
     };
 
-    const cfg       = INPUT_CONFIG[timeframe];
+    const cfg = INPUT_CONFIG[timeframe];
     const deptLabel = selectedDepts.length === 0
         ? 'All Departments'
         : selectedDepts.length === 1
@@ -414,9 +430,9 @@ const DojoHandoverComparisonChart = () => {
                         </Label>
                         <div className="flex gap-1">
                             {[
-                                { key: 'daily',   label: 'Daily (30d)'   },
+                                { key: 'daily', label: 'Daily (30d)' },
                                 { key: 'monthly', label: 'Monthly (12m)' },
-                                { key: 'yearly',  label: 'Yearly (5y)'   },
+                                { key: 'yearly', label: 'Yearly (5y)' },
                             ].map(({ key, label }) => (
                                 <Button
                                     key={key}
@@ -512,7 +528,7 @@ const DojoHandoverComparisonChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[480px] flex flex-col items-center justify-center gap-4">
+                    <div className="h-[560px] flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -523,11 +539,11 @@ const DojoHandoverComparisonChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[480px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div className="h-[560px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load handover comparison.</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[480px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div className="h-[560px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">No handover data found for this period.</p>
                         <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>

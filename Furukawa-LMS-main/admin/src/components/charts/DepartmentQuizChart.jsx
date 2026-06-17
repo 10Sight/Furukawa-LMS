@@ -202,7 +202,7 @@ const DepartmentQuizChart = ({ dateRange }) => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconChartBar className="h-5 w-5 text-blue-600" />
-                            Department Test Performance
+                            Department Wise Test Performance
                         </CardTitle>
                         <CardDescription>
                             Pass vs Fail attempts by department — grouped bar view

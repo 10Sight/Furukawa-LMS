@@ -352,7 +352,7 @@ const ContractorWiseOperatorChart = () => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconBuilding className="h-5 w-5 text-blue-600" />
-                            Contractor Wise Operators
+                            Contractor Wise DOJO Candidates
                         </CardTitle>
                         <CardDescription>
                             Operators joined per contractor — grouped by joining date

@@ -708,7 +708,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                 </div>
                             </>
                         )}
-                    </div>
+                    </div>  
                 </div>
             </DialogContent>
         </Dialog>

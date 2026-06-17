@@ -999,7 +999,7 @@ const EfficiencyChart = () => {
                     {/* ── CHART 2: Department Averages ── */}
                     <ChartSection
                         badge={<span className="text-indigo-600">Chart 2:</span>}
-                        title="Department Efficiency"
+                        title="Department Wise Efficiency"
                         dateText={getDateText(f1)}
                         tag={<span className="bg-indigo-50 text-indigo-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Dept Level</span>}
                         statsVisible={statVis.c1} onToggleStats={() => toggleStat('c1')}
@@ -1041,7 +1041,7 @@ const EfficiencyChart = () => {
                     {/* ── CHART 3: Section Averages ── */}
                     <ChartSection
                         badge={<span className="text-emerald-600">Chart 3:</span>}
-                        title="Section Efficiency"
+                        title="Section Wise Efficiency"
                         dateText={getDateText(f2)}
                         tag={<span className="bg-emerald-50 text-emerald-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Section Level</span>}
                         statsVisible={statVis.c2} onToggleStats={() => toggleStat('c2')}
@@ -1083,7 +1083,7 @@ const EfficiencyChart = () => {
                     {/* ── CHART 4: Line Averages ── */}
                     <ChartSection
                         badge={<span className="text-amber-600">Chart 4:</span>}
-                        title="Line Efficiency"
+                        title="Line Wise Efficiency"
                         dateText={getDateText(f3)}
                         tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Line Level</span>}
                         statsVisible={statVis.c3} onToggleStats={() => toggleStat('c3')}
@@ -1125,7 +1125,7 @@ const EfficiencyChart = () => {
                     {/* ── CHART 5: Sub-section Averages ── */}
                     <ChartSection
                         badge={<span className="text-amber-600">Chart 5:</span>}
-                        title="Sub-section Efficiency"
+                        title="Sub-section Wise Efficiency"
                         dateText={getDateText(f4)}
                         tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Sub-section</span>}
                         statsVisible={statVis.c4} onToggleStats={() => toggleStat('c4')}

@@ -76,9 +76,58 @@ const getCcEmailListFromHeads = (heads = []) => {
     const uniqueEmails = new Set();
 
     for (const head of heads || []) {
-        const ccMailVal = getValueIgnoreCase(head, ["CCMail", "ccMail", "ccmail", "CCMAIL"]);
+        const ccMailVal = getValueIgnoreCase(head, [
+            "CCMail",
+            "ccMail",
+            "ccmail",
+            "CCMAIL",
+            "ccEmail",
+            "ccEmails",
+            "cc_email",
+            "cc",
+            "CC",
+            "CC Mail",
+            "CCEmail",
+            "CCEmails",
+        ]);
+
         for (const email of normalizeEmailList(ccMailVal)) {
             uniqueEmails.add(email.toLowerCase());
+        }
+    }
+
+    return Array.from(uniqueEmails);
+};
+
+const getGlobalCcEmailsFromDb = async () => {
+    try {
+        const [rows] = await executeSql(`
+            SELECT email
+            FROM global_cc_emails WITH (NOLOCK)
+            WHERE is_active = 1
+              AND email IS NOT NULL
+              AND LTRIM(RTRIM(email)) != ''
+            ORDER BY id ASC
+        `);
+
+        return (rows || [])
+            .flatMap((row) => normalizeEmailList(row.email))
+            .map((email) => email.toLowerCase());
+    } catch (error) {
+        console.error("[GLOBAL-CC] Failed to fetch global CC emails:", error.message);
+        return [];
+    }
+};
+
+const mergeUniqueEmails = (...emailLists) => {
+    const uniqueEmails = new Set();
+
+    for (const list of emailLists || []) {
+        for (const email of Array.isArray(list) ? list : normalizeEmailList(list)) {
+            const normalized = String(email || "").trim().toLowerCase();
+            if (normalized && normalized.includes("@")) {
+                uniqueEmails.add(normalized);
+            }
         }
     }
 
@@ -433,7 +482,9 @@ const sendRequirementEditApprovalMail = async ({
 }) => {
     try {
         const heads = await findSectionHeadsForRequirement(newReq);
-        const ccEmails = getCcEmailListFromHeads(heads);
+        const sectionWiseCcEmails = getCcEmailListFromHeads(heads);
+        const globalCcEmails = await getGlobalCcEmailsFromDb();
+        const ccEmails = mergeUniqueEmails(sectionWiseCcEmails, globalCcEmails);
         console.log("BASE_URL =", process.env.BASE_URL);
         console.log("APP_BASE_URL =", process.env.APP_BASE_URL);
         console.log("HOST =", `${req.protocol}://${req.get("host")}`);
@@ -626,9 +677,7 @@ ${showButtons ? `
     <a href="${approveUrl}" style="background:#16a34a;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;margin-right:10px;">
         ✅ APPROVE
     </a>
-    <a href="${rejectUrl}" style="background:#dc2626;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
-        ❌ REJECT
-    </a>
+
 </td>
 </tr>
 ` : ''}
@@ -1437,7 +1486,9 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     normalizeEmailList(getValueIgnoreCase(head, ["email", "Email", "EMAIL"])).length > 0
                 );
 
-                const ccEmails = getCcEmailListFromHeads(secHeads);
+                const sectionWiseCcEmails = getCcEmailListFromHeads(secHeads);
+                const globalCcEmails = await getGlobalCcEmailsFromDb();
+                const ccEmails = mergeUniqueEmails(sectionWiseCcEmails, globalCcEmails);
 
                 if (approvalHeads.length === 0) {
                     console.log(
@@ -1676,7 +1727,9 @@ ${showButtons ? `
                 }
 
                 console.log(`[UPLOAD-EMAIL] For section ${secName}, secHeads rows: ${secHeads.length}, approvalHeads: ${approvalHeads.length}`);
-                console.log(`[UPLOAD-EMAIL] For section ${secName}, ccEmails extracted:`, ccEmails);
+                console.log(`[UPLOAD-EMAIL] For section ${secName}, section-wise CC extracted:`, sectionWiseCcEmails);
+                console.log(`[UPLOAD-EMAIL] For section ${secName}, global CC extracted:`, globalCcEmails);
+                console.log(`[UPLOAD-EMAIL] For section ${secName}, final CC extracted:`, ccEmails);
 
                 if (ccEmails.length > 0) {
                     const ccRecipientName = getValueIgnoreCase(secHeads[0], ["name", "Name", "NAME"]) || "Section Head";

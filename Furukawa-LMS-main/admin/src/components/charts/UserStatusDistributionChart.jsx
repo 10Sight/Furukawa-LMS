@@ -111,7 +111,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                 <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2 text-lg">
                         <IconUsers className="h-5 w-5 text-indigo-600" />
-                        User Status Distribution
+                        DOJO Candidate Attendance Status 
                     </CardTitle>
                     <CardDescription>
                         Attendance and exit status — Dojo Users

@@ -303,7 +303,7 @@ const TestPaperPassChart = () => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconCertificate className="h-5 w-5 text-blue-600" />
-                            Comprehensive Test Analytics
+                            DOJO Candidates Test Analytics
                         </CardTitle>
                         <CardDescription>
                             Date-wise pass / fail performance for Theoretical and Practical tests

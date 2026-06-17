@@ -91,14 +91,15 @@ async function fetchDeptSections(dbPool) {
 // =================================================
 // STEP 2: Fetch required headcount from requirements
 // =================================================
-async function fetchRequirements(dbPool, monthName, yearVal) {
+async function fetchRequirements(dbPool, monthName, yearVal, reportDay = 1) {
+    const reqColumn = reportDay <= 15 ? "prodPlanFN01" : "prodPlanFN02";
     const rows = (await dbPool.request()
         .input("monthName", monthName)
         .input("yearVal", yearVal)
         .query(`
             SELECT
                 UPPER(LTRIM(RTRIM(sectionCode))) AS secCode,
-                SUM(prodPlan) AS totalRequired
+                SUM(ISNULL(${reqColumn}, 0)) AS totalRequired
             FROM requirements
             WHERE monthName = @monthName AND year = @yearVal
             GROUP BY UPPER(LTRIM(RTRIM(sectionCode)))
@@ -368,11 +369,15 @@ export const getReportData = async () => {
     const dbPool = await poolPromise;
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
-    const monthName = MONTH_NAMES[today.getMonth()];
-    const yearVal = today.getFullYear();
+
+    const reportDate = new Date(today);
+    reportDate.setDate(reportDate.getDate() - 1); // Yesterday is the report date
+    const monthName = MONTH_NAMES[reportDate.getMonth()];
+    const yearVal = reportDate.getFullYear();
+    const reportDay = reportDate.getDate();
 
     const deptSections = await fetchDeptSections(dbPool);
-    const reqMap = await fetchRequirements(dbPool, monthName, yearVal);
+    const reqMap = await fetchRequirements(dbPool, monthName, yearVal, reportDay);
     const actualMap = await fetchActualMPBySection(dbPool);
     const availMap = await fetchAvailableMPBySection(dbPool, todayStr);
 
@@ -456,12 +461,24 @@ async function _buildManpowerBuffer() {
         const currentDate = now.toLocaleDateString("en-GB").replace(/\//g, "-");
         const monthHeader = now.toLocaleString("default", { month: "short", year: "numeric" });
 
+        // Calculate milestone date based on yesterday (reportDate)
+        const reportDate = new Date(now);
+        reportDate.setDate(reportDate.getDate() - 1);
+        const reportDay = reportDate.getDate();
+        const milestoneDateObj = new Date(reportDate);
+        if (reportDay <= 15) {
+            milestoneDateObj.setDate(1);
+        } else {
+            milestoneDateObj.setDate(16);
+        }
+        const milestoneDate = milestoneDateObj.toLocaleDateString("en-GB").replace(/\//g, "-");
+
         safeMerge(ws, "A1:D1");
         safeMerge(ws, "E1:F1");
         safeMerge(ws, "G1:J1");
 
         ws.getCell("A1").value = monthHeader;
-        ws.getCell("E1").value = currentDate;
+        ws.getCell("E1").value = milestoneDate;
         ws.getCell("G1").value = currentDate;
 
         ["A1", "E1", "G1"].forEach(ref =>
@@ -749,8 +766,12 @@ async function _buildManagementBuffer() {
         const dbPool = await poolPromise;
         const today = new Date();
         const todayStr = today.toISOString().slice(0, 10);
-        const monthName = MONTH_NAMES[today.getMonth()];
-        const yearVal = today.getFullYear();
+        
+        const reportDate = new Date(today);
+        reportDate.setDate(reportDate.getDate() - 1); // Yesterday is the report date
+        const monthName = MONTH_NAMES[reportDate.getMonth()];
+        const yearVal = reportDate.getFullYear();
+        const reportDay = reportDate.getDate();
 
         const secRows = (await dbPool.request().query(`
             SELECT
@@ -788,7 +809,7 @@ async function _buildManagementBuffer() {
             linesBySection.get(l.sectionId).push(l);
         });
 
-        const reqMap = await fetchRequirements(dbPool, monthName, yearVal);
+        const reqMap = await fetchRequirements(dbPool, monthName, yearVal, reportDay);
 
         const handSecRows = (await dbPool.request().query(`
             SELECT

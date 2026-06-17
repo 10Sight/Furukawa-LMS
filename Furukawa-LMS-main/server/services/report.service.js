@@ -474,14 +474,16 @@ async function _buildManpowerBuffer() {
         const milestoneDate = milestoneDateObj.toLocaleDateString("en-GB").replace(/\//g, "-");
 
         safeMerge(ws, "A1:D1");
-        safeMerge(ws, "E1:F1");
+        // Date should appear only above "Total Required" column (F), not above Direct/Indirect (E).
+        // So E1 is kept separate/blank and F1 contains the milestone date.
         safeMerge(ws, "G1:J1");
 
         ws.getCell("A1").value = monthHeader;
-        ws.getCell("E1").value = milestoneDate;
+        ws.getCell("E1").value = "";
+        ws.getCell("F1").value = milestoneDate;
         ws.getCell("G1").value = currentDate;
 
-        ["A1", "E1", "G1"].forEach(ref =>
+        ["A1", "E1", "F1", "G1"].forEach(ref =>
             styleCell(ws.getCell(ref), {
                 bold: true,
                 color: C.WHITE,
@@ -503,7 +505,7 @@ async function _buildManpowerBuffer() {
             "Available M/P",
             "Actual M/P",
             "Gap",
-            "OT"
+            "OT Mandays"
         ];
 
         hdr.eachCell({ includeEmpty: true }, cell =>
@@ -577,10 +579,17 @@ async function _buildManpowerBuffer() {
                 sections.forEach(item => {
                     const isInd = (item.category || "").toLowerCase() === "indirect";
                     const req = Number(item.totalRequired) || 0;
-                    const avail = Number(item.totalPresent) || 0;
-                    const actual = Number(item.totalAssigned) || 0;
+
+                    // Available M/P = total employees assigned to the section.
+                    // Actual M/P = attendance/present employees for the report date.
+                    const avail = Number(item.totalAssigned) || 0;
+                    const actual = Number(item.totalPresent) || 0;
+
                     const ot = parseFloat((Number(item.totalOtHrs) || 0).toFixed(2));
-                    const gap = avail - (actual - avail);
+
+                    // Gap = Actual M/P - Total Required
+                    // Actual M/P is attendance/present employees for the report date.
+                    const gap = actual - req;
 
                     if (isInd) {
                         iReq += req;
@@ -654,11 +663,13 @@ async function _buildManpowerBuffer() {
                     row.getCell(3).value = "";
                     row.getCell(4).value = "";
                     row.getCell(5).value = label;
-                    row.getCell(6).value = req !== 0 ? req : "";
-                    row.getCell(7).value = avail !== 0 ? avail : "";
-                    row.getCell(8).value = actual !== 0 ? actual : "";
-                    row.getCell(9).value = gap !== 0 ? gap : "";
-                    row.getCell(10).value = ot !== 0 ? parseFloat(ot.toFixed(2)) : "";
+                    // Subtotal rows should show 0 instead of blank when values are zero.
+                    // This applies to Direct / Indirect / Total rows.
+                    row.getCell(6).value = Number(req) || 0;
+                    row.getCell(7).value = Number(avail) || 0;
+                    row.getCell(8).value = Number(actual) || 0;
+                    row.getCell(9).value = Number(gap) || 0;
+                    row.getCell(10).value = parseFloat((Number(ot) || 0).toFixed(2));
 
                     for (let c = 3; c <= 10; c++) {
                         styleCell(row.getCell(c), {
@@ -922,7 +933,7 @@ async function _buildManagementBuffer() {
             G: "B-Shift\n(14:30 ~ 23:00)",
             H: "C-Shift\n(23:00 ~ 06:00)",
             I: "Total",
-            J: "Over Time\nhours",
+            J: "OT\nMandays",
             K: "Total man\nhours",
             L: "Headcount\nRequired VS\nActual in %",
             M: "Headcount\nHandover VS\nActual in %"
@@ -1138,7 +1149,7 @@ async function _buildManagementBuffer() {
                 const secReq = reqMap.get(sc) || 0;
                 const secHand = handSecMap.get(sec.sectionId) || 0;
                 const secAct = getNum(att, "totalPresent");
-                const secOT = getNum(att, "totalOtHrs");
+                const secOT = getNum(att, "totalOtHrs"); // OT Mandays = section employees OT sum / 8
                 const secHrs = getNum(att, "totalHrsWorked");
                 const secGen = getNum(att, "shiftGeneral");
                 const secA = getNum(att, "shiftA");
@@ -1211,7 +1222,7 @@ async function _buildManagementBuffer() {
                         const lB = getNum(latt, "shiftB");
                         const lC = getNum(latt, "shiftC");
                         const lAct = getNum(latt, "totalPresent");
-                        const lOT = getNum(latt, "totalOtHrs");
+                        const lOT = getNum(latt, "totalOtHrs"); // OT Mandays = line employees OT sum / 8
                         const lHrs = getNum(latt, "totalHrsWorked");
 
                         totReq += lReq;
@@ -1489,4 +1500,4 @@ export default {
     generateAndSend,
     generateAndSendManagementDaily,
     sendBothReports
-};
+};-1

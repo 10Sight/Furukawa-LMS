@@ -997,8 +997,11 @@ export const addRequirements = asyncHandler(async (req, res) => {
             const fn01 = safeNumber(readCell(row.getCell(m.fn01Col)));
             const fn02 = safeNumber(readCell(row.getCell(m.fn02Col)));
 
-            if (sp === null && fn01 === null && fn02 === null) continue;
-
+            // IMPORTANT:
+            // Earlier code skipped the month when Sales/FN01/FN02 were all blank/null.
+            // Requirement: if Section Code is present in Excel, the section must be saved
+            // even when all monthly values are 0/blank. So every detected month is inserted
+            // with 0 values. Explicit 0 and blank are both treated as 0 for upload rows.
             const pp = (fn01 || 0) + (fn02 || 0);
 
             rowsToProcess.push({
@@ -1083,9 +1086,36 @@ export const addRequirements = asyncHandler(async (req, res) => {
         );
     }
 
+    // Same Section Unicode should not be saved multiple times in one upload.
+    // If Excel contains the same Section Code more than once, the later row replaces the earlier row.
+    const uniqueRowsMap = new Map();
+    const duplicateUploadSections = new Set();
+
+    for (const row of validRowsToProcess) {
+        const uniqueKey = [
+            normalizeUnicode(row.sectionCode),
+            String(row.monthName || "").trim().toLowerCase(),
+            String(row.year || "").trim(),
+        ].join("|");
+
+        if (uniqueRowsMap.has(uniqueKey)) {
+            duplicateUploadSections.add(row.sectionCode);
+        }
+
+        uniqueRowsMap.set(uniqueKey, row);
+    }
+
+    if (duplicateUploadSections.size > 0) {
+        console.log(
+            `[UPLOAD] Duplicate Section Code rows found in Excel and replaced by latest row: ${Array.from(duplicateUploadSections).join(", ")}`
+        );
+    }
+
+    const finalRowsToProcess = Array.from(uniqueRowsMap.values());
+
     // Mutate rowsToProcess in-place so all downstream logic works without changes
     rowsToProcess.length = 0;
-    rowsToProcess.push(...validRowsToProcess);
+    rowsToProcess.push(...finalRowsToProcess);
 
     const conn = await poolPromise;
     const transaction = new mssql.Transaction(conn);
@@ -1128,7 +1158,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
         );
 
         const makeKey = (r) =>
-            `${r.srNo || ""}|${r.sectionCode || ""}|${r.lineCode || ""}|${r.monthName || ""}|${r.year || ""}`;
+            `${safeTrim(r.sectionCode).toLowerCase()}|${String(r.monthName || "").trim().toLowerCase()}|${r.year || ""}`;
 
         const existingMap = new Map();
 
@@ -1386,8 +1416,11 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     FROM section_heads sh
                     INNER JOIN sections s ON sh.sectionId = s.id
                     WHERE
-                        sh.email IS NOT NULL
-                        AND LTRIM(RTRIM(sh.email)) != ''
+                        (
+                            (sh.email IS NOT NULL AND LTRIM(RTRIM(sh.email)) != '')
+                            OR
+                            (sh.CCMail IS NOT NULL AND LTRIM(RTRIM(sh.CCMail)) != '')
+                        )
                         AND UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(?)))
                     `,
                     [secCode]
@@ -1395,12 +1428,22 @@ export const addRequirements = asyncHandler(async (req, res) => {
 
                 if (!secHeads || secHeads.length === 0) {
                     console.log(
-                        `[UPLOAD-EMAIL] No section head found for section: ${secName}`
+                        `[UPLOAD-EMAIL] No section head/CC mail found for section: ${secName}`
                     );
                     continue;
                 }
 
+                const approvalHeads = secHeads.filter((head) =>
+                    normalizeEmailList(getValueIgnoreCase(head, ["email", "Email", "EMAIL"])).length > 0
+                );
+
                 const ccEmails = getCcEmailListFromHeads(secHeads);
+
+                if (approvalHeads.length === 0) {
+                    console.log(
+                        `[UPLOAD-EMAIL] No section-head email found for section: ${secName}. CC notification will still be sent without buttons.`
+                    );
+                }
 
                 await executeSql(
                     `
@@ -1413,8 +1456,12 @@ export const addRequirements = asyncHandler(async (req, res) => {
                       AND ISNULL(approvalStatus, 'pending') = 'pending'
                     `,
                     [
-                        getValueIgnoreCase(secHeads[0], ["name", "Name", "NAME"]) || "Section Head",
-                        getValueIgnoreCase(secHeads[0], ["email", "Email", "EMAIL"]) || "",
+                        approvalHeads.length > 0
+                            ? (getValueIgnoreCase(approvalHeads[0], ["name", "Name", "NAME"]) || "Section Head")
+                            : "Section Head",
+                        approvalHeads.length > 0
+                            ? (getValueIgnoreCase(approvalHeads[0], ["email", "Email", "EMAIL"]) || "")
+                            : "",
                         uploadBatchId,
                         secCode,
                     ]
@@ -1465,16 +1512,18 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     .toString(36)
                     .substring(2, 10)}`.toUpperCase();
 
-                await createRequirementTokenSafe({
-                    token: tkn,
-                    uploadBatchId,
-                    sectionCode: secCode,
-                    sectionName: secName,
-                    recipientEmail: getValueIgnoreCase(secHeads[0], ["email", "Email", "EMAIL"]) || "",
-                    senderEmail: req.user?.email || "admin@furukawa.com",
-                    expiresAt: new Date(Date.now() + 24 * 3600000),
-                    status: "pending",
-                });
+                if (approvalHeads.length > 0) {
+                    await createRequirementTokenSafe({
+                        token: tkn,
+                        uploadBatchId,
+                        sectionCode: secCode,
+                        sectionName: secName,
+                        recipientEmail: getValueIgnoreCase(approvalHeads[0], ["email", "Email", "EMAIL"]) || "",
+                        senderEmail: req.user?.email || "admin@furukawa.com",
+                        expiresAt: new Date(Date.now() + 24 * 3600000),
+                        status: "pending",
+                    });
+                }
 
                 const BASE_URL =
                     process.env.BASE_URL ||
@@ -1607,42 +1656,41 @@ ${showButtons ? `
 </body>
 </html>`;
 
-                for (const head of secHeads) {
+                for (const head of approvalHeads) {
                     const recipientName = getValueIgnoreCase(head, ["name", "Name", "NAME"]) || "Section Head";
                     const email = getValueIgnoreCase(head, ["email", "Email", "EMAIL"]);
                     const htmlMsgWithButtons = getHtmlMsg(recipientName, true);
 
-                    if (email) {
-                        await sendMail(email, subject, htmlMsgWithButtons, [], "")
-                            .then(() =>
-                                console.log(
-                                    `[UPLOAD-EMAIL] Sent to ${email} for section: ${secName}`
-                                )
+                    await sendMail(email, subject, htmlMsgWithButtons, [], "")
+                        .then(() =>
+                            console.log(
+                                `[UPLOAD-EMAIL] Sent approval mail with buttons to ${email} for section: ${secName}`
                             )
-                            .catch((e) =>
-                                console.error(
-                                    `[UPLOAD-EMAIL] Failed for ${email}:`,
-                                    e.message
-                                )
-                            );
-                    } else {
-                        console.error(`[UPLOAD-EMAIL] Email is missing/undefined for section head: ${recipientName}`);
-                    }
+                        )
+                        .catch((e) =>
+                            console.error(
+                                `[UPLOAD-EMAIL] Failed for approval head ${email}:`,
+                                e.message
+                            )
+                        );
                 }
 
-                console.log(`[UPLOAD-EMAIL] For section ${secName}, secHeads count: ${secHeads.length}`);
+                console.log(`[UPLOAD-EMAIL] For section ${secName}, secHeads rows: ${secHeads.length}, approvalHeads: ${approvalHeads.length}`);
                 console.log(`[UPLOAD-EMAIL] For section ${secName}, ccEmails extracted:`, ccEmails);
 
                 if (ccEmails.length > 0) {
                     const ccRecipientName = getValueIgnoreCase(secHeads[0], ["name", "Name", "NAME"]) || "Section Head";
                     const htmlMsgWithoutButtons = getHtmlMsg(`${ccRecipientName} (CC)`, false);
 
+                    // CC recipients get only an information mail. No approve/reject buttons.
                     await sendMailToMultipleRecipients(
                         ccEmails,
                         subject,
                         htmlMsgWithoutButtons,
                         `[UPLOAD-EMAIL-CC][${secName}]`
                     );
+                } else {
+                    console.log(`[UPLOAD-EMAIL-CC][${secName}] No CC email configured.`);
                 }
             }
         } catch (emailErr) {

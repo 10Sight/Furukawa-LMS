@@ -88,9 +88,8 @@ const normalizeMonth = (m) => {
 
 const makeGroupKey = (req) => {
   const sectionCode = req?.sectionCode || "";
-  const lineCode = req?.lineCode || "";
   const year = req?.year || "";
-  return `${sectionCode}||${lineCode}||${year}`;
+  return `${sectionCode}||${year}`;
 };
 
 const normalizeApprovalStatus = (status, isActive) => {
@@ -590,13 +589,19 @@ export default function SetRequirements() {
       }
 
       const clientErrors = [];
-      for (let i = headerRowIdx + 2; i < jsonData.length; i++) {
+      for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0) continue;
 
         const rawSectionCode = row[sectionCodeIdx] ? String(row[sectionCodeIdx]).trim() : "";
+        const rawSectionName = sectionNameIdx !== -1 && row[sectionNameIdx] ? String(row[sectionNameIdx]).trim() : "";
 
         if (rawSectionCode && rawSectionCode.toLowerCase() === "section code") continue;
+
+        // Excel has 2 sub-header rows after month headers:
+        // Row 2 = Sales Plan / Prod Plan, Row 3 = FN01 / FN02.
+        // Those rows have month text but no Section Code/Section name, so do not validate them as data rows.
+        if (!rawSectionCode && !rawSectionName) continue;
 
         const hasData = row.some(
           (val) => val !== null && val !== "" && val !== undefined
@@ -625,7 +630,7 @@ export default function SetRequirements() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      toast.success("Requirements uploaded successfully. Approval mail sent to section head.");
+      toast.success("Requirements uploaded successfully. Approval mail sent to section head and CC notification sent where configured.");
       setIsUploadOpen(false);
       setSelectedFile(null);
       await fetchAllRequirements();
@@ -1004,7 +1009,6 @@ export default function SetRequirements() {
               <tr>
                 <th className="px-3 py-3 sticky left-0 z-40 bg-slate-50 border-r border-slate-200" style={{ width: "140px", minWidth: "140px" }}>Section Code</th>
                 <th className="px-3 py-3 sticky left-[140px] z-40 bg-slate-50 border-r-2 border-slate-300" style={{ width: "180px", minWidth: "180px" }}>Section Name</th>
-                <th className="px-3 py-3 border-r border-slate-200" style={{ width: "140px", minWidth: "140px" }}>Line Code</th>
                 <th className="px-3 py-3 border-r border-slate-200" style={{ width: "220px", minWidth: "220px" }}>Line Description</th>
                 <th className="px-3 py-3 text-center" style={{ width: "90px", minWidth: "90px" }}>Year</th>
                 <th className="px-3 py-3 text-center border-l border-slate-200" style={{ width: "160px", minWidth: "160px" }}>Approval</th>
@@ -1043,7 +1047,7 @@ export default function SetRequirements() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={20} className="px-6 py-12 text-center">
+                  <td colSpan={18} className="px-6 py-12 text-center">
                     <div className="flex justify-center items-center gap-2 text-slate-500">
                       <Loader2 className="h-5 w-5 animate-spin" /> Loading...
                     </div>
@@ -1051,7 +1055,7 @@ export default function SetRequirements() {
                 </tr>
               ) : pagedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={20} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={18} className="px-6 py-12 text-center text-slate-400">
                     No matching records found.
                   </td>
                 </tr>
@@ -1098,9 +1102,6 @@ export default function SetRequirements() {
                         )}
                       </td>
 
-                      <td className="px-3 py-3 border-r border-slate-200">
-                        <span className="text-xs truncate block">{r.lineCode || "-"}</span>
-                      </td>
 
                       <td className="px-3 py-3 border-r border-slate-200">
                         <span className="text-xs truncate block">{r.lineDescription || "-"}</span>
@@ -1142,9 +1143,6 @@ export default function SetRequirements() {
                         const fn02 = rawFn02 !== null ? rawFn02 : (pp !== null ? 0 : null);
 
                         const hasAnyData = sp !== null || fn01 !== null || fn02 !== null || pp !== null;
-                        const computedTotalPP = (rawFn01 !== null || rawFn02 !== null)
-                          ? ((rawFn01 || 0) + (rawFn02 || 0))
-                          : (pp !== null ? pp : 0);
 
                         return (
                           <td
@@ -1175,9 +1173,6 @@ export default function SetRequirements() {
                                 </div>
 
                                 <div className="p-1.5 flex flex-col items-center gap-1">
-                                  <div className="inline-flex items-center justify-center rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 leading-none">
-                                    PP: {computedTotalPP}
-                                  </div>
                                   <MonthStatusLabel cell={cell} />
                                 </div>
                               </div>
@@ -1352,7 +1347,7 @@ export default function SetRequirements() {
 
           {editForm && (
             <div className="p-6 grid gap-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Section Code</Label>
                   <Input disabled value={editForm.sectionCode || ""} />
@@ -1363,10 +1358,6 @@ export default function SetRequirements() {
                   <Input disabled value={editForm.sectionName || ""} />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Line Code</Label>
-                  <Input disabled value={editForm.lineCode || ""} />
-                </div>
 
                 <div className="space-y-2">
                   <Label>Year</Label>
@@ -1390,10 +1381,6 @@ export default function SetRequirements() {
                     const ppVal = editForm?.monthData?.[m]?.prodPlan ?? null;
                     const fn01Val = editForm?.monthData?.[m]?.prodPlanFN01 ?? null;
                     const fn02Val = editForm?.monthData?.[m]?.prodPlanFN02 ?? null;
-
-                    const computedTotalPP = (fn01Val !== null || fn02Val !== null)
-                      ? ((fn01Val || 0) + (fn02Val || 0))
-                      : (ppVal || 0);
 
                     return (
                       <div key={m} className="space-y-3 border border-slate-200 rounded-md p-3 bg-white">
@@ -1441,9 +1428,6 @@ export default function SetRequirements() {
                                 }
                               />
                             </div>
-                          </div>
-                          <div className="text-[11px] text-slate-500 font-bold mt-2 text-center">
-                            Total PP: <span className="text-slate-900 font-extrabold text-xs">{computedTotalPP}</span>
                           </div>
                         </div>
                       </div>

@@ -254,7 +254,9 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                   <div className="flex gap-2 items-center">
                     <span className="min-w-[120px] text-black">Process Name :</span>
                     <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold">
-                      {attempt.student?.subSectionName || attempt.quiz?.title || "Visual"}
+                      {attempt.quiz?.subSectionNames && attempt.quiz.subSectionNames.length > 0
+                        ? attempt.quiz.subSectionNames.join(", ")
+                        : attempt.student?.subSectionName || attempt.quiz?.title || "Visual"}
                     </span>
                   </div>
                   <div className="flex gap-2 items-center">

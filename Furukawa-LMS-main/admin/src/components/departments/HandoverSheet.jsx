@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,44 @@ const INTERVIEW_OPTIONS = [
     { value: "NA", label: "Not Required" },
 ];
 
+const AutoResizeInput = ({ value = "", onChange, className = "", minWidth = 40, ...rest }) => {
+    const mirrorRef = useRef(null);
+    const inputRef = useRef(null);
+
+    useLayoutEffect(() => {
+        if (mirrorRef.current && inputRef.current) {
+            const w = Math.max(mirrorRef.current.scrollWidth + 8, minWidth);
+            inputRef.current.style.width = w + 'px';
+        }
+    }, [value, minWidth]);
+
+    return (
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <span
+                ref={mirrorRef}
+                style={{
+                    visibility: 'hidden',
+                    position: 'absolute',
+                    whiteSpace: 'pre',
+                    fontSize: 'inherit',
+                    fontFamily: 'inherit',
+                    padding: '0 2px',
+                    pointerEvents: 'none',
+                }}
+                aria-hidden
+            >{value || ' '}</span>
+            <input
+                ref={inputRef}
+                value={value}
+                onChange={onChange}
+                className={className}
+                style={{ minWidth }}
+                {...rest}
+            />
+        </span>
+    );
+};
+
 const InterviewSelect = ({ value, onChange }) => (
     <Select value={value || ""} onValueChange={onChange}>
         <SelectTrigger className="h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent">
@@ -44,7 +82,7 @@ const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, classNam
 
     return (
         <Select value={value || ""} onValueChange={onValueChange}>
-            <SelectTrigger className={`h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent ${className}`}>
+            <SelectTrigger className={`h-7 w-auto min-w-[100px] border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent [&>span]:line-clamp-none [&>span]:whitespace-nowrap ${className}`}>
                 <SelectValue placeholder="Process" />
             </SelectTrigger>
             <SelectContent>
@@ -62,7 +100,7 @@ const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, classNam
     );
 };
 
-const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false }) => {
+const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false, date: propDate, setDate: propSetDate }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const hasHandoverBypass = authUser?.customRole?.permissions?.includes('dojo:handover_sheet');
@@ -73,7 +111,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const canEditLayout = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_layout');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [localDate, setLocalDate] = useState(new Date().toISOString().split('T')[0]);
+    const date = propDate !== undefined ? propDate : localDate;
+    const setDate = propSetDate !== undefined ? propSetDate : setLocalDate;
     const [entries, setEntries] = useState([]); // Array of objects matching table rows
     const [signatures, setSignatures] = useState({
         educationCell: "",
@@ -690,7 +730,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                     <Button
                                         variant="outline"
                                         className="border-green-600 text-green-600 hover:bg-green-50"
-                                        onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
+                                        onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId, date })}
                                     >
                                         <IconDownload className="h-4 w-4 mr-2" />
                                         Export
@@ -724,7 +764,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                         </div>
 
                         {/* Main Table */}
-                        <div className="border border-gray-300">
+                        <div className="border border-gray-300 overflow-x-auto">
                             <table className="w-full text-xs border-collapse">
                                 <thead>
                                     <tr className="bg-gray-100">
@@ -809,11 +849,11 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                     : entry[col.field]}
                                                             </div>
                                                         ) : (
-                                                            <Input
-                                                                value={entry[col.field] || ""}
+                                                            <AutoResizeInput
+                                                                value={(entry[col.field] || "").toString()}
                                                                 onChange={(e) => handleEntryChange(index, col.field, e.target.value)}
-                                                                className="h-7 min-w-[20px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                                size={Math.max((entry[col.field] || "").toString().length || 1, 5)}
+                                                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
+                                                                minWidth={40}
                                                             />
                                                         )}
                                                     </td>
@@ -847,11 +887,11 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                     </td>
                                                     <td className="border p-1 text-center">
                                                         {canManage ? (
-                                                            <Input
+                                                            <AutoResizeInput
                                                                 value={entry.empCode || ""}
                                                                 onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
-                                                                className="h-7 min-w-[40px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                                size={Math.max((entry.empCode || "").length || 1, 8)}
+                                                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
+                                                                minWidth={60}
                                                             />
                                                         ) : (
                                                             <div className="p-1 text-center">{entry.empCode}</div>
@@ -859,11 +899,11 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                     </td>
                                                     <td className="border p-1 text-center">
                                                         {canManage ? (
-                                                            <Input
-                                                                value={entry.marks}
+                                                            <AutoResizeInput
+                                                                value={entry.marks || ""}
                                                                 onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
-                                                                className="h-7 min-w-[30px] text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 inline-block w-auto"
-                                                                size={Math.max((entry.marks || "").toString().length || 1, 4)}
+                                                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
+                                                                minWidth={40}
                                                             />
                                                         ) : (
                                                             <div className="p-1 text-center">{entry.marks}</div>
@@ -1023,7 +1063,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                         <div className="flex justify-end mt-8 no-print gap-4">
                             <Button
                                 variant="outline"
-                                onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId })}
+                                onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId, date })}
                                 className="border-green-600 text-green-600 hover:bg-green-50"
                             >
                                 Export to Excel

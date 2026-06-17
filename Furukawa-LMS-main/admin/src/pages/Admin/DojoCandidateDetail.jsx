@@ -131,7 +131,6 @@ const DojoCandidateDetail = () => {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">{candidate.fullName}</h1>
               <div className="flex items-center gap-2 mt-1">
-                <p className="text-muted-foreground">@{candidate.userName}</p>
                 <Badge variant={candidate.isTemporary ? "warning" : "success"} className="px-2 py-0 h-5 text-[10px]">
                   {candidate.isTemporary ? "Dojo Candidate" : "Permanent Employee"}
                 </Badge>
@@ -214,17 +213,19 @@ const DojoCandidateDetail = () => {
                 <InfoItem label="Email Address" icon={IconMail} value={candidate.email} />
                 <InfoItem label="Mobile Number" icon={IconPhone} value={candidate.phoneNumber} />
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Temporary ID</label>
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Employee ID</label>
                   <div className="text-sm font-medium flex items-center gap-2">
-                    <Badge variant="outline" className="bg-white border-blue-200 font-mono text-blue-700">{candidate.empId}</Badge>
+                    <Badge variant="outline" className="bg-white border-blue-200 font-mono text-blue-700">{candidate.empId || "—"}</Badge>
                   </div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Employee Base Code</label>
-                  <div className="text-sm font-medium flex items-center gap-2">
-                    <Badge variant="secondary" className="bg-slate-100 font-mono">{candidate.userName}</Badge>
+                {candidate.idCard && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Card No.</label>
+                    <div className="text-sm font-medium flex items-center gap-2">
+                      <Badge variant="outline" className="bg-white border-slate-200 font-mono text-slate-700">{candidate.idCard}</Badge>
+                    </div>
                   </div>
-                </div>
+                )}
                 <InfoItem label="Designation" value={candidate.designation || "Candidate"} highlight />
                 <InfoItem label="Contractor" icon={IconBuilding} value={candidate.contractor} />
               </CardContent>

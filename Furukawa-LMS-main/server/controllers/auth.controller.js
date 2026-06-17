@@ -402,14 +402,14 @@ export const dojoRegister = asyncHandler(async (req, res) => {
   let {
     fullName, userName, password, email, phoneNumber, unit,
     gender, dob, education, district, state, pin, busRoute, contractor, designation,
-    departmentId, sectionId, expectedHandover, fatherHusbandName, empId
+    departmentId, sectionId, expectedHandover, fatherHusbandName, empId, idCard
   } = req.body;
 
-  if (!fullName || !userName || !password || !unit) {
-    throw new ApiError("All fields are required (Name, Username, Password, Unit)", 400);
+  if (!fullName || !empId || !unit) {
+    throw new ApiError("All fields are required (Name, Employee Code, Unit)", 400);
   }
 
-  userName = userName.toLowerCase();
+  userName = empId;
 
   const usernameExists = await User.findOne({ userName });
   if (usernameExists) throw new ApiError("Username already in use", 400);
@@ -426,6 +426,7 @@ export const dojoRegister = asyncHandler(async (req, res) => {
     userName,
     password,
     empId: empId || null,
+    idCard: idCard || null,
     email: email ? email.toLowerCase() : null,
     phoneNumber: phoneNumber || null,
     role: "STUDENT",

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
     useDojoRegisterMutation,
     useGetTemporaryUsersQuery,
     useLazyGetTemporaryUsersQuery,
-    useLazyGetNextTemporaryIdQuery,
     useUpdateUserMutation,
     useDeleteUserMutation,
     useImportDojoCandidatesMutation,
@@ -132,7 +131,7 @@ const DojoHiring = () => {
     const [genderFilter, setGenderFilter] = useState("ALL");
     
     const [formData, setFormData] = useState({
-        fullName: "", empId: "", tempId: "", fatherHusbandName: "", gender: "MALE",
+        fullName: "", empId: "", idCard: "", fatherHusbandName: "", gender: "MALE",
         designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0],
         departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
         education: "", email: "", phoneNumber: "", district: "", state: "",
@@ -148,7 +147,6 @@ const DojoHiring = () => {
         gender: genderFilter !== "ALL" ? genderFilter : "",
         today: activeTab === "today" ? "true" : "false"
     });
-    const [triggerNextId] = useLazyGetNextTemporaryIdQuery();
     const [dojoRegister, { isLoading: isCreating }] = useDojoRegisterMutation();
     const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation();
     const [deleteUser, { isLoading: isDeleting }] = useDeleteUserMutation();
@@ -173,29 +171,6 @@ const DojoHiring = () => {
     useEffect(() => {
         setSelectedRows(new Set());
     }, [currentPage, searchTerm, genderFilter, activeTab]);
-
-    useEffect(() => {
-        const generateId = async () => {
-            // Only generate ID if we are creating a new user, not editing
-            if (!selectedUser && formData.fullName && formData.empId) {
-                const namePart = formData.fullName.trim().substring(0, 3).toUpperCase();
-                const empPart = formData.empId.trim().toUpperCase();
-                const prefix = `TEMP${namePart}${empPart}`;
-                
-                try {
-                    const res = await triggerNextId(prefix).unwrap();
-                    setFormData(prev => ({ ...prev, tempId: res.data.nextId }));
-                } catch (e) {
-                    console.error("Failed to generate next ID", e);
-                }
-            } else if (!selectedUser) {
-                setFormData(prev => ({ ...prev, tempId: "" }));
-            }
-        };
-
-        const timer = setTimeout(generateId, 500);
-        return () => clearTimeout(timer);
-    }, [formData.fullName, formData.empId, triggerNextId, selectedUser]);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -222,7 +197,7 @@ const DojoHiring = () => {
                 const payload = {
                     id: selectedUser.id,
                     ...formData,
-                    empId: formData.tempId,
+                    empId: formData.empId,
                     contractorId: formData.contractorId ? Number(formData.contractorId) : null,
                 };
                 await updateUser(payload).unwrap();
@@ -231,12 +206,12 @@ const DojoHiring = () => {
                 // Create mode
                 const payload = {
                     ...formData,
-                    empId: formData.tempId,
+                    empId: formData.empId,
                     isEmployee: true,
                     isTemporary: true,
                     role: "STUDENT",
                     status: "PRESENT",
-                    password: formData.tempId,
+                    password: formData.empId,
                     userName: formData.empId,
                     contractorId: formData.contractorId ? Number(formData.contractorId) : null,
                 };
@@ -386,8 +361,8 @@ const DojoHiring = () => {
 
             worksheet.columns = [
                 { header: "Candidate Name", key: "fullName", width: 25 },
-                { header: "Employee Code", key: "userName", width: 20 },
-                { header: "Temporary ID", key: "empId", width: 20 },
+                { header: "Employee ID", key: "empId", width: 20 },
+                { header: "Card No.", key: "idCard", width: 20 },
                 { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
                 { header: "Gender", key: "gender", width: 10 },
                 { header: "Designation", key: "designation", width: 20 },
@@ -415,8 +390,8 @@ const DojoHiring = () => {
             allCandidates.forEach((candidate) => {
                 worksheet.addRow({
                     fullName: candidate.fullName || "",
-                    userName: candidate.userName || "",
                     empId: candidate.empId || "",
+                    idCard: candidate.idCard || "",
                     fatherHusbandName: candidate.fatherHusbandName || "",
                     gender: candidate.gender || "",
                     designation: candidate.designation || "",
@@ -473,8 +448,8 @@ const DojoHiring = () => {
 
         setFormData({
             fullName: user.fullName || "",
-            empId: user.userName || "", // userName was used as empId in registration
-            tempId: user.empId || "",
+            empId: user.empId || "",
+            idCard: user.idCard || "",
             fatherHusbandName: user.fatherHusbandName || "",
             gender: user.gender || "MALE",
             designation: user.designation || "",
@@ -507,7 +482,7 @@ const DojoHiring = () => {
         setIsAddModalOpen(false);
         setSelectedUser(null);
         setFormData({
-            fullName: "", empId: "", tempId: "", fatherHusbandName: "", gender: "MALE",
+            fullName: "", empId: "", idCard: "", fatherHusbandName: "", gender: "MALE",
             designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0],
             departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
             education: "", email: "", phoneNumber: "", district: "", state: "",
@@ -700,12 +675,15 @@ const DojoHiring = () => {
                                                 aria-label="Select all"
                                             />
                                         </TableHead>
-                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Candidate Details</TableHead>
-                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Temporary ID</TableHead>
-                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Professional Info</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Candidate Name</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Employee ID / Card No</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Designation</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Department</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Section</TableHead>
                                         <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Status</TableHead>
-                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Contact</TableHead>
-                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Joining / Leaving</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Contact Detail</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Joining Date</TableHead>
+                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Leaving Date</TableHead>
                                         <TableHead className="pr-6 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -736,26 +714,35 @@ const DojoHiring = () => {
                                                         </Avatar>
                                                         <div>
                                                             <div className="font-bold text-slate-900 leading-tight">{user.fullName}</div>
-                                                            <div className="text-slate-400 text-xs font-medium uppercase tracking-tight">Code: {user.userName || 'N/A'}</div>
                                                         </div>
                                                     </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge variant="secondary" className="font-mono text-blue-700 bg-blue-50 border-blue-100/50 px-2 py-1 rounded text-xs font-black">
-                                                        {user.empId}
-                                                    </Badge>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="space-y-1">
-                                                        <div className="text-slate-700 font-bold text-sm">{user.designation || "Operator"}</div>
-                                                        <div className="flex items-center gap-1 text-slate-400 text-[10px] font-black uppercase">
-                                                            <IconBuilding className="w-3 h-3" />
-                                                            {user.deptName || "Not Assigned"}
-                                                        </div>
+                                                        <Badge variant="secondary" className="font-mono text-blue-700 bg-blue-50 border-blue-100/50 px-2 py-1 rounded text-xs font-black">
+                                                            {user.empId || "—"}
+                                                        </Badge>
+                                                        {user.idCard && (
+                                                            <div className="text-[10px] text-slate-500 font-mono font-medium pl-0.5">
+                                                                Card: {user.idCard}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </TableCell>
+                                                <TableCell>
+                                                    <div className="text-slate-700 font-bold text-sm">{user.designation || "—"}</div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="flex items-center gap-1.5 text-slate-700 text-sm font-bold">
+                                                        <IconBuilding className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                        {user.deptName || "—"}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="text-slate-600 text-sm">{user.sectionName || "—"}</div>
+                                                </TableCell>
                                                 <TableCell className="text-center">
-                                                    <Badge 
+                                                    <Badge
                                                         className={`font-black text-[10px] uppercase px-2 py-0.5 rounded-full border ${
                                                             user.status === "PRESENT" ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
                                                             user.status === "LEAVE" ? "bg-amber-50 text-amber-700 border-amber-100" :
@@ -769,40 +756,31 @@ const DojoHiring = () => {
                                                     <div className="space-y-1 text-xs">
                                                         <div className="flex items-center gap-2 text-slate-600 font-bold">
                                                             <IconPhone className="w-3.5 h-3.5 text-slate-300" />
-                                                            {user.phoneNumber || "-"}
+                                                            {user.phoneNumber || "—"}
                                                         </div>
                                                         <div className="flex items-center gap-2 text-slate-400 font-medium">
                                                             <IconMapPin className="w-3.5 h-3.5 text-slate-300" />
-                                                            {user.district || user.state || "N/A"}
+                                                            {user.district || user.state || "—"}
                                                         </div>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div className="flex flex-col">
-                                                        {user.status === "LEFT" ? (
-                                                            user.leavingDate ? (
-                                                                <>
-                                                                    <div className="text-rose-600 font-bold text-sm">
-                                                                        {new Date(user.leavingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                                                    </div>
-                                                                    <div className="text-[10px] text-rose-400 font-black uppercase">Left</div>
-                                                                </>
-                                                            ) : (
-                                                                <span className="text-slate-400 text-xs italic">Date not set</span>
-                                                            )
-                                                        ) : (
-                                                            user.joiningDate ? (
-                                                                <>
-                                                                    <div className="text-slate-700 font-bold text-sm">
-                                                                        {new Date(user.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                                                    </div>
-                                                                    <div className="text-[10px] text-slate-400 font-black uppercase">Joined</div>
-                                                                </>
-                                                            ) : (
-                                                                <span className="text-slate-400 text-xs">N/A</span>
-                                                            )
-                                                        )}
-                                                    </div>
+                                                    {user.joiningDate ? (
+                                                        <div className="text-slate-700 font-bold text-sm">
+                                                            {new Date(user.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-400 text-xs">—</span>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {user.leavingDate ? (
+                                                        <div className="text-rose-600 font-bold text-sm">
+                                                            {new Date(user.leavingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-400 text-xs">—</span>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell className="pr-6 text-right" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -837,7 +815,7 @@ const DojoHiring = () => {
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="text-center py-32">
+                                            <TableCell colSpan={11} className="text-center py-32">
                                                 <div className="flex flex-col items-center gap-3 opacity-30">
                                                     <IconUsers className="w-16 h-16" />
                                                     <div className="space-y-1">
@@ -933,24 +911,23 @@ const DojoHiring = () => {
                             />
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="empId">Employee Base Code *</Label>
-                            <Input 
+                            <Label htmlFor="empId">Employee Code *</Label>
+                            <Input
                                 id="empId"
-                                name="empId" 
-                                value={formData.empId} 
-                                onChange={handleInputChange} 
-                                placeholder="E-code Prefix" 
+                                name="empId"
+                                value={formData.empId}
+                                onChange={handleInputChange}
+                                placeholder="e.g. AS000233"
                             />
                         </div>
-                        <div className="md:col-span-2 grid gap-2">
-                            <Label htmlFor="tempId" className="text-blue-700 font-bold">System Generated ID</Label>
-                            <Input 
-                                id="tempId"
-                                name="tempId" 
-                                value={formData.tempId} 
-                                readOnly 
-                                className="bg-blue-50/50 border-blue-200 font-mono text-blue-700 font-bold h-12 text-lg text-center" 
-                                placeholder="Awaiting Details..."
+                        <div className="grid gap-2">
+                            <Label htmlFor="idCard">Card No</Label>
+                            <Input
+                                id="idCard"
+                                name="idCard"
+                                value={formData.idCard}
+                                onChange={handleInputChange}
+                                placeholder="e.g. 00C0233"
                             />
                         </div>
 
@@ -1230,6 +1207,7 @@ const DojoHiring = () => {
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-blue-700 font-mono bg-white/50 p-2 rounded-lg">
                                     <span>- Employee Code *</span>
                                     <span>- Name *</span>
+                                    <span>- Card No.</span>
                                     <span>- Mobile No</span>
                                     <span>- Gender</span>
                                     <span>- Contractor</span>

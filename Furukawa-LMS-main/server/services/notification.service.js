@@ -6,6 +6,7 @@ import User from "../models/auth.model.js";
 import Machine from "../models/machine.model.js";
 import Line from "../models/line.model.js";
 import SubSection from "../models/subSection.model.js";
+import Section from "../models/section.model.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
@@ -92,9 +93,9 @@ class NotificationService {
                         <p style="font-weight: bold; color: #000000;">Safety First!</p>
                         <p><strong>Sub:</strong> (Daily 5M Recording - ${deptName} (${date}))</p>
                         <p>Please find the attached Daily 5M Recording sheet for <strong>${deptName}</strong> on <strong>${date}</strong>.</p>
-                        
+
                         <div style="margin: 25px 0;">
-                            <a href="${reviewUrl}" 
+                            <a href="${reviewUrl}"
                                style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
                                 Review & Approve Recording
                             </a>
@@ -104,6 +105,29 @@ class NotificationService {
                         <p>Regards,<br/><strong>FME Digital Portal</strong></p>
                     </div>
                 `;
+            }
+
+            if (formName === "Handover Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const sheetSectionId = formData?.sectionId || "";
+                const sheetDate = formData?.date || "";
+                const reviewUrl = `${adminUrl}/admin/handover-sheet?dept=${departmentId}&section=${sheetSectionId}&date=${sheetDate}`;
+
+                let sectionName = "";
+                if (sheetSectionId) {
+                    try {
+                        const sec = await Section.findById(sheetSectionId);
+                        sectionName = sec?.name || "";
+                    } catch (_) { /* non-critical */ }
+                }
+
+                htmlMessage = emailTemplates.generateHandoverSheetEmail({
+                    departmentName: deptName,
+                    sectionName,
+                    date: sheetDate,
+                    entries: formData?.entries || [],
+                    portalUrl: reviewUrl
+                });
             }
 
 
@@ -356,14 +380,21 @@ class NotificationService {
     }
 
     static async _fillHandoverSheet(worksheet, departmentId, formData) {
+        const _interviewLabel = (val) => {
+            if (val === 'OK') return '✓ OK';
+            if (val === 'CROSS') return '✗ Cross';
+            if (val === 'NA') return 'Not Required';
+            return val || '';
+        };
+
         // --- Header Section ---
-        worksheet.mergeCells('A1:F1');
+        worksheet.mergeCells('A1:H1');
         const companyCell = worksheet.getCell('A1');
         companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
         companyCell.font = { bold: true, size: 10 };
         companyCell.alignment = { horizontal: 'right' };
 
-        worksheet.mergeCells('A2:F2');
+        worksheet.mergeCells('A2:H2');
         const titleCell = worksheet.getCell('A2');
         titleCell.value = 'HANDOVER SHEET';
         titleCell.font = { bold: true, size: 16 };
@@ -371,12 +402,12 @@ class NotificationService {
 
         // --- Metadata Section ---
         const meta = formData.metadata || {};
-        worksheet.addRow(['DATE:', formData.date || '', '', 'SECTION:', meta.section || '', '']);
+        worksheet.addRow(['DATE:', formData.date || '', '', 'SECTION:', meta.section || '', '', '', '']);
         worksheet.mergeCells(worksheet.lastRow.number, 1, worksheet.lastRow.number, 1);
         worksheet.mergeCells(worksheet.lastRow.number, 4, worksheet.lastRow.number, 4);
 
         // --- Main Table Headers ---
-        const headerRow = worksheet.addRow(['SN.', 'Employee Name', 'Emp. Code', 'Marks', 'Process', 'Mentor']);
+        const headerRow = worksheet.addRow(['SN.', 'Employee Name', 'Emp. Code', 'Marks', 'Process', 'Mentor', '1st Interview', '2nd Practical Interview']);
         headerRow.font = { bold: true };
         headerRow.eachCell(cell => {
             this._applyHeaderStyle(cell);
@@ -388,7 +419,9 @@ class NotificationService {
             { key: 'empCode', width: 15 },
             { key: 'marks', width: 10 },
             { key: 'process', width: 20 },
-            { key: 'mentor', width: 20 }
+            { key: 'mentor', width: 20 },
+            { key: 'interview1', width: 18 },
+            { key: 'interview2', width: 24 }
         ];
 
         // --- Data Rows ---
@@ -400,7 +433,9 @@ class NotificationService {
                     empCode: entry.empCode,
                     marks: entry.marks,
                     process: entry.process,
-                    mentor: entry.mentor
+                    mentor: entry.mentor,
+                    interview1: _interviewLabel(entry.interview1),
+                    interview2: _interviewLabel(entry.interview2)
                 });
                 row.eachCell(cell => {
                     this._applyBorderStyle(cell);
@@ -410,7 +445,7 @@ class NotificationService {
 
         // --- Footer Section ---
         const lastRowNumber = worksheet.lastRow.number + 2;
-        worksheet.mergeCells(`A${lastRowNumber}:F${lastRowNumber}`);
+        worksheet.mergeCells(`A${lastRowNumber}:H${lastRowNumber}`);
         const footerCell = worksheet.getCell(`A${lastRowNumber}`);
         footerCell.value = 'FRM-WH-QA-160 | REV: 02 | REV DATE: 15.06.2023 | PAGE: 1 OF 1';
         footerCell.font = { size: 9 };

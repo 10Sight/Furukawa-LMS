@@ -945,13 +945,20 @@ export const generateMaxLevelNotificationEmail = ({
  * @param {Object} data - Data for the email
  * @returns {string} HTML email template
  */
-export const generateHandoverSheetEmail = ({ 
-    departmentName, 
-    sectionName, 
-    date, 
-    entries, 
-    portalUrl 
+export const generateHandoverSheetEmail = ({
+    departmentName,
+    sectionName,
+    date,
+    entries,
+    portalUrl
 }) => {
+    const _interviewLabel = (val) => {
+        if (val === 'OK') return '✓ OK';
+        if (val === 'CROSS') return '✗ Cross';
+        if (val === 'NA') return 'Not Required';
+        return val || '—';
+    };
+
     const entryRows = (entries || []).map((entry, index) => `
         <tr>
             <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 12px;">${index + 1}</td>
@@ -960,6 +967,8 @@ export const generateHandoverSheetEmail = ({
             <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 12px;">${entry.marks || '-'}</td>
             <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;">${entry.process || '-'}</td>
             <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;">${entry.mentor || '-'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 11px;">${_interviewLabel(entry.interview1)}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 11px;">${_interviewLabel(entry.interview2)}</td>
             <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-size: 11px; color: ${entry.interviewStatus === 'APPROVE' ? '#10b981' : entry.interviewStatus === 'REJECT' ? '#ef4444' : '#6b7280'}; font-weight: bold;">
                 ${entry.interviewStatus || 'Pending'}
             </td>
@@ -1022,6 +1031,8 @@ export const generateHandoverSheetEmail = ({
                     <th>Marks</th>
                     <th>Process</th>
                     <th>Mentor</th>
+                    <th>1st Interview</th>
+                    <th>2nd Practical Interview</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -1031,7 +1042,7 @@ export const generateHandoverSheetEmail = ({
         </table>
 
         <div class="actions">
-            <a href="${portalUrl}" class="btn">Review & Approve Handover</a>
+            <a href="${portalUrl}" class="btn">Review &amp; Approve Handover</a>
         </div>
 
         <div class="footer">

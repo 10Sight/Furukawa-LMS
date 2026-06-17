@@ -144,38 +144,6 @@ const syncDepartmentStudents = async (userId, departmentId) => {
     }
 };
 
-/**
- * Internal helper to generate next temporary ID for DOJO candidates
- */
-const generateNextTempId = async (prefix) => {
-    const cleanPrefix = prefix.replace(/-/g, '').replace(/\s/g, '');
-    const [rows] = await executeQuery(`
-        SELECT TOP 1 empId FROM users 
-        WHERE empId LIKE ? AND isTemporary = 1
-        ORDER BY createdAt DESC
-    `, [`${cleanPrefix}%`]);
-
-    let nextSeq = 1;
-    let randomPart = Math.floor(100 + Math.random() * 900); // 3-digit random
-
-    if (rows && rows.length > 0) {
-        const lastId = rows[0].empId;
-        // Try to extract existing sequence (last 3 digits)
-        const seqMatch = lastId.match(/(\d{3})$/);
-        if (seqMatch) {
-            nextSeq = parseInt(seqMatch[1]) + 1;
-        }
-
-        // Try to keep the same random part for same prefix to maintain structure
-        const randMatch = lastId.match(/(\d{3})\d{3}$/);
-        if (randMatch) {
-            randomPart = randMatch[1];
-        }
-    }
-
-    const formattedSeq = String(nextSeq).padStart(3, '0');
-    return `${cleanPrefix}${randomPart}${formattedSeq}`;
-};
 
 /**
  * Normalize status values from Excel to canonical DB values (PRESENT / LEFT / ON-LEAVE)
@@ -880,6 +848,7 @@ export const importDojoUsers = async (req, res) => {
                 const normalizedRow = {
                     contractor: getRowVal(row, ["Contractor", "Contractor Name"])?.toString().trim(),
                     empId: getRowVal(row, ["Employee Code", "EmployeeID", "Employee ID"])?.toString().trim(),
+                    idCard: getRowVal(row, ["Card No.", "Card No", "CardNo"])?.toString().trim(),
                     fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
                     gender: getRowVal(row, ["Gender"])?.toString().trim() || "MALE",
                     department: getRowVal(row, ["Department"])?.toString().trim(),
@@ -908,7 +877,7 @@ export const importDojoUsers = async (req, res) => {
                 }
 
                 // Check for duplicate username (Employee Code)
-                const [existing] = await executeQuery("SELECT id FROM users WHERE userName = ?", [normalizedRow.empId.toLowerCase()]);
+                const [existing] = await executeQuery("SELECT id FROM users WHERE LOWER(userName) = LOWER(?)", [normalizedRow.empId]);
                 if (existing.length > 0) {
                     throw new Error(`Candidate with Employee Code ${normalizedRow.empId} already exists.`);
                 }
@@ -928,17 +897,12 @@ export const importDojoUsers = async (req, res) => {
                 const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
                 const sectionId = (departmentId && normalizedRow.section) ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`) : null;
 
-                // Generate Temporary ID
-                const namePart = normalizedRow.fullName.substring(0, 3).toUpperCase();
-                const empPart = normalizedRow.empId.toUpperCase();
-                const prefix = `TEMP${namePart}${empPart}`;
-                const tempId = await generateNextTempId(prefix);
-
                 const userData = {
                     fullName: normalizedRow.fullName,
-                    userName: normalizedRow.empId.toLowerCase(), // Manual code as login
-                    empId: tempId, // Generated TEMP ID
-                    password: tempId, // TEMP ID as password
+                    userName: normalizedRow.empId,
+                    empId: normalizedRow.empId,
+                    idCard: normalizedRow.idCard || null,
+                    password: normalizedRow.empId,
                     role: "STUDENT",
                     isEmployee: true,
                     isTemporary: true,
@@ -966,7 +930,7 @@ export const importDojoUsers = async (req, res) => {
 
                 const newUser = await User.create(userData);
 
-                results.success.push({ row: rowNumber, userName: userData.userName, tempId });
+                results.success.push({ row: rowNumber, userName: userData.userName, empId: userData.empId });
                 await executeQuery(
                     "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
                     [logId, rowNumber, JSON.stringify(row), "CREATED", newUser.id]
@@ -1001,6 +965,7 @@ export const downloadDojoImportTemplate = async (req, res) => {
         const templateData = [
             {
                 "Employee Code": "AS000233",
+                "Card No.": "00C0233",
                 "Name": "SUBHASH SINGH",
                 "Father / Husband Name": "RAM SHARAN",
                 "Gender": "M",

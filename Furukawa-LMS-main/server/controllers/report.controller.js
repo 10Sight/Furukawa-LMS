@@ -11,7 +11,7 @@ import Mail from '../models/mail.model.js';
  */
 export const exportFormReport = asyncHandler(async (req, res) => {
     const { formName } = req.params;
-    const { id, departmentId, studentId } = req.query;
+    const { id, departmentId, studentId, sectionId, date } = req.query;
 
     if (!formName) {
         return res.status(400).json({ success: false, message: "Form name is required" });
@@ -42,8 +42,12 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             }
             break;
 
-        case "Handover Sheet":
-            const [hoRows] = await executeQuery(`SELECT * FROM handover_sheets WHERE departmentId = ?`, [departmentId]);
+        case "Handover Sheet": {
+            let hsQuery = `SELECT * FROM handover_sheets WHERE departmentId = ?`;
+            const hsParams = [departmentId];
+            if (sectionId) { hsQuery += ` AND sectionId = ?`; hsParams.push(sectionId); }
+            if (date) { hsQuery += ` AND [date] = ?`; hsParams.push(date); }
+            const [hoRows] = await executeQuery(hsQuery, hsParams);
             if (hoRows.length > 0) {
                 formData = {
                     date: hoRows[0].date,
@@ -53,6 +57,7 @@ export const exportFormReport = asyncHandler(async (req, res) => {
                 };
             }
             break;
+        }
         case "On Job Training Record Sheet":
         case "On Job Training Evaluation Sheet":
             const [ojtRows] = await executeQuery(`

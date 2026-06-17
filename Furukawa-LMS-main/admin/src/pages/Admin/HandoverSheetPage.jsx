@@ -42,14 +42,16 @@ const HandoverSheetPage = () => {
     // Selections
     const [dept, setDept] = useState(searchParams.get('dept') || "");
     const [section, setSection] = useState(searchParams.get('section') || "");
+    const [date, setDate] = useState(searchParams.get('date') || new Date().toISOString().split('T')[0]);
 
     // Synchronize selections with URL query params
     useEffect(() => {
         const params = {};
         if (dept) params.dept = dept;
         if (section) params.section = section;
+        if (date) params.date = date;
         setSearchParams(params, { replace: true });
-    }, [dept, section, setSearchParams]);
+    }, [dept, section, date, setSearchParams]);
 
     // API Data
     const { data: deptsData } = useGetAllDepartmentsQuery({ limit: 500 });
@@ -196,6 +198,8 @@ const HandoverSheetPage = () => {
                         departments={departments}
                         machines={machines}
                         dojoHandoverPassedOnly={true}
+                        date={date}
+                        setDate={setDate}
                     />
                 </div>
             ) : (

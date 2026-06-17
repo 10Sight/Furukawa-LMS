@@ -20,6 +20,10 @@ class QuizAttempt {
         this.timeTaken = data.timeTaken !== undefined ? data.timeTaken : 0;
         this.conductedBy = data.conductedBy !== undefined && data.conductedBy !== null ? data.conductedBy : "";
 
+        // Snapshot of student identity at attempt time (survives user deletion/re-import)
+        this.studentName = data.studentName || null;
+        this.studentEmpId = data.studentEmpId || null;
+
         // Admin adjustment metadata
         this.manuallyAdjusted = !!data.manuallyAdjusted;
         this.adjustedBy = data.adjustedBy;
@@ -69,6 +73,18 @@ class QuizAttempt {
                 END
             `;
             await executeQuery(checkColQuery);
+
+            // Migration: add studentName and studentEmpId snapshot columns
+            await executeQuery(`
+                IF NOT EXISTS (
+                    SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'attempted_quizzes' AND COLUMN_NAME = 'studentName'
+                )
+                BEGIN
+                    ALTER TABLE [attempted_quizzes] ADD [studentName] NVARCHAR(255) NULL;
+                    ALTER TABLE [attempted_quizzes] ADD [studentEmpId] NVARCHAR(255) NULL;
+                END
+            `);
         } catch (error) {
             logger.error("Failed to initialize QuizAttempt table", error);
         }
@@ -80,7 +96,9 @@ class QuizAttempt {
         const fields = [
             "quiz", "student", "answer", "score", "status",
             "startedAt", "completedAt", "attemptNumber", "timeTaken",
-            "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes", "conductedBy", "createdAt"
+            "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes", "conductedBy",
+            "studentName", "studentEmpId",
+            "createdAt"
         ];
 
         if (!attempt.createdAt) attempt.createdAt = new Date();

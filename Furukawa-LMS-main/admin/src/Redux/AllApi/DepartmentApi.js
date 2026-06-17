@@ -174,6 +174,15 @@ export const departmentApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
+
+        getHandoverSheetsMonitoring: builder.query({
+            query: ({ departmentId = 'all', sectionId = 'all', month = 'all', year = 'all' } = {}) => ({
+                url: "/api/departments/handover-sheet/monitoring",
+                method: "GET",
+                params: { departmentId, sectionId, month, year }
+            }),
+            providesTags: ['Department'],
+        }),
     }),
 });
 
@@ -197,4 +206,5 @@ export const {
     useCancelDepartmentMutation,
     useGetMyDepartmentsQuery,
     useLazyExportDepartmentsQuery,
+    useGetHandoverSheetsMonitoringQuery,
 } = departmentApi;

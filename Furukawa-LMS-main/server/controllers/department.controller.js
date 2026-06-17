@@ -1296,6 +1296,80 @@ export const sendHandoverPDF = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, null, "Email sent successfully with PDF attachment"));
 });
 
+export const getHandoverSheetsMonitoring = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId, month, year } = req.query;
+
+    const filterDeptId = normalizeParam(departmentId);
+    const filterSectionId = normalizeParam(sectionId);
+    const filterMonth = normalizeParam(month);
+    const filterYear = normalizeParam(year);
+
+    const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+    const hasHandoverBypass = req.user?.customRole?.permissions?.includes('dojo:handover_sheet');
+    const canAccessAll = isAdmin || hasHandoverBypass;
+
+    const conditions = ["1=1"];
+    const params = [];
+
+    if (filterDeptId) {
+        conditions.push("hs.departmentId = ?");
+        params.push(filterDeptId);
+    } else if (!canAccessAll) {
+        const assignedDepts = [];
+        if (Array.isArray(req.user?.departments)) assignedDepts.push(...req.user.departments);
+        if (req.user?.departmentId) assignedDepts.push(req.user.departmentId);
+        const uniqueDepts = [...new Set(assignedDepts.map(String).filter(Boolean))];
+        if (uniqueDepts.length === 0) {
+            return res.status(200).json(new ApiResponse(200, [], "No accessible handover sheets"));
+        }
+        conditions.push(`hs.departmentId IN (${uniqueDepts.map(() => '?').join(',')})`);
+        params.push(...uniqueDepts);
+    }
+
+    if (filterSectionId) {
+        conditions.push("hs.sectionId = ?");
+        params.push(filterSectionId);
+    }
+
+    if (filterMonth) {
+        conditions.push("MONTH(hs.date) = ?");
+        params.push(parseInt(filterMonth));
+    }
+
+    if (filterYear) {
+        conditions.push("YEAR(hs.date) = ?");
+        params.push(parseInt(filterYear));
+    }
+
+    const whereClause = conditions.join(" AND ");
+
+    const [rows] = await executeQuery(`
+        SELECT
+            hs.id,
+            hs.departmentId,
+            hs.sectionId,
+            hs.date,
+            hs.isSubmitted,
+            hs.submittedAt,
+            hs.createdBy,
+            hs.updatedBy,
+            hs.createdAt,
+            hs.updatedAt,
+            d.name AS departmentName,
+            sec.name AS sectionName,
+            (SELECT COUNT(*) FROM OPENJSON(hs.entries)) AS entriesCount
+        FROM handover_sheets hs
+        LEFT JOIN departments d ON hs.departmentId = d.id
+        LEFT JOIN [sections] sec ON hs.sectionId = sec.id
+        WHERE ${whereClause}
+        ORDER BY hs.date DESC, hs.createdAt DESC
+    `, params);
+
+    return res.status(200).json(
+        new ApiResponse(200, rows, "Handover sheet monitoring data fetched successfully")
+    );
+});
+
 export const getStudentHandoverHistory = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
     if (!studentId) throw new ApiError("Student ID is required", 400);

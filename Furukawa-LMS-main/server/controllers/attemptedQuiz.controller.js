@@ -60,8 +60,29 @@ const populateAttempt = async (attempt) => {
     }
     if (attempt.student) {
         if (typeof attempt.student !== 'object') {
+            const _origStudentId = attempt.student;
             attempt.student = await User.findById(attempt.student).then(async (u) => {
-                if (!u) return null;
+                // Reconnect via empId snapshot when user was deleted and re-imported with new ID
+                if (!u && attempt.studentEmpId) {
+                    try {
+                        const [rows] = await executeQuery(
+                            "SELECT id FROM users WHERE empId = ?",
+                            [attempt.studentEmpId]
+                        );
+                        if (rows.length > 0) u = await User.findById(rows[0].id);
+                    } catch (e) { /* non-fatal */ }
+                }
+                if (!u) {
+                    return (attempt.studentName || attempt.studentEmpId) ? {
+                        id: _origStudentId, _id: _origStudentId,
+                        fullName: attempt.studentName || 'Unknown',
+                        userName: attempt.studentEmpId || '',
+                        empId: attempt.studentEmpId || '',
+                        email: null, departmentId: null, departmentName: null,
+                        sectionId: null, sectionName: null, lineId: null, lineName: null,
+                        subSectionId: null, subSectionName: null, role: null
+                    } : null;
+                }
                 let deptName = u.department || null;
                 let secName = null;
                 let lineName = null;
@@ -200,8 +221,10 @@ export const attemptQuiz = asyncHandler(async (req, res) => {
     const attempt = await AttemptedQuiz.create({
         quiz: resolvedQuizId,
         student: userId,
+        studentName: req.user.fullName || null,
+        studentEmpId: req.user.empId || null,
         answer: answers.map((ans, idx) => ({
-            questionId: questions[idx]._id || questions[idx].id, // Ensure we have some ID
+            questionId: questions[idx]._id || questions[idx].id,
             selectedOptions: [ans || ""],
             isCorrect: answers[idx] === questions[idx].correctOption,
             marksObtained: answers[idx] === questions[idx].correctOption ? (questions[idx].marks || 1) : 0
@@ -355,19 +378,41 @@ export const getStudentAttempts = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
 
     let resolvedStudentId = studentId;
-    if (isNaN(studentId)) { // Assuming if not number, it's a slug or username
+    let userEmpId = null;
+
+    if (isNaN(studentId)) {
         const handle = String(studentId).toLowerCase();
-        // findOne by username or slug logic needs to be robust
-        // But User model usually has findOne.
-        // Assuming UserName/Slug logic is custom.
-        const u = await User.findOne({ userName: handle }); // or slug if user has slug
-        if (!u) {
-            throw new ApiError("Invalid student ID", 400);
-        }
+        const u = await User.findOne({ userName: handle });
+        if (!u) throw new ApiError("Invalid student ID", 400);
         resolvedStudentId = u.id;
+        userEmpId = u.empId || null;
+    } else {
+        // Fetch empId so we can also recover attempts recorded under a previous DB id (delete+reimport)
+        try {
+            const [userRows] = await executeQuery("SELECT empId FROM users WHERE id = ?", [resolvedStudentId]);
+            if (userRows.length > 0) userEmpId = userRows[0].empId || null;
+        } catch (e) { /* non-fatal */ }
     }
 
-    let attempts = await AttemptedQuiz.find({ student: resolvedStudentId });
+    // Match by current student id OR by empId snapshot so historical attempts survive delete+reimport
+    let attemptRows;
+    if (userEmpId) {
+        [attemptRows] = await executeQuery(
+            `SELECT * FROM attempted_quizzes WHERE student = ? OR (studentEmpId IS NOT NULL AND studentEmpId = ?) ORDER BY createdAt DESC`,
+            [String(resolvedStudentId), userEmpId]
+        );
+    } else {
+        [attemptRows] = await executeQuery(
+            `SELECT * FROM attempted_quizzes WHERE student = ? ORDER BY createdAt DESC`,
+            [String(resolvedStudentId)]
+        );
+    }
+
+    // Deduplicate in case a single row matches both conditions
+    const _seenIds = new Set();
+    let attempts = attemptRows
+        .filter(r => { if (_seenIds.has(r.id)) return false; _seenIds.add(r.id); return true; })
+        .map(r => new AttemptedQuiz(r));
     attempts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     attempts = await Promise.all(attempts.map(populateAttempt));
@@ -866,9 +911,29 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     const scorePercent = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
     const passed = scorePercent >= (quiz.passingScore || 70);
 
+    // Snapshot student identity so the attempt survives future user deletion or re-import
+    let studentName = null;
+    let studentEmpId = null;
+    try {
+        if (String(userId) === String(req.user.id)) {
+            studentName = req.user.fullName || null;
+            studentEmpId = req.user.empId || null;
+        } else {
+            const [snapshotRows] = await executeQuery(
+                "SELECT fullName, empId FROM users WHERE id = ?", [userId]
+            );
+            if (snapshotRows.length > 0) {
+                studentName = snapshotRows[0].fullName || null;
+                studentEmpId = snapshotRows[0].empId || null;
+            }
+        }
+    } catch (e) { /* non-fatal */ }
+
     const attemptData = {
         quiz: resolvedQuizId,
         student: userId,
+        studentName,
+        studentEmpId,
         answer: answers.map((ans, idx) => {
             const question = questions[idx];
             const detailedAnswer = detailedAnswers[idx];
@@ -1140,7 +1205,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId, level, testType, search } = req.query;
 
     let sql = `
-        SELECT 
+        SELECT
             aq.id as id,
             aq.quiz as quizId,
             aq.student as studentId,
@@ -1150,7 +1215,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
             aq.completedAt as completedAt,
             aq.timeTaken as timeTaken,
             aq.createdAt as createdAt,
-            
+
             q.title as quizTitle,
             q.type as quizType,
             q.level as quizLevel,
@@ -1159,10 +1224,10 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
             q.isTheoretical as quizIsTheoretical,
             q.questions as quizQuestions,
             q.passingScore as quizPassingScore,
-            
-            u.fullName as studentName,
-            u.empId as studentECode,
-            u.userName as studentUserName,
+
+            COALESCE(u.fullName, aq.studentName, 'Unknown') as studentName,
+            COALESCE(u.empId, aq.studentEmpId, '') as studentECode,
+            COALESCE(u.userName, aq.studentEmpId, '') as studentUserName,
             u.email as studentEmail,
             u.role as studentRole,
             u.isTemporary as studentIsTemporary,
@@ -1172,14 +1237,20 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
             u.sectionId as studentSectionId,
             u.lineId as studentLineId,
             u.subSectionId as studentSubSectionId,
-            
+
             dept.name as deptName,
             sec.name as secName,
             lin.name as lineName,
             sub.name as subSecName
         FROM attempted_quizzes aq
         LEFT JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
-        LEFT JOIN users u ON CAST(u.id AS NVARCHAR(255)) = aq.student
+        OUTER APPLY (
+            SELECT TOP 1 u2.*
+            FROM users u2
+            WHERE CAST(u2.id AS NVARCHAR(255)) = aq.student
+               OR (aq.studentEmpId IS NOT NULL AND u2.empId = aq.studentEmpId)
+            ORDER BY CASE WHEN CAST(u2.id AS NVARCHAR(255)) = aq.student THEN 0 ELSE 1 END
+        ) u
         LEFT JOIN departments dept ON dept.id = u.departmentId
         LEFT JOIN [sections] sec ON sec.id = u.sectionId
         LEFT JOIN [lines] lin ON lin.id = u.lineId
@@ -1224,7 +1295,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
 
     if (search) {
         const searchQuery = `%${search}%`;
-        sql += " AND (u.fullName LIKE ? OR u.empId LIKE ? OR q.title LIKE ?)";
+        sql += " AND (COALESCE(u.fullName, aq.studentName, '') LIKE ? OR COALESCE(u.empId, aq.studentEmpId, '') LIKE ? OR q.title LIKE ?)";
         values.push(searchQuery, searchQuery, searchQuery);
     }
 

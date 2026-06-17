@@ -69,7 +69,7 @@ const SkillUpgradationWrapper = () => {
         departmentId: dept,
         sectionId: section,
         limit: 1000,
-        sixteenDayApprovedOnly: "true"
+        includeTemporary: "true"
     }, { 
         skip: !dept || !section,
         refetchOnMountOrArgChange: true 

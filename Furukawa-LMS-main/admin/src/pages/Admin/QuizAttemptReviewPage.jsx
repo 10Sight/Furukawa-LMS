@@ -236,10 +236,10 @@ const QuizAttemptReviewPage = () => {
               {/* Title box */}
               <div className="col-span-6 border-r-[3px] border-black flex flex-col items-center justify-center py-4 bg-white text-center">
                 <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight uppercase leading-none">
-                  SKILL EVALUATION RESULT SHEET
+                  {attempt.quiz?.paperTitle || "SKILL EVALUATION RESULT SHEET"}
                 </h1>
                 <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
-                  Graded Sheet for {attempt.quiz?.level || "L-2"}
+                  {attempt.quiz?.paperSubTitle || `Graded Sheet for ${attempt.quiz?.level || "L-2"}`}
                 </h2>
               </div>
 

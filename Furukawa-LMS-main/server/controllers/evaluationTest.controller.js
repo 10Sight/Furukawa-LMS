@@ -5,7 +5,7 @@ import EvaluationTest from "../models/evaluationTest.model.js";
 import EvaluationTestAttempt from "../models/evaluationTestAttempt.model.js";
 
 export const createEvaluationTest = asyncHandler(async (req, res) => {
-    const { title, performDateCount, contentStructure } = req.body;
+    const { title, performDateCount, processType, contentStructure } = req.body;
     const createdBy = req.user?.fullName || req.user?.userName || "Admin";
 
     if (!title) {
@@ -15,6 +15,7 @@ export const createEvaluationTest = asyncHandler(async (req, res) => {
     const testData = {
         title,
         performDateCount: parseInt(performDateCount, 10) || 4,
+        processType: processType || 'Former process',
         contentStructure: contentStructure || [],
         createdBy
     };
@@ -48,7 +49,7 @@ export const getEvaluationTestById = asyncHandler(async (req, res) => {
 
 export const updateEvaluationTest = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { title, performDateCount, contentStructure } = req.body;
+    const { title, performDateCount, processType, contentStructure } = req.body;
 
     const existingTest = await EvaluationTest.findById(id);
     if (!existingTest) {
@@ -58,6 +59,7 @@ export const updateEvaluationTest = asyncHandler(async (req, res) => {
     const updateData = {};
     if (title !== undefined) updateData.title = title;
     if (performDateCount !== undefined) updateData.performDateCount = parseInt(performDateCount, 10);
+    if (processType !== undefined) updateData.processType = processType;
     if (contentStructure !== undefined) updateData.contentStructure = contentStructure;
 
     const updatedTest = await EvaluationTest.update(id, updateData);

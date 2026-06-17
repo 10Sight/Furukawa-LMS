@@ -86,6 +86,7 @@ const EvaluationTestBuilder = () => {
     // Local builder states
     const [title, setTitle] = useState("Auto Crimping Operation");
     const [performDateCount, setPerformDateCount] = useState(4);
+    const [processType, setProcessType] = useState("Former process");
     const [contentStructure, setContentStructure] = useState(() => normalizeContentStructure(DEFAULT_STRUCTURE, "1. Taping operation"));
     const [isPrintMode, setIsPrintMode] = useState(isPrintModeUrl);
     const [educatorName, setEducatorName] = useState("");
@@ -101,6 +102,7 @@ const EvaluationTestBuilder = () => {
             const test = fetchResponse.data;
             setTitle(test.title || "");
             setPerformDateCount(test.performDateCount || 4);
+            setProcessType(test.processType || "Former process");
             setContentStructure(normalizeContentStructure(test.contentStructure || [], test.title));
         }
     }, [isEditMode, fetchResponse]);
@@ -404,6 +406,7 @@ const EvaluationTestBuilder = () => {
         const payload = {
             title,
             performDateCount,
+            processType,
             contentStructure
         };
 
@@ -489,7 +492,7 @@ const EvaluationTestBuilder = () => {
                     <div className="flex flex-col md:flex-row justify-between gap-4 border border-black p-4 bg-gray-50/50">
                         <div className="flex-1 flex items-center">
                             <h2 className="text-sm sm:text-lg font-bold uppercase tracking-tight text-gray-800 leading-tight">
-                                DOJO Evaluation test of practical education 【Former process】
+                                DOJO Evaluation test of practical education 【{processType || "Former process"}】
                             </h2>
                         </div>
                         <div className="grid grid-cols-3 border border-black text-center text-[10px] sm:text-xs w-full md:w-72 h-14 font-semibold">
@@ -779,6 +782,19 @@ const EvaluationTestBuilder = () => {
                                     className="border-gray-200 focus:ring-blue-100"
                                 />
                                 <p className="text-[10px] text-gray-400">The overall identifier of this DOJO evaluation sheet.</p>
+                            </div>
+
+                            {/* Process Type Field */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">Process Type / Name</label>
+                                <Input
+                                    type="text"
+                                    placeholder="e.g. Former process"
+                                    value={processType}
+                                    onChange={(e) => setProcessType(e.target.value)}
+                                    className="border-gray-200 focus:ring-blue-100"
+                                />
+                                <p className="text-[10px] text-gray-400">Shown in the sheet header as 【Process Type】.</p>
                             </div>
 
                             {/* Perform Date Columns Count Field */}

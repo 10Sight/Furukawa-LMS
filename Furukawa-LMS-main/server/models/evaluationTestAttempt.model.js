@@ -86,7 +86,7 @@ class EvaluationTestAttempt {
 
     static async findById(id) {
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount, t.contentStructure,
+            SELECT a.*, t.title as testTitle, t.performDateCount, t.processType, t.contentStructure,
                    u.userName, u.isTemporary
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id

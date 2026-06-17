@@ -36,27 +36,26 @@ const getDynamicPerformDateCount = (attemptDataObj, performDatesArr, baseCount) 
         }
     }
 
-    // Check if there is ANY failure ("X") in ANY of the evaluated columns
-    let hasFailureAnywhere = false;
-    if (lastEvaluatedColIdx !== -1) {
-        for (let colIdx = 0; colIdx <= lastEvaluatedColIdx; colIdx++) {
-            const hasFailureInCol = Object.keys(attemptDataObj || {}).some(qId => {
-                if (qId.startsWith("_")) return false;
-                return attemptDataObj[qId]?.results?.[colIdx] === "X";
-            });
-            if (hasFailureInCol) {
-                hasFailureAnywhere = true;
-                break;
-            }
+    // We start our column count with at least baseCount, and at least lastEvaluatedColIdx + 1
+    let count = Math.max(baseCount, lastEvaluatedColIdx + 1);
+
+    // If the last column (index count - 1) has an "X", we increment count.
+    // Repeat the process in case the new last column also has an "X".
+    while (count < 100) {
+        const lastColIdx = count - 1;
+        const lastColHasFailure = Object.keys(attemptDataObj || {}).some(qId => {
+            if (qId.startsWith("_")) return false;
+            return attemptDataObj[qId]?.results?.[lastColIdx] === "X";
+        });
+
+        if (lastColHasFailure) {
+            count++;
+        } else {
+            break;
         }
     }
 
-    if (hasFailureAnywhere) {
-        // Always provide an extra column beyond either the base template count or the last evaluated column
-        return Math.max(baseCount + 1, lastEvaluatedColIdx + 2);
-    }
-
-    return Math.max(baseCount, lastEvaluatedColIdx + 1);
+    return count;
 };
 
 const normalizeContentStructure = (structure, fallbackTitle) => {
@@ -165,30 +164,26 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         return normalizeContentStructure(activeTemplate?.contentStructure || [], testTitle);
     }, [activeTemplate, testTitle]);
 
-    // Dynamic perform date count state
-    const [performDateCount, setPerformDateCount] = useState(4);
-
-    useEffect(() => {
-        if (activeTemplate?.performDateCount) {
-            if (isView || isEdit) {
-                const rawAttemptData = attemptResponse?.data?.attemptData || {};
-                const rawPerformDates = rawAttemptData._performDates || [];
-                const baseCount = activeTemplate.performDateCount || 4;
-                const dynamicCount = getDynamicPerformDateCount(rawAttemptData, rawPerformDates, baseCount);
-                setPerformDateCount(dynamicCount);
-            } else {
-                setPerformDateCount(activeTemplate.performDateCount);
-            }
-        }
-    }, [activeTemplate, isView, isEdit, attemptResponse]);
-
     // Dynamic perform dates state
     const [performDates, setPerformDates] = useState([]);
 
     // Tracks which columns have been pre-filled in previous days to prevent editing
     const [preFilledColumns, setPreFilledColumns] = useState([]);
 
-    // Populate data in View Mode or Edit Mode from database attempt record
+    // performDateCount is derived in real-time from local attemptData so the extra column
+    // appears/disappears immediately as the user fills the LAST column with X or passes it,
+    // without needing to save first.
+    const performDateCount = React.useMemo(() => {
+        const baseCount = activeTemplate?.performDateCount || 4;
+        if (isView || isEdit) {
+            return getDynamicPerformDateCount(attemptData, performDates, baseCount);
+        }
+        return baseCount;
+    }, [attemptData, performDates, activeTemplate, isView, isEdit]);
+
+    // Populate data in View Mode or Edit Mode from database attempt record.
+    // Uses initCount computed directly from raw server data to avoid circular dependency
+    // with the performDateCount useMemo above.
     useEffect(() => {
         if ((isView || isEdit) && attemptResponse?.data) {
             const data = attemptResponse.data;
@@ -198,8 +193,11 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             setEducatorName(data.educatorName || "");
 
             const rawAttemptData = data.attemptData || {};
+            const rawPerformDates = rawAttemptData._performDates || [];
+            const baseCount = activeTemplate?.performDateCount || 4;
+            const initCount = getDynamicPerformDateCount(rawAttemptData, rawPerformDates, baseCount);
 
-            // Pad attemptData question results arrays to performDateCount elements
+            // Pad attemptData question results arrays to initCount elements
             const paddedAttemptData = { ...rawAttemptData };
             (contentStructure || []).forEach(block => {
                 (block.contentSections || []).forEach(content => {
@@ -208,7 +206,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                             const qId = q.id;
                             const current = paddedAttemptData[qId] || { results: [], comment: "" };
                             const results = [...(current.results || [])];
-                            while (results.length < performDateCount) {
+                            while (results.length < initCount) {
                                 results.push("");
                             }
                             paddedAttemptData[qId] = { ...current, results };
@@ -219,18 +217,17 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             setAttemptData(paddedAttemptData);
 
             if (rawAttemptData._performDates) {
-                const rawDates = rawAttemptData._performDates || [];
-                const paddedDates = [...rawDates];
-                while (paddedDates.length < performDateCount) {
+                const paddedDates = [...rawPerformDates];
+                while (paddedDates.length < initCount) {
                     paddedDates.push("");
                 }
                 setPerformDates(paddedDates);
             } else {
-                setPerformDates(Array.from({ length: performDateCount }).map(() => ""));
+                setPerformDates(Array.from({ length: initCount }).map(() => ""));
             }
 
             // Lock columns already filled in previous submissions
-            const colsFilled = Array.from({ length: performDateCount }).map((_, colIdx) => {
+            const colsFilled = Array.from({ length: initCount }).map((_, colIdx) => {
                 const hasDate = !!rawAttemptData._performDates?.[colIdx];
                 let hasGrade = false;
                 Object.keys(rawAttemptData).forEach((qId) => {
@@ -244,7 +241,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             });
             setPreFilledColumns(colsFilled);
         }
-    }, [isView, isEdit, attemptResponse, performDateCount, contentStructure]);
+    }, [isView, isEdit, attemptResponse, activeTemplate, contentStructure]);
 
     // Keep search query synced with manual edits / selections of traineeName
     useEffect(() => {
@@ -506,7 +503,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                     <div className="flex flex-col md:flex-row justify-between gap-4 border border-black p-4 bg-gray-50/50">
                         <div className="flex-1 flex items-center">
                             <h2 className="text-sm sm:text-lg font-bold uppercase tracking-tight text-gray-800 leading-tight">
-                                DOJO Evaluation test of practical education 【Former process】
+                                DOJO Evaluation test of practical education 【{activeTemplate?.processType || "Former process"}】
                             </h2>
                         </div>
                         <div className="grid grid-cols-3 border border-black text-center text-[10px] sm:text-xs w-full md:w-[320px] min-w-[280px] h-14 font-semibold">

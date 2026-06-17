@@ -6,12 +6,13 @@ class EvaluationTest {
         this.id = data.id;
         this.title = data.title;
         this.performDateCount = data.performDateCount || 4;
-        
+        this.processType = data.processType || 'Former process';
+
         // Dynamic tree structure representing Content -> Categories -> Questions
         this.contentStructure = typeof data.contentStructure === 'string'
             ? JSON.parse(data.contentStructure)
             : (data.contentStructure || []);
-            
+
         this.createdBy = data.createdBy;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -25,11 +26,19 @@ class EvaluationTest {
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     title NVARCHAR(255) NOT NULL,
                     performDateCount INT DEFAULT 4,
+                    processType NVARCHAR(255) DEFAULT 'Former process',
                     contentStructure NVARCHAR(MAX),
                     createdBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE()
                 )
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('evaluation_tests', 'processType') IS NULL
+                BEGIN
+                    ALTER TABLE evaluation_tests ADD processType NVARCHAR(255) DEFAULT 'Former process'
+                END
             END
         `;
         try {
@@ -43,14 +52,15 @@ class EvaluationTest {
 
     static async create(data) {
         const query = `
-            INSERT INTO evaluation_tests (title, performDateCount, contentStructure, createdBy)
+            INSERT INTO evaluation_tests (title, performDateCount, processType, contentStructure, createdBy)
             OUTPUT INSERTED.*
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
         `;
         const structureStr = JSON.stringify(data.contentStructure || []);
         const [rows] = await executeQuery(query, [
             data.title,
             data.performDateCount || 4,
+            data.processType || 'Former process',
             structureStr,
             data.createdBy
         ]);
@@ -79,6 +89,10 @@ class EvaluationTest {
         if (data.performDateCount !== undefined) {
             fields.push("performDateCount = ?");
             values.push(data.performDateCount);
+        }
+        if (data.processType !== undefined) {
+            fields.push("processType = ?");
+            values.push(data.processType);
         }
         if (data.contentStructure !== undefined) {
             fields.push("contentStructure = ?");

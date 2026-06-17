@@ -85,7 +85,8 @@ const EvaluationTestOperatorsPage = () => {
     const getFilledColumnsList = (attempt, columnsLimit) => {
         const rawAttemptData = attempt.attemptData || {};
         const filled = [];
-        for (let colIdx = 0; colIdx < columnsLimit; colIdx++) {
+        const actualLimit = Math.max(columnsLimit || 4, rawAttemptData._performDates?.length || 0);
+        for (let colIdx = 0; colIdx < actualLimit; colIdx++) {
             const hasDate = !!rawAttemptData._performDates?.[colIdx];
             let hasGrade = false;
             Object.keys(rawAttemptData).forEach((qId) => {
@@ -250,13 +251,14 @@ const EvaluationTestOperatorsPage = () => {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {filteredOperators.map((operator, index) => {
+                                                                    {filteredOperators.map((operator, index) => {
                                         const opEmpIdKey = operator.empId?.trim().toUpperCase();
                                         const opUserKey = operator.userName?.trim().toUpperCase();
                                         const attempt = (opEmpIdKey ? operatorAttemptsMap[opEmpIdKey] : null) || 
                                                         (opUserKey ? operatorAttemptsMap[opUserKey] : null);
                                         const filledCols = attempt ? getFilledColumnsList(attempt, maxCols) : [];
                                         const hasAttempt = !!attempt;
+                                        const actualAttemptCols = attempt ? Math.max(maxCols, attempt.attemptData?._performDates?.length || 0) : maxCols;
 
                                         return (
                                             <TableRow key={operator._id || operator.id} className="hover:bg-gray-50/50 transition-colors">
@@ -296,7 +298,7 @@ const EvaluationTestOperatorsPage = () => {
                                                                     </span>
                                                                 ))}
                                                                 <span className="text-[10px] text-gray-500 font-semibold block w-full mt-0.5">
-                                                                    ({filledCols.length} of {maxCols} filled)
+                                                                    ({filledCols.length} of {actualAttemptCols} filled)
                                                                 </span>
                                                             </div>
                                                         )

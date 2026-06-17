@@ -94,8 +94,8 @@ const EvaluationTestMonitoring = () => {
   const getFilledColumnsList = (attempt, columnsLimit) => {
     const rawAttemptData = attempt.attemptData || {};
     const filled = [];
-    const limit = columnsLimit || 4;
-    for (let colIdx = 0; colIdx < limit; colIdx++) {
+    const actualLimit = Math.max(columnsLimit || 4, rawAttemptData._performDates?.length || 0);
+    for (let colIdx = 0; colIdx < actualLimit; colIdx++) {
       const hasDate = !!rawAttemptData._performDates?.[colIdx];
       let hasGrade = false;
       Object.keys(rawAttemptData).forEach((qId) => {
@@ -286,6 +286,7 @@ const EvaluationTestMonitoring = () => {
                     const empIdVal = attempt.userName || attempt.employeeNo || "N/A";
                     const maxCols = attempt.performDateCount || 4;
                     const filledCols = getFilledColumnsList(attempt, maxCols);
+                    const actualAttemptCols = Math.max(maxCols, attempt.attemptData?._performDates?.length || 0);
 
                     return (
                       <TableRow key={attempt.id} className="hover:bg-slate-50/30 transition-colors border-b border-gray-100">
@@ -367,7 +368,7 @@ const EvaluationTestMonitoring = () => {
                                 </span>
                               ))}
                               <span className="text-[10px] text-gray-400 font-semibold block w-full mt-0.5">
-                                ({filledCols.length} of {maxCols} filled)
+                                ({filledCols.length} of {actualAttemptCols} filled)
                               </span>
                             </div>
                           )}

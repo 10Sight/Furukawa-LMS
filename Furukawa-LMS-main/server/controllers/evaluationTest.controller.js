@@ -169,3 +169,11 @@ export const deleteEvaluationTestAttempt = asyncHandler(async (req, res) => {
         new ApiResponse(200, null, "Evaluation test sheet record deleted successfully")
     );
 });
+
+export const getStudentEvaluationTestAttempts = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    if (!studentId) throw new ApiError("Student ID is required", 400);
+
+    const attempts = await EvaluationTestAttempt.findByStudentId(studentId);
+    res.json(new ApiResponse(200, attempts, "Student evaluation attempts fetched successfully"));
+});

@@ -156,6 +156,35 @@ class EvaluationTestAttempt {
         });
     }
 
+    static async findByStudentId(studentId) {
+        const query = `
+            SELECT a.*, t.title as testTitle, t.performDateCount,
+                   COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) as departmentId,
+                   COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) as sectionId,
+                   COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) as lineId,
+                   COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) as subSectionId,
+                   u.isTemporary, u.userName,
+                   dept.name as departmentName, sec.name as sectionName,
+                   l.name as lineName, ss.name as subSectionName
+            FROM evaluation_test_attempts a
+            JOIN evaluation_tests t ON a.testId = t.id
+            LEFT JOIN users u ON a.userId = u.id
+            LEFT JOIN departments dept ON COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) = dept.id
+            LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) = sec.id
+            LEFT JOIN [lines] l ON COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) = l.id
+            LEFT JOIN sub_sections ss ON COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) = ss.id
+            WHERE a.userId = ? OR (a.userId IS NULL AND a.employeeNo = (SELECT empId FROM users WHERE id = ?))
+            ORDER BY a.createdAt DESC
+        `;
+        const [rows] = await executeQuery(query, [studentId, studentId]);
+        return rows.map(row => {
+            if (typeof row.attemptData === "string") {
+                try { row.attemptData = JSON.parse(row.attemptData); } catch (e) { row.attemptData = {}; }
+            }
+            return row;
+        });
+    }
+
     static async delete(id) {
         await executeQuery("DELETE FROM evaluation_test_attempts WHERE id = ?", [id]);
         return true;

@@ -37,7 +37,8 @@ import {
     getHandoverSheetConfig,
     saveHandoverSheetConfig,
     getHandoverSheetHistory,
-    sendHandoverPDF
+    sendHandoverPDF,
+    getStudentHandoverHistory
 } from "../controllers/department.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
@@ -110,5 +111,6 @@ router.get("/handover-sheet/config/:id", verifyJWT, authorizeRole([SYSTEM_PERMIS
 router.post("/handover-sheet/config/save", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT]), saveHandoverSheetConfig);
 router.get("/handover-sheet/history/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetHistory);
 router.post("/handover-sheet/pdf/send", verifyJWT, sendHandoverPDF);
+router.get("/handover-sheet/student/:studentId", verifyJWT, getStudentHandoverHistory);
 
 export default router;

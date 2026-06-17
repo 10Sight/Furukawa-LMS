@@ -286,6 +286,12 @@ const QuizAttemptReviewPage = () => {
                     {(attempt.student?.userName || attempt.student?.empId || "—").toUpperCase()}
                   </span>
                 </div>
+                <div className="flex gap-2 items-center">
+                  <span className="min-w-[120px] text-black">Department :</span>
+                  <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
+                    {attempt.student?.departmentName || "—"}
+                  </span>
+                </div>
               </div>
 
               {/* Right box */}
@@ -293,7 +299,7 @@ const QuizAttemptReviewPage = () => {
                 <div className="flex gap-2 items-center">
                   <span className="text-black">Conducted By :</span>
                   <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold font-sans">
-                    {attempt.quiz?.conductedBy || attempt.quiz?.createdBy?.fullName || attempt.quiz?.createdBy?.userName || "—"}
+                    {attempt.conductedBy || "—"}
                   </span>
                 </div>
                 <div className="flex gap-2 items-center">
@@ -325,6 +331,14 @@ const QuizAttemptReviewPage = () => {
                   <span className={`border-b border-dashed border-black flex-1 pb-0.5 text-center font-black text-xs uppercase ${currentPassed ? 'text-green-600' : 'text-red-600'
                     }`}>
                     {currentPassed ? 'PASS' : 'FAIL'}
+                  </span>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <span className="text-black">Test Date :</span>
+                  <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
+                    {attempt.createdAt
+                      ? new Date(attempt.createdAt).toLocaleDateString('en-GB').replace(/\//g, '.')
+                      : "—"}
                   </span>
                 </div>
               </div>

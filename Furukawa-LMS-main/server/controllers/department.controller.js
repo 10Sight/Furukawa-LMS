@@ -1295,3 +1295,37 @@ export const sendHandoverPDF = asyncHandler(async (req, res) => {
 
     res.json(new ApiResponse(200, null, "Email sent successfully with PDF attachment"));
 });
+
+export const getStudentHandoverHistory = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    if (!studentId) throw new ApiError("Student ID is required", 400);
+
+    const [rows] = await executeQuery(`
+        SELECT
+            hs.id,
+            hs.departmentId,
+            hs.sectionId,
+            hs.date,
+            hs.isSubmitted,
+            hs.submittedAt,
+            d.name as departmentName,
+            sec.name as sectionName,
+            JSON_VALUE(entry.value, '$.marks') as marks,
+            JSON_VALUE(entry.value, '$.process') as process,
+            JSON_VALUE(entry.value, '$.mentor') as mentor,
+            JSON_VALUE(entry.value, '$.interview1') as interview1,
+            JSON_VALUE(entry.value, '$.interview2') as interview2,
+            JSON_VALUE(entry.value, '$.interviewStatus') as interviewStatus,
+            JSON_VALUE(entry.value, '$.statusActionBy') as statusActionBy
+        FROM handover_sheets hs
+        CROSS APPLY OPENJSON(hs.entries) as entry
+        LEFT JOIN departments d ON hs.departmentId = d.id
+        LEFT JOIN [sections] sec ON hs.sectionId = sec.id
+        WHERE JSON_VALUE(entry.value, '$.studentId') = CAST(? AS NVARCHAR(50))
+        ORDER BY hs.date DESC, hs.createdAt DESC
+    `, [studentId]);
+
+    res.status(200).json(
+        new ApiResponse(200, rows, "Student handover history fetched successfully")
+    );
+});

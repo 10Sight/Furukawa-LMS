@@ -1,16 +1,17 @@
 import { Router } from "express";
-import { 
-    createEvaluationTest, 
-    getAllEvaluationTests, 
-    getEvaluationTestById, 
-    updateEvaluationTest, 
+import {
+    createEvaluationTest,
+    getAllEvaluationTests,
+    getEvaluationTestById,
+    updateEvaluationTest,
     deleteEvaluationTest,
     createEvaluationTestAttempt,
     getAllEvaluationTestAttempts,
     getEvaluationTestAttemptById,
     getEvaluationTestAttemptsByTestId,
     updateEvaluationTestAttempt,
-    deleteEvaluationTestAttempt
+    deleteEvaluationTestAttempt,
+    getStudentEvaluationTestAttempts
 } from "../controllers/evaluationTest.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 
@@ -22,6 +23,7 @@ router.use(verifyJWT);
 // Student Grading / Attempt Sheet APIs
 router.post("/attempts", createEvaluationTestAttempt);
 router.get("/attempts", getAllEvaluationTestAttempts);
+router.get("/attempts/student/:studentId", getStudentEvaluationTestAttempts);
 router.get("/attempts/:id", getEvaluationTestAttemptById);
 router.put("/attempts/:id", updateEvaluationTestAttempt);
 router.delete("/attempts/:id", deleteEvaluationTestAttempt);

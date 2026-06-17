@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useGetAdminHomeUserStatusStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { Skeleton } from "@/components/ui/skeleton";
-import { IconUsers, IconCalendar, IconChartPie, IconChartBar } from "@tabler/icons-react";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { IconUsers, IconChartPie, IconChartBar } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import highcharts3d from 'highcharts/highcharts-3d';
+import 'highcharts/modules/no-data-to-display';
 
 // Initialize 3D module
 if (typeof highcharts3d === 'function') {
@@ -18,12 +17,11 @@ if (typeof highcharts3d === 'function') {
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#94a3b8', '#8b5cf6']; // Green (Present), Amber (Leave), Red (Left)
 
 const UserStatusDistributionChart = ({ dateRange }) => {
-    const { data: statsData, isLoading, error } = useGetAdminHomeUserStatusStatsQuery(dateRange);
-    const [userType, setUserType] = useState('operator');
+    const { data: statsData, isLoading, error } = useGetAdminHomeUserStatusStatsQuery({ ...dateRange, isTemporary: 1 });
     const [viewType, setViewType] = useState('pie'); // 'pie' or 'bar'
 
-    const allData = statsData?.data || { operator: [], dojo: [] };
-    const chartData = allData[userType] || [];
+    const allData = statsData?.data || { dojo: [] };
+    const chartData = allData.dojo || [];
     const totalUsers = chartData.reduce((acc, curr) => acc + curr.value, 0);
 
     if (isLoading) {
@@ -50,16 +48,18 @@ const UserStatusDistributionChart = ({ dateRange }) => {
         );
     }
 
-    const hasData = totalUsers > 0;
+    const noDataConfig = {
+        noData: {
+            style: { fontSize: '14px', fontWeight: '600', color: '#94a3b8' },
+            position: { align: 'center', verticalAlign: 'middle' },
+        },
+        lang: { noData: 'No status data found for Dojo Users.' },
+    };
 
     const getPieOptions = () => ({
         chart: {
             type: 'pie',
-            options3d: {
-                enabled: true,
-                alpha: 0,
-                beta: 0
-            },
+            options3d: { enabled: true, alpha: 0, beta: 0 },
             backgroundColor: 'transparent',
             height: 450
         },
@@ -72,10 +72,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                 allowPointSelect: true,
                 cursor: 'pointer',
                 depth: 35,
-                dataLabels: {
-                    enabled: true,
-                    format: '{point.name}: {point.y}'
-                },
+                dataLabels: { enabled: true, format: '{point.name}: {point.y}' },
                 colors: COLORS,
                 point: {
                     events: {
@@ -89,7 +86,8 @@ const UserStatusDistributionChart = ({ dateRange }) => {
             name: 'Status Share',
             data: chartData.map(item => ({ name: item.name, y: item.value }))
         }],
-        credits: { enabled: false }
+        credits: { enabled: false },
+        ...noDataConfig,
     });
 
     const getBarOptions = () => ({
@@ -103,7 +101,8 @@ const UserStatusDistributionChart = ({ dateRange }) => {
             colorByPoint: true,
             colors: COLORS
         }],
-        credits: { enabled: false }
+        credits: { enabled: false },
+        ...noDataConfig,
     });
 
     return (
@@ -115,55 +114,37 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                         User Status Distribution
                     </CardTitle>
                     <CardDescription>
-                        Attendance and exit status
+                        Attendance and exit status — Dojo Users
                     </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Select value={userType} onValueChange={setUserType}>
-                        <SelectTrigger className="w-[110px] h-8 text-xs">
-                            <SelectValue placeholder="Select Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="operator">Operators</SelectItem>
-                            <SelectItem value="dojo">Candidate</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => setViewType(viewType === 'pie' ? 'bar' : 'pie')}
-                        title={viewType === 'pie' ? 'Switch to Bar Chart' : 'Switch to Pie Chart'}
-                    >
-                        {viewType === 'pie' ? <IconChartBar className="h-4 w-4" /> : <IconChartPie className="h-4 w-4" />}
-                    </Button>
-                </div>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setViewType(viewType === 'pie' ? 'bar' : 'pie')}
+                    title={viewType === 'pie' ? 'Switch to Bar Chart' : 'Switch to Pie Chart'}
+                >
+                    {viewType === 'pie' ? <IconChartBar className="h-4 w-4" /> : <IconChartPie className="h-4 w-4" />}
+                </Button>
             </CardHeader>
             <CardContent>
                 <div className="h-[450px] w-full relative mt-4">
-                    {hasData ? (
-                        <HighchartsReact
-                            key={viewType}
-                            highcharts={Highcharts}
-                            options={viewType === 'pie' ? getPieOptions() : getBarOptions()}
-                        />
-                    ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-500 bg-gray-50/50 rounded-xl border border-dashed">
-                            <IconCalendar className="h-10 w-10 mb-2 opacity-20" />
-                            <p className="text-sm">No status data found for {userType}s.</p>
-                        </div>
-                    )}
+                    <HighchartsReact
+                        key={viewType}
+                        highcharts={Highcharts}
+                        options={viewType === 'pie' ? getPieOptions() : getBarOptions()}
+                    />
                 </div>
 
                 <div className="mt-6 grid grid-cols-3 gap-2">
-                    {chartData.map((item, index) => (
+                    {chartData.map((item) => (
                         <div key={item.name} className="flex flex-col items-center p-2 rounded-lg bg-gray-50/50 border border-gray-100">
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{item.name}</span>
                             <span className="text-lg font-black text-gray-800">{item.value}</span>
                         </div>
                     ))}
                     <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-50 col-span-3 mt-2 px-4">
-                        <span className="text-xs font-bold text-indigo-700">Total {userType === 'dojo' ? 'Dojo Users' : 'Operators'}</span>
+                        <span className="text-xs font-bold text-indigo-700">Total Dojo Users</span>
                         <span className="text-sm font-black text-indigo-900">{totalUsers}</span>
                     </div>
                 </div>

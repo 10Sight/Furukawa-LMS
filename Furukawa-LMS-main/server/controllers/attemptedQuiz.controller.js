@@ -68,8 +68,19 @@ const populateAttempt = async (attempt) => {
                 let subSecName = null;
 
                 try {
-                    if (u.departmentId) {
-                        const [r] = await executeQuery("SELECT name FROM departments WHERE id = ?", [u.departmentId]);
+                    // Resolve department using same fallback order as user search:
+                    // departmentId → targetDeptId (temporary users) → section's dept → line's dept
+                    const resolvedDeptId = u.departmentId || (u.isTemporary ? u.targetDeptId : null);
+                    if (resolvedDeptId) {
+                        const [r] = await executeQuery("SELECT name FROM departments WHERE id = ?", [resolvedDeptId]);
+                        if (r && r.length > 0) deptName = r[0].name;
+                    }
+                    if (!deptName && u.sectionId) {
+                        const [r] = await executeQuery("SELECT d.name FROM departments d INNER JOIN [sections] s ON s.departmentId = d.id WHERE s.id = ?", [u.sectionId]);
+                        if (r && r.length > 0) deptName = r[0].name;
+                    }
+                    if (!deptName && u.lineId) {
+                        const [r] = await executeQuery("SELECT d.name FROM departments d INNER JOIN [sections] s ON s.departmentId = d.id INNER JOIN [lines] l ON l.sectionId = s.id WHERE l.id = ?", [u.lineId]);
                         if (r && r.length > 0) deptName = r[0].name;
                     }
                     if (u.sectionId) {

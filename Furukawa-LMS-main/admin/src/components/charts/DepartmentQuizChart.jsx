@@ -16,6 +16,7 @@ import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { IconChartBar, IconRefresh } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import 'highcharts/modules/no-data-to-display';
 
 const PASS_COLOR = '#16a34a';
 const FAIL_COLOR = '#dc2626';
@@ -88,7 +89,6 @@ const DepartmentQuizChart = ({ dateRange }) => {
     const totalFailed   = chartData.reduce((a, d) => a + (Number(d.failedCount) || 0), 0);
     const totalAttempts = totalPassed + totalFailed;
     const passRate      = totalAttempts > 0 ? Math.round((totalPassed / totalAttempts) * 100) : 0;
-    const hasAnyData    = totalAttempts > 0;
 
     /* ── Scroll ── */
     const SLOT_WIDTH     = 96;
@@ -111,6 +111,15 @@ const DepartmentQuizChart = ({ dateRange }) => {
         },
         title:   { text: '' },
         credits: { enabled: false },
+        noData: {
+            style: {
+                fontSize:   '14px',
+                fontWeight: '600',
+                color:      '#94a3b8',
+            },
+            position: { align: 'center', verticalAlign: 'middle' },
+        },
+        lang: { noData: 'No test attempt data for the selected filters.' },
         xAxis: {
             categories:    chartData.map(d => d.departmentName),
             crosshair:     true,
@@ -251,12 +260,6 @@ const DepartmentQuizChart = ({ dateRange }) => {
                 ) : error ? (
                     <div className="h-[480px] flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">Failed to load department test statistics.</p>
-                    </div>
-                ) : !hasAnyData ? (
-                    <div className="h-[480px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
-                        <IconChartBar className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">No test attempt data available.</p>
-                        <p className="text-xs opacity-60">Try adjusting the date range or filters above.</p>
                     </div>
                 ) : (
                     <>

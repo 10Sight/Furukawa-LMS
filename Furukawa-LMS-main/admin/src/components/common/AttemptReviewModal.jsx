@@ -37,8 +37,8 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
   const isEditable = useMemo(() => {
     if (canEdit) return true;
     return !!(
-      currentUser?.isAdmin || 
-      currentUser?.isTrainer || 
+      currentUser?.isAdmin ||
+      currentUser?.isTrainer ||
       ['ADMIN', 'SUPERADMIN', 'TRAINER', 'INSTRUCTOR'].includes(currentUser?.role) ||
       (currentUser?.role === 'CUSTOM' && ['admin', 'superadmin', 'trainer', 'instructor'].includes(String(currentUser?.customRole?.targetLayout).toLowerCase()))
     );
@@ -46,7 +46,7 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
 
   const { data, isLoading, isError, refetch } = useGetAttemptByIdQuery(attemptId, { skip: !attemptId || !isOpen });
   const attempt = data?.data;
-  
+
   const [answersOverride, setAnswersOverride] = useState({});
   const [notes, setNotes] = useState("");
   const [updateAttempt, { isLoading: isSaving }] = useAdminUpdateAttemptMutation();
@@ -87,9 +87,9 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
       const qId = String(q._id || q.id);
       let ans = answersMap.get(qId) || answersMap.get(`index-${idx}`) || {};
       const override = answersOverride[qId] || {};
-      
-      const marks = override.marksObtained !== undefined && override.marksObtained !== "" 
-        ? Number(override.marksObtained) 
+
+      const marks = override.marksObtained !== undefined && override.marksObtained !== ""
+        ? Number(override.marksObtained)
         : (ans.marksObtained ?? 0);
       return sum + marks;
     }, 0);
@@ -137,7 +137,7 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
       }));
 
       await updateAttempt({ attemptId, answersOverride: payload, adjustmentNotes: notes || undefined }).unwrap();
-      
+
       toast.success("Attempt grades and overrides updated successfully!");
       setAnswersOverride({});
       setNotes("");
@@ -149,8 +149,8 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
   };
 
   return (
-    <Dialog 
-      open={isOpen} 
+    <Dialog
+      open={isOpen}
       onOpenChange={(open) => !open && onClose?.()}
       className="max-w-[95vw] lg:max-w-[1300px] w-full"
     >
@@ -200,15 +200,17 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
           </Alert>
         ) : attempt ? (
           <div className="space-y-6 mt-2">
-            
+
             {/* Standardized Graded Test Paper Worksheet Container */}
             <div className="print-worksheet bg-white border-[3px] border-black text-black font-serif shadow-sm overflow-hidden">
-              
+
               {/* HEADER TABLE */}
               <div className="grid grid-cols-12 border-b-[3px] border-black">
                 {/* Logo box */}
                 <div className="col-span-3 border-r-[3px] border-black flex flex-col items-center justify-center p-3 bg-white text-center">
-                  <span className="text-4xl font-extrabold italic tracking-tight text-black font-sans leading-none">Fme</span>
+                  <span className="text-4xl font-extrabold italic tracking-tight text-black font-sans leading-none">
+                    <img src="../../fme_transparent.png" alt="FME Logo" srcset="" width={80} height={80} />
+                  </span>
                   <span className="text-[8px] font-black text-black mt-1.5 uppercase tracking-tight leading-none text-center">
                     FURUKAWA MINDA<br />ELECTRIC PVT. LTD.
                   </span>
@@ -245,11 +247,6 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                 </div>
               </div>
 
-              {/* QUARTER SUB-HEADER */}
-              <div className="border-b-[3px] border-black flex justify-end px-6 py-2 bg-white">
-                <span className="font-bold text-xs tracking-widest uppercase">{getCurrentQuarter()}</span>
-              </div>
-
               {/* METADATA SECTION */}
               <div className="grid grid-cols-12 border-b-[3px] border-black text-xs uppercase font-bold">
                 {/* Left box */}
@@ -270,6 +267,12 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                     <span className="min-w-[120px] text-black">E.Code :</span>
                     <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-mono">
                       {(attempt.student?.userName || attempt.student?.empId || "—").toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <span className="min-w-[120px] text-black">Department :</span>
+                    <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
+                      {attempt.student?.departmentName || "—"}
                     </span>
                   </div>
                 </div>
@@ -302,10 +305,23 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                   </div>
                   <div className="flex gap-2 items-center">
                     <span className="text-black">Result Status :</span>
-                    <span className={`border-b border-dashed border-black flex-1 pb-0.5 text-center font-black text-xs uppercase ${
-                      currentPassed ? 'text-green-600' : 'text-red-600'
-                    }`}>
+                    <span className={`border-b border-dashed border-black flex-1 pb-0.5 text-center font-black text-xs uppercase ${currentPassed ? 'text-green-600' : 'text-red-600'
+                      }`}>
                       {currentPassed ? 'PASS' : 'FAIL'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-black">Test Conducted By :</span>
+                    <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold font-sans">
+                      {attempt.conductedBy || "—"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-black">Test Date :</span>
+                    <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
+                      {attempt.createdAt
+                        ? new Date(attempt.createdAt).toLocaleDateString('en-GB').replace(/\//g, '.')
+                        : "—"}
                     </span>
                   </div>
                 </div>
@@ -329,11 +345,11 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                     {attempt.quiz?.questions?.map((question, questionIndex) => {
                       const qId = question._id || question.id ? String(question._id || question.id) : String(questionIndex);
                       const ans = answersMap.get(qId) || answersMap.get(String(questionIndex)) || answersMap.get(`index-${questionIndex}`) || {};
-                      
+
                       const override = answersOverride[qId] || {};
                       const isCorrect = override.isCorrect ?? ans.isCorrect;
                       const marksObtained = override.marksObtained ?? ans.marksObtained;
-                      
+
                       // Get student's answer text (prioritize dynamic overrides over submitted answers)
                       const studentAnswerText = override.selectedOptions?.[0] ?? ans.selectedOptions?.[0] ?? "";
 
@@ -354,11 +370,10 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                                 )}
                               </div>
                               <div className="flex items-center gap-2 shrink-0 mt-1">
-                                <span className={`text-xs font-black shrink-0 border px-2 py-1 rounded uppercase tracking-wider leading-none shadow-sm ${
-                                  isCorrect 
-                                    ? 'bg-green-100 border-green-300 text-green-800' 
-                                    : 'bg-red-100 border-red-300 text-red-800'
-                                }`}>
+                                <span className={`text-xs font-black shrink-0 border px-2 py-1 rounded uppercase tracking-wider leading-none shadow-sm ${isCorrect
+                                  ? 'bg-green-100 border-green-300 text-green-800'
+                                  : 'bg-red-100 border-red-300 text-red-800'
+                                  }`}>
                                   Score: {marksObtained} / {question.marks || 1}
                                 </span>
                               </div>
@@ -379,12 +394,12 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                             {(!question.type || question.type === "mcq") && (
                               <div className="flex flex-wrap gap-x-8 gap-y-4 pt-2">
                                 {(question.options || []).map((option, optionIndex) => {
-                                  const isCorrectOption = option.isCorrect === true || 
-                                                          option.isCorrect === 1 || 
-                                                          String(option.isCorrect).toLowerCase() === 'true' ||
-                                                          (question.correctOption && option.text === question.correctOption);
+                                  const isCorrectOption = option.isCorrect === true ||
+                                    option.isCorrect === 1 ||
+                                    String(option.isCorrect).toLowerCase() === 'true' ||
+                                    (question.correctOption && option.text === question.correctOption);
                                   const isUserSelected = option.text === studentAnswerText;
-                                  
+
                                   let optionBg = 'hover:bg-gray-50 text-gray-800 border-transparent';
                                   let badgeColor = 'border-black text-black bg-white';
                                   let indicatorIcon = null;
@@ -412,9 +427,8 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                                           handleChange(qId, 'marksObtained', isCorrectOption ? (question.marks || 1) : 0);
                                         }
                                       }}
-                                      className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all ${
-                                        canEdit ? 'cursor-pointer hover:border-slate-400 hover:shadow-md' : ''
-                                      } ${optionBg}`}
+                                      className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all ${canEdit ? 'cursor-pointer hover:border-slate-400 hover:shadow-md' : ''
+                                        } ${optionBg}`}
                                     >
                                       <span className={`w-7 h-7 rounded-full flex items-center justify-center border-2 font-bold text-sm ${badgeColor}`}>
                                         {optionIndex + 1}
@@ -449,37 +463,36 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                               <div className="pt-2 space-y-2">
                                 <div className="flex items-center gap-3">
                                   <span className="text-sm font-black text-gray-800 shrink-0">Candidate Answer:</span>
-                                  <div className={`flex-1 border-b-2 py-1 font-bold text-base px-2 uppercase tracking-wide flex items-center justify-between ${
-                                    isCorrect 
-                                      ? 'border-green-600 text-green-700 bg-green-50/20' 
-                                      : 'border-red-600 text-red-700 bg-red-50/20'
-                                  }`}>
-                                  {canEdit ? (
-                                    <Input
-                                      type="text"
-                                      value={studentAnswerText}
-                                      onChange={(e) => {
-                                        const newAnsText = e.target.value;
-                                        handleChange(qId, 'selectedOptions', [newAnsText]);
-                                        const correctText = String(question.correctAnswer || "").trim().toLowerCase();
-                                        const isMatch = correctText !== "" && correctText === String(newAnsText).trim().toLowerCase();
-                                        handleChange(qId, 'isCorrect', isMatch);
-                                        handleChange(qId, 'marksObtained', isMatch ? (question.marks || 1) : 0);
-                                      }}
-                                      className="flex-1 font-bold text-base uppercase tracking-wide border border-gray-300 bg-white text-black p-1 h-8 rounded"
-                                      placeholder="Modify candidate's answer..."
-                                    />
-                                  ) : (
-                                    <span>{studentAnswerText || "NO ANSWER"}</span>
-                                  )}
-                                  {isCorrect ? (
-                                    <IconCircleCheck size={18} className="text-green-600 shrink-0 ml-2" />
-                                  ) : (
-                                    <IconAlertCircle size={18} className="text-red-600 shrink-0 ml-2" />
-                                  )}
+                                  <div className={`flex-1 border-b-2 py-1 font-bold text-base px-2 uppercase tracking-wide flex items-center justify-between ${isCorrect
+                                    ? 'border-green-600 text-green-700 bg-green-50/20'
+                                    : 'border-red-600 text-red-700 bg-red-50/20'
+                                    }`}>
+                                    {canEdit ? (
+                                      <Input
+                                        type="text"
+                                        value={studentAnswerText}
+                                        onChange={(e) => {
+                                          const newAnsText = e.target.value;
+                                          handleChange(qId, 'selectedOptions', [newAnsText]);
+                                          const correctText = String(question.correctAnswer || "").trim().toLowerCase();
+                                          const isMatch = correctText !== "" && correctText === String(newAnsText).trim().toLowerCase();
+                                          handleChange(qId, 'isCorrect', isMatch);
+                                          handleChange(qId, 'marksObtained', isMatch ? (question.marks || 1) : 0);
+                                        }}
+                                        className="flex-1 font-bold text-base uppercase tracking-wide border border-gray-300 bg-white text-black p-1 h-8 rounded"
+                                        placeholder="Modify candidate's answer..."
+                                      />
+                                    ) : (
+                                      <span>{studentAnswerText || "NO ANSWER"}</span>
+                                    )}
+                                    {isCorrect ? (
+                                      <IconCircleCheck size={18} className="text-green-600 shrink-0 ml-2" />
+                                    ) : (
+                                      <IconAlertCircle size={18} className="text-red-600 shrink-0 ml-2" />
+                                    )}
                                   </div>
                                 </div>
-                                
+
                                 <div className="flex items-center gap-3 text-sm text-green-700 font-bold bg-green-50/50 p-2 border border-green-200">
                                   <span>Set Correct Answer:</span>
                                   <span className="uppercase tracking-wide">{question.correctAnswer || "Not set (manual audit)"}</span>
@@ -496,29 +509,28 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                                 <div className="bg-gray-50 border border-gray-300 p-2 text-xs font-bold text-gray-700 uppercase tracking-wider">
                                   Candidate Matching Selections:
                                 </div>
-                                
+
                                 {(() => {
                                   let userMatches = {};
                                   try {
                                     if (studentAnswerText) {
                                       userMatches = JSON.parse(studentAnswerText);
                                     }
-                                  } catch (e) {}
+                                  } catch (e) { }
 
                                   return (
                                     <div className="space-y-4">
                                       {(question.pairs || []).map((pair, pIdx) => {
                                         const userSelectedRight = userMatches[pair.leftText] || "";
                                         const isPairCorrect = String(userSelectedRight).trim().toLowerCase() === String(pair.rightText).trim().toLowerCase();
-                                        
+
                                         return (
-                                          <div 
-                                            key={pIdx} 
-                                            className={`flex flex-col md:flex-row md:items-center gap-4 p-4 border-2 shadow-sm ${
-                                              isPairCorrect 
-                                                ? 'border-green-300 bg-green-50/10' 
-                                                : 'border-red-300 bg-red-50/10'
-                                            }`}
+                                          <div
+                                            key={pIdx}
+                                            className={`flex flex-col md:flex-row md:items-center gap-4 p-4 border-2 shadow-sm ${isPairCorrect
+                                              ? 'border-green-300 bg-green-50/10'
+                                              : 'border-red-300 bg-red-50/10'
+                                              }`}
                                           >
                                             <div className="flex-1 space-y-1">
                                               <div className="font-bold text-base text-black">
@@ -543,52 +555,51 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                                             <div className="text-black font-black text-xl hidden md:block">➔</div>
 
                                             <div className="w-full md:w-[350px] space-y-2">
-                                              <div className={`p-3 rounded-lg border flex items-center justify-between ${
-                                                isPairCorrect 
-                                                  ? 'bg-green-50 border-green-300 text-green-950 font-bold' 
-                                                  : 'bg-red-50 border-red-300 text-red-950 font-bold'
-                                              }`}>
-                                              <div className="flex flex-col text-sm flex-1">
-                                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Candidate Match:</span>
-                                                {isEditable ? (
-                                                  <select
-                                                    value={userSelectedRight}
-                                                    onChange={(e) => {
-                                                      const newVal = e.target.value;
-                                                      const updatedMatches = { ...userMatches, [pair.leftText]: newVal };
-                                                      const serialized = JSON.stringify(updatedMatches);
-                                                      
-                                                      handleChange(qId, 'selectedOptions', [serialized]);
-                                                      
-                                                      // Auto-grade: all pairs must match
-                                                      let allCorrect = true;
-                                                      (question.pairs || []).forEach(p => {
-                                                        const userRight = p.leftText === pair.leftText ? newVal : (updatedMatches[p.leftText] || "");
-                                                        const isMatch = String(userRight).trim().toLowerCase() === String(p.rightText).trim().toLowerCase();
-                                                        if (!isMatch) allCorrect = false;
-                                                      });
-                                                      
-                                                      handleChange(qId, 'isCorrect', allCorrect);
-                                                      handleChange(qId, 'marksObtained', allCorrect ? (question.marks || 1) : 0);
-                                                    }}
-                                                    className="w-full h-8 px-2 border border-gray-300 font-bold text-xs focus:outline-none focus:border-blue-600 bg-white text-black mt-1"
-                                                  >
-                                                    <option value="">-- Select Match --</option>
-                                                    {(question.pairs || []).map((p, rIdx) => (
-                                                      <option key={rIdx} value={p.rightText}>
-                                                        {p.rightText} {p.rightTextSec ? ` (${p.rightTextSec})` : ''}
-                                                      </option>
-                                                    ))}
-                                                  </select>
+                                              <div className={`p-3 rounded-lg border flex items-center justify-between ${isPairCorrect
+                                                ? 'bg-green-50 border-green-300 text-green-950 font-bold'
+                                                : 'bg-red-50 border-red-300 text-red-950 font-bold'
+                                                }`}>
+                                                <div className="flex flex-col text-sm flex-1">
+                                                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Candidate Match:</span>
+                                                  {isEditable ? (
+                                                    <select
+                                                      value={userSelectedRight}
+                                                      onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        const updatedMatches = { ...userMatches, [pair.leftText]: newVal };
+                                                        const serialized = JSON.stringify(updatedMatches);
+
+                                                        handleChange(qId, 'selectedOptions', [serialized]);
+
+                                                        // Auto-grade: all pairs must match
+                                                        let allCorrect = true;
+                                                        (question.pairs || []).forEach(p => {
+                                                          const userRight = p.leftText === pair.leftText ? newVal : (updatedMatches[p.leftText] || "");
+                                                          const isMatch = String(userRight).trim().toLowerCase() === String(p.rightText).trim().toLowerCase();
+                                                          if (!isMatch) allCorrect = false;
+                                                        });
+
+                                                        handleChange(qId, 'isCorrect', allCorrect);
+                                                        handleChange(qId, 'marksObtained', allCorrect ? (question.marks || 1) : 0);
+                                                      }}
+                                                      className="w-full h-8 px-2 border border-gray-300 font-bold text-xs focus:outline-none focus:border-blue-600 bg-white text-black mt-1"
+                                                    >
+                                                      <option value="">-- Select Match --</option>
+                                                      {(question.pairs || []).map((p, rIdx) => (
+                                                        <option key={rIdx} value={p.rightText}>
+                                                          {p.rightText} {p.rightTextSec ? ` (${p.rightTextSec})` : ''}
+                                                        </option>
+                                                      ))}
+                                                    </select>
+                                                  ) : (
+                                                    <span>{userSelectedRight || "NO SELECTION"}</span>
+                                                  )}
+                                                </div>
+                                                {isPairCorrect ? (
+                                                  <IconCircleCheck size={18} className="text-green-600 shrink-0 ml-2" />
                                                 ) : (
-                                                  <span>{userSelectedRight || "NO SELECTION"}</span>
+                                                  <IconAlertCircle size={18} className="text-red-600 shrink-0 ml-2" />
                                                 )}
-                                              </div>
-                                              {isPairCorrect ? (
-                                                <IconCircleCheck size={18} className="text-green-600 shrink-0 ml-2" />
-                                              ) : (
-                                                <IconAlertCircle size={18} className="text-red-600 shrink-0 ml-2" />
-                                              )}
                                               </div>
 
                                               {!isPairCorrect && (
@@ -626,35 +637,35 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                                   />
                                   <label htmlFor={`override-correct-${qId}`} className="text-xs font-bold text-slate-800 cursor-pointer select-none">
                                     Mark Correct
-                              </label>
-                            </div>
-                            <div className="flex items-center gap-2 ml-auto sm:ml-0">
-                              <span className="text-[11px] font-semibold text-slate-500">Marks Awarded:</span>
-                              <Input
-                                type="number"
-                                min={0}
-                                max={question.marks || 1}
-                                step={0.5}
-                                value={marksObtained}
-                                onChange={(e) => {
-                                  const val = e.target.value === "" ? 0 : Number(e.target.value);
-                                  handleChange(qId, 'marksObtained', val);
-                                  if (val >= (question.marks || 1)) {
-                                    handleChange(qId, 'isCorrect', true);
-                                  } else if (val === 0) {
-                                    handleChange(qId, 'isCorrect', false);
-                                  }
-                                }}
-                                className="h-8 w-20 text-xs font-mono font-bold text-center border-slate-300"
-                              />
-                              <span className="text-xs text-slate-400">/ {question.marks || 1} max</span>
-                            </div>
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                                  </label>
+                                </div>
+                                <div className="flex items-center gap-2 ml-auto sm:ml-0">
+                                  <span className="text-[11px] font-semibold text-slate-500">Marks Awarded:</span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={question.marks || 1}
+                                    step={0.5}
+                                    value={marksObtained}
+                                    onChange={(e) => {
+                                      const val = e.target.value === "" ? 0 : Number(e.target.value);
+                                      handleChange(qId, 'marksObtained', val);
+                                      if (val >= (question.marks || 1)) {
+                                        handleChange(qId, 'isCorrect', true);
+                                      } else if (val === 0) {
+                                        handleChange(qId, 'isCorrect', false);
+                                      }
+                                    }}
+                                    className="h-8 w-20 text-xs font-mono font-bold text-center border-slate-300"
+                                  />
+                                  <span className="text-xs text-slate-400">/ {question.marks || 1} max</span>
+                                </div>
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

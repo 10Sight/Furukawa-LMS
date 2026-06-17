@@ -80,20 +80,36 @@ const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, classNam
     const { data } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
     const subSections = Array.isArray(data?.data) ? data.data : (data?.data?.subSections || []);
 
+    // Find if the current value matches either the name or the displayName (e.g. for backward compatibility)
+    const matchedSS = subSections.find(ss => {
+        const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name || "";
+        return displayName === value || ss.name === value;
+    });
+
+    // If a match is found, use its displayName as the Select value so it matches one of the rendered SelectItems uniquely
+    const selectValue = matchedSS ? (matchedSS.lineName ? `${matchedSS.name} (${matchedSS.lineName})` : matchedSS.name) : value;
+
     return (
-        <Select value={value || ""} onValueChange={onValueChange}>
+        <Select value={selectValue || ""} onValueChange={onValueChange}>
             <SelectTrigger className={`h-7 w-auto min-w-[100px] border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent [&>span]:line-clamp-none [&>span]:whitespace-nowrap ${className}`}>
                 <SelectValue placeholder="Process" />
             </SelectTrigger>
             <SelectContent>
                 {subSections.length > 0 ? (
-                    subSections.map((ss, i) => (
-                        <SelectItem key={ss.id || ss._id || i} value={ss.name || ""}>
-                            {ss.name}{ss.sectionName ? ` (${ss.sectionName})` : ""}
-                        </SelectItem>
-                    ))
+                    subSections.map((ss, i) => {
+                        const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name || "";
+                        return (
+                            <SelectItem key={ss.id || ss._id || i} value={displayName}>
+                                {displayName}
+                            </SelectItem>
+                        );
+                    })
                 ) : (
                     <SelectItem value="none" disabled>No Processes Found</SelectItem>
+                )}
+                {/* Fallback option if selectValue is not empty and doesn't match any subSection */}
+                {selectValue && !subSections.some(ss => (ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name || "") === selectValue) && (
+                    <SelectItem value={selectValue}>{selectValue}</SelectItem>
                 )}
             </SelectContent>
         </Select>
@@ -273,7 +289,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                             lineId: student.lineId || null,
                             subSectionId: student.subSectionId || null,
                             stationId: student.stationId || null,
-                            process: student.stationName || "",
+                            process: (student.stationName && student.lineName) ? `${student.stationName} (${student.lineName})` : (student.stationName || ""),
                             mentor: "",
                             interview1: "",
                             interview2: "",
@@ -287,25 +303,29 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                         const eligibleStudents = dojoHandoverPassedOnly
                             ? students
                             : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
-                        initialEntries = eligibleStudents.map((student, index) => ({
-                            sn: index + 1,
-                            studentId: student._id || student.id,
-                            employeeName: student.fullName,
-                            empCode: student.empId || "",
-                            marks: "0%",
-                            department: student.deptName || sectionName || departmentName || "",
-                            departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
-                            sectionId: student.sectionId || student.targetSectionId || null,
-                            lineId: student.lineId || student.targetLineId || null,
-                            subSectionId: student.subSectionId || student.targetSubSectionId || null,
-                            stationId: student.stationId || student.targetStationId || null,
-                            process: student.stationName || "",
-                            mentor: "",
-                            interview1: "",
-                            interview2: "",
-                            interviewStatus: "",
-                            statusActionBy: ""
-                        }));
+                        initialEntries = eligibleStudents.map((student, index) => {
+                            const studentProcess = student.stationName || "";
+                            const processWithLine = (studentProcess && student.lineName) ? `${studentProcess} (${student.lineName})` : studentProcess;
+                            return {
+                                sn: index + 1,
+                                studentId: student._id || student.id,
+                                employeeName: student.fullName,
+                                empCode: student.empId || "",
+                                marks: "0%",
+                                department: student.deptName || sectionName || departmentName || "",
+                                departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
+                                sectionId: student.sectionId || student.targetSectionId || null,
+                                lineId: student.lineId || student.targetLineId || null,
+                                subSectionId: student.subSectionId || student.targetSubSectionId || null,
+                                stationId: student.stationId || student.targetStationId || null,
+                                process: processWithLine,
+                                mentor: "",
+                                interview1: "",
+                                interview2: "",
+                                interviewStatus: "",
+                                statusActionBy: ""
+                            };
+                        });
                     }
 
                     // 3. Fallback to a single empty row if nothing else
@@ -350,25 +370,29 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                     ? students
                     : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
                 if (eligibleStudents.length > 0) {
-                    const populatedEntries = eligibleStudents.map((student, index) => ({
-                        sn: index + 1,
-                        studentId: student._id || student.id,
-                        employeeName: student.fullName,
-                        empCode: student.empId || "",
-                        marks: "0%",
-                        department: student.deptName || sectionName || departmentName || "",
-                        departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
-                        sectionId: student.sectionId || student.targetSectionId || null,
-                        lineId: student.lineId || student.targetLineId || null,
-                        subSectionId: student.subSectionId || student.targetSubSectionId || null,
-                        stationId: student.stationId || student.targetStationId || null,
-                        process: student.stationName || "",
-                        mentor: "",
-                        interview1: "",
-                        interview2: "",
-                        interviewStatus: "",
-                        statusActionBy: ""
-                    }));
+                    const populatedEntries = eligibleStudents.map((student, index) => {
+                        const studentProcess = student.stationName || "";
+                        const processWithLine = (studentProcess && student.lineName) ? `${studentProcess} (${student.lineName})` : studentProcess;
+                        return {
+                            sn: index + 1,
+                            studentId: student._id || student.id,
+                            employeeName: student.fullName,
+                            empCode: student.empId || "",
+                            marks: "0%",
+                            department: student.deptName || sectionName || departmentName || "",
+                            departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
+                            sectionId: student.sectionId || student.targetSectionId || null,
+                            lineId: student.lineId || student.targetLineId || null,
+                            subSectionId: student.subSectionId || student.targetSubSectionId || null,
+                            stationId: student.stationId || student.targetStationId || null,
+                            process: processWithLine,
+                            mentor: "",
+                            interview1: "",
+                            interview2: "",
+                            interviewStatus: "",
+                            statusActionBy: ""
+                        };
+                    });
                     setEntries(populatedEntries);
                 }
             }
@@ -385,6 +409,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
     const handleUserSelect = (index, user) => {
         const newEntries = [...entries];
+        const userProcessName = user.machineName || user.stationName || "";
+        const processWithLine = (userProcessName && user.lineName) ? `${userProcessName} (${user.lineName})` : userProcessName;
         newEntries[index] = {
             ...newEntries[index],
             studentId: user.id,
@@ -396,7 +422,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
             lineId: user.lineId || user.targetLineId || null,
             subSectionId: user.subSectionId || user.targetSubSectionId || null,
             stationId: user.stationId || user.targetStationId || null,
-            process: user.machineName || user.stationName || ""
+            process: processWithLine
         };
         setEntries(newEntries);
     };

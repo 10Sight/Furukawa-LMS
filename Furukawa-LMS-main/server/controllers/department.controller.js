@@ -1028,11 +1028,15 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                     u.targetLineId as lineId,
                     u.targetSubSectionId as subSectionId,
                     u.targetStationId as stationId,
+                    l.name as lineName,
+                    st.name as stationName,
                     aq.score,
                     q.questions as quizQuestions
                 FROM users u
                 JOIN attempted_quizzes aq ON CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student
                 JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+                LEFT JOIN [lines] l ON u.targetLineId = l.id
+                LEFT JOIN machines st ON u.targetStationId = st.id
                 WHERE u.isTemporary = 1 
                   AND u.targetDeptId = ?
                   AND q.isHandover = 1

@@ -3053,22 +3053,7 @@ const DashboardHome = () => {
                             <p className="text-sm text-slate-500 mt-1">
                                 Requirement line is orange and value is visible on every date
                             </p>
-                            {manpowerData.length > 0 && (
-                                <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 mt-2 w-fit">
-                                    <span className="font-semibold text-slate-700">Reconciliation:</span>
-                                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
-                                        Mapped Present: {manpowerData.reduce((sum, item) => sum + (item.present || 0), 0)}
-                                    </span>
-                                    <span className="text-slate-400 font-bold">+</span>
-                                    <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-800 font-medium">
-                                        Unmapped (Not in Master): {manpowerData.reduce((sum, item) => sum + (item.unmappedPresent || 0), 0)}
-                                    </span>
-                                    <span className="text-slate-400 font-bold">=</span>
-                                    <span className="px-2 py-0.5 rounded bg-green-100 text-green-800 font-medium">
-                                        Total Uploaded Present: {manpowerData.reduce((sum, item) => sum + (item.totalPresent || 0), 0)}
-                                    </span>
-                                </div>
-                            )}
+                          
                         </div>
 
                         <div className="flex items-center gap-4 flex-wrap">

@@ -55,16 +55,19 @@ class LineRequirement {
                 BEGIN
                     ALTER TABLE line_requirements ADD sectionId INT NULL;
                     ALTER TABLE line_requirements ADD CONSTRAINT FK_line_requirements_sections FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL;
-                    
-                    -- Backfill existing records with sectionId based on lineId
-                    EXEC('
-                        UPDATE lr
-                        SET lr.sectionId = l.sectionId
-                        FROM line_requirements lr
-                        INNER JOIN [lines] l ON lr.lineId = l.id
-                        WHERE lr.sectionId IS NULL
-                    ');
                 END
+            END
+
+            -- Ensure any existing records with NULL sectionId are updated to their correct sectionId
+            IF COL_LENGTH('line_requirements', 'sectionId') IS NOT NULL
+            BEGIN
+                EXEC('
+                    UPDATE lr
+                    SET lr.sectionId = l.sectionId
+                    FROM line_requirements lr
+                    INNER JOIN [lines] l ON lr.lineId = l.id
+                    WHERE lr.sectionId IS NULL
+                ');
             END
         `;
         try {

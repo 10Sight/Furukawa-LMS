@@ -230,17 +230,12 @@ const LineRequirementManager = () => {
         const fn01 = parseInt(fn01Val) || 0;
         const fn02 = parseInt(fn02Val) || 0;
 
-        const savedLine = lines.find(l => l.lineId === lineId);
-        const oldFn01 = savedLine?.fn01 ?? 0;
-        const oldFn02 = savedLine?.fn02 ?? 0;
-        const newTotalFN01 = enteredFN01 - oldFn01 + fn01;
-        const newTotalFN02 = enteredFN02 - oldFn02 + fn02;
-
-        if (newTotalFN01 > targetFN01 || newTotalFN02 > targetFN02) {
+        if (enteredFN01 > targetFN01 || enteredFN02 > targetFN02) {
             toast.error("Cannot save: Total section requirements exceed target limit.");
+            const savedLine = lines.find(l => l.lineId === lineId);
             setReqValues(prev => ({
                 ...prev,
-                [lineId]: { fn01: oldFn01, fn02: oldFn02 },
+                [lineId]: { fn01: savedLine?.fn01 ?? 0, fn02: savedLine?.fn02 ?? 0 },
             }));
             return;
         }

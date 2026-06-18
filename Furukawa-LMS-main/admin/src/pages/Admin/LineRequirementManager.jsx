@@ -69,42 +69,75 @@ const LineRequirementManager = () => {
     const [historyData, setHistoryData] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
 
+    // Helper to safely extract IDs from various structures (IDs, objects, JSON strings)
+    const extractIds = (items) => {
+        if (!items) return [];
+        let parsed = items;
+        if (typeof items === 'string') {
+            try {
+                parsed = JSON.parse(items);
+            } catch (e) {
+                return [String(items)];
+            }
+        }
+        if (!Array.isArray(parsed)) return [String(parsed)];
+        return parsed.map(item => {
+            if (!item) return null;
+            if (typeof item === 'object') {
+                return String(item.id ?? item._id ?? item.departmentId ?? item.sectionId ?? '');
+            }
+            return String(item);
+        }).filter(Boolean);
+    };
+
     // --- Role-based department/section filtering ---
     const assignableDepartments = useMemo(() => {
-        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
-        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = extractIds(authUser?.departments);
+        if (authUser?.departmentId) {
+            const depIdStr = String(authUser.departmentId);
+            if (!assignedIds.includes(depIdStr)) {
+                assignedIds.push(depIdStr);
+            }
+        }
         if (!authUser || canAccessAll || assignedIds.length === 0) return departments;
         return departments.filter(d => assignedIds.includes(String(d.id)));
     }, [departments, authUser, canAccessAll]);
 
     const assignableSections = useMemo(() => {
-        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
-        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = extractIds(authUser?.sections);
+        if (authUser?.sectionId) {
+            const secIdStr = String(authUser.sectionId);
+            if (!assignedIds.includes(secIdStr)) {
+                assignedIds.push(secIdStr);
+            }
+        }
         if (!authUser || canAccessAll || assignedIds.length === 0) return sections;
         return sections.filter(s => assignedIds.includes(String(s.id)));
     }, [sections, authUser, canAccessAll]);
 
-    const isRestricted = !canAccessAll && authUser && (
-        (authUser.departments?.length > 0) || authUser.departmentId ||
-        (authUser.sections?.length > 0) || authUser.sectionId
-    );
+    const isRestricted = useMemo(() => {
+        if (canAccessAll) return false;
+        const deptIds = extractIds(authUser?.departments);
+        if (authUser?.departmentId) deptIds.push(String(authUser.departmentId));
+        const sectIds = extractIds(authUser?.sections);
+        if (authUser?.sectionId) sectIds.push(String(authUser.sectionId));
+        return deptIds.length > 0 || sectIds.length > 0;
+    }, [authUser, canAccessAll]);
 
     // Auto-select the only assignable dept/section for restricted users
     useEffect(() => {
         if (!isRestricted) return;
-        if (assignableDepartments.length === 1 && filters.departmentId === 'all') {
+        if (assignableDepartments.length > 0 && filters.departmentId === 'all') {
             setFilters(prev => ({ ...prev, departmentId: String(assignableDepartments[0].id) }));
         }
-    }, [isRestricted, assignableDepartments]);
+    }, [isRestricted, assignableDepartments, filters.departmentId]);
 
     useEffect(() => {
         if (!isRestricted) return;
-        if (filters.departmentId !== 'all' && assignableSections.length === 1 && filters.sectionId === 'all') {
+        if (filters.departmentId !== 'all' && assignableSections.length > 0 && filters.sectionId === 'all') {
             setFilters(prev => ({ ...prev, sectionId: String(assignableSections[0].id) }));
         }
-    }, [isRestricted, assignableSections, filters.departmentId]);
+    }, [isRestricted, assignableSections, filters.departmentId, filters.sectionId]);
 
     // --- Initial Load: Departments ---
     useEffect(() => {

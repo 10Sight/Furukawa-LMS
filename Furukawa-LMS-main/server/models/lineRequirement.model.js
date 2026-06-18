@@ -66,6 +66,7 @@ class LineRequirement {
                     SET lr.sectionId = l.sectionId
                     FROM line_requirements lr
                     INNER JOIN [lines] l ON lr.lineId = l.id
+                    INNER JOIN [sections] s ON l.sectionId = s.id
                     WHERE lr.sectionId IS NULL
                 ');
             END
@@ -82,8 +83,11 @@ class LineRequirement {
         const { lineId, requirementDate, requirementMonth, requirementYear, fn01, fn02, type } = data;
         const quantity = (fn01 || 0) + (fn02 || 0);
 
-        // Fetch sectionId for the given lineId from lines table
-        const [lineRows] = await executeQuery("SELECT sectionId FROM [lines] WHERE id = ?", [lineId]);
+        // Fetch sectionId for the given lineId from lines table, ensuring the section exists
+        const [lineRows] = await executeQuery(
+            "SELECT l.sectionId FROM [lines] l INNER JOIN [sections] s ON l.sectionId = s.id WHERE l.id = ?",
+            [lineId]
+        );
         const sectionId = lineRows[0]?.sectionId || null;
 
         const query = `

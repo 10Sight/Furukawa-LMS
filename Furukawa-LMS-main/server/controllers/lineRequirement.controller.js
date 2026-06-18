@@ -47,34 +47,32 @@ export const getLineRequirements = asyncHandler(async (req, res) => {
     // Detect requirements table schema — all critical columns checked in one round-trip
     const [colCheck] = await executeQuery(`
         SELECT
-            COL_LENGTH('requirements', 'monthName')      as hasMonthName,
-            COL_LENGTH('requirements', 'month_name')     as hasMonthNameSnake,
-            COL_LENGTH('requirements', 'year')           as hasYear,
-            COL_LENGTH('requirements', 'year_val')       as hasYearVal,
-            COL_LENGTH('requirements', 'lineCode')       as hasLineCode,
-            COL_LENGTH('requirements', 'sectionName')    as hasSectionName,
-            COL_LENGTH('requirements', 'section_name')   as hasSectionNameSnake,
-            COL_LENGTH('requirements', 'prodPlanFN01')   as hasProdPlanFN01,
-            COL_LENGTH('requirements', 'prodPlanFN02')   as hasProdPlanFN02
+            COL_LENGTH('requirements', 'monthName')    as hasMonthName,
+            COL_LENGTH('requirements', 'month_name')   as hasMonthNameSnake,
+            COL_LENGTH('requirements', 'year')         as hasYear,
+            COL_LENGTH('requirements', 'year_val')     as hasYearVal,
+            COL_LENGTH('requirements', 'sectionCode')  as hasSectionCode,
+            COL_LENGTH('requirements', 'section_code') as hasSectionCodeSnake,
+            COL_LENGTH('requirements', 'prodPlanFN01') as hasProdPlanFN01,
+            COL_LENGTH('requirements', 'prodPlanFN02') as hasProdPlanFN02
     `);
     const ci = colCheck[0] || {};
 
     let targetFN01 = 0, targetFN02 = 0;
 
-    // Requirements are stored at section level (lineCode is often empty).
-    // Always join via sectionName → sections.name regardless of lineCode existence.
+    // Join requirements → sections via sectionCode = sections.uniCode (more stable than name matching)
     if (ci.hasProdPlanFN01 && ci.hasProdPlanFN02) {
         try {
-            const monthCol       = ci.hasMonthName    ? 'r.monthName'   : 'r.month_name';
-            const yearCol        = ci.hasYear         ? 'r.year'        : 'r.year_val';
-            const sectionNameCol = ci.hasSectionName  ? 'r.sectionName' : 'r.section_name';
+            const monthCol      = ci.hasMonthName    ? 'r.monthName'   : 'r.month_name';
+            const yearCol       = ci.hasYear         ? 'r.year'        : 'r.year_val';
+            const sectionCodeCol = ci.hasSectionCode ? 'r.sectionCode' : 'r.section_code';
 
             let targetSql = `
                 SELECT
                     ISNULL(SUM(CAST(r.prodPlanFN01 AS INT)), 0) as targetFN01,
                     ISNULL(SUM(CAST(r.prodPlanFN02 AS INT)), 0) as targetFN02
                 FROM requirements r
-                INNER JOIN [sections] s ON LOWER(TRIM(${sectionNameCol})) = LOWER(TRIM(s.name))
+                INNER JOIN [sections] s ON LOWER(TRIM(${sectionCodeCol})) = LOWER(TRIM(s.uniCode))
                 WHERE LOWER(${monthCol}) = LOWER(?) AND ${yearCol} = ?
                   AND ISNULL(r.is_active, 1) = 1
             `;

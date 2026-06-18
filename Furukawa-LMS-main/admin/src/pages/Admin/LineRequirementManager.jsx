@@ -283,44 +283,48 @@ const LineRequirementManager = () => {
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
             {/* --- Header --- */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900">Line Requirement Management</h1>
                     <p className="text-slate-500">View and update manpower requirements for specific lines.</p>
                 </div>
-                <div className="flex flex-wrap gap-2 items-center">
-                    <Badge className="bg-blue-100 text-blue-700 border-none px-3 py-1.5 text-sm font-semibold gap-1.5">
-                        <CalendarIcon className="w-3.5 h-3.5" />
-                        {selectedMonthName} {filters.year}
-                    </Badge>
-                    <Badge className="bg-slate-200 text-slate-600 border-none px-3 py-1.5 text-sm font-medium">
-                        FN01 &amp; FN02
-                    </Badge>
-                </div>
-            </div>
 
-            {/* --- Target / Remaining Badges --- */}
-            <div className="flex flex-wrap gap-4 items-center">
-                <div className="flex items-center gap-2">
-                    <Target className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Target</span>
-                    <Badge className="bg-amber-100 text-amber-700 border-none px-3 py-1 font-bold text-sm">
-                        FN01: {targetFN01}
-                    </Badge>
-                    <Badge className="bg-amber-100 text-amber-700 border-none px-3 py-1 font-bold text-sm">
-                        FN02: {targetFN02}
-                    </Badge>
-                </div>
-                <div className="w-px h-5 bg-slate-200" />
-                <div className="flex items-center gap-2">
-                    <TrendingDown className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Remaining</span>
-                    <Badge className={`border-none px-3 py-1 font-bold text-sm ${remainingFN01 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        FN01: {remainingFN01}
-                    </Badge>
-                    <Badge className={`border-none px-3 py-1 font-bold text-sm ${remainingFN02 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        FN02: {remainingFN02}
-                    </Badge>
+                {/* Month/Year + Target + Remaining — stacked right-aligned */}
+                <div className="flex flex-col items-end gap-2">
+                    {/* Row 1: month / year label */}
+                    <div className="flex items-center gap-2">
+                        <Badge className="bg-blue-100 text-blue-700 border-none px-4 py-2 text-base font-bold gap-1.5">
+                            <CalendarIcon className="w-4 h-4" />
+                            {selectedMonthName} {filters.year}
+                        </Badge>
+                        <Badge className="bg-slate-200 text-slate-600 border-none px-4 py-2 text-base font-bold">
+                            FN01 &amp; FN02
+                        </Badge>
+                    </div>
+
+                    {/* Row 2: Target */}
+                    <div className="flex items-center gap-2">
+                        <Target className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target</span>
+                        <Badge className="bg-amber-100 text-amber-700 border-none px-4 py-2 text-base font-bold">
+                            FN01: {targetFN01}
+                        </Badge>
+                        <Badge className="bg-amber-100 text-amber-700 border-none px-4 py-2 text-base font-bold">
+                            FN02: {targetFN02}
+                        </Badge>
+                    </div>
+
+                    {/* Row 3: Remaining */}
+                    <div className="flex items-center gap-2">
+                        <TrendingDown className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Remaining</span>
+                        <Badge className={`border-none px-4 py-2 text-base font-bold ${remainingFN01 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            FN01: {remainingFN01}
+                        </Badge>
+                        <Badge className={`border-none px-4 py-2 text-base font-bold ${remainingFN02 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            FN02: {remainingFN02}
+                        </Badge>
+                    </div>
                 </div>
             </div>
 

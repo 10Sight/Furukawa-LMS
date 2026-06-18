@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import {
     Card,
     CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription
 } from "@/components/ui/card";
 import {
     Select,
@@ -18,15 +15,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-    Search,
     Filter,
     History as HistoryIcon,
-    Save,
     Calendar as CalendarIcon,
-    ChevronRight,
     Loader2,
     CheckCircle2,
-    AlertCircle
+    AlertCircle,
+    Target,
+    TrendingDown,
 } from 'lucide-react';
 import {
     Dialog,
@@ -35,7 +31,6 @@ import {
     DialogTitle,
     DialogDescription,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
 
@@ -48,27 +43,68 @@ const MONTHS = [
 
 const LineRequirementManager = () => {
     const dispatch = useDispatch();
+    const authUser = useSelector(state => state.auth.user);
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const canAccessAll = isAdmin;
+
     // --- State: Filters ---
     const [departments, setDepartments] = useState([]);
     const [sections, setSections] = useState([]);
-    const [lines, setLines] = useState([]);
-    
+
     const [filters, setFilters] = useState({
         departmentId: 'all',
         sectionId: 'all',
-        type: 'MONTHLY',
         year: new Date().getFullYear().toString(),
         month: (new Date().getMonth() + 1).toString(),
-        date: new Date().toISOString().split('T')[0]
     });
 
     // --- State: Data ---
-    const [data, setData] = useState([]);
+    const [lines, setLines] = useState([]);
+    const [targetFN01, setTargetFN01] = useState(0);
+    const [targetFN02, setTargetFN02] = useState(0);
+    const [reqValues, setReqValues] = useState({});
     const [loading, setLoading] = useState(false);
     const [updatingId, setUpdatingId] = useState(null);
     const [historyLine, setHistoryLine] = useState(null);
     const [historyData, setHistoryData] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+
+    // --- Role-based department/section filtering ---
+    const assignableDepartments = useMemo(() => {
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return departments;
+        return departments.filter(d => assignedIds.includes(String(d.id)));
+    }, [departments, authUser, canAccessAll]);
+
+    const assignableSections = useMemo(() => {
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return sections;
+        return sections.filter(s => assignedIds.includes(String(s.id)));
+    }, [sections, authUser, canAccessAll]);
+
+    const isRestricted = !canAccessAll && authUser && (
+        (authUser.departments?.length > 0) || authUser.departmentId ||
+        (authUser.sections?.length > 0) || authUser.sectionId
+    );
+
+    // Auto-select the only assignable dept/section for restricted users
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && filters.departmentId === 'all') {
+            setFilters(prev => ({ ...prev, departmentId: String(assignableDepartments[0].id) }));
+        }
+    }, [isRestricted, assignableDepartments]);
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (filters.departmentId !== 'all' && assignableSections.length === 1 && filters.sectionId === 'all') {
+            setFilters(prev => ({ ...prev, sectionId: String(assignableSections[0].id) }));
+        }
+    }, [isRestricted, assignableSections, filters.departmentId]);
 
     // --- Initial Load: Departments ---
     useEffect(() => {
@@ -79,7 +115,6 @@ const LineRequirementManager = () => {
                     setDepartments(res.data.data.departments || []);
                 }
             } catch (error) {
-                console.error("Error fetching departments:", error);
                 toast.error("Failed to load departments");
             }
         };
@@ -111,25 +146,30 @@ const LineRequirementManager = () => {
         setLoading(true);
         try {
             const params = {
-                type: filters.type,
                 year: filters.year,
+                month: filters.month,
             };
-            
             if (filters.departmentId !== 'all') params.departmentId = filters.departmentId;
             if (filters.sectionId !== 'all') params.sectionId = filters.sectionId;
-            
-            if (filters.type === 'MONTHLY') {
-                params.month = filters.month;
-            } else {
-                params.date = filters.date;
-            }
 
             const res = await axiosInstance.get('/api/line-requirements', { params });
             if (res.data?.success) {
-                setData(res.data.data || []);
+                const responseData = res.data.data || {};
+                const fetchedLines = responseData.lines || [];
+                setLines(fetchedLines);
+                setTargetFN01(responseData.targetFN01 || 0);
+                setTargetFN02(responseData.targetFN02 || 0);
+
+                const initial = {};
+                fetchedLines.forEach(item => {
+                    initial[item.lineId] = {
+                        fn01: item.fn01 ?? 0,
+                        fn02: item.fn02 ?? 0,
+                    };
+                });
+                setReqValues(initial);
             }
         } catch (error) {
-            console.error("Error fetching line requirements:", error);
             toast.error("Failed to load requirements");
         } finally {
             setLoading(false);
@@ -140,32 +180,41 @@ const LineRequirementManager = () => {
         fetchData();
     }, [filters]);
 
+    // --- Dynamic remaining calculation ---
+    const enteredFN01 = useMemo(() =>
+        Object.values(reqValues).reduce((sum, v) => sum + (parseInt(v.fn01) || 0), 0),
+        [reqValues]
+    );
+    const enteredFN02 = useMemo(() =>
+        Object.values(reqValues).reduce((sum, v) => sum + (parseInt(v.fn02) || 0), 0),
+        [reqValues]
+    );
+    const remainingFN01 = targetFN01 - enteredFN01;
+    const remainingFN02 = targetFN02 - enteredFN02;
+
     // --- Update Requirement ---
-    const handleUpdate = async (lineId, newQuantity) => {
-        if (newQuantity === '' || isNaN(newQuantity)) return;
-        
+    const handleUpdate = async (lineId, fn01Val, fn02Val) => {
+        const fn01 = parseInt(fn01Val) || 0;
+        const fn02 = parseInt(fn02Val) || 0;
+
         setUpdatingId(lineId);
         try {
             const payload = {
                 lineId,
-                quantity: parseInt(newQuantity),
-                type: filters.type,
-                requirementYear: parseInt(filters.year)
+                fn01,
+                fn02,
+                requirementYear: parseInt(filters.year),
+                requirementMonth: parseInt(filters.month),
             };
-
-            if (filters.type === 'MONTHLY') {
-                payload.requirementMonth = parseInt(filters.month);
-            } else {
-                payload.requirementDate = filters.date;
-            }
 
             const res = await axiosInstance.post('/api/line-requirements/update', payload);
             if (res.data?.success) {
                 toast.success("Requirement updated");
-                // Local state update
-                setData(prev => prev.map(item => item.lineId === lineId ? { ...item, quantity: newQuantity } : item));
-                
-                // Invalidate RTK Query cache for Line components to ensure consistency across the UI
+                setLines(prev => prev.map(item =>
+                    item.lineId === lineId
+                        ? { ...item, fn01, fn02, quantity: fn01 + fn02 }
+                        : item
+                ));
                 try {
                     const { LineApi } = await import('@/Redux/AllApi/LineApi');
                     dispatch(LineApi.util.invalidateTags(['Line']));
@@ -174,7 +223,6 @@ const LineRequirementManager = () => {
                 }
             }
         } catch (error) {
-            console.error("Error updating requirement:", error);
             toast.error("Update failed");
         } finally {
             setUpdatingId(null);
@@ -197,6 +245,8 @@ const LineRequirementManager = () => {
         }
     };
 
+    const selectedMonthName = MONTHS.find(m => m.id === parseInt(filters.month))?.name || '';
+
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
             {/* --- Header --- */}
@@ -205,13 +255,39 @@ const LineRequirementManager = () => {
                     <h1 className="text-2xl font-bold text-slate-900">Line Requirement Management</h1>
                     <p className="text-slate-500">View and update manpower requirements for specific lines.</p>
                 </div>
-                <div className="flex gap-2">
-                    <Tabs value={filters.type} onValueChange={(val) => setFilters(prev => ({ ...prev, type: val }))} className="w-[300px]">
-                        <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="MONTHLY">Monthly</TabsTrigger>
-                            <TabsTrigger value="DAILY">Daily</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
+                <div className="flex flex-wrap gap-2 items-center">
+                    <Badge className="bg-blue-100 text-blue-700 border-none px-3 py-1.5 text-sm font-semibold gap-1.5">
+                        <CalendarIcon className="w-3.5 h-3.5" />
+                        {selectedMonthName} {filters.year}
+                    </Badge>
+                    <Badge className="bg-slate-200 text-slate-600 border-none px-3 py-1.5 text-sm font-medium">
+                        FN01 &amp; FN02
+                    </Badge>
+                </div>
+            </div>
+
+            {/* --- Target / Remaining Badges --- */}
+            <div className="flex flex-wrap gap-4 items-center">
+                <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Target</span>
+                    <Badge className="bg-amber-100 text-amber-700 border-none px-3 py-1 font-bold text-sm">
+                        FN01: {targetFN01}
+                    </Badge>
+                    <Badge className="bg-amber-100 text-amber-700 border-none px-3 py-1 font-bold text-sm">
+                        FN02: {targetFN02}
+                    </Badge>
+                </div>
+                <div className="w-px h-5 bg-slate-200" />
+                <div className="flex items-center gap-2">
+                    <TrendingDown className="w-4 h-4 text-emerald-500" />
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Remaining</span>
+                    <Badge className={`border-none px-3 py-1 font-bold text-sm ${remainingFN01 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        FN01: {remainingFN01}
+                    </Badge>
+                    <Badge className={`border-none px-3 py-1 font-bold text-sm ${remainingFN02 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        FN02: {remainingFN02}
+                    </Badge>
                 </div>
             </div>
 
@@ -221,13 +297,17 @@ const LineRequirementManager = () => {
                     {/* Department Filter */}
                     <div className="flex-1 min-w-[200px] space-y-1.5">
                         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Department</label>
-                        <Select value={filters.departmentId} onValueChange={(val) => setFilters(prev => ({ ...prev, departmentId: val, sectionId: 'all' }))}>
+                        <Select
+                            value={filters.departmentId}
+                            onValueChange={(val) => setFilters(prev => ({ ...prev, departmentId: val, sectionId: 'all' }))}
+                            disabled={isRestricted && assignableDepartments.length === 1}
+                        >
                             <SelectTrigger className="bg-white border-slate-200">
                                 <SelectValue placeholder="All Departments" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">All Departments</SelectItem>
-                                {departments.map(dept => (
+                                {!isRestricted && <SelectItem value="all">All Departments</SelectItem>}
+                                {assignableDepartments.map(dept => (
                                     <SelectItem key={dept.id} value={dept.id.toString()}>{dept.name}</SelectItem>
                                 ))}
                             </SelectContent>
@@ -237,63 +317,48 @@ const LineRequirementManager = () => {
                     {/* Section Filter */}
                     <div className="flex-1 min-w-[200px] space-y-1.5">
                         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Section</label>
-                        <Select 
-                            value={filters.sectionId} 
+                        <Select
+                            value={filters.sectionId}
                             onValueChange={(val) => setFilters(prev => ({ ...prev, sectionId: val }))}
-                            disabled={filters.departmentId === 'all'}
+                            disabled={(filters.departmentId === 'all') || (isRestricted && assignableSections.length === 1)}
                         >
                             <SelectTrigger className="bg-white border-slate-200">
                                 <SelectValue placeholder="All Sections" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">All Sections</SelectItem>
-                                {sections.map(sec => (
+                                {!isRestricted && <SelectItem value="all">All Sections</SelectItem>}
+                                {assignableSections.map(sec => (
                                     <SelectItem key={sec.id} value={sec.id.toString()}>{sec.name}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
 
-                    {/* Time Filters */}
-                    {filters.type === 'MONTHLY' ? (
-                        <>
-                            <div className="w-[120px] space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Month</label>
-                                <Select value={filters.month} onValueChange={(val) => setFilters(prev => ({ ...prev, month: val }))}>
-                                    <SelectTrigger className="bg-white border-slate-200">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {MONTHS.map(m => (
-                                            <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="w-[100px] space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Year</label>
-                                <Input 
-                                    type="number" 
-                                    value={filters.year} 
-                                    onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
-                                    className="bg-white border-slate-200"
-                                />
-                            </div>
-                        </>
-                    ) : (
-                        <div className="w-[200px] space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</label>
-                            <div className="relative">
-                                <Input 
-                                    type="date" 
-                                    value={filters.date} 
-                                    onChange={(e) => setFilters(prev => ({ ...prev, date: e.target.value }))}
-                                    className="bg-white border-slate-200 pl-10"
-                                />
-                                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            </div>
-                        </div>
-                    )}
+                    {/* Month Filter */}
+                    <div className="w-[130px] space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Month</label>
+                        <Select value={filters.month} onValueChange={(val) => setFilters(prev => ({ ...prev, month: val }))}>
+                            <SelectTrigger className="bg-white border-slate-200">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {MONTHS.map(m => (
+                                    <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Year Filter */}
+                    <div className="w-[100px] space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Year</label>
+                        <Input
+                            type="number"
+                            value={filters.year}
+                            onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
+                            className="bg-white border-slate-200"
+                        />
+                    </div>
 
                     <Button variant="outline" size="icon" className="shrink-0 text-slate-400 border-slate-200" onClick={fetchData}>
                         <Filter className="w-4 h-4" />
@@ -307,62 +372,89 @@ const LineRequirementManager = () => {
                     <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-50 border-b border-slate-100 uppercase text-[10px] font-bold text-slate-500 tracking-wider">
                             <tr>
-                                <th className="px-6 py-4">Department / Section</th>
-                                <th className="px-6 py-4">Line Name</th>
-                                <th className="px-6 py-4">UniCode</th>
-                                <th className="px-6 py-4 text-center">Requirement</th>
-                                <th className="px-6 py-4 text-right">Actions</th>
+                                <th className="px-6 py-3" rowSpan={2}>Department</th>
+                                <th className="px-6 py-3" rowSpan={2}>Section</th>
+                                <th className="px-6 py-3" rowSpan={2}>Line Name</th>
+                                <th className="px-6 py-3 text-center border-l border-slate-100" colSpan={2}>Requirement</th>
+                                <th className="px-6 py-3 text-right" rowSpan={2}>Actions</th>
+                            </tr>
+                            <tr>
+                                <th className="px-6 py-2 text-center border-l border-slate-100 border-t border-slate-100">FN01</th>
+                                <th className="px-6 py-2 text-center border-t border-slate-100">FN02</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-20 text-center">
+                                    <td colSpan={6} className="px-6 py-20 text-center">
                                         <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600 mb-2" />
                                         <span className="text-slate-400 font-medium tracking-wide">Fetching requirements...</span>
                                     </td>
                                 </tr>
-                            ) : data.length === 0 ? (
+                            ) : lines.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-20 text-center">
+                                    <td colSpan={6} className="px-6 py-20 text-center">
                                         <AlertCircle className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                                         <span className="text-slate-400 font-medium tracking-wide">No lines found for the selected filters.</span>
                                     </td>
                                 </tr>
-                            ) : data.map((item) => (
+                            ) : lines.map((item) => (
                                 <tr key={item.lineId} className="hover:bg-slate-50/50 transition-colors group">
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-col">
-                                            <span className="font-semibold text-slate-700">{item.departmentName}</span>
-                                            <span className="text-[11px] text-slate-400 font-medium">{item.sectionName}</span>
-                                        </div>
-                                    </td>
+                                    <td className="px-6 py-4 font-semibold text-slate-700">{item.departmentName}</td>
+                                    <td className="px-6 py-4 text-slate-500 text-[12px] font-medium">{item.sectionName}</td>
                                     <td className="px-6 py-4 font-medium text-slate-900">{item.lineName}</td>
-                                    <td className="px-6 py-4">
-                                        <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none font-mono">
-                                            {item.lineCode || 'N/A'}
-                                        </Badge>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center justify-center gap-2 max-w-[120px] mx-auto">
-                                            <Input 
-                                                type="number" 
-                                                defaultValue={item.quantity || 0}
-                                                onBlur={(e) => handleUpdate(item.lineId, e.target.value)}
+
+                                    {/* FN01 input */}
+                                    <td className="px-4 py-4 border-l border-slate-100">
+                                        <div className="flex items-center justify-center gap-1.5 max-w-[110px] mx-auto">
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                value={reqValues[item.lineId]?.fn01 ?? 0}
+                                                onChange={(e) => setReqValues(prev => ({
+                                                    ...prev,
+                                                    [item.lineId]: { ...prev[item.lineId], fn01: e.target.value }
+                                                }))}
+                                                onBlur={(e) => handleUpdate(
+                                                    item.lineId,
+                                                    e.target.value,
+                                                    reqValues[item.lineId]?.fn02 ?? 0
+                                                )}
                                                 className="h-8 w-20 text-center bg-white border-slate-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all font-bold"
-                                                key={`${item.lineId}-${item.quantity}`} // Force re-render on save
                                             />
                                             {updatingId === item.lineId ? (
-                                                <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                                                <Loader2 className="w-3 h-3 animate-spin text-blue-600 shrink-0" />
                                             ) : (
-                                                <CheckCircle2 className="w-3 h-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                <CheckCircle2 className="w-3 h-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                                             )}
                                         </div>
                                     </td>
+
+                                    {/* FN02 input */}
+                                    <td className="px-4 py-4">
+                                        <div className="flex items-center justify-center max-w-[90px] mx-auto">
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                value={reqValues[item.lineId]?.fn02 ?? 0}
+                                                onChange={(e) => setReqValues(prev => ({
+                                                    ...prev,
+                                                    [item.lineId]: { ...prev[item.lineId], fn02: e.target.value }
+                                                }))}
+                                                onBlur={(e) => handleUpdate(
+                                                    item.lineId,
+                                                    reqValues[item.lineId]?.fn01 ?? 0,
+                                                    e.target.value
+                                                )}
+                                                className="h-8 w-20 text-center bg-white border-slate-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all font-bold"
+                                            />
+                                        </div>
+                                    </td>
+
                                     <td className="px-6 py-4 text-right">
-                                        <Button 
-                                            variant="ghost" 
-                                            size="sm" 
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
                                             className="h-8 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all rounded-lg"
                                             onClick={() => openHistory(item)}
                                         >
@@ -411,25 +503,34 @@ const LineRequirementManager = () => {
                             <div className="space-y-4">
                                 {historyData.map((log) => (
                                     <div key={log.id} className="relative flex gap-4 pr-4">
-                                        {/* Timeline Dot */}
+                                        {/* Timeline dot */}
                                         <div className="flex flex-col items-center">
-                                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 group">
-                                                <div className="w-2 h-2 rounded-full bg-blue-600 group-hover:scale-125 transition-transform" />
+                                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                                                <div className="w-2 h-2 rounded-full bg-blue-600" />
                                             </div>
                                             <div className="w-[1px] h-full bg-slate-100" />
                                         </div>
-                                        
+
                                         {/* Content */}
                                         <div className="flex-1 pb-6">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-bold text-slate-900">{log.newQuantity}</span>
-                                                    <Badge className="bg-blue-50 text-blue-600 border-none text-[9px] uppercase tracking-tighter h-4">
-                                                        {log.type}
-                                                    </Badge>
-                                                    {log.oldQuantity !== null && (
-                                                        <span className="text-xs text-slate-400 line-through decoration-slate-300">from {log.oldQuantity}</span>
-                                                    )}
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="flex flex-col gap-1">
+                                                    {/* FN01 row */}
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge className="bg-blue-50 text-blue-600 border-none text-[9px] uppercase tracking-tighter h-4 px-1.5">FN01</Badge>
+                                                        <span className="font-bold text-slate-900">{log.newFn01 ?? log.newQuantity ?? 0}</span>
+                                                        {(log.oldFn01 !== null && log.oldFn01 !== undefined) && (
+                                                            <span className="text-xs text-slate-400 line-through decoration-slate-300">from {log.oldFn01}</span>
+                                                        )}
+                                                    </div>
+                                                    {/* FN02 row */}
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge className="bg-indigo-50 text-indigo-600 border-none text-[9px] uppercase tracking-tighter h-4 px-1.5">FN02</Badge>
+                                                        <span className="font-bold text-slate-900">{log.newFn02 ?? 0}</span>
+                                                        {(log.oldFn02 !== null && log.oldFn02 !== undefined) && (
+                                                            <span className="text-xs text-slate-400 line-through decoration-slate-300">from {log.oldFn02}</span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full uppercase">
                                                     {new Date(log.createdAt).toLocaleString()}
@@ -443,7 +544,7 @@ const LineRequirementManager = () => {
                                                     <span>Changed by <span className="text-slate-700 font-semibold">{log.changedByName || 'System'}</span></span>
                                                 </div>
                                                 <div className="text-[10px] text-slate-400 font-medium italic">
-                                                    Target: {log.type === 'DAILY' ? log.requirementDate : `${MONTHS[log.requirementMonth-1]?.name} ${log.requirementYear}`}
+                                                    {MONTHS[log.requirementMonth - 1]?.name} {log.requirementYear}
                                                 </div>
                                             </div>
                                         </div>

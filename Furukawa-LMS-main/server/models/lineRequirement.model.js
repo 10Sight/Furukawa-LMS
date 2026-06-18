@@ -8,8 +8,10 @@ class LineRequirement {
         this.requirementDate = data.requirementDate;
         this.requirementMonth = data.requirementMonth;
         this.requirementYear = data.requirementYear;
+        this.fn01 = data.fn01 || 0;
+        this.fn02 = data.fn02 || 0;
         this.quantity = data.quantity || 0;
-        this.type = data.type; // 'DAILY' or 'MONTHLY'
+        this.type = data.type;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -24,6 +26,8 @@ class LineRequirement {
                     requirementDate DATE NULL,
                     requirementMonth INT NULL,
                     requirementYear INT NOT NULL,
+                    fn01 INT DEFAULT 0,
+                    fn02 INT DEFAULT 0,
                     quantity INT DEFAULT 0,
                     type NVARCHAR(10) NOT NULL CHECK (type IN ('DAILY', 'MONTHLY')),
                     createdAt DATETIME DEFAULT GETDATE(),
@@ -33,6 +37,17 @@ class LineRequirement {
                 );
                 CREATE INDEX idx_line_req ON line_requirements(lineId);
                 CREATE INDEX idx_date_req ON line_requirements(requirementDate);
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('line_requirements', 'fn01') IS NULL
+                BEGIN
+                    ALTER TABLE line_requirements ADD fn01 INT DEFAULT 0;
+                END
+                IF COL_LENGTH('line_requirements', 'fn02') IS NULL
+                BEGIN
+                    ALTER TABLE line_requirements ADD fn02 INT DEFAULT 0;
+                END
             END
         `;
         try {
@@ -44,43 +59,46 @@ class LineRequirement {
     }
 
     static async createOrUpdate(data) {
-        const { lineId, requirementDate, requirementMonth, requirementYear, quantity, type } = data;
-        
+        const { lineId, requirementDate, requirementMonth, requirementYear, fn01, fn02, type } = data;
+        const quantity = (fn01 || 0) + (fn02 || 0);
+
         const query = `
             MERGE line_requirements AS target
             USING (
                 SELECT ? AS lineId, ? AS requirementDate, ? AS requirementMonth, ? AS requirementYear, ? AS type
             ) AS source
-            ON target.lineId = source.lineId 
+            ON target.lineId = source.lineId
                AND (target.requirementDate = source.requirementDate OR (target.requirementDate IS NULL AND source.requirementDate IS NULL))
                AND (target.requirementMonth = source.requirementMonth OR (target.requirementMonth IS NULL AND source.requirementMonth IS NULL))
                AND target.requirementYear = source.requirementYear
                AND target.type = source.type
             WHEN MATCHED THEN
-                UPDATE SET 
+                UPDATE SET
+                    fn01 = ?,
+                    fn02 = ?,
                     quantity = ?,
                     updatedAt = GETDATE()
             WHEN NOT MATCHED THEN
-                INSERT (lineId, requirementDate, requirementMonth, requirementYear, quantity, type, createdAt, updatedAt)
-                VALUES (source.lineId, source.requirementDate, source.requirementMonth, source.requirementYear, ?, source.type, GETDATE(), GETDATE())
+                INSERT (lineId, requirementDate, requirementMonth, requirementYear, fn01, fn02, quantity, type, createdAt, updatedAt)
+                VALUES (source.lineId, source.requirementDate, source.requirementMonth, source.requirementYear, ?, ?, ?, source.type, GETDATE(), GETDATE())
             OUTPUT INSERTED.id;
         `;
 
         const [result] = await executeQuery(query, [
             lineId, requirementDate || null, requirementMonth || null, requirementYear, type,
-            quantity, quantity
+            fn01 || 0, fn02 || 0, quantity,
+            fn01 || 0, fn02 || 0, quantity
         ]);
 
-        // Also update the main lines table for consistency with existing UI
         const updateLineQuery = `UPDATE [lines] SET requirement = ? WHERE id = ?`;
         await executeQuery(updateLineQuery, [quantity, lineId]);
-        
+
         return result[0]?.id;
     }
 
     static async findByFilters(filters) {
         let sql = `
-            SELECT lr.*, l.name as lineName, s.name as sectionName, d.name as departmentName 
+            SELECT lr.*, l.name as lineName, s.name as sectionName, d.name as departmentName
             FROM line_requirements lr
             INNER JOIN [lines] l ON lr.lineId = l.id
             INNER JOIN [sections] s ON l.sectionId = s.id

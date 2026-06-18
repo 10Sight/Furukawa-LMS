@@ -5,6 +5,7 @@ class LineRequirement {
     constructor(data) {
         this.id = data.id;
         this.lineId = data.lineId;
+        this.sectionId = data.sectionId;
         this.requirementDate = data.requirementDate;
         this.requirementMonth = data.requirementMonth;
         this.requirementYear = data.requirementYear;
@@ -23,6 +24,7 @@ class LineRequirement {
                 CREATE TABLE line_requirements (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     lineId INT NOT NULL,
+                    sectionId INT NULL,
                     requirementDate DATE NULL,
                     requirementMonth INT NULL,
                     requirementYear INT NOT NULL,
@@ -33,6 +35,7 @@ class LineRequirement {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE,
+                    FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL,
                     CONSTRAINT unique_line_requirement UNIQUE (lineId, requirementDate, requirementMonth, requirementYear, type)
                 );
                 CREATE INDEX idx_line_req ON line_requirements(lineId);
@@ -48,6 +51,20 @@ class LineRequirement {
                 BEGIN
                     ALTER TABLE line_requirements ADD fn02 INT DEFAULT 0;
                 END
+                IF COL_LENGTH('line_requirements', 'sectionId') IS NULL
+                BEGIN
+                    ALTER TABLE line_requirements ADD sectionId INT NULL;
+                    ALTER TABLE line_requirements ADD CONSTRAINT FK_line_requirements_sections FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL;
+                    
+                    -- Backfill existing records with sectionId based on lineId
+                    EXEC('
+                        UPDATE lr
+                        SET lr.sectionId = l.sectionId
+                        FROM line_requirements lr
+                        INNER JOIN [lines] l ON lr.lineId = l.id
+                        WHERE lr.sectionId IS NULL
+                    ');
+                END
             END
         `;
         try {
@@ -62,10 +79,14 @@ class LineRequirement {
         const { lineId, requirementDate, requirementMonth, requirementYear, fn01, fn02, type } = data;
         const quantity = (fn01 || 0) + (fn02 || 0);
 
+        // Fetch sectionId for the given lineId from lines table
+        const [lineRows] = await executeQuery("SELECT sectionId FROM [lines] WHERE id = ?", [lineId]);
+        const sectionId = lineRows[0]?.sectionId || null;
+
         const query = `
             MERGE line_requirements AS target
             USING (
-                SELECT ? AS lineId, ? AS requirementDate, ? AS requirementMonth, ? AS requirementYear, ? AS type
+                SELECT ? AS lineId, ? AS requirementDate, ? AS requirementMonth, ? AS requirementYear, ? AS type, ? AS sectionId
             ) AS source
             ON target.lineId = source.lineId
                AND (target.requirementDate = source.requirementDate OR (target.requirementDate IS NULL AND source.requirementDate IS NULL))
@@ -77,15 +98,16 @@ class LineRequirement {
                     fn01 = ?,
                     fn02 = ?,
                     quantity = ?,
+                    sectionId = source.sectionId,
                     updatedAt = GETDATE()
             WHEN NOT MATCHED THEN
-                INSERT (lineId, requirementDate, requirementMonth, requirementYear, fn01, fn02, quantity, type, createdAt, updatedAt)
-                VALUES (source.lineId, source.requirementDate, source.requirementMonth, source.requirementYear, ?, ?, ?, source.type, GETDATE(), GETDATE())
+                INSERT (lineId, sectionId, requirementDate, requirementMonth, requirementYear, fn01, fn02, quantity, type, createdAt, updatedAt)
+                VALUES (source.lineId, source.sectionId, source.requirementDate, source.requirementMonth, source.requirementYear, ?, ?, ?, source.type, GETDATE(), GETDATE())
             OUTPUT INSERTED.id;
         `;
 
         const [result] = await executeQuery(query, [
-            lineId, requirementDate || null, requirementMonth || null, requirementYear, type,
+            lineId, requirementDate || null, requirementMonth || null, requirementYear, type, sectionId,
             fn01 || 0, fn02 || 0, quantity,
             fn01 || 0, fn02 || 0, quantity
         ]);

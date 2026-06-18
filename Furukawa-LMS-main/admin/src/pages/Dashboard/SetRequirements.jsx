@@ -63,7 +63,7 @@ const MONTHS_SHORT = {
   December: "Dec",
 };
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 8;
 
 const safeNum = (v) => {
   if (v === null || v === undefined || v === "") return null;
@@ -1007,11 +1007,11 @@ export default function SetRequirements() {
           <table className="text-left text-sm text-slate-500 w-full min-w-max">
             <thead className="bg-slate-50 text-xs uppercase font-medium text-slate-500">
               <tr>
-                <th className="px-3 py-3 sticky left-0 z-40 bg-slate-50 border-r border-slate-200" style={{ width: "140px", minWidth: "140px" }}>Section Code</th>
-                <th className="px-3 py-3 sticky left-[140px] z-40 bg-slate-50 border-r-2 border-slate-300" style={{ width: "180px", minWidth: "180px" }}>Section Name</th>
-                <th className="px-3 py-3 border-r border-slate-200" style={{ width: "220px", minWidth: "220px" }}>Line Description</th>
+                <th className="px-2 py-3 sticky left-0 z-40 bg-slate-50 border-r border-slate-200" style={{ width: "105px", minWidth: "105px", maxWidth: "105px" }}>Section Code</th>
+                <th className="px-2 py-3 sticky left-[105px] z-40 bg-slate-50 border-r border-slate-200" style={{ width: "140px", minWidth: "140px", maxWidth: "140px" }}>Section Name</th>
+                <th className="px-2 py-3 sticky left-[245px] z-40 bg-slate-50 border-r border-slate-200" style={{ width: "170px", minWidth: "170px", maxWidth: "170px" }}>Line Description</th>
+                <th className="px-2 py-3 sticky left-[415px] z-40 bg-slate-50 text-center border-r-2 border-slate-300" style={{ width: "135px", minWidth: "135px", maxWidth: "135px" }}>Approval</th>
                 <th className="px-3 py-3 text-center" style={{ width: "90px", minWidth: "90px" }}>Year</th>
-                <th className="px-3 py-3 text-center border-l border-slate-200" style={{ width: "160px", minWidth: "160px" }}>Approval</th>
 
                 {MONTHS.map((m) => (
                   <th
@@ -1074,21 +1074,27 @@ export default function SetRequirements() {
                             : ""
                         }`}
                     >
-                      <td className={`px-3 py-3 sticky left-0 z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      <td
+                        className={`px-2 py-3 sticky left-0 z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700 font-bold"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700 font-bold"
                             : "bg-white"
-                        }`}>
+                        }`}
+                        style={{ width: "105px", minWidth: "105px", maxWidth: "105px" }}
+                      >
                         <div className="font-medium text-xs truncate">{r.sectionCode || "-"}</div>
                       </td>
 
-                      <td className={`px-3 py-3 sticky left-[140px] z-30 group-hover:bg-slate-50 transition-colors border-r-2 border-slate-300 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                      <td
+                        className={`px-2 py-3 sticky left-[105px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700"
                             : "bg-white"
-                        }`}>
+                        }`}
+                        style={{ width: "140px", minWidth: "140px", maxWidth: "140px" }}
+                      >
                         <span className="text-xs truncate block font-bold">{r.sectionName || "-"}</span>
                         {r.sectionCategory && (
                           <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 mt-1 rounded ${r.sectionCategory.toLowerCase() === "direct"
@@ -1102,33 +1108,48 @@ export default function SetRequirements() {
                         )}
                       </td>
 
-
-                      <td className="px-3 py-3 border-r border-slate-200">
+                      <td
+                        className={`px-2 py-3 sticky left-[245px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                          ? "bg-red-50 text-red-700"
+                          : r.approvalStatus === "system_approved"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-white"
+                        }`}
+                        style={{ width: "170px", minWidth: "170px", maxWidth: "170px" }}
+                      >
                         <span className="text-xs truncate block">{r.lineDescription || "-"}</span>
                       </td>
 
-                      <td className="px-3 py-3 text-center">
-                        <div className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">
-                          <Clock className="w-2.5 h-2.5" />
-                          {r.year || "-"}
-                        </div>
-                      </td>
-
-                      <td className="px-3 py-3 text-center border-l border-slate-100">
+                      <td
+                        className={`px-2 py-3 sticky left-[415px] z-30 group-hover:bg-slate-50 transition-colors text-center border-r-2 border-slate-300 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                          ? "bg-red-50"
+                          : r.approvalStatus === "system_approved"
+                            ? "bg-amber-50"
+                            : "bg-white"
+                        }`}
+                        style={{ width: "135px", minWidth: "135px", maxWidth: "135px" }}
+                      >
                         <div
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${rowBadge.className}`}
+                          className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-1 text-[9px] font-bold max-w-full ${rowBadge.className}`}
                           title={
                             r.approvalStatus === "system_approved" && r.approvalOwnerName
                               ? `Approved by system for ${r.approvalOwnerName}`
                               : rowBadge.label
                           }
                         >
-                          <RowIcon className="w-3 h-3" />
-                          <span>
+                          <RowIcon className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">
                             {r.approvalStatus === "system_approved" && r.approvalOwnerName
                               ? `System (${r.approvalOwnerName})`
                               : rowBadge.label}
                           </span>
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-3 text-center">
+                        <div className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">
+                          <Clock className="w-2.5 h-2.5" />
+                          {r.year || "-"}
                         </div>
                       </td>
 

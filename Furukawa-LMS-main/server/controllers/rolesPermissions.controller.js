@@ -199,6 +199,8 @@ const SYSTEM_PERMISSIONS = {
   MPS_REQUIREMENT_UPLOAD: "mps_requirement:upload_excel",
   MPS_EMAIL_REPORTS_TRIGGER: "mps_email_reports:trigger_mail",
   MPS_EMAIL_REPORTS_ADD: "mps_email_reports:add_mail",
+  LINE_REQUIREMENT_READ: "line_requirement:read",
+  LINE_REQUIREMENT_UPDATE: "line_requirement:update",
 
   // Settings Management
   SETTINGS_CHANGE_PASSWORD: "settings:change_password",
@@ -529,6 +531,10 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_UPLOAD, name: "Upload Requirements Excel", description: "Upload line requirements from Excel templates" },
         { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_TRIGGER, name: "Trigger Email Reports", description: "Manually trigger the sending of email reports" },
         { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_ADD, name: "Add Email to Reports", description: "Add new email recipients to report configurations" }
+      ],
+      "Line Requirement Management": [
+        { id: SYSTEM_PERMISSIONS.LINE_REQUIREMENT_READ, name: "View Line Requirements", description: "View line requirements page and records" },
+        { id: SYSTEM_PERMISSIONS.LINE_REQUIREMENT_UPDATE, name: "Edit Line Requirements", description: "Create, update, or edit line requirements" }
       ],
       "Settings Management": [
         { id: SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD, name: "Change Password", description: "Allow user to change their own login password from the Settings page" },

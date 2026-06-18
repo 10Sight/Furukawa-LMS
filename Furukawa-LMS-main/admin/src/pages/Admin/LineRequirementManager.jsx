@@ -45,6 +45,9 @@ const LineRequirementManager = () => {
     const dispatch = useDispatch();
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const permissions = authUser?.customRole?.permissions || [];
+    const canView = isAdmin || permissions.includes('line_requirement:read');
+    const canEdit = isAdmin || permissions.includes('line_requirement:update');
     const canAccessAll = isAdmin;
 
     // --- State: Filters ---
@@ -280,6 +283,18 @@ const LineRequirementManager = () => {
 
     const selectedMonthName = MONTHS.find(m => m.id === parseInt(filters.month))?.name || '';
 
+    if (!canView) {
+        return (
+            <div className="flex flex-col items-center justify-center py-24 bg-slate-50/50 rounded-3xl border border-slate-200 m-6">
+                <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+                <h3 className="text-xl font-bold text-slate-700">Access Denied</h3>
+                <p className="text-sm text-slate-500 max-w-xs text-center mt-2 leading-relaxed">
+                    You do not have permission to view this page.
+                </p>
+            </div>
+        );
+    }
+
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
             {/* --- Header --- */}
@@ -445,6 +460,7 @@ const LineRequirementManager = () => {
                                                 type="number"
                                                 min="0"
                                                 value={reqValues[item.lineId]?.fn01 ?? 0}
+                                                disabled={!canEdit || updatingId === item.lineId}
                                                 onChange={(e) => setReqValues(prev => ({
                                                     ...prev,
                                                     [item.lineId]: { ...prev[item.lineId], fn01: e.target.value }
@@ -471,6 +487,7 @@ const LineRequirementManager = () => {
                                                 type="number"
                                                 min="0"
                                                 value={reqValues[item.lineId]?.fn02 ?? 0}
+                                                disabled={!canEdit || updatingId === item.lineId}
                                                 onChange={(e) => setReqValues(prev => ({
                                                     ...prev,
                                                     [item.lineId]: { ...prev[item.lineId], fn02: e.target.value }

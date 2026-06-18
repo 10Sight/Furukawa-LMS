@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useGetUserByIdQuery } from "@/Redux/AllApi/UserApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetStudentProgressQuery } from "@/Redux/AllApi/ProgressApi";
 import { useGetStudentSubmissionsQuery } from "@/Redux/AllApi/SubmissionApi";
 import { useGetStudentAttemptsQuery } from "@/Redux/AllApi/AttemptedQuizApi";
@@ -129,10 +130,41 @@ const StudentDetail = () => {
     refetchOnMountOrArgChange: true,
   });
 
+  const { data: deptListData } = useGetAllDepartmentsQuery({ page: 1, limit: 100 });
+  const allDepts = deptListData?.data?.departments || [];
+
   const student = studentData?.data;
   const progressList = progressData?.data || [];
   const submissions = submissionsData?.data || [];
   const attempts = attemptsData?.data || [];
+
+  const getDeptNames = (s) => {
+    if (!s) return [];
+    const rawDepts = typeof s.departments === 'string' ? JSON.parse(s.departments || "[]") : (s.departments || []);
+    if (Array.isArray(rawDepts) && rawDepts.length > 0 && allDepts.length > 0) {
+      const names = rawDepts.map(id => {
+        const d = allDepts.find(dept => String(dept.id || dept._id) === String(id));
+        return d ? d.name : null;
+      }).filter(Boolean);
+      if (names.length > 0) return names;
+    }
+    if (s.assignments?.length > 0) {
+      const names = [...new Set(s.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+      if (names.length > 0) return names;
+    }
+    if (s.deptName && s.deptName.toLowerCase() !== "none") return [s.deptName];
+    if (typeof s.department === 'object' && s.department?.name) return [s.department.name];
+    return [];
+  };
+
+  const getSectionNames = (s) => {
+    if (!s) return [];
+    if (Array.isArray(s.assignments) && s.assignments.length > 0) {
+      const names = [...new Set(s.assignments.map(a => a.sectionName).filter(n => n && n.toLowerCase() !== "none"))];
+      if (names.length > 0) return names;
+    }
+    return (s.sectionName && s.sectionName.toLowerCase() !== "none") ? [s.sectionName] : [];
+  };
 
   // Calculate Operator Efficiency values
   const currentEff = useMemo(() => {
@@ -474,6 +506,28 @@ const StudentDetail = () => {
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Designation</label>
               <div className="text-sm font-semibold text-indigo-700">{student.designation || "Operator"}</div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Department(s)</label>
+              <div className="flex flex-wrap gap-1">
+                {getDeptNames(student).length > 0
+                  ? getDeptNames(student).map((name, idx) => (
+                      <Badge key={idx} variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">{name}</Badge>
+                    ))
+                  : <span className="text-sm text-muted-foreground">N/A</span>
+                }
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Section(s)</label>
+              <div className="flex flex-wrap gap-1">
+                {getSectionNames(student).length > 0
+                  ? getSectionNames(student).map((name, idx) => (
+                      <Badge key={idx} variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">{name}</Badge>
+                    ))
+                  : <span className="text-sm text-muted-foreground">N/A</span>
+                }
+              </div>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Current Overall Efficiency</label>

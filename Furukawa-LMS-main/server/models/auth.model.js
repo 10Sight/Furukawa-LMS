@@ -35,6 +35,9 @@ class User {
         this.department = data.department;
         this.departments = typeof data.departments === 'string' ? JSON.parse(data.departments) : (data.departments || []);
         this.stations = typeof data.stations === 'string' ? JSON.parse(data.stations) : (data.stations || []);
+        this.sections = typeof data.sections === 'string' ? JSON.parse(data.sections) : (data.sections || []);
+        this.lines = typeof data.lines === 'string' ? JSON.parse(data.lines) : (data.lines || []);
+        this.subSections = typeof data.subSections === 'string' ? JSON.parse(data.subSections) : (data.subSections || []);
         this.unit = data.unit;
         this.empId = data.empId || null;
         this.isEmployee = !!data.isEmployee;
@@ -207,6 +210,9 @@ class User {
                 { name: 'skillEffeciency', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
                 { name: 'ojt', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
                 { name: 'stations', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
+                { name: 'sections', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
+                { name: 'lines', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
+                { name: 'subSections', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
                 { name: 'expectedHandover', type: 'DATE NULL' },
                 { name: 'contractorId', type: 'INT NULL' }
             ];
@@ -387,7 +393,7 @@ class User {
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
             "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "currentEffeciency", "skillEffeciency", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
-            "isDeleted", "department", "sub_section", "departments", "stations", "unit", "empId", "isEmployee",
+            "isDeleted", "department", "sub_section", "departments", "stations", "sections", "lines", "subSections", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
@@ -411,10 +417,19 @@ class User {
         if (dataToInsert.departments && Array.isArray(dataToInsert.departments) && dataToInsert.departments.length > 0) {
             dataToInsert.departmentId = parseInt(dataToInsert.departments[0]);
         }
+        if (dataToInsert.sections && Array.isArray(dataToInsert.sections) && dataToInsert.sections.length > 0) {
+            dataToInsert.sectionId = dataToInsert.sectionId || parseInt(dataToInsert.sections[0]);
+        }
+        if (dataToInsert.lines && Array.isArray(dataToInsert.lines) && dataToInsert.lines.length > 0) {
+            dataToInsert.lineId = dataToInsert.lineId || parseInt(dataToInsert.lines[0]);
+        }
+        if (dataToInsert.subSections && Array.isArray(dataToInsert.subSections) && dataToInsert.subSections.length > 0) {
+            dataToInsert.subSectionId = dataToInsert.subSectionId || parseInt(dataToInsert.subSections[0]);
+        }
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
                 return JSON.stringify(val || (field === 'avatar' ? {} : []));
             }
             if (val === undefined || val === "") return null;
@@ -709,7 +724,7 @@ class User {
             "fullName", "userName", "slug", "email", "phoneNumber", "password",
             "avatar", "refreshToken", "role", "currentLevel", "currentSkill", "currentEffeciency", "skillEffeciency", "status", "isVerified",
             "enrolledCourses", "createdCourses", "lastLogin", "loginHistory",
-            "isDeleted", "department", "sub_section", "departments", "stations", "unit", "empId", "isEmployee",
+            "isDeleted", "department", "sub_section", "departments", "stations", "sections", "lines", "subSections", "unit", "empId", "isEmployee",
             "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate",
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
@@ -723,13 +738,22 @@ class User {
         if (this.departments && Array.isArray(this.departments) && this.departments.length > 0) {
             this.departmentId = parseInt(this.departments[0]);
         }
+        if (this.sections && Array.isArray(this.sections) && this.sections.length > 0) {
+            this.sectionId = this.sectionId || parseInt(this.sections[0]);
+        }
+        if (this.lines && Array.isArray(this.lines) && this.lines.length > 0) {
+            this.lineId = this.lineId || parseInt(this.lines[0]);
+        }
+        if (this.subSections && Array.isArray(this.subSections) && this.subSections.length > 0) {
+            this.subSectionId = this.subSectionId || parseInt(this.subSections[0]);
+        }
 
         // Only update fields that are defined on the instance
         const definedFields = fields.filter(field => this[field] !== undefined);
         const setClause = definedFields.map(field => `${field} = ?`).join(", ");
         const values = definedFields.map(field => {
             const val = this[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
                 return typeof val === 'object' ? JSON.stringify(val) : val;
             }
             if (val instanceof Date) return val;

@@ -465,6 +465,33 @@ const AllUsersManagement = () => {
     }
   };
 
+  const getUserDeptNames = (user) => {
+    const allDepartments = deptData?.data?.departments || [];
+    const rawDepts = typeof user.departments === 'string'
+      ? JSON.parse(user.departments || "[]")
+      : (user.departments || []);
+    if (Array.isArray(rawDepts) && rawDepts.length > 0 && allDepartments.length > 0) {
+      const names = rawDepts.map(id => {
+        const d = allDepartments.find(dept => String(getDeptId(dept)) === String(id));
+        return d ? d.name : null;
+      }).filter(Boolean);
+      if (names.length > 0) return names;
+    }
+    if (Array.isArray(user.assignments) && user.assignments.length > 0) {
+      const names = [...new Set(user.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+      if (names.length > 0) return names;
+    }
+    return (user.deptName && user.deptName.toLowerCase() !== "none") ? [user.deptName] : [];
+  };
+
+  const getUserSectionNames = (user) => {
+    if (Array.isArray(user.assignments) && user.assignments.length > 0) {
+      const names = [...new Set(user.assignments.map(a => a.sectionName).filter(n => n && n.toLowerCase() !== "none"))];
+      if (names.length > 0) return names;
+    }
+    return (user.sectionName && user.sectionName.toLowerCase() !== "none") ? [user.sectionName] : [];
+  };
+
   const getRoleColor = (role) => {
     switch (role) {
       case "SUPERADMIN":
@@ -1595,11 +1622,33 @@ const AllUsersManagement = () => {
                           </div>
                         </div>
                       </td>
-                       <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
-                        {(user.deptName && user.deptName.toLowerCase() !== "none") ? user.deptName : "-"}
+                       <td className="px-6 py-4 text-sm text-gray-900 max-w-[120px]">
+                        {(() => {
+                          const names = getUserDeptNames(user);
+                          if (names.length === 0) return <span className="text-gray-400">-</span>;
+                          if (names.length === 1) return <span className="truncate">{names[0]}</span>;
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              {names.map((name, idx) => (
+                                <span key={idx} className="text-xs font-medium bg-blue-50 text-blue-700 px-1 py-0.5 rounded truncate">{name}</span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
-                        {(user.sectionName && user.sectionName.toLowerCase() !== "none") ? user.sectionName : "-"}
+                      <td className="px-6 py-4 text-sm text-gray-900 max-w-[120px]">
+                        {(() => {
+                          const names = getUserSectionNames(user);
+                          if (names.length === 0) return <span className="text-gray-400">-</span>;
+                          if (names.length === 1) return <span className="truncate">{names[0]}</span>;
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              {names.map((name, idx) => (
+                                <span key={idx} className="text-xs font-medium bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded truncate">{name}</span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900 truncate max-w-[100px]">
                         {(user.lineName && user.lineName.toLowerCase() !== "none") ? user.lineName : "-"}
@@ -1720,11 +1769,31 @@ const AllUsersManagement = () => {
                         </div>
                         <div>
                           <p className="text-gray-400 mb-0.5">Department</p>
-                          <p className="font-medium text-gray-700 truncate">{user.deptName || "-"}</p>
+                          {(() => {
+                            const names = getUserDeptNames(user);
+                            if (names.length <= 1) return <p className="font-medium text-gray-700 truncate">{names[0] || "-"}</p>;
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                {names.map((name, idx) => (
+                                  <span key={idx} className="text-xs font-medium bg-blue-50 text-blue-700 px-1 py-0.5 rounded truncate">{name}</span>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div>
                           <p className="text-gray-400 mb-0.5">Section</p>
-                          <p className="font-medium text-gray-700 truncate">{user.sectionName || "-"}</p>
+                          {(() => {
+                            const names = getUserSectionNames(user);
+                            if (names.length <= 1) return <p className="font-medium text-gray-700 truncate">{names[0] || "-"}</p>;
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                {names.map((name, idx) => (
+                                  <span key={idx} className="text-xs font-medium bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded truncate">{name}</span>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div>
                           <p className="text-gray-400 mb-0.5">Efficiency</p>

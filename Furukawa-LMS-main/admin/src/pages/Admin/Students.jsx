@@ -587,6 +587,9 @@ const Students = () => {
         gender: formData.gender,
         departments: formData.departments,
         stations: formData.stations,
+        sections: formData.sections,
+        lines: formData.lines,
+        subSections: formData.subSections,
         sectionId: formData.sections[0] || null,
         subSectionId: formData.subSections[0] || null,
         lineId: formData.lines[0] || null,
@@ -654,6 +657,9 @@ const Students = () => {
         gender: updateData.gender,
         departments: updateData.departments,
         stations: updateData.stations,
+        sections: updateData.sections,
+        lines: updateData.lines,
+        subSections: updateData.subSections,
         sectionId: updateData.sections[0] || null,
         subSectionId: updateData.subSections[0] || null,
         lineId: updateData.lines[0] || null,
@@ -1008,26 +1014,20 @@ const Students = () => {
       ? rawStations.map(String)
       : ((student.stationId || student.StationId) ? [String(student.stationId || student.StationId)] : []);
 
-    const resolvedSections = [
-      ...new Set([
-        ...(student.sectionId ? [String(student.sectionId)] : []),
-        ...(student.assignments || []).map(a => String(a.sectionId))
-      ])
-    ].filter(Boolean);
+    const rawSections = typeof student.sections === 'string' ? JSON.parse(student.sections || "[]") : (student.sections || []);
+    const resolvedSections = Array.isArray(rawSections) && rawSections.length
+      ? rawSections.map(String)
+      : (student.sectionId ? [String(student.sectionId)] : []);
 
-    const resolvedLines = [
-      ...new Set([
-        ...(student.lineId ? [String(student.lineId)] : []),
-        ...(student.assignments || []).map(a => String(a.lineId))
-      ])
-    ].filter(Boolean);
+    const rawLines = typeof student.lines === 'string' ? JSON.parse(student.lines || "[]") : (student.lines || []);
+    const resolvedLines = Array.isArray(rawLines) && rawLines.length
+      ? rawLines.map(String)
+      : (student.lineId ? [String(student.lineId)] : []);
 
-    const resolvedSubSections = [
-      ...new Set([
-        ...(student.subSectionId ? [String(student.subSectionId)] : []),
-        ...(student.assignments || []).map(a => String(a.subSectionId))
-      ])
-    ].filter(Boolean);
+    const rawSubSections = typeof student.subSections === 'string' ? JSON.parse(student.subSections || "[]") : (student.subSections || []);
+    const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length
+      ? rawSubSections.map(String)
+      : (student.subSectionId ? [String(student.subSectionId)] : []);
 
     setFormData({
       fullName: student.fullName || "",
@@ -1147,8 +1147,17 @@ const Students = () => {
         return d ? d.name : null;
       }).filter(Boolean);
     }
-    if (deptNames.length === 0 && student.department) {
+    // Fallback: unique dept names from machine assignments
+    if (deptNames.length === 0 && student.assignments?.length > 0) {
+      deptNames = [...new Set(student.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+    }
+    // Fallback: single department object
+    if (deptNames.length === 0 && student.department?.name) {
       deptNames = [student.department.name];
+    }
+    // Fallback: deptName string
+    if (deptNames.length === 0 && student.deptName && student.deptName.toLowerCase() !== "none") {
+      deptNames = [student.deptName];
     }
 
     const assignedSections = [...new Set((student.assignments || []).map(a => a.sectionName).filter(Boolean))];
@@ -1181,10 +1190,17 @@ const Students = () => {
             ))}
           </div>
         )}
-        {(sectionsList.length > 0 || linesList.length > 0) && (
+        {sectionsList.length > 0 && (
+          <div className="flex flex-wrap gap-1 max-w-[200px]">
+            {sectionsList.map((name, idx) => (
+              <Badge key={idx} variant="outline" className="w-fit text-[10px] py-0 px-1.5 h-5 bg-indigo-50 text-indigo-700 border-indigo-200">
+                {name}
+              </Badge>
+            ))}
+          </div>
+        )}
+        {linesList.length > 0 && (
           <div className="text-[10px] font-medium text-muted-foreground flex flex-wrap items-center gap-1 pl-0.5">
-            <span className="text-foreground">{sectionsList.join(', ')}</span>
-            {sectionsList.length > 0 && linesList.length > 0 && <span className="text-[8px] opacity-50">&gt;</span>}
             <span>{linesList.join(', ')}</span>
           </div>
         )}

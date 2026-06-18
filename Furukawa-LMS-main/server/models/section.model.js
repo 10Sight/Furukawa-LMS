@@ -146,14 +146,23 @@ class Section {
 
     static async syncUserList(sectionId) {
         try {
-            // Aggregate users from all child lines
+            // Aggregate users from child lines AND from direct section assignment (sections JSON array)
             const query = `
-                SELECT DISTINCT u.[value] as userId
-                FROM [lines] l
-                CROSS APPLY OPENJSON(ISNULL(l.users, '[]')) u
-                WHERE l.sectionId = ?
+                SELECT DISTINCT userId FROM (
+                    SELECT u.[value] as userId
+                    FROM [lines] l
+                    CROSS APPLY OPENJSON(ISNULL(l.users, '[]')) u
+                    WHERE l.sectionId = ?
+
+                    UNION
+
+                    SELECT CAST(u.id AS NVARCHAR(50)) as userId
+                    FROM users u
+                    WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                    AND EXISTS (SELECT 1 FROM OPENJSON(ISNULL(u.sections, '[]')) WHERE TRY_CAST([value] AS INT) = ?)
+                ) combined
             `;
-            const [rows] = await executeQuery(query, [sectionId]);
+            const [rows] = await executeQuery(query, [sectionId, sectionId]);
             const userList = rows.map(r => r.userId);
             
             await executeQuery(

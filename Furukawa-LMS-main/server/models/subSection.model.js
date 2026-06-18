@@ -116,16 +116,20 @@ class SubSection {
 
     static async syncUserList(subSectionId) {
         try {
-            // Aggregate users from direct assignment AND machine assignments
+            // Aggregate users from direct assignment, JSON array assignment, AND machine assignments
             const query = `
                 SELECT DISTINCT u.id
                 FROM users u
                 LEFT JOIN machine_assignments ma ON u.id = ma.user_id
                 LEFT JOIN machines m ON ma.machine_id = m.id
                 WHERE (u.role IN ('STUDENT', 'CUSTOM') AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-                AND (u.subSectionId = ? OR m.subSectionId = ?)
+                AND (
+                    u.subSectionId = ?
+                    OR EXISTS (SELECT 1 FROM OPENJSON(ISNULL(u.subSections, '[]')) WHERE TRY_CAST([value] AS INT) = ?)
+                    OR m.subSectionId = ?
+                )
             `;
-            const [rows] = await executeQuery(query, [subSectionId, subSectionId]);
+            const [rows] = await executeQuery(query, [subSectionId, subSectionId, subSectionId]);
             const userIds = rows.map(r => r.id);
             const jsonUsers = JSON.stringify(userIds);
 

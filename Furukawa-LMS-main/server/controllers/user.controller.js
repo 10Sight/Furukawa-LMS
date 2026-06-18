@@ -160,6 +160,9 @@ export const formatUser = (u) => {
     _id: u.id,
     avatar: parseJSON(u.avatar),
     assignments,
+    sections: parseJSON(u.sections, []),
+    lines: parseJSON(u.lines, []),
+    subSections: parseJSON(u.subSections, []),
     primaryStationName: u.stationName || sanitize(u.stationNo) || "No Station",
     primaryLevel: resolvedPrimaryLevel,
     allStations: assignments?.length > 0
@@ -505,12 +508,24 @@ export const createUser = asyncHandler(async (req, res) => {
 
   const departments = parseArray(data.departments);
   const stations = parseArray(data.stations);
+  const sections = parseArray(data.sections);
+  const lines = parseArray(data.lines);
+  const subSections = parseArray(data.subSections);
 
   if (departments.length > 0 && !data.departmentId) {
     data.departmentId = parseInt(departments[0]);
   }
   if (stations.length > 0 && !data.stationId) {
     data.stationId = parseInt(stations[0]);
+  }
+  if (sections.length > 0 && !data.sectionId) {
+    data.sectionId = parseInt(sections[0]);
+  }
+  if (lines.length > 0 && !data.lineId) {
+    data.lineId = parseInt(lines[0]);
+  }
+  if (subSections.length > 0 && !data.subSectionId) {
+    data.subSectionId = parseInt(subSections[0]);
   }
 
   // Sync department name
@@ -527,7 +542,7 @@ export const createUser = asyncHandler(async (req, res) => {
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "contractorId"
+    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "sections", "lines", "subSections", "contractorId"
   ];
 
   const values = fields.map(f => {
@@ -538,6 +553,9 @@ export const createUser = asyncHandler(async (req, res) => {
     if (f === 'createdAt' || f === 'updatedAt') return new Date();
     if (f === 'departments') return JSON.stringify(departments);
     if (f === 'stations') return JSON.stringify(stations);
+    if (f === 'sections') return JSON.stringify(sections);
+    if (f === 'lines') return JSON.stringify(lines);
+    if (f === 'subSections') return JSON.stringify(subSections);
     if (['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f)) return data[f] ? 1 : 0;
     return data[f] || null;
   });
@@ -569,11 +587,15 @@ export const createUser = asyncHandler(async (req, res) => {
   try {
     const SubSection = (await import("../models/subSection.model.js")).default;
     const Line = (await import("../models/line.model.js")).default;
+    const Section = (await import("../models/section.model.js")).default;
 
     const affectedSubSectionIds = new Set();
-    if (data.subSectionId) {
-      affectedSubSectionIds.add(parseInt(data.subSectionId));
-    }
+
+    // All directly assigned sub-sections
+    subSections.map(id => parseInt(id)).filter(id => !isNaN(id)).forEach(id => affectedSubSectionIds.add(id));
+    if (data.subSectionId) affectedSubSectionIds.add(parseInt(data.subSectionId));
+
+    // Sub-sections from assigned stations
     if (stations.length > 0) {
       const sanitizedStationIds = stations.map(id => parseInt(id)).filter(id => !isNaN(id));
       if (sanitizedStationIds.length > 0) {
@@ -590,11 +612,21 @@ export const createUser = asyncHandler(async (req, res) => {
       await SubSection.syncUserList(subSecId);
     }
 
-    if (data.lineId) {
-      await Line.syncUserList(data.lineId);
+    // Sync all directly assigned lines
+    const affectedLineIds = new Set(lines.map(id => parseInt(id)).filter(id => !isNaN(id)));
+    if (data.lineId) affectedLineIds.add(parseInt(data.lineId));
+    for (const lineId of affectedLineIds) {
+      await Line.syncUserList(lineId);
+    }
+
+    // Sync all directly assigned sections
+    const affectedSectionIds = new Set(sections.map(id => parseInt(id)).filter(id => !isNaN(id)));
+    if (data.sectionId) affectedSectionIds.add(parseInt(data.sectionId));
+    for (const sectionId of affectedSectionIds) {
+      await Section.syncUserList(sectionId);
     }
   } catch (error) {
-    logger.error(`Failed to trigger hierarchy sync in createUser: ${error.message}`);
+    console.error(`Failed to trigger hierarchy sync in createUser: ${error.message}`);
   }
 
   if (departments.length > 0) {
@@ -620,7 +652,7 @@ export const updateUser = asyncHandler(async (req, res) => {
   const [rows] = await executeQuery("SELECT * FROM users WHERE id = ?", [userId]);
   if (rows.length === 0) throw new ApiError("User not found", 404);
 
-  // Parse departments and stations if they exist in request body
+  // Parse departments, stations, sections, lines, subSections if they exist in request body
   if (data.departments !== undefined) {
     const depts = parseArray(data.departments);
     if (depts.length > 0 && data.departmentId === undefined) {
@@ -631,6 +663,24 @@ export const updateUser = asyncHandler(async (req, res) => {
     const stns = parseArray(data.stations);
     if (stns.length > 0 && data.stationId === undefined) {
       data.stationId = parseInt(stns[0]);
+    }
+  }
+  if (data.sections !== undefined) {
+    const scts = parseArray(data.sections);
+    if (scts.length > 0 && data.sectionId === undefined) {
+      data.sectionId = parseInt(scts[0]);
+    }
+  }
+  if (data.lines !== undefined) {
+    const lns = parseArray(data.lines);
+    if (lns.length > 0 && data.lineId === undefined) {
+      data.lineId = parseInt(lns[0]);
+    }
+  }
+  if (data.subSections !== undefined) {
+    const sss = parseArray(data.subSections);
+    if (sss.length > 0 && data.subSectionId === undefined) {
+      data.subSectionId = parseInt(sss[0]);
     }
   }
 
@@ -646,7 +696,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "contractor", "contractorId", "expectedHandover",
     "customRoleId", "currentLevel", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
-    "departments", "stations"
+    "departments", "stations", "sections", "lines", "subSections"
   ];
 
   const oldUser = rows[0];
@@ -734,6 +784,15 @@ export const updateUser = asyncHandler(async (req, res) => {
       } else if (f === "stations") {
         updates.push("stations = ?");
         values.push(JSON.stringify(parseArray(data[f])));
+      } else if (f === "sections") {
+        updates.push("sections = ?");
+        values.push(JSON.stringify(parseArray(data[f])));
+      } else if (f === "lines") {
+        updates.push("lines = ?");
+        values.push(JSON.stringify(parseArray(data[f])));
+      } else if (f === "subSections") {
+        updates.push("subSections = ?");
+        values.push(JSON.stringify(parseArray(data[f])));
       } else {
         updates.push(`${f} = ?`);
         values.push(['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f) ? (data[f] ? 1 : 0) : (data[f] === undefined ? null : data[f]));
@@ -746,22 +805,51 @@ export const updateUser = asyncHandler(async (req, res) => {
   }
 
   // Trigger Hierarchy Sync
-  if (data.lineId || data.subSectionId || data.stationId || data.status !== undefined || data.isDeleted !== undefined) {
+  if (data.lineId || data.subSectionId || data.stationId || data.lines !== undefined || data.subSections !== undefined || data.sections !== undefined || data.status !== undefined || data.isDeleted !== undefined) {
     try {
       const SubSection = (await import("../models/subSection.model.js")).default;
       const Line = (await import("../models/line.model.js")).default;
-      
-      // If we know the previous location, we should sync it too, but for simplicity we sync current
-      const [u] = await executeQuery("SELECT lineId, subSectionId FROM users WHERE id = ?", [userId]);
+      const Section = (await import("../models/section.model.js")).default;
+
+      const [u] = await executeQuery(
+        "SELECT lineId, subSectionId, sectionId, lines, subSections, sections FROM users WHERE id = ?",
+        [userId]
+      );
+
       if (u.length > 0) {
-        if (u[0].subSectionId) {
-          await SubSection.syncUserList(u[0].subSectionId);
-        } else if (u[0].lineId) {
-          await Line.syncUserList(u[0].lineId);
+        const affectedSubSectionIds = new Set();
+        const affectedLineIds = new Set();
+        const affectedSectionIds = new Set();
+
+        if (u[0].subSectionId) affectedSubSectionIds.add(u[0].subSectionId);
+        if (u[0].lineId) affectedLineIds.add(u[0].lineId);
+        if (u[0].sectionId) affectedSectionIds.add(u[0].sectionId);
+
+        // Include all IDs from the new JSON arrays
+        parseArray(u[0].subSections).map(id => parseInt(id)).filter(id => !isNaN(id)).forEach(id => affectedSubSectionIds.add(id));
+        parseArray(u[0].lines).map(id => parseInt(id)).filter(id => !isNaN(id)).forEach(id => affectedLineIds.add(id));
+        parseArray(u[0].sections).map(id => parseInt(id)).filter(id => !isNaN(id)).forEach(id => affectedSectionIds.add(id));
+
+        // Also sync old values from before the update (oldUser)
+        if (oldUser.subSectionId) affectedSubSectionIds.add(parseInt(oldUser.subSectionId));
+        if (oldUser.lineId) affectedLineIds.add(parseInt(oldUser.lineId));
+        if (oldUser.sectionId) affectedSectionIds.add(parseInt(oldUser.sectionId));
+        parseArray(oldUser.subSections).map(id => parseInt(id)).filter(id => !isNaN(id)).forEach(id => affectedSubSectionIds.add(id));
+        parseArray(oldUser.lines).map(id => parseInt(id)).filter(id => !isNaN(id)).forEach(id => affectedLineIds.add(id));
+        parseArray(oldUser.sections).map(id => parseInt(id)).filter(id => !isNaN(id)).forEach(id => affectedSectionIds.add(id));
+
+        for (const subSecId of affectedSubSectionIds) {
+          await SubSection.syncUserList(subSecId);
+        }
+        for (const lineId of affectedLineIds) {
+          await Line.syncUserList(lineId);
+        }
+        for (const sectionId of affectedSectionIds) {
+          await Section.syncUserList(sectionId);
         }
       }
     } catch (error) {
-      logger.error(`Failed to trigger hierarchy sync in updateUser: ${error.message}`);
+      console.error(`Failed to trigger hierarchy sync in updateUser: ${error.message}`);
     }
   }
 
@@ -1093,14 +1181,17 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
   if (deptId) { whereClauses.push("d.id = ?"); params.push(deptId); }
   if (sectId) {
-    whereClauses.push("(u.sectionId = ? OR u.lineId IN (SELECT id FROM [lines] WHERE sectionId = ?) OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId IN (SELECT id FROM [lines] WHERE sectionId = ?)))");
-    params.push(sectId, sectId, sectId);
+    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id = ?)");
+    params.push(sectId);
   }
   if (lnId) {
-    whereClauses.push("(u.lineId = ? OR u.subSectionId IN (SELECT id FROM sub_sections WHERE lineId = ?))");
-    params.push(lnId, lnId);
+    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id = ?)");
+    params.push(lnId);
   }
-  if (subSectId) { whereClauses.push("u.subSectionId = ?"); params.push(subSectId); }
+  if (subSectId) {
+    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id = ?)");
+    params.push(subSectId);
+  }
   if (stnId) { whereClauses.push("u.stationId = ?"); params.push(stnId); }
   if (req.query.sixteenDayApprovedOnly === "true") {
     whereClauses.push(`EXISTS (

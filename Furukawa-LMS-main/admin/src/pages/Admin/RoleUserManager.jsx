@@ -97,6 +97,35 @@ export default function RoleUserManager() {
         includeLeft: "true"
     });
 
+    const { data: allDeptsRes } = useGetAllDepartmentsQuery({ page: 1, limit: 100 });
+    const allDepts = allDeptsRes?.data?.departments || [];
+
+    const getDeptNames = (user) => {
+        const rawDepts = typeof user.departments === 'string'
+            ? JSON.parse(user.departments || "[]")
+            : (user.departments || []);
+        if (Array.isArray(rawDepts) && rawDepts.length > 0 && allDepts.length > 0) {
+            const names = rawDepts.map(id => {
+                const d = allDepts.find(dept => String(dept.id || dept._id) === String(id));
+                return d ? d.name : null;
+            }).filter(Boolean);
+            if (names.length > 0) return names;
+        }
+        if (Array.isArray(user.assignments) && user.assignments.length > 0) {
+            const names = [...new Set(user.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+            if (names.length > 0) return names;
+        }
+        return (user.deptName && user.deptName.toLowerCase() !== "none") ? [user.deptName] : [];
+    };
+
+    const getSectionNames = (user) => {
+        if (Array.isArray(user.assignments) && user.assignments.length > 0) {
+            const names = [...new Set(user.assignments.map(a => a.sectionName).filter(n => n && n.toLowerCase() !== "none"))];
+            if (names.length > 0) return names;
+        }
+        return (user.sectionName && user.sectionName.toLowerCase() !== "none") ? [user.sectionName] : [];
+    };
+
     const [deleteUser] = useDeleteUserMutation();
 
     const handleDelete = async (user) => {
@@ -303,21 +332,37 @@ export default function RoleUserManager() {
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-sm">
-                                            {user.deptName && user.deptName.toLowerCase() !== "none" ? (
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span className="font-medium text-gray-900">{user.deptName}</span>
-                                                    <span className="text-xs text-gray-500">
-                                                        {[
-                                                            user.sectionName,
-                                                            user.lineName,
-                                                            user.subSectionName,
-                                                            user.stationName
-                                                        ].filter(val => val && val.toLowerCase() !== "none").join(" ➔ ") || "No further assignment"}
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-gray-400 italic">Unassigned</span>
-                                            )}
+                                            {(() => {
+                                                const deptNames = getDeptNames(user);
+                                                const sectionNames = getSectionNames(user);
+                                                if (deptNames.length === 0 && sectionNames.length === 0) return <span className="text-gray-400 italic">Unassigned</span>;
+                                                return (
+                                                    <div className="flex flex-col gap-1">
+                                                        {deptNames.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {deptNames.map((name, idx) => (
+                                                                    <span key={idx} className="text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded">
+                                                                        {name}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {sectionNames.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {sectionNames.map((name, idx) => (
+                                                                    <span key={idx} className="text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded">
+                                                                        {name}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        <span className="text-xs text-gray-500">
+                                                            {[user.lineName, user.subSectionName, user.stationName]
+                                                                .filter(val => val && val.toLowerCase() !== "none").join(" ➔ ") || ""}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })()}
                                         </TableCell>
                                         <TableCell className="text-right px-4">
                                             <div className="flex justify-end gap-2">
@@ -579,6 +624,9 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
                 status: newUser.status,
                 departments: newUser.departments,
                 stations: newUser.stations,
+                sections: newUser.sections,
+                lines: newUser.lines,
+                subSections: newUser.subSections,
                 sectionId: newUser.sections[0] || null,
                 subSectionId: newUser.subSections[0] || null,
                 lineId: newUser.lines[0] || null,
@@ -955,26 +1003,20 @@ function EditUserDialog({ isOpen, setIsOpen, user, currentRoleId, onSuccess }) {
                 ? rawStations.map(String)
                 : ((user.stationId || user.StationId) ? [String(user.stationId || user.StationId)] : []);
 
-            const resolvedSections = [
-                ...new Set([
-                    ...(user.sectionId ? [String(user.sectionId)] : []),
-                    ...(user.assignments || []).map(a => String(a.sectionId))
-                ])
-            ].filter(Boolean);
+            const rawSections = typeof user.sections === 'string' ? JSON.parse(user.sections || "[]") : (user.sections || []);
+            const resolvedSections = Array.isArray(rawSections) && rawSections.length
+                ? rawSections.map(String)
+                : (user.sectionId ? [String(user.sectionId)] : []);
 
-            const resolvedLines = [
-                ...new Set([
-                    ...(user.lineId ? [String(user.lineId)] : []),
-                    ...(user.assignments || []).map(a => String(a.lineId))
-                ])
-            ].filter(Boolean);
+            const rawLines = typeof user.lines === 'string' ? JSON.parse(user.lines || "[]") : (user.lines || []);
+            const resolvedLines = Array.isArray(rawLines) && rawLines.length
+                ? rawLines.map(String)
+                : (user.lineId ? [String(user.lineId)] : []);
 
-            const resolvedSubSections = [
-                ...new Set([
-                    ...(user.subSectionId ? [String(user.subSectionId)] : []),
-                    ...(user.assignments || []).map(a => String(a.subSectionId))
-                ])
-            ].filter(Boolean);
+            const rawSubSections = typeof user.subSections === 'string' ? JSON.parse(user.subSections || "[]") : (user.subSections || []);
+            const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length
+                ? rawSubSections.map(String)
+                : (user.subSectionId ? [String(user.subSectionId)] : []);
 
             setEditUser({
                 fullName: user.fullName || "",
@@ -1024,6 +1066,9 @@ function EditUserDialog({ isOpen, setIsOpen, user, currentRoleId, onSuccess }) {
                 customRoleId: editUser.customRoleId === "none" ? null : editUser.customRoleId,
                 departments: editUser.departments,
                 stations: editUser.stations,
+                sections: editUser.sections,
+                lines: editUser.lines,
+                subSections: editUser.subSections,
                 sectionId: editUser.sections[0] || null,
                 subSectionId: editUser.subSections[0] || null,
                 lineId: editUser.lines[0] || null

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,38 @@ const TEN_CYCLE_FORM_TYPES = [
 
 const DepartmentSectionManager = ({ departmentId }) => {
     const { data: sectionsData, isLoading, error } = useGetSectionsByDepartmentQuery(departmentId);
+    const { user } = useSelector((state) => state.auth || {});
+
+    const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+
+    const rawAssigned = useMemo(() => {
+        let sections = [];
+        if (Array.isArray(user?.sections)) {
+            sections = [...user.sections];
+        } else if (typeof user?.sections === 'string') {
+            try {
+                sections = JSON.parse(user.sections || "[]");
+            } catch (e) {
+                sections = [];
+            }
+        }
+        if (user?.sectionId) {
+            sections.push(user.sectionId);
+        }
+        return sections.map(id => String(id)).filter(Boolean);
+    }, [user]);
+
+    const visibleSections = useMemo(() => {
+        const allSections = sectionsData?.data || [];
+        if (isAdmin || rawAssigned.length === 0) {
+            return allSections;
+        }
+        return allSections.filter(section => {
+            const secId = String(section.id || section._id);
+            return rawAssigned.includes(secId);
+        });
+    }, [sectionsData, rawAssigned, isAdmin]);
+
     const [createSection, { isLoading: isCreating }] = useCreateSectionMutation();
     const [updateSection, { isLoading: isUpdating }] = useUpdateSectionMutation();
     const [deleteSection, { isLoading: isDeleting }] = useDeleteSectionMutation();
@@ -397,7 +430,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                     <div className="flex justify-center p-8"><IconLoader className="animate-spin" /></div>
                 ) : error ? (
                     <div className="text-red-500 p-4">Error loading sections: {error.message}</div>
-                ) : sectionsData?.data?.length === 0 ? (
+                ) : visibleSections.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
                         No sections found for this department. Create one to manage lines.
                     </div>
@@ -406,7 +439,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                         <Table>
                             <TableHeader className="bg-slate-50">
                                 <TableRow>
-                                    <TableHead className="w-12 text-center">#</TableHead>
+                                    <TableHead className="w-12 text-center"> #</TableHead>
                                     <TableHead>Section Name</TableHead>
                                     <TableHead>Category</TableHead>
                                     <TableHead>Form Type</TableHead>
@@ -415,7 +448,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {sectionsData?.data
+                                {visibleSections
                                     ?.filter(section => categoryFilter === "All" || section.category === categoryFilter)
                                     .map((section, index) => {
                                         const sectionId = section.id || section._id;

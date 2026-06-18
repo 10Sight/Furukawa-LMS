@@ -26,7 +26,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // Custom middleware to support both role permissions and privilege fallback
 const authorizeUpload = (req, res, next) => {
-    if (req.user && (req.user.role === "SUPERADMIN" || req.user.isAdmin || hasPermission(req.user, SYSTEM_PERMISSIONS.MPS_REQUIREMENT_UPLOAD))) {
+    if (
+        req.user &&
+        (
+            req.user.role === "SUPERADMIN" ||
+            req.user.isAdmin ||
+            hasPermission(req.user, SYSTEM_PERMISSIONS.MPS_REQUIREMENT_UPLOAD)
+        )
+    ) {
         return next();
     }
     return checkPrivilege("setrequirement")(req, res, next);
@@ -35,6 +42,15 @@ const authorizeUpload = (req, res, next) => {
 // Public approval links from email
 router.route("/approve-batch").get(approveBatchRequirements).post(approveBatchRequirements);
 router.route("/approve-single").get(approveSingleRequirement).post(approveSingleRequirement);
+
+// Dashboard approval from SetRequirement page
+// IMPORTANT: Keep this before "/:id" route.
+router.post(
+    "/approve-dashboard",
+    verifyJWT,
+    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
+    approveDashboardRequirements
+);
 
 // Create manually
 router.post(
@@ -70,8 +86,6 @@ router.get(
     authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirementLogs
 );
-
-router.post("/approve-dashboard", verifyJWT, approveDashboardRequirements);
 
 router.get(
     "/logs/:id",

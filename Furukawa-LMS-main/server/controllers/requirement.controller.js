@@ -1770,7 +1770,48 @@ export const addRequirements = asyncHandler(async (req, res) => {
    GET REQUIREMENTS
 ============================================================ */
 
-const getAssignedRequirementSectionForUser = async (req) => {
+const parseJsonArrayIds = (value) => {
+    if (value === null || value === undefined || value === "") return [];
+
+    const addFromAny = (raw, output) => {
+        if (raw === null || raw === undefined || raw === "") return;
+
+        if (Array.isArray(raw)) {
+            raw.forEach((v) => addFromAny(v, output));
+            return;
+        }
+
+        if (typeof raw === "number") {
+            if (Number.isInteger(raw) && raw > 0) output.push(raw);
+            return;
+        }
+
+        const str = String(raw).trim();
+        if (!str || str.toLowerCase() === "null") return;
+
+        try {
+            const parsed = JSON.parse(str);
+            if (parsed !== str) {
+                addFromAny(parsed, output);
+                return;
+            }
+        } catch (_) { }
+
+        str.split(/[;,]+/)
+            .map((x) => x.trim().replace(/^['"]|['"]$/g, ""))
+            .filter(Boolean)
+            .forEach((x) => {
+                const n = Number(x);
+                if (Number.isInteger(n) && n > 0) output.push(n);
+            });
+    };
+
+    const ids = [];
+    addFromAny(value, ids);
+    return [...new Set(ids)];
+};
+
+const getAssignedRequirementSectionsForUser = async (req) => {
     const userId = req.user?.id || req.user?._id;
     const userEmail = req.user?.email;
 
@@ -1783,10 +1824,8 @@ const getAssignedRequirementSectionForUser = async (req) => {
     if (isSuperUser) return null;
 
     const currentRole = String(req.user?.role || "").trim().toUpperCase();
-    const currentSectionId = req.user?.sectionId || req.user?.section_id || null;
 
-    // For CUSTOM users, section assignment is taken from users.sectionId.
-    // If auth middleware does not attach role/sectionId, fetch it again from users table using id/email.
+    // Only CUSTOM section-head users are restricted by assigned section IDs.
     if (currentRole && currentRole !== "CUSTOM") return null;
 
     const filters = [];
@@ -1802,41 +1841,97 @@ const getAssignedRequirementSectionForUser = async (req) => {
         values.push(userEmail);
     }
 
-    if (currentSectionId && filters.length === 0) {
-        filters.push("u.sectionId = ?");
-        values.push(currentSectionId);
-    }
-
     if (!filters.length) return null;
 
-    const [rows] = await executeSql(
+    const [userRows] = await executeSql(
         `
         SELECT TOP 1
             u.id,
             u.role,
             u.sectionId,
-            s.id AS dbSectionId,
-            s.name AS sectionName,
-            s.uniCode AS sectionCode
+            u.sections
         FROM users u WITH (NOLOCK)
-        LEFT JOIN sections s WITH (NOLOCK)
-            ON s.id = u.sectionId
         WHERE (${filters.join(" OR ")})
           AND UPPER(LTRIM(RTRIM(ISNULL(u.role, '')))) = 'CUSTOM'
         `,
         values
     );
 
-    const assigned = rows?.[0];
+    const assignedUser = userRows?.[0];
 
     // If logged-in user is not CUSTOM, do not restrict this endpoint.
-    if (!assigned && currentRole !== "CUSTOM") return null;
-    if (!assigned?.sectionId) return { noAssignedSection: true };
+    if (!assignedUser && currentRole !== "CUSTOM") return null;
+    if (!assignedUser) return { noAssignedSection: true };
+
+    const sectionIds = [
+        ...parseJsonArrayIds(assignedUser.sectionId),
+        ...parseJsonArrayIds(assignedUser.sections),
+        ...parseJsonArrayIds(req.user?.sectionId),
+        ...parseJsonArrayIds(req.user?.sections),
+    ];
+
+    const uniqueSectionIds = [...new Set(sectionIds)].filter((id) => Number.isInteger(Number(id)) && Number(id) > 0).map(Number);
+
+    if (uniqueSectionIds.length === 0) return { noAssignedSection: true };
+
+    const placeholders = uniqueSectionIds.map(() => "?").join(",");
+    const [sectionRows] = await executeSql(
+        `
+        SELECT DISTINCT
+            id AS sectionId,
+            name AS sectionName,
+            uniCode AS sectionCode,
+            category AS sectionCategory
+        FROM sections WITH (NOLOCK)
+        WHERE id IN (${placeholders})
+        `,
+        uniqueSectionIds
+    );
+
+    const sections = (sectionRows || [])
+        .filter((s) => s.sectionId)
+        .map((s) => ({
+            sectionId: Number(s.sectionId),
+            sectionCode: safeTrim(s.sectionCode),
+            sectionName: safeTrim(s.sectionName),
+            sectionCategory: safeTrim(s.sectionCategory),
+        }));
+
+    if (sections.length === 0) return { noAssignedSection: true };
 
     return {
-        sectionId: assigned.sectionId,
-        sectionCode: safeTrim(assigned.sectionCode),
-        sectionName: safeTrim(assigned.sectionName),
+        sectionIds: sections.map((s) => s.sectionId),
+        sectionCodes: [...new Set(sections.map((s) => s.sectionCode).filter(Boolean))],
+        sectionNames: [...new Set(sections.map((s) => s.sectionName).filter(Boolean))],
+        sections,
+    };
+};
+
+const appendAssignedSectionsFilter = (countSql, sql, params, assignedSections, alias = "r") => {
+    if (!assignedSections?.sectionCodes?.length && !assignedSections?.sectionNames?.length) {
+        return { countSql, sql, params };
+    }
+
+    const codePlaceholders = assignedSections.sectionCodes.map(() => "?").join(",");
+    const namePlaceholders = assignedSections.sectionNames.map(() => "?").join(",");
+    const conditions = [];
+    const filterParams = [];
+
+    if (assignedSections.sectionCodes.length) {
+        conditions.push(`UPPER(LTRIM(RTRIM(ISNULL(${alias}.sectionCode, '')))) IN (${codePlaceholders.split(',').map(() => 'UPPER(LTRIM(RTRIM(?)))').join(',')})`);
+        filterParams.push(...assignedSections.sectionCodes);
+    }
+
+    if (assignedSections.sectionNames.length) {
+        conditions.push(`UPPER(LTRIM(RTRIM(ISNULL(${alias}.sectionName, '')))) IN (${namePlaceholders.split(',').map(() => 'UPPER(LTRIM(RTRIM(?)))').join(',')})`);
+        filterParams.push(...assignedSections.sectionNames);
+    }
+
+    const cond = ` AND (${conditions.join(" OR ")})`;
+    return {
+        countSql: countSql + cond,
+        sql: sql + cond,
+        params: [...params, ...filterParams],
     };
 };
 
@@ -1851,11 +1946,11 @@ export const getRequirements = asyncHandler(async (req, res) => {
 
     let countSql = "SELECT COUNT(r.id) AS total FROM requirements r WHERE 1=1";
     let sql = "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory FROM requirements r WHERE 1=1";
-    const params = [];
+    let params = [];
 
-    const assignedSection = await getAssignedRequirementSectionForUser(req);
+    const assignedSections = await getAssignedRequirementSectionsForUser(req);
 
-    if (assignedSection?.noAssignedSection) {
+    if (assignedSections?.noAssignedSection) {
         return res.status(200).json(
             new ApiResponse(
                 200,
@@ -1868,6 +1963,7 @@ export const getRequirements = asyncHandler(async (req, res) => {
                     },
                     totalManpower: 0,
                     filtersApplied: {
+                        department: "Assigned section not found",
                         section: "Assigned section not found",
                         line: "All",
                         dateMode: startDate || endDate ? "Range" : "Current Month",
@@ -1879,30 +1975,39 @@ export const getRequirements = asyncHandler(async (req, res) => {
         );
     }
 
-    if (assignedSection?.sectionCode || assignedSection?.sectionName) {
+    ({ countSql, sql, params } = appendAssignedSectionsFilter(countSql, sql, params, assignedSections, "r"));
+
+    // Frontend first dropdown is Department. In requirements data this is stored either
+    // in requirements.category or in sections.category. Keep r.sectionName fallback for older data.
+    if (section && String(section).toLowerCase() !== "all") {
         const cond = `
             AND (
-                UPPER(LTRIM(RTRIM(ISNULL(r.sectionCode, '')))) = UPPER(LTRIM(RTRIM(?)))
+                UPPER(LTRIM(RTRIM(ISNULL(r.category, '')))) = UPPER(LTRIM(RTRIM(?)))
+                OR EXISTS (
+                    SELECT 1
+                    FROM sections sec WITH (NOLOCK)
+                    WHERE (sec.uniCode = r.sectionCode OR sec.name = r.sectionName)
+                      AND UPPER(LTRIM(RTRIM(ISNULL(sec.category, '')))) = UPPER(LTRIM(RTRIM(?)))
+                )
                 OR UPPER(LTRIM(RTRIM(ISNULL(r.sectionName, '')))) = UPPER(LTRIM(RTRIM(?)))
             )
         `;
         countSql += cond;
         sql += cond;
-        params.push(assignedSection.sectionCode || "__NO_SECTION_CODE__", assignedSection.sectionName || "__NO_SECTION_NAME__");
+        params.push(section, section, section);
     }
 
-    if (section && String(section).toLowerCase() !== "all") {
-        const cond = " AND r.sectionName = ?";
-        countSql += cond;
-        sql += cond;
-        params.push(section);
-    }
-
+    // Frontend second dropdown is Section. Fallback to lineDescription for old records/UI labels.
     if (sub_section && String(sub_section).toLowerCase() !== "all") {
-        const cond = " AND r.lineDescription = ?";
+        const cond = `
+            AND (
+                UPPER(LTRIM(RTRIM(ISNULL(r.sectionName, '')))) = UPPER(LTRIM(RTRIM(?)))
+                OR UPPER(LTRIM(RTRIM(ISNULL(r.lineDescription, '')))) = UPPER(LTRIM(RTRIM(?)))
+            )
+        `;
         countSql += cond;
         sql += cond;
-        params.push(sub_section);
+        params.push(sub_section, sub_section);
     }
 
     if (search) {
@@ -1997,8 +2102,9 @@ export const getRequirements = asyncHandler(async (req, res) => {
                 },
                 totalManpower,
                 filtersApplied: {
-                    section: assignedSection?.sectionName || section || "All",
-                    assignedSection: assignedSection || null,
+                    department: section || "All",
+                    section: sub_section || "All",
+                    assignedSections: assignedSections || null,
                     line: sub_section || "All",
                     dateMode: startDate || endDate ? "Range" : "Current Month",
                 },
@@ -2032,28 +2138,99 @@ export const getRequirementLogs = asyncHandler(async (req, res) => {
 });
 
 export const getRequirementFilters = asyncHandler(async (req, res) => {
-    const [sections] = await executeSql(`
-        SELECT DISTINCT sectionName AS section
-        FROM requirements
-        WHERE sectionName IS NOT NULL
-          AND LTRIM(RTRIM(sectionName)) != ''
-        ORDER BY sectionName
-    `);
+    const { department } = req.query || {};
+    const assignedSections = await getAssignedRequirementSectionsForUser(req);
 
-    const [subSections] = await executeSql(`
-        SELECT DISTINCT lineDescription AS sub_section
-        FROM requirements
-        WHERE lineDescription IS NOT NULL
-          AND LTRIM(RTRIM(lineDescription)) != ''
-        ORDER BY lineDescription
-    `);
+    if (assignedSections?.noAssignedSection) {
+        return res.status(200).json(
+            new ApiResponse(
+                200,
+                { departments: [], sections: [], subSections: [] },
+                "No assigned section found for this custom user."
+            )
+        );
+    }
+
+    let baseWhere = " WHERE 1=1 ";
+    let params = [];
+
+    if (assignedSections?.sectionCodes?.length || assignedSections?.sectionNames?.length) {
+        const tmp = appendAssignedSectionsFilter("", "", [], assignedSections, "r");
+        baseWhere += tmp.sql.replace(/^\s*AND/i, " AND");
+        params.push(...tmp.params);
+    }
+
+    const departmentCond = department && String(department).toLowerCase() !== "all"
+        ? `
+          AND (
+              UPPER(LTRIM(RTRIM(ISNULL(r.category, '')))) = UPPER(LTRIM(RTRIM(?)))
+              OR EXISTS (
+                  SELECT 1
+                  FROM sections sec2 WITH (NOLOCK)
+                  WHERE (sec2.uniCode = r.sectionCode OR sec2.name = r.sectionName)
+                    AND UPPER(LTRIM(RTRIM(ISNULL(sec2.category, '')))) = UPPER(LTRIM(RTRIM(?)))
+              )
+          )
+        `
+        : "";
+
+    const departmentParams = department && String(department).toLowerCase() !== "all"
+        ? [department, department]
+        : [];
+
+    const [departments] = await executeSql(
+        `
+        SELECT DISTINCT department
+        FROM (
+            SELECT NULLIF(LTRIM(RTRIM(ISNULL(r.category, ''))), '') AS department
+            FROM requirements r WITH (NOLOCK)
+            ${baseWhere}
+            UNION
+            SELECT NULLIF(LTRIM(RTRIM(ISNULL(sec.category, ''))), '') AS department
+            FROM requirements r WITH (NOLOCK)
+            LEFT JOIN sections sec WITH (NOLOCK)
+                ON sec.uniCode = r.sectionCode OR sec.name = r.sectionName
+            ${baseWhere}
+        ) d
+        WHERE department IS NOT NULL
+        ORDER BY department
+        `,
+        [...params, ...params]
+    );
+
+    const [sections] = await executeSql(
+        `
+        SELECT DISTINCT r.sectionName AS section
+        FROM requirements r WITH (NOLOCK)
+        ${baseWhere}
+        ${departmentCond}
+          AND r.sectionName IS NOT NULL
+          AND LTRIM(RTRIM(r.sectionName)) != ''
+        ORDER BY r.sectionName
+        `,
+        [...params, ...departmentParams]
+    );
+
+    const [subSections] = await executeSql(
+        `
+        SELECT DISTINCT r.lineDescription AS sub_section
+        FROM requirements r WITH (NOLOCK)
+        ${baseWhere}
+        ${departmentCond}
+          AND r.lineDescription IS NOT NULL
+          AND LTRIM(RTRIM(r.lineDescription)) != ''
+        ORDER BY r.lineDescription
+        `,
+        [...params, ...departmentParams]
+    );
 
     res.status(200).json(
         new ApiResponse(
             200,
             {
-                sections: sections.map((s) => s.section),
-                subSections: subSections.map((s) => s.sub_section),
+                departments: departments.map((d) => d.department).filter(Boolean),
+                sections: sections.map((s) => s.section).filter(Boolean),
+                subSections: subSections.map((s) => s.sub_section).filter(Boolean),
             },
             "Filters fetched successfully"
         )
@@ -2433,34 +2610,39 @@ export const approveDashboardRequirements = asyncHandler(async (req, res) => {
         loggedInRole === "SUPERADMIN" ||
         loggedInRole === "ADMIN";
 
-    const assignedSection = await getAssignedRequirementSectionForUser(req);
+    const assignedSections = await getAssignedRequirementSectionsForUser(req);
 
-    if (assignedSection?.noAssignedSection) {
+    if (assignedSections?.noAssignedSection) {
         throw new ApiError("No section is assigned to this custom user.", 403);
     }
 
-    // CUSTOM users can approve only their own assigned section.
+    // CUSTOM users can approve only their assigned sections.
     // Admin/Superadmin can approve any selected requirement IDs.
     if (!isSuperUser) {
-        if (!assignedSection?.sectionCode && !assignedSection?.sectionName) {
+        if (!assignedSections?.sectionCodes?.length && !assignedSections?.sectionNames?.length) {
             throw new ApiError("You are not allowed to approve these requirements.", 403);
         }
 
-        const placeholders = cleanIds.map(() => "?").join(",");
+        const idPlaceholders = cleanIds.map(() => "?").join(",");
+        const codeConditions = assignedSections.sectionCodes?.length
+            ? `UPPER(LTRIM(RTRIM(ISNULL(r.sectionCode, '')))) IN (${assignedSections.sectionCodes.map(() => "UPPER(LTRIM(RTRIM(?)))").join(",")})`
+            : "";
+        const nameConditions = assignedSections.sectionNames?.length
+            ? `UPPER(LTRIM(RTRIM(ISNULL(r.sectionName, '')))) IN (${assignedSections.sectionNames.map(() => "UPPER(LTRIM(RTRIM(?)))").join(",")})`
+            : "";
+        const sectionConditions = [codeConditions, nameConditions].filter(Boolean).join(" OR ");
+
         const [allowedRows] = await executeSql(
             `
             SELECT COUNT(1) AS matchedCount
             FROM requirements r WITH (NOLOCK)
-            WHERE r.id IN (${placeholders})
-              AND (
-                    UPPER(LTRIM(RTRIM(ISNULL(r.sectionCode, '')))) = UPPER(LTRIM(RTRIM(?)))
-                    OR UPPER(LTRIM(RTRIM(ISNULL(r.sectionName, '')))) = UPPER(LTRIM(RTRIM(?)))
-                  )
+            WHERE r.id IN (${idPlaceholders})
+              AND (${sectionConditions})
             `,
             [
                 ...cleanIds,
-                assignedSection.sectionCode || "__NO_SECTION_CODE__",
-                assignedSection.sectionName || "__NO_SECTION_NAME__",
+                ...(assignedSections.sectionCodes || []),
+                ...(assignedSections.sectionNames || []),
             ]
         );
 

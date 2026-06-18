@@ -310,10 +310,33 @@ export default function SetRequirements() {
   }, []);
 
   useEffect(() => {
+    const normalizeOptionList = (items) => {
+      if (!Array.isArray(items)) return [];
+      return items
+        .map((item, index) => {
+          if (typeof item === "string") return { id: item, name: item };
+          return {
+            id: item?.id ?? item?.value ?? item?.name ?? index,
+            name: item?.name ?? item?.department ?? item?.section ?? item?.value ?? "",
+          };
+        })
+        .filter((item) => item.name);
+    };
+
     const fetchDepartments = async () => {
       try {
+        // Requirement filters are already restricted by backend for CUSTOM section heads.
+        const filterRes = await axiosInstance.get("/api/requirements/filters");
+        const filterDepartments = normalizeOptionList(filterRes.data?.data?.departments || []);
+
+        if (filterDepartments.length > 0) {
+          setDepartments(filterDepartments);
+          return;
+        }
+
         const res = await axiosInstance.get("/api/departments");
-        if (res.data?.success) setDepartments(res.data.data.departments || []);
+        if (res.data?.success) setDepartments(normalizeOptionList(res.data.data.departments || []));
+        else setDepartments([]);
       } catch (e) {
         console.error(e);
         setDepartments([]);
@@ -323,6 +346,19 @@ export default function SetRequirements() {
   }, []);
 
   useEffect(() => {
+    const normalizeSectionList = (items) => {
+      if (!Array.isArray(items)) return [];
+      return items
+        .map((item, index) => {
+          if (typeof item === "string") return { id: item, name: item };
+          return {
+            id: item?.id ?? item?.value ?? item?.name ?? item?.section ?? index,
+            name: item?.name ?? item?.section ?? item?.sub_section ?? item?.value ?? "",
+          };
+        })
+        .filter((item) => item.name);
+    };
+
     const fetchSections = async () => {
       if (!filterState.section || filterState.section === "all") {
         setSections([]);
@@ -336,9 +372,37 @@ export default function SetRequirements() {
       }
 
       try {
-        const res = await axiosInstance.get(`/api/lines?sectionId=${selected.id}`);
-        if (res.data?.success) setSections(res.data.data || []);
-        else setSections([]);
+        // Correct source for SetRequirement: sections from requirement data by selected department.
+        const filterRes = await axiosInstance.get("/api/requirements/filters", {
+          params: { department: selected.name },
+        });
+
+        const requirementSections = normalizeSectionList(filterRes.data?.data?.sections || []);
+        if (requirementSections.length > 0) {
+          setSections(requirementSections);
+          return;
+        }
+
+        // Fallbacks for projects where a dedicated sections endpoint exists.
+        const fallbackEndpoints = [
+          `/api/sections?departmentId=${selected.id}`,
+          `/api/sections?department=${encodeURIComponent(selected.name)}`,
+          `/api/departments/${selected.id}/sections`,
+        ];
+
+        for (const url of fallbackEndpoints) {
+          try {
+            const res = await axiosInstance.get(url);
+            const raw = res.data?.data?.sections || res.data?.data || res.data?.sections || [];
+            const normalized = normalizeSectionList(raw);
+            if (normalized.length > 0) {
+              setSections(normalized);
+              return;
+            }
+          } catch (_) { }
+        }
+
+        setSections([]);
       } catch (e) {
         console.error(e);
         setSections([]);

@@ -710,21 +710,30 @@ export default function SetRequirements() {
   };
 
   const getRowApprovedByName = (row) => {
+    const isEmailLike = (value) => /@/.test(String(value || ""));
+    const cleanName = (value) => {
+      const text = String(value || "").trim();
+      if (!text || isEmailLike(text)) return "";
+      return text;
+    };
+
     const approvedCells = MONTHS
       .filter((m) => hasMonthRequirementData(row, m))
       .map((m) => row?.monthData?.[m] || {})
       .filter((cell) => normalizeApprovalStatus(cell?.approvalStatus, cell?.isActive) === "approved");
 
     const firstApprovedCell = approvedCells.find(
-      (cell) => cell?.approvedBy || cell?.approvedByEmail || cell?.approvalOwnerName
+      (cell) => cell?.approvedBy || cell?.approvalOwnerName || cell?.approvedByEmail
     );
 
     return (
-      firstApprovedCell?.approvedBy ||
-      firstApprovedCell?.approvedByEmail ||
-      row?.approvedBy ||
-      row?.approvedByEmail ||
-      row?.approvalOwnerName ||
+      cleanName(firstApprovedCell?.approvedBy) ||
+      cleanName(row?.approvedBy) ||
+      cleanName(firstApprovedCell?.approvalOwnerName) ||
+      cleanName(row?.approvalOwnerName) ||
+      cleanName(user?.fullName) ||
+      cleanName(user?.userName) ||
+      cleanName(user?.name) ||
       "Section Head"
     );
   };

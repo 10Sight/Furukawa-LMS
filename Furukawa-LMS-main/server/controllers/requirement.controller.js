@@ -134,6 +134,65 @@ const mergeUniqueEmails = (...emailLists) => {
     return Array.from(uniqueEmails);
 };
 
+const isEmailLike = (value) => /@/.test(String(value || ""));
+
+const cleanDisplayName = (value) => {
+    const text = safeTrim(value);
+    if (!text || isEmailLike(text)) return "";
+    if (text.toLowerCase() === "section head") return "";
+    return text;
+};
+
+const resolvePersonNameByEmail = async (email, fallbackName = "Section Head") => {
+    const cleanEmail = safeTrim(email).toLowerCase();
+    const cleanFallback = cleanDisplayName(fallbackName);
+
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+        return cleanFallback || "Section Head";
+    }
+
+    try {
+        const [rows] = await executeSql(
+            `
+            SELECT TOP 1
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(u.fullName)), ''),
+                    NULLIF(LTRIM(RTRIM(u.userName)), ''),
+                    NULLIF(LTRIM(RTRIM(sh.name)), '')
+                ) AS displayName
+            FROM (SELECT ? AS email) e
+            LEFT JOIN users u WITH (NOLOCK)
+                ON LOWER(LTRIM(RTRIM(u.email))) = LOWER(LTRIM(RTRIM(e.email)))
+            LEFT JOIN section_heads sh WITH (NOLOCK)
+                ON LOWER(LTRIM(RTRIM(sh.email))) = LOWER(LTRIM(RTRIM(e.email)))
+            WHERE
+                u.id IS NOT NULL
+                OR sh.id IS NOT NULL
+            `,
+            [cleanEmail]
+        );
+
+        const dbName = cleanDisplayName(rows?.[0]?.displayName);
+        return dbName || cleanFallback || "Section Head";
+    } catch (error) {
+        console.error("[APPROVER-NAME] Failed to resolve name for email:", cleanEmail, error.message);
+        return cleanFallback || "Section Head";
+    }
+};
+
+const resolveApproverNameFromUserOrEmail = async (user, fallbackEmail = "", fallbackName = "Section Head") => {
+    const directName =
+        cleanDisplayName(user?.fullName) ||
+        cleanDisplayName(user?.name) ||
+        cleanDisplayName(user?.userName) ||
+        cleanDisplayName(user?.username);
+
+    if (directName) return directName;
+
+    const email = safeTrim(user?.email || fallbackEmail);
+    return resolvePersonNameByEmail(email, fallbackName);
+};
+
 const sendMailToMultipleRecipients = async (recipients, subject, htmlMsg, logPrefix) => {
     const emailList = Array.isArray(recipients)
         ? recipients
@@ -453,7 +512,12 @@ const findSectionHeadsForRequirement = async (reqRow) => {
         `
         SELECT DISTINCT
             sh.email,
-            sh.name,
+            COALESCE(
+                NULLIF(LTRIM(RTRIM(sh.name)), ''),
+                NULLIF(LTRIM(RTRIM(u.fullName)), ''),
+                NULLIF(LTRIM(RTRIM(u.userName)), ''),
+                'Section Head'
+            ) AS name,
             sh.CCMail,
             s.id AS sectionId,
             s.name AS dbSectionName,
@@ -461,6 +525,8 @@ const findSectionHeadsForRequirement = async (reqRow) => {
         FROM section_heads sh
         INNER JOIN sections s
             ON sh.sectionId = s.id
+        LEFT JOIN users u WITH (NOLOCK)
+            ON LOWER(LTRIM(RTRIM(u.email))) = LOWER(LTRIM(RTRIM(sh.email)))
         WHERE
             sh.email IS NOT NULL
             AND LTRIM(RTRIM(sh.email)) != ''
@@ -2794,15 +2860,9 @@ export const approveDashboardRequirements = asyncHandler(async (req, res) => {
         }
     }
 
-    const approvedByName =
-        req.user?.fullName ||
-        req.user?.name ||
-        req.user?.userName ||
-        req.user?.username ||
-        req.user?.email ||
-        "Section Head";
+    const approvedByEmail = safeTrim(req.user?.email || "");
+    const approvedByName = await resolveApproverNameFromUserOrEmail(req.user, approvedByEmail, "Section Head");
 
-    const approvedByEmail = req.user?.email || "";
     const placeholders = cleanIds.map(() => "?").join(",");
 
     const [, updateInfo] = await executeSql(
@@ -2815,12 +2875,17 @@ export const approveDashboardRequirements = asyncHandler(async (req, res) => {
             approvedByEmail = ?,
             approvedAt = GETDATE(),
             approvalSource = 'section_head_dashboard',
+            approvalOwnerName = CASE
+                WHEN approvalOwnerName IS NULL OR LTRIM(RTRIM(approvalOwnerName)) = '' OR LTRIM(RTRIM(approvalOwnerName)) = 'Section Head'
+                THEN ?
+                ELSE approvalOwnerName
+            END,
             rejectedBy = NULL,
             rejectedAt = NULL
         WHERE id IN (${placeholders})
           AND ISNULL(approvalStatus, 'pending') IN ('pending', 'rejected', 'system_approved')
         `,
-        [approvedByName, approvedByEmail, ...cleanIds]
+        [approvedByName, approvedByEmail, approvedByName, ...cleanIds]
     );
 
     res.status(200).json(
@@ -3196,6 +3261,7 @@ p {
     }
 
     if (finalAction === "approve") {
+        const approverName = await resolvePersonNameByEmail(recipientEmail, "Section Head");
         await executeSql(
             `
             UPDATE requirements
@@ -3206,11 +3272,16 @@ p {
                 approvedByEmail = ?,
                 approvedAt = GETDATE(),
                 approvalSource = 'section_head',
+                approvalOwnerName = CASE
+                    WHEN approvalOwnerName IS NULL OR LTRIM(RTRIM(approvalOwnerName)) = '' OR LTRIM(RTRIM(approvalOwnerName)) = 'Section Head'
+                    THEN ?
+                    ELSE approvalOwnerName
+                END,
                 rejectedBy = NULL,
                 rejectedAt = NULL
             WHERE id = ?
             `,
-            [recipientEmail || "Section Head", recipientEmail || "", requirementId]
+            [approverName, recipientEmail || "", approverName, requirementId]
         );
 
         await updateRequirementToken(token, { status: "approved" });
@@ -3460,6 +3531,9 @@ p {
     }
 
     if (action === "approve") {
+        const approverEmail = safeTrim(user?.email || recipientEmail || "");
+        const approverName = await resolveApproverNameFromUserOrEmail(user, approverEmail || recipientEmail, "Section Head");
+
         const [_, meta] = await executeSql(
             `
             UPDATE requirements
@@ -3470,6 +3544,11 @@ p {
                 approvedByEmail = ?,
                 approvedAt = GETDATE(),
                 approvalSource = 'section_head',
+                approvalOwnerName = CASE
+                    WHEN approvalOwnerName IS NULL OR LTRIM(RTRIM(approvalOwnerName)) = '' OR LTRIM(RTRIM(approvalOwnerName)) = 'Section Head'
+                    THEN ?
+                    ELSE approvalOwnerName
+                END,
                 rejectedBy = NULL,
                 rejectedAt = NULL
             WHERE LTRIM(RTRIM(uploadBatchId)) = LTRIM(RTRIM(?))
@@ -3477,8 +3556,9 @@ p {
               AND (approvalStatus IS NULL OR LTRIM(RTRIM(approvalStatus)) = '' OR LTRIM(RTRIM(approvalStatus)) = 'pending')
             `,
             [
-                recipientEmail || "Section Head",
-                recipientEmail || "",
+                approverName,
+                approverEmail || recipientEmail || "",
+                approverName,
                 uploadBatchId,
                 sectionCode,
             ]

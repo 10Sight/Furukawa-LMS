@@ -17,6 +17,7 @@ import {
     deleteRequirement,
     approveBatchRequirements,
     approveSingleRequirement,
+    approveDashboardRequirements,
 } from "../controllers/requirement.controller.js";
 
 const router = Router();
@@ -69,6 +70,8 @@ router.get(
     authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     getRequirementLogs
 );
+
+router.post("/approve-dashboard", verifyJWT, approveDashboardRequirements);
 
 router.get(
     "/logs/:id",

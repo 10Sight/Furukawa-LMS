@@ -232,6 +232,7 @@ export default function SetRequirements() {
   const canManageRequirements = hasPrivilege("setrequirement");
   const canUpload = user?.isAdmin || user?.role === 'SUPERADMIN' || canManageRequirements || user?.customRole?.permissions?.includes('mps_requirement:upload_excel');
   const canManageEmails = user?.isAdmin || user?.role === 'SUPERADMIN' || canManageRequirements || user?.customRole?.permissions?.includes('mps_requirement:add_emails');
+  const isCustomSectionHead = String(user?.role || "").trim().toUpperCase() === "CUSTOM";
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
@@ -258,6 +259,7 @@ export default function SetRequirements() {
   const [currentRow, setCurrentRow] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [approvingRows, setApprovingRows] = useState({});
 
   const [tableMaxWidth, setTableMaxWidth] = useState("100%");
 
@@ -630,7 +632,7 @@ export default function SetRequirements() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      toast.success("Requirements uploaded successfully. Approval mail sent to section head and CC notification sent where configured.");
+      toast.success("Requirements uploaded successfully. View Requirement mail sent to section head and CC notification sent where configured.");
       setIsUploadOpen(false);
       setSelectedFile(null);
       await fetchAllRequirements();
@@ -640,6 +642,62 @@ export default function SetRequirements() {
       toast.error(<div className="whitespace-pre-wrap">{errMsg}</div>, { duration: 8000 });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const getRowApprovedByName = (row) => {
+    const approvedCells = MONTHS
+      .filter((m) => hasMonthRequirementData(row, m))
+      .map((m) => row?.monthData?.[m] || {})
+      .filter((cell) => normalizeApprovalStatus(cell?.approvalStatus, cell?.isActive) === "approved");
+
+    const firstApprovedCell = approvedCells.find(
+      (cell) => cell?.approvedBy || cell?.approvedByEmail || cell?.approvalOwnerName
+    );
+
+    return (
+      firstApprovedCell?.approvedBy ||
+      firstApprovedCell?.approvedByEmail ||
+      row?.approvedBy ||
+      row?.approvedByEmail ||
+      row?.approvalOwnerName ||
+      "Section Head"
+    );
+  };
+
+  const getRowRequirementIds = (row) => MONTHS.flatMap((m) => row?.monthIds?.[m] || []);
+
+  const canApproveRow = (row) => {
+    const status = normalizeApprovalStatus(row?.approvalStatus, row?.isActive);
+    return isCustomSectionHead && ["pending", "rejected"].includes(status) && getRowRequirementIds(row).length > 0;
+  };
+
+  const handleApproveRow = async (row) => {
+    if (!row) return;
+
+    const idsToApprove = getRowRequirementIds(row);
+    if (idsToApprove.length === 0) return toast.info("No requirement records found for approval.");
+
+    if (!confirm(`Approve all pending requirements for ${row.sectionName || row.sectionCode || "this section"}?`)) {
+      return;
+    }
+
+    setApprovingRows((prev) => ({ ...prev, [row.key]: true }));
+
+    try {
+      const res = await axiosInstance.post("/api/requirements/approve-dashboard", {
+        ids: idsToApprove,
+        sectionCode: row.sectionCode,
+        sectionName: row.sectionName,
+      });
+
+      toast.success(res?.data?.message || "Requirement approved successfully.");
+      await fetchAllRequirements();
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.response?.data?.message || "Failed to approve requirement.");
+    } finally {
+      setApprovingRows((prev) => ({ ...prev, [row.key]: false }));
     }
   };
 
@@ -1129,21 +1187,52 @@ export default function SetRequirements() {
                         }`}
                         style={{ width: "135px", minWidth: "135px", maxWidth: "135px" }}
                       >
-                        <div
-                          className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-1 text-[9px] font-bold max-w-full ${rowBadge.className}`}
-                          title={
-                            r.approvalStatus === "system_approved" && r.approvalOwnerName
-                              ? `Approved by system for ${r.approvalOwnerName}`
-                              : rowBadge.label
-                          }
-                        >
-                          <RowIcon className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">
-                            {r.approvalStatus === "system_approved" && r.approvalOwnerName
-                              ? `System (${r.approvalOwnerName})`
-                              : rowBadge.label}
-                          </span>
-                        </div>
+                        {canApproveRow(r) ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 px-2 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                            disabled={!!approvingRows[r.key]}
+                            onClick={() => handleApproveRow(r)}
+                            title="Approve this section requirement"
+                          >
+                            {approvingRows[r.key] ? (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                Approving
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                Approve
+                              </>
+                            )}
+                          </Button>
+                        ) : normalizeApprovalStatus(r.approvalStatus, r.isActive) === "approved" ? (
+                          <div
+                            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[9px] font-bold text-emerald-700 max-w-full"
+                            title={`Approved by ${getRowApprovedByName(r)}`}
+                          >
+                            <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">Approved by {getRowApprovedByName(r)}</span>
+                          </div>
+                        ) : (
+                          <div
+                            className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-1 text-[9px] font-bold max-w-full ${rowBadge.className}`}
+                            title={
+                              r.approvalStatus === "system_approved" && r.approvalOwnerName
+                                ? `Approved by system for ${r.approvalOwnerName}`
+                                : rowBadge.label
+                            }
+                          >
+                            <RowIcon className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">
+                              {r.approvalStatus === "system_approved" && r.approvalOwnerName
+                                ? `System (${r.approvalOwnerName})`
+                                : rowBadge.label}
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="px-3 py-3 text-center">

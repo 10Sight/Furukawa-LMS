@@ -1581,8 +1581,13 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     process.env.APP_BASE_URL ||
                     `${req.protocol}://${req.get("host")}`;
 
-                const approveUrl = `${BASE_URL}/api/requirements/approve-batch?token=${tkn}&action=approve`;
-                const rejectUrl = `${BASE_URL}/api/requirements/approve-batch?token=${tkn}&action=reject`;
+                const FRONTEND_BASE_URL =
+                    process.env.FRONTEND_BASE_URL ||
+                    process.env.CLIENT_URL ||
+                    process.env.APP_FRONTEND_URL ||
+                    "http://192.168.90.19:5174";
+
+                const requirementDashboardUrl = `${FRONTEND_BASE_URL.replace(/\/$/, "")}/dashboard/requirements`;
 
                 const getHtmlMsg = (recipientName, showButtons) => `
 <!DOCTYPE html>
@@ -1655,30 +1660,14 @@ export const addRequirements = asyncHandler(async (req, res) => {
     </table>
 </td>
 </tr>
-${showButtons ? `
 <tr>
 <td style="padding:10px 36px 24px;text-align:center;">
-    <a href="${approveUrl}" style="background:#16a34a;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;margin-right:10px;">
-        ✅ APPROVE
+    <a href="${requirementDashboardUrl}" style="background:#2563eb;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+        View Requirement
     </a>
-    <a href="${rejectUrl}" style="background:#dc2626;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
-        ❌ REJECT
-    </a>
-</td>
-</tr>
-` : ''}
-<tr>
-<td style="padding:0 36px 24px;">
-    <p style="font-size:14px;font-weight:700;color:#1e293b;margin:0 0 10px;">Month-wise Breakdown:</p>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
-        <tr>
-            <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:left;border:1px solid #1e3a5f;">Month</th>
-            <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">Sales Plan</th>
-            <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">FN01 Plan</th>
-            <th style="padding:10px 14px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">FN02 Plan</th>
-        </tr>
-        ${monthRows}
-    </table>
+    <p style="font-size:12px;color:#64748b;line-height:1.5;margin:12px 0 0;">
+        Please login with your assigned section-head account. You will see only your assigned section requirements.
+    </p>
 </td>
 </tr>
 <tr>
@@ -1781,6 +1770,76 @@ ${showButtons ? `
    GET REQUIREMENTS
 ============================================================ */
 
+const getAssignedRequirementSectionForUser = async (req) => {
+    const userId = req.user?.id || req.user?._id;
+    const userEmail = req.user?.email;
+
+    const isSuperUser =
+        req.user?.isAdmin === true ||
+        req.user?.isAdmin === 1 ||
+        String(req.user?.role || "").toUpperCase() === "SUPERADMIN" ||
+        String(req.user?.role || "").toUpperCase() === "ADMIN";
+
+    if (isSuperUser) return null;
+
+    const currentRole = String(req.user?.role || "").trim().toUpperCase();
+    const currentSectionId = req.user?.sectionId || req.user?.section_id || null;
+
+    // For CUSTOM users, section assignment is taken from users.sectionId.
+    // If auth middleware does not attach role/sectionId, fetch it again from users table using id/email.
+    if (currentRole && currentRole !== "CUSTOM") return null;
+
+    const filters = [];
+    const values = [];
+
+    if (userId) {
+        filters.push("u.id = ?");
+        values.push(userId);
+    }
+
+    if (userEmail) {
+        filters.push("LOWER(LTRIM(RTRIM(u.email))) = LOWER(LTRIM(RTRIM(?)))");
+        values.push(userEmail);
+    }
+
+    if (currentSectionId && filters.length === 0) {
+        filters.push("u.sectionId = ?");
+        values.push(currentSectionId);
+    }
+
+    if (!filters.length) return null;
+
+    const [rows] = await executeSql(
+        `
+        SELECT TOP 1
+            u.id,
+            u.role,
+            u.sectionId,
+            s.id AS dbSectionId,
+            s.name AS sectionName,
+            s.uniCode AS sectionCode
+        FROM users u WITH (NOLOCK)
+        LEFT JOIN sections s WITH (NOLOCK)
+            ON s.id = u.sectionId
+        WHERE (${filters.join(" OR ")})
+          AND UPPER(LTRIM(RTRIM(ISNULL(u.role, '')))) = 'CUSTOM'
+        `,
+        values
+    );
+
+    const assigned = rows?.[0];
+
+    // If logged-in user is not CUSTOM, do not restrict this endpoint.
+    if (!assigned && currentRole !== "CUSTOM") return null;
+    if (!assigned?.sectionId) return { noAssignedSection: true };
+
+    return {
+        sectionId: assigned.sectionId,
+        sectionCode: safeTrim(assigned.sectionCode),
+        sectionName: safeTrim(assigned.sectionName),
+    };
+};
+
 export const getRequirements = asyncHandler(async (req, res) => {
     await autoApproveExpiredRequirements();
 
@@ -1793,6 +1852,44 @@ export const getRequirements = asyncHandler(async (req, res) => {
     let countSql = "SELECT COUNT(r.id) AS total FROM requirements r WHERE 1=1";
     let sql = "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory FROM requirements r WHERE 1=1";
     const params = [];
+
+    const assignedSection = await getAssignedRequirementSectionForUser(req);
+
+    if (assignedSection?.noAssignedSection) {
+        return res.status(200).json(
+            new ApiResponse(
+                200,
+                {
+                    pagination: {
+                        totalItems: 0,
+                        totalPages: 1,
+                        currentPage: page,
+                        limit,
+                    },
+                    totalManpower: 0,
+                    filtersApplied: {
+                        section: "Assigned section not found",
+                        line: "All",
+                        dateMode: startDate || endDate ? "Range" : "Current Month",
+                    },
+                    data: [],
+                },
+                "No assigned section found for this custom user."
+            )
+        );
+    }
+
+    if (assignedSection?.sectionCode || assignedSection?.sectionName) {
+        const cond = `
+            AND (
+                UPPER(LTRIM(RTRIM(ISNULL(r.sectionCode, '')))) = UPPER(LTRIM(RTRIM(?)))
+                OR UPPER(LTRIM(RTRIM(ISNULL(r.sectionName, '')))) = UPPER(LTRIM(RTRIM(?)))
+            )
+        `;
+        countSql += cond;
+        sql += cond;
+        params.push(assignedSection.sectionCode || "__NO_SECTION_CODE__", assignedSection.sectionName || "__NO_SECTION_NAME__");
+    }
 
     if (section && String(section).toLowerCase() !== "all") {
         const cond = " AND r.sectionName = ?";
@@ -1900,7 +1997,8 @@ export const getRequirements = asyncHandler(async (req, res) => {
                 },
                 totalManpower,
                 filtersApplied: {
-                    section: section || "All",
+                    section: assignedSection?.sectionName || section || "All",
+                    assignedSection: assignedSection || null,
                     line: sub_section || "All",
                     dateMode: startDate || endDate ? "Range" : "Current Month",
                 },
@@ -2306,6 +2404,113 @@ export const deleteRequirement = asyncHandler(async (req, res) => {
 
     res.status(200).json(
         new ApiResponse(200, null, "Requirement deleted successfully")
+    );
+});
+
+
+/* ============================================================
+   APPROVE REQUIREMENTS FROM DASHBOARD (SECTION HEAD)
+   Route needed: POST /api/requirements/approve-dashboard
+============================================================ */
+
+export const approveDashboardRequirements = asyncHandler(async (req, res) => {
+    const { ids } = req.body || {};
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+        throw new ApiError("ids array is required", 400);
+    }
+
+    const cleanIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+
+    if (cleanIds.length === 0) {
+        throw new ApiError("Valid requirement IDs are required", 400);
+    }
+
+    const loggedInRole = String(req.user?.role || "").trim().toUpperCase();
+    const isSuperUser =
+        req.user?.isAdmin === true ||
+        req.user?.isAdmin === 1 ||
+        loggedInRole === "SUPERADMIN" ||
+        loggedInRole === "ADMIN";
+
+    const assignedSection = await getAssignedRequirementSectionForUser(req);
+
+    if (assignedSection?.noAssignedSection) {
+        throw new ApiError("No section is assigned to this custom user.", 403);
+    }
+
+    // CUSTOM users can approve only their own assigned section.
+    // Admin/Superadmin can approve any selected requirement IDs.
+    if (!isSuperUser) {
+        if (!assignedSection?.sectionCode && !assignedSection?.sectionName) {
+            throw new ApiError("You are not allowed to approve these requirements.", 403);
+        }
+
+        const placeholders = cleanIds.map(() => "?").join(",");
+        const [allowedRows] = await executeSql(
+            `
+            SELECT COUNT(1) AS matchedCount
+            FROM requirements r WITH (NOLOCK)
+            WHERE r.id IN (${placeholders})
+              AND (
+                    UPPER(LTRIM(RTRIM(ISNULL(r.sectionCode, '')))) = UPPER(LTRIM(RTRIM(?)))
+                    OR UPPER(LTRIM(RTRIM(ISNULL(r.sectionName, '')))) = UPPER(LTRIM(RTRIM(?)))
+                  )
+            `,
+            [
+                ...cleanIds,
+                assignedSection.sectionCode || "__NO_SECTION_CODE__",
+                assignedSection.sectionName || "__NO_SECTION_NAME__",
+            ]
+        );
+
+        const matchedCount = Number(allowedRows?.[0]?.matchedCount || 0);
+
+        if (matchedCount !== cleanIds.length) {
+            throw new ApiError("You can approve only your assigned section requirements.", 403);
+        }
+    }
+
+    const approvedByName =
+        req.user?.fullName ||
+        req.user?.name ||
+        req.user?.userName ||
+        req.user?.username ||
+        req.user?.email ||
+        "Section Head";
+
+    const approvedByEmail = req.user?.email || "";
+    const placeholders = cleanIds.map(() => "?").join(",");
+
+    const [, updateInfo] = await executeSql(
+        `
+        UPDATE requirements
+        SET
+            is_active = 1,
+            approvalStatus = 'approved',
+            approvedBy = ?,
+            approvedByEmail = ?,
+            approvedAt = GETDATE(),
+            approvalSource = 'section_head_dashboard',
+            rejectedBy = NULL,
+            rejectedAt = NULL
+        WHERE id IN (${placeholders})
+          AND ISNULL(approvalStatus, 'pending') IN ('pending', 'rejected', 'system_approved')
+        `,
+        [approvedByName, approvedByEmail, ...cleanIds]
+    );
+
+    res.status(200).json(
+        new ApiResponse(
+            200,
+            {
+                approvedCount: updateInfo.affectedRows || 0,
+                approvedIds: cleanIds,
+                approvedBy: approvedByName,
+                approvedByEmail,
+            },
+            "Requirements approved successfully."
+        )
     );
 });
 

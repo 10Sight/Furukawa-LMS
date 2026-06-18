@@ -61,70 +61,38 @@ export const getLineRequirements = asyncHandler(async (req, res) => {
 
     let targetFN01 = 0, targetFN02 = 0;
 
-    // Only attempt the target query when the FN columns actually exist
+    // Requirements are stored at section level (lineCode is often empty).
+    // Always join via sectionName → sections.name regardless of lineCode existence.
     if (ci.hasProdPlanFN01 && ci.hasProdPlanFN02) {
         try {
-            const monthCol       = ci.hasMonthName       ? 'r.monthName'    : 'r.month_name';
-            const yearCol        = ci.hasYear             ? 'r.year'         : 'r.year_val';
-            const sectionNameCol = ci.hasSectionName      ? 'r.sectionName'  : 'r.section_name';
+            const monthCol       = ci.hasMonthName    ? 'r.monthName'   : 'r.month_name';
+            const yearCol        = ci.hasYear         ? 'r.year'        : 'r.year_val';
+            const sectionNameCol = ci.hasSectionName  ? 'r.sectionName' : 'r.section_name';
 
-            let targetSql, targetParams;
+            let targetSql = `
+                SELECT
+                    ISNULL(SUM(CAST(r.prodPlanFN01 AS INT)), 0) as targetFN01,
+                    ISNULL(SUM(CAST(r.prodPlanFN02 AS INT)), 0) as targetFN02
+                FROM requirements r
+                INNER JOIN [sections] s ON LOWER(TRIM(${sectionNameCol})) = LOWER(TRIM(s.name))
+                WHERE LOWER(${monthCol}) = LOWER(?) AND ${yearCol} = ?
+                  AND ISNULL(r.is_active, 1) = 1
+            `;
+            const targetParams = [MONTH_NAMES[resolvedMonth - 1], resolvedYear];
 
-            if (ci.hasLineCode) {
-                // camelCase schema: join via lineCode → lines → sections → departments
-                targetSql = `
-                    SELECT
-                        ISNULL(SUM(CAST(r.prodPlanFN01 AS INT)), 0) as targetFN01,
-                        ISNULL(SUM(CAST(r.prodPlanFN02 AS INT)), 0) as targetFN02
-                    FROM requirements r
-                    INNER JOIN [lines] l ON r.lineCode = l.uniCode
-                    INNER JOIN [sections] s ON l.sectionId = s.id
-                    INNER JOIN departments d ON l.department = d.id
-                    WHERE LOWER(${monthCol}) = LOWER(?) AND ${yearCol} = ?
-                      AND ISNULL(r.is_active, 1) = 1 AND l.isActive = 1
-                `;
-                targetParams = [MONTH_NAMES[resolvedMonth - 1], resolvedYear];
-                if (departmentId) { targetSql += " AND d.id = ?"; targetParams.push(departmentId); }
-                if (sectionId)    { targetSql += " AND s.id = ?"; targetParams.push(sectionId); }
-
-            } else if (ci.hasSectionName || ci.hasSectionNameSnake) {
-                // snake_case schema: join via section_name → sections table
-                targetSql = `
-                    SELECT
-                        ISNULL(SUM(CAST(r.prodPlanFN01 AS INT)), 0) as targetFN01,
-                        ISNULL(SUM(CAST(r.prodPlanFN02 AS INT)), 0) as targetFN02
-                    FROM requirements r
-                    INNER JOIN [sections] s ON LOWER(${sectionNameCol}) = LOWER(s.name)
-                    WHERE LOWER(${monthCol}) = LOWER(?) AND ${yearCol} = ?
-                      AND ISNULL(r.is_active, 1) = 1
-                `;
-                targetParams = [MONTH_NAMES[resolvedMonth - 1], resolvedYear];
-                if (sectionId) {
-                    targetSql += " AND s.id = ?";
-                    targetParams.push(sectionId);
-                } else if (departmentId) {
-                    targetSql += " AND s.departmentId = ?";
-                    targetParams.push(departmentId);
-                }
-
-            } else {
-                // No usable section column — aggregate the whole month/year
-                targetSql = `
-                    SELECT
-                        ISNULL(SUM(CAST(prodPlanFN01 AS INT)), 0) as targetFN01,
-                        ISNULL(SUM(CAST(prodPlanFN02 AS INT)), 0) as targetFN02
-                    FROM requirements
-                    WHERE LOWER(${monthCol}) = LOWER(?) AND ${yearCol} = ?
-                      AND ISNULL(is_active, 1) = 1
-                `;
-                targetParams = [MONTH_NAMES[resolvedMonth - 1], resolvedYear];
+            if (sectionId) {
+                targetSql += " AND s.id = ?";
+                targetParams.push(sectionId);
+            } else if (departmentId) {
+                targetSql += " AND s.departmentId = ?";
+                targetParams.push(departmentId);
             }
 
             const [targetRows] = await executeQuery(targetSql, targetParams);
             targetFN01 = targetRows[0]?.targetFN01 || 0;
             targetFN02 = targetRows[0]?.targetFN02 || 0;
         } catch (e) {
-            logger.warn(`Target FN01/FN02 query failed (schema mismatch?): ${e.message}`);
+            logger.warn(`Target FN01/FN02 query failed: ${e.message}`);
         }
     }
 

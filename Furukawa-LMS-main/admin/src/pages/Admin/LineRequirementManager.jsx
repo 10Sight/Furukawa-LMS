@@ -225,13 +225,25 @@ const LineRequirementManager = () => {
         Object.values(reqValues).reduce((sum, v) => sum + (parseInt(v.fn02) || 0), 0),
         [reqValues]
     );
-    const remainingFN01 = targetFN01 - enteredFN01;
-    const remainingFN02 = targetFN02 - enteredFN02;
-
     // --- Update Requirement ---
     const handleUpdate = async (lineId, fn01Val, fn02Val) => {
         const fn01 = parseInt(fn01Val) || 0;
         const fn02 = parseInt(fn02Val) || 0;
+
+        const savedLine = lines.find(l => l.lineId === lineId);
+        const oldFn01 = savedLine?.fn01 ?? 0;
+        const oldFn02 = savedLine?.fn02 ?? 0;
+        const newTotalFN01 = enteredFN01 - oldFn01 + fn01;
+        const newTotalFN02 = enteredFN02 - oldFn02 + fn02;
+
+        if (newTotalFN01 > targetFN01 || newTotalFN02 > targetFN02) {
+            toast.error("Cannot save: Total section requirements exceed target limit.");
+            setReqValues(prev => ({
+                ...prev,
+                [lineId]: { fn01: oldFn01, fn02: oldFn02 },
+            }));
+            return;
+        }
 
         setUpdatingId(lineId);
         try {
@@ -330,11 +342,11 @@ const LineRequirementManager = () => {
                     <div className="flex items-center gap-2">
                         <TrendingDown className="w-4 h-4 text-emerald-500 shrink-0" />
                         <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Actual</span>
-                        <Badge className={`border-none px-4 py-2 text-base font-bold ${remainingFN01 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            FN01: {remainingFN01}
+                        <Badge className={`border-none px-4 py-2 text-base font-bold ${enteredFN01 > targetFN01 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            FN01: {enteredFN01}
                         </Badge>
-                        <Badge className={`border-none px-4 py-2 text-base font-bold ${remainingFN02 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            FN02: {remainingFN02}
+                        <Badge className={`border-none px-4 py-2 text-base font-bold ${enteredFN02 > targetFN02 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            FN02: {enteredFN02}
                         </Badge>
                     </div>
                 </div>

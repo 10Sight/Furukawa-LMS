@@ -1205,11 +1205,11 @@ export default function SetRequirements() {
                         }`}
                         style={{ width: "105px", minWidth: "105px", maxWidth: "105px" }}
                       >
-                        <div className="font-medium text-xs truncate">{r.sectionCode || "-"}</div>
+                        <div className="font-medium text-xs whitespace-normal break-words leading-snug">{r.sectionCode || "-"}</div>
                       </td>
 
                       <td
-                        className={`px-2 py-3 sticky left-[105px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                        className={`px-2 py-3 align-top sticky left-[105px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700"
@@ -1217,7 +1217,7 @@ export default function SetRequirements() {
                         }`}
                         style={{ width: "140px", minWidth: "140px", maxWidth: "140px" }}
                       >
-                        <span className="text-xs truncate block font-bold">{r.sectionName || "-"}</span>
+                        <span className="text-xs whitespace-normal break-words leading-snug block font-bold">{r.sectionName || "-"}</span>
                         {r.sectionCategory && (
                           <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 mt-1 rounded ${r.sectionCategory.toLowerCase() === "direct"
                               ? "bg-blue-100 text-blue-800 border border-blue-200"
@@ -1231,7 +1231,7 @@ export default function SetRequirements() {
                       </td>
 
                       <td
-                        className={`px-2 py-3 sticky left-[245px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                        className={`px-2 py-3 align-top sticky left-[245px] z-30 group-hover:bg-slate-50 transition-colors border-r border-slate-200 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50 text-red-700"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50 text-amber-700"
@@ -1239,11 +1239,11 @@ export default function SetRequirements() {
                         }`}
                         style={{ width: "170px", minWidth: "170px", maxWidth: "170px" }}
                       >
-                        <span className="text-xs truncate block">{r.lineDescription || "-"}</span>
+                        <span className="text-xs whitespace-normal break-words leading-snug block">{r.lineDescription || "-"}</span>
                       </td>
 
                       <td
-                        className={`px-2 py-3 sticky left-[415px] z-30 group-hover:bg-slate-50 transition-colors text-center border-r-2 border-slate-300 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
+                        className={`px-2 py-3 align-top sticky left-[415px] z-30 group-hover:bg-slate-50 transition-colors text-center border-r-2 border-slate-300 ${r.approvalStatus === "pending" || r.approvalStatus === "rejected"
                           ? "bg-red-50"
                           : r.approvalStatus === "system_approved"
                             ? "bg-amber-50"
@@ -1274,15 +1274,15 @@ export default function SetRequirements() {
                           </Button>
                         ) : normalizeApprovalStatus(r.approvalStatus, r.isActive) === "approved" ? (
                           <div
-                            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[9px] font-bold text-emerald-700 max-w-full"
+                            className="inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[9px] font-bold text-emerald-700 max-w-full whitespace-normal break-words"
                             title={`Approved by ${getRowApprovedByName(r)}`}
                           >
                             <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
-                            <span className="truncate">Approved by {getRowApprovedByName(r)}</span>
+                            <span className="whitespace-normal break-words leading-snug text-center">Approved by {getRowApprovedByName(r)}</span>
                           </div>
                         ) : (
                           <div
-                            className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-1 text-[9px] font-bold max-w-full ${rowBadge.className}`}
+                            className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[9px] font-bold max-w-full whitespace-normal break-words ${rowBadge.className}`}
                             title={
                               r.approvalStatus === "system_approved" && r.approvalOwnerName
                                 ? `Approved by system for ${r.approvalOwnerName}`
@@ -1290,7 +1290,7 @@ export default function SetRequirements() {
                             }
                           >
                             <RowIcon className="w-3 h-3 flex-shrink-0" />
-                            <span className="truncate">
+                            <span className="whitespace-normal break-words leading-snug text-center">
                               {r.approvalStatus === "system_approved" && r.approvalOwnerName
                                 ? `System (${r.approvalOwnerName})`
                                 : rowBadge.label}

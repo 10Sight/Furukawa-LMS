@@ -292,13 +292,10 @@ const LineRequirementManager = () => {
                 {/* Month/Year + Target + Remaining — stacked right-aligned */}
                 <div className="flex flex-col items-end gap-2">
                     {/* Row 1: month / year label */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                         <Badge className="bg-blue-100 text-blue-700 border-none px-4 py-2 text-base font-bold gap-1.5">
                             <CalendarIcon className="w-4 h-4" />
                             {selectedMonthName} {filters.year}
-                        </Badge>
-                        <Badge className="bg-slate-200 text-slate-600 border-none px-4 py-2 text-base font-bold">
-                            FN01 &amp; FN02
                         </Badge>
                     </div>
 
@@ -317,7 +314,7 @@ const LineRequirementManager = () => {
                     {/* Row 3: Remaining */}
                     <div className="flex items-center gap-2">
                         <TrendingDown className="w-4 h-4 text-emerald-500 shrink-0" />
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Remaining</span>
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Actual</span>
                         <Badge className={`border-none px-4 py-2 text-base font-bold ${remainingFN01 < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                             FN01: {remainingFN01}
                         </Badge>

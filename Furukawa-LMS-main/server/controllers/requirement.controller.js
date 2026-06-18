@@ -1447,6 +1447,38 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 timeZone: "Asia/Kolkata",
             });
 
+            const ccSummaryEmailSet = new Set();
+            const ccSummarySectionMap = new Map();
+
+            const addCcSummaryRecipients = (emails = [], secDataForCc = {}) => {
+                const secCodeForCc = safeTrim(secDataForCc.sectionCode);
+                if (!secCodeForCc) return;
+
+                const sectionInfo = {
+                    sectionCode: secCodeForCc,
+                    sectionName: safeTrim(secDataForCc.sectionName) || secCodeForCc,
+                    sectionDescription: Array.from(secDataForCc.descriptions || [])
+                        .filter(Boolean)
+                        .join(", ") || "-",
+                    monthsCount: secDataForCc.months?.size || 0,
+                    salesCount: secDataForCc.salesCount || 0,
+                    prodCount: secDataForCc.prodCount || 0,
+                };
+
+                for (const email of emails || []) {
+                    const normalizedEmail = String(email || "").trim().toLowerCase();
+                    if (!normalizedEmail || !normalizedEmail.includes("@")) continue;
+
+                    ccSummaryEmailSet.add(normalizedEmail);
+
+                    if (!ccSummarySectionMap.has(normalizedEmail)) {
+                        ccSummarySectionMap.set(normalizedEmail, new Map());
+                    }
+
+                    ccSummarySectionMap.get(normalizedEmail).set(secCodeForCc, sectionInfo);
+                }
+            };
+
             for (const [secCode, secData] of sectionDataMap.entries()) {
                 const secName = secData.sectionName;
                 const sectionDescription = Array.from(secData.descriptions || [])
@@ -1721,18 +1753,127 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 console.log(`[UPLOAD-EMAIL] For section ${secName}, final CC extracted:`, ccEmails);
 
                 if (ccEmails.length > 0) {
-                    const ccRecipientName = getValueIgnoreCase(secHeads[0], ["name", "Name", "NAME"]) || "Section Head";
-                    const htmlMsgWithoutButtons = getHtmlMsg(`${ccRecipientName} (CC)`, false);
-
-                    // CC recipients get only an information mail. No approve/reject buttons.
-                    await sendMailToMultipleRecipients(
-                        ccEmails,
-                        subject,
-                        htmlMsgWithoutButtons,
-                        `[UPLOAD-EMAIL-CC][${secName}]`
-                    );
+                    // CC recipients should receive only one consolidated mail per upload.
+                    // Do not send section-wise CC mails inside this loop.
+                    addCcSummaryRecipients(ccEmails, secData);
                 } else {
                     console.log(`[UPLOAD-EMAIL-CC][${secName}] No CC email configured.`);
+                }
+            }
+
+            if (ccSummaryEmailSet.size > 0) {
+                const FRONTEND_BASE_URL =
+                    process.env.FRONTEND_BASE_URL ||
+                    process.env.CLIENT_URL ||
+                    process.env.APP_FRONTEND_URL ||
+                    "http://192.168.90.19:5174";
+
+                const requirementDashboardUrl = `${FRONTEND_BASE_URL.replace(/\/$/, "")}/dashboard/requirements`;
+                const ccSubject = `📊 Requirements Uploaded — ${sectionDataMap.size} Section${sectionDataMap.size > 1 ? "s" : ""}`;
+
+                const buildCcSummaryHtml = (sectionsForEmail = []) => {
+                    const sectionRowsHtml = sectionsForEmail
+                        .sort((a, b) => String(a.sectionName || "").localeCompare(String(b.sectionName || "")))
+                        .map((sec, index) => `
+                            <tr>
+                                <td style="padding:10px 12px;border:1px solid #e2e8f0;color:#64748b;text-align:center;font-weight:700;">${index + 1}</td>
+                                <td style="padding:10px 12px;border:1px solid #e2e8f0;color:#1e293b;font-weight:700;">${sec.sectionCode || "-"}</td>
+                                <td style="padding:10px 12px;border:1px solid #e2e8f0;color:#1e293b;font-weight:700;">${sec.sectionName || "-"}</td>
+                                <td style="padding:10px 12px;border:1px solid #e2e8f0;color:#475569;line-height:1.5;">${sec.sectionDescription || "-"}</td>
+                                <td style="padding:10px 12px;border:1px solid #e2e8f0;color:#2563eb;text-align:center;font-weight:800;">${sec.monthsCount || 0}</td>
+                            </tr>`)
+                        .join("");
+
+                    return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 0;">
+<tr>
+<td align="center">
+<table width="760" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.09);">
+<tr>
+<td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:32px 36px;text-align:center;">
+    <div style="font-size:40px;margin-bottom:10px;">📊</div>
+    <h1 style="color:#fff;font-size:22px;font-weight:700;margin:0;">Requirements Uploaded</h1>
+    <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:14px;">
+        Consolidated CC information mail
+    </p>
+</td>
+</tr>
+<tr>
+<td style="padding:28px 36px 8px;">
+    <p style="font-size:15px;color:#334155;margin:0 0 6px;">
+        Dear <strong>Team</strong>,
+    </p>
+    <p style="font-size:14px;color:#64748b;line-height:1.6;margin:0;">
+        New manpower requirements have been uploaded. You are receiving this as a CC information mail.
+        You can view the requirements from the dashboard, but approval action is allowed only for the assigned section head.
+    </p>
+</td>
+</tr>
+<tr>
+<td style="padding:16px 36px 10px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+        <tr>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;">📤 <strong>Uploaded By</strong></td>
+            <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#1e293b;">${uploadedByName} (${uploadedByRole})</td>
+            <td style="padding:10px 14px;font-size:13px;color:#64748b;">🕒 <strong>Date</strong></td>
+            <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#1e293b;">${uploadedAt}</td>
+        </tr>
+    </table>
+</td>
+</tr>
+<tr>
+<td style="padding:14px 36px 20px;">
+    <p style="font-size:14px;font-weight:800;color:#1e293b;margin:0 0 10px;">Sections included in this upload:</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+        <tr>
+            <th style="padding:10px 12px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;width:45px;">#</th>
+            <th style="padding:10px 12px;background:#1e3a5f;color:#fff;text-align:left;border:1px solid #1e3a5f;">Section Code</th>
+            <th style="padding:10px 12px;background:#1e3a5f;color:#fff;text-align:left;border:1px solid #1e3a5f;">Section Name</th>
+            <th style="padding:10px 12px;background:#1e3a5f;color:#fff;text-align:left;border:1px solid #1e3a5f;">Description</th>
+            <th style="padding:10px 12px;background:#1e3a5f;color:#fff;text-align:center;border:1px solid #1e3a5f;">Months</th>
+        </tr>
+        ${sectionRowsHtml}
+    </table>
+</td>
+</tr>
+<tr>
+<td style="padding:4px 36px 28px;text-align:center;">
+    <a href="${requirementDashboardUrl}" style="background:#2563eb;color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+        View Requirement
+    </a>
+    <p style="font-size:12px;color:#64748b;line-height:1.5;margin:12px 0 0;">
+        This mail does not provide approval permission. Approval depends on your assigned section-head access in the system.
+    </p>
+</td>
+</tr>
+<tr>
+<td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 36px;text-align:center;">
+    <p style="font-size:12px;color:#94a3b8;margin:0;">
+        Automated notification from <strong>Furukawa LMS</strong>.
+    </p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+                };
+
+                for (const ccEmail of Array.from(ccSummaryEmailSet)) {
+                    const sectionMapForEmail = ccSummarySectionMap.get(ccEmail);
+                    const sectionsForEmail = Array.from(sectionMapForEmail?.values() || []);
+                    if (sectionsForEmail.length === 0) continue;
+
+                    const ccHtml = buildCcSummaryHtml(sectionsForEmail);
+                    await sendMail(ccEmail, ccSubject, ccHtml, [], "")
+                        .then(() => console.log(`[UPLOAD-EMAIL-CC-SUMMARY] Sent consolidated CC mail to ${ccEmail}`))
+                        .catch((e) => console.error(`[UPLOAD-EMAIL-CC-SUMMARY] Failed for ${ccEmail}:`, e.message));
                 }
             }
         } catch (emailErr) {

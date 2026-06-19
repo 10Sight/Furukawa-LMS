@@ -383,45 +383,51 @@ class Daily5MRecord {
     }
 
     static async getStats({ departmentId, sectionId, startDate, endDate, formType }) {
-        let sql = `
-            SELECT 
-                date,
-                status,
-                recordData
-            FROM daily_5m_records
-            WHERE 1=1
-        `;
+        // Use CTE to pick only the latest row per session so repeated saves/edits
+        // don't inflate the count — each unique sheet is counted exactly once.
+        let whereClauses = "WHERE 1=1";
         let params = [];
 
         if (departmentId && departmentId !== 'all') {
             if (departmentId.includes(',')) {
                 const ids = departmentId.split(',');
-                sql += ` AND departmentId IN (${ids.map(() => '?').join(',')})`;
+                whereClauses += ` AND departmentId IN (${ids.map(() => '?').join(',')})`;
                 params.push(...ids);
             } else {
-                sql += " AND departmentId = ?";
+                whereClauses += " AND departmentId = ?";
                 params.push(departmentId);
             }
         }
 
         if (sectionId && sectionId !== 'all') {
-            sql += " AND sectionId = ?";
+            whereClauses += " AND sectionId = ?";
             params.push(sectionId);
         }
         if (formType) {
-            sql += " AND formType = ?";
+            whereClauses += " AND formType = ?";
             params.push(formType);
         }
         if (startDate) {
-            sql += " AND date >= ?";
+            whereClauses += " AND date >= ?";
             params.push(startDate);
         }
         if (endDate) {
-            sql += " AND date <= ?";
+            whereClauses += " AND date <= ?";
             params.push(endDate);
         }
 
-        sql += " ORDER BY date ASC";
+        const sql = `
+            WITH LatestSessions AS (
+                SELECT date, status, recordData, sessionId,
+                       ROW_NUMBER() OVER (PARTITION BY sessionId ORDER BY createdAt DESC) AS rn
+                FROM daily_5m_records
+                ${whereClauses}
+            )
+            SELECT date, status, recordData
+            FROM LatestSessions
+            WHERE rn = 1
+            ORDER BY date ASC
+        `;
 
         const [records] = await executeQuery(sql, params);
         
@@ -490,40 +496,47 @@ class Daily5MRecord {
     }
 
     static async getRowStats({ departmentId, sectionId, startDate, endDate }) {
-        let sql = `
-            SELECT 
-                r.departmentId, 
-                d.name as departmentName, 
-                r.recordData
-            FROM daily_5m_records r
-            LEFT JOIN departments d ON r.departmentId = CAST(d.id AS NVARCHAR(255))
-            WHERE 1=1
-        `;
+        // Use CTE to pick only the latest row per session before counting row statuses
+        // so reopening/editing a sheet doesn't double-count its filled rows.
+        let whereClauses = "WHERE 1=1";
         let params = [];
 
         if (departmentId && departmentId !== 'all') {
             if (departmentId.includes(',')) {
                 const ids = departmentId.split(',');
-                sql += ` AND r.departmentId IN (${ids.map(() => '?').join(',')})`;
+                whereClauses += ` AND r.departmentId IN (${ids.map(() => '?').join(',')})`;
                 params.push(...ids);
             } else {
-                sql += " AND r.departmentId = ?";
+                whereClauses += " AND r.departmentId = ?";
                 params.push(departmentId);
             }
         }
 
         if (sectionId && sectionId !== 'all') {
-            sql += " AND r.sectionId = ?";
+            whereClauses += " AND r.sectionId = ?";
             params.push(sectionId);
         }
         if (startDate) {
-            sql += " AND r.date >= ?";
+            whereClauses += " AND r.date >= ?";
             params.push(startDate);
         }
         if (endDate) {
-            sql += " AND r.date <= ?";
+            whereClauses += " AND r.date <= ?";
             params.push(endDate);
         }
+
+        const sql = `
+            WITH LatestSessions AS (
+                SELECT r.departmentId, r.recordData, r.sessionId,
+                       ROW_NUMBER() OVER (PARTITION BY r.sessionId ORDER BY r.createdAt DESC) AS rn
+                FROM daily_5m_records r
+                ${whereClauses}
+            )
+            SELECT ls.departmentId, d.name AS departmentName, ls.recordData
+            FROM LatestSessions ls
+            LEFT JOIN departments d ON ls.departmentId = CAST(d.id AS NVARCHAR(255))
+            WHERE ls.rn = 1
+        `;
 
         const [records] = await executeQuery(sql, params);
 

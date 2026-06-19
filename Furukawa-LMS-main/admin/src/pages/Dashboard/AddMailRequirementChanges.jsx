@@ -165,10 +165,10 @@ export default function MailManagementModal({ isOpen, onClose }) {
         }
     };
 
-    const canSubmit = Boolean(selectedSection && email);
+    const canSubmit = Boolean(selectedSection && email && name.trim());
 
     const handleSubmit = async () => {
-        if (!canSubmit) return toast.error("Please fill all required fields");
+        if (!canSubmit) return toast.error("Please select section and enter recipient name + email");
 
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         const emails = email.split(",").map((e) => e.trim());
@@ -183,7 +183,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                 sectionId: selectedSection,
                 sectionUnicode: sec?.uniCode || "",
                 email: emails.join(", "),
-                name,
+                name: name.trim(),
                 CCMail: "",
             };
             if (editingId) {
@@ -393,7 +393,7 @@ export default function MailManagementModal({ isOpen, onClose }) {
                                             {/* Field 3: Name (optional) */}
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                                    Recipient Name <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                                                    Recipient Name <span className="text-red-500">*</span>
                                                 </Label>
                                                 <Input
                                                     placeholder="e.g. John Doe"

@@ -193,6 +193,17 @@ const resolveApproverNameFromUserOrEmail = async (user, fallbackEmail = "", fall
     return resolvePersonNameByEmail(email, fallbackName);
 };
 
+const getRequirementUpdatedByName = (req) => {
+    return (
+        cleanDisplayName(req?.user?.fullName) ||
+        cleanDisplayName(req?.user?.name) ||
+        cleanDisplayName(req?.user?.userName) ||
+        cleanDisplayName(req?.user?.username) ||
+        safeTrim(req?.user?.email) ||
+        "Unknown"
+    );
+};
+
 const sendMailToMultipleRecipients = async (recipients, subject, htmlMsg, logPrefix) => {
     const emailList = Array.isArray(recipients)
         ? recipients
@@ -1373,6 +1384,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         new_values: insertedRow,
                         employee_id: req.user?._id || req.user?.id || null,
                         employee_role: req.user?.role || "Admin",
+                        updated_by_name: getRequirementUpdatedByName(req),
                     }, transaction);
                 } catch (logErr) {
                     console.error("Failed to log bulk insert requirement:", logErr.message);
@@ -1448,6 +1460,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         new_values: newRows[0],
                         employee_id: req.user?._id || req.user?.id || null,
                         employee_role: req.user?.role || "Admin",
+                        updated_by_name: getRequirementUpdatedByName(req),
                     }, transaction);
                 }
             } catch (logErr) {
@@ -2339,8 +2352,18 @@ export const getRequirementLogs = asyncHandler(async (req, res) => {
 
     const rows = await RequirementLog.getLogs(filters, { limit, offset });
 
+    const logsWithNames = (rows || []).map((row) => ({
+        ...row,
+        updated_by_name:
+            row.updated_by_name ||
+            row.user_name ||
+            row.employee_name ||
+            row.name ||
+            "Unknown",
+    }));
+
     res.status(200).json(
-        new ApiResponse(200, rows, "Requirement logs fetched successfully")
+        new ApiResponse(200, logsWithNames, "Requirement logs fetched successfully")
     );
 });
 
@@ -2639,6 +2662,7 @@ export const updateRequirement = asyncHandler(async (req, res) => {
             new_values: newReq,
             employee_id: req.user?._id || req.user?.id || null,
             employee_role: req.user?.role || "Admin",
+            updated_by_name: getRequirementUpdatedByName(req),
         });
     } catch (logErr) {
         console.error("Failed to log requirement update:", logErr.message);

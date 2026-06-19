@@ -120,7 +120,7 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
             const createdAt = log.created_at || log.createdAt || log.timestamp || log.time;
             const createdDate = toDateSafe(createdAt) || new Date();
 
-            const userName = log.user_name || log.updated_by_name || log.employee_name || log.name || "Unknown";
+            const userName = log.updated_by_name || log.user_name || log.employee_name || log.name || "Unknown";
             const userAvatar = log.user_avatar || log.avatar || null;
             const userRole = log.employee_role || log.role || "User";
             const employeeId = log.employee_id || null;

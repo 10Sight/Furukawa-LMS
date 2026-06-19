@@ -21,6 +21,8 @@ class Daily5MRecord {
         this.approvedBy = data.approvedBy;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
+        this.adminRemarks = data.adminRemarks || "";
+        this.adminRemarksHistory = data.adminRemarksHistory || [];
     }
 
     static async init() {
@@ -92,6 +94,7 @@ class Daily5MRecord {
             await migrationHelper.ensureColumnExists('daily_5m_records', 'status', "NVARCHAR(20) DEFAULT 'PENDING'");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'approvedBy', "INT");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'sectionId', "NVARCHAR(255)");
+            await migrationHelper.ensureColumnExists('daily_5m_records', 'adminRemarks', "NVARCHAR(MAX)");
 
             // Remove unique constraints to allow full history (every save = new row)
             const dropConstraintsQuery = `
@@ -152,18 +155,18 @@ class Daily5MRecord {
     }
 
     static async upsert(recordData) {
-        const { departmentId, sectionId, date, shift, line, formType, recordData: data, submittedBy, sessionId } = recordData;
+        const { departmentId, sectionId, date, shift, line, formType, recordData: data, submittedBy, sessionId, adminRemarks } = recordData;
         const dataJson = JSON.stringify(data);
         const aggregateStatus = this.calculateAggregateStatus(data);
- 
+
         const query = `
-            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETUTCDATE(), GETUTCDATE());
+            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETUTCDATE(), GETUTCDATE());
             SELECT SCOPE_IDENTITY() as id;
         `;
- 
+
         const [rows] = await executeQuery(query, [
-            departmentId, sectionId || null, date, shift, line, formType, dataJson, submittedBy, sessionId || null, aggregateStatus
+            departmentId, sectionId || null, date, shift, line, formType, dataJson, submittedBy, sessionId || null, aggregateStatus, adminRemarks || null
         ]);
 
         const newId = rows[0].id;
@@ -292,7 +295,36 @@ class Daily5MRecord {
         const [rows] = await executeQuery(sql, params);
         const totalCount = rows.length > 0 ? rows[0].totalCount : 0;
         const records = rows.map(row => new Daily5MRecord(row));
-        
+
+        if (groupBySession && records.length > 0) {
+            const sessionIds = records.map(r => r.sessionId).filter(Boolean);
+            if (sessionIds.length > 0) {
+                const placeholders = sessionIds.map(() => '?').join(',');
+                const historyQuery = `
+                    SELECT r.sessionId, r.adminRemarks, r.createdAt, u.fullName as adminName
+                    FROM daily_5m_records r
+                    LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
+                    WHERE r.sessionId IN (${placeholders})
+                      AND r.adminRemarks IS NOT NULL
+                      AND r.adminRemarks != ''
+                    ORDER BY r.sessionId, r.createdAt DESC
+                `;
+                const [historyRows] = await executeQuery(historyQuery, sessionIds);
+                const historyMap = {};
+                historyRows.forEach(row => {
+                    if (!historyMap[row.sessionId]) historyMap[row.sessionId] = [];
+                    historyMap[row.sessionId].push({
+                        remark: row.adminRemarks,
+                        createdAt: row.createdAt,
+                        adminName: row.adminName || "Admin"
+                    });
+                });
+                records.forEach(record => {
+                    record.adminRemarksHistory = historyMap[record.sessionId] || [];
+                });
+            }
+        }
+
         return { records, totalCount };
     }
 

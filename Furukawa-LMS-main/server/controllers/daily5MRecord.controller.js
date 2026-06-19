@@ -6,7 +6,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 // Create a new record
 export const create5MRecord = async (req, res, next) => {
     try {
-        const { departmentId, sectionId, date, shift, line, recordData, formType, sessionId } = req.body;
+        const { departmentId, sectionId, date, shift, line, recordData, formType, sessionId, adminRemarks } = req.body;
         const userId = req.user.id; // From auth middleware
 
         if (!departmentId || !date) {
@@ -22,6 +22,7 @@ export const create5MRecord = async (req, res, next) => {
             recordData,
             formType,
             sessionId,
+            adminRemarks,
             submittedBy: userId
         });
 

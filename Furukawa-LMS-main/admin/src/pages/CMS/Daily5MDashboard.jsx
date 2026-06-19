@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import axiosInstance from '@/Helper/axiosInstance';
 import { format } from "date-fns";
-import { Loader2, Eye, Trash2, Plus, History, Search, Calendar as CalendarIcon, Filter, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Eye, Trash2, Plus, History, Search, Calendar as CalendarIcon, Filter, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -952,6 +952,7 @@ const Daily5MDashboard = () => {
                                     <TableHead>Line</TableHead>
                                     <TableHead>Submitted By</TableHead>
                                     <TableHead>Status</TableHead>
+                                    <TableHead className="min-w-[180px]">Admin Remarks</TableHead>
                                     <TableHead>Last Saved</TableHead>
                                     <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
                                 </TableRow>
@@ -978,8 +979,51 @@ const Daily5MDashboard = () => {
                                                 <span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-xs font-semibold">Approved</span>
                                             ) : record.status === 'REJECTED' || record.status === 'DECLINED' ? (
                                                 <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-xs font-semibold">Rejected</span>
+                                            ) : record.status === 'SUBMITTED' ? (
+                                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs font-semibold">Submitted</span>
                                             ) : (
                                                 <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-xs font-semibold">Pending</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="max-w-[200px]">
+                                            {record.adminRemarksHistory?.length > 0 ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <p className="text-xs text-slate-600 truncate flex-1" title={record.adminRemarksHistory[0].remark}>
+                                                        {record.adminRemarksHistory[0].remark}
+                                                    </p>
+                                                    <Popover>
+                                                        <PopoverTrigger asChild>
+                                                            <button className="flex-shrink-0 p-1 rounded hover:bg-slate-100 text-blue-500 hover:text-blue-700 transition-colors" title="View remark history">
+                                                                <History className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-80 p-0 shadow-xl" align="end">
+                                                            <div className="p-3 border-b bg-slate-50 rounded-t-md">
+                                                                <p className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                                    <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                                                                    Admin Edit History
+                                                                </p>
+                                                            </div>
+                                                            <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                                                                {record.adminRemarksHistory.map((entry, idx) => (
+                                                                    <div key={idx} className="p-3 space-y-1.5">
+                                                                        <div className="flex items-center justify-between gap-2">
+                                                                            <span className="text-xs font-semibold text-slate-700">{entry.adminName}</span>
+                                                                            <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                                                                                {format(new Date(entry.createdAt), "PP p")}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-xs text-slate-600 leading-relaxed border-l-2 border-blue-300 pl-2">
+                                                                            {entry.remark}
+                                                                        </p>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-slate-300">—</span>
                                             )}
                                         </TableCell>
                                         <TableCell className="text-[10px] text-gray-400 whitespace-nowrap">

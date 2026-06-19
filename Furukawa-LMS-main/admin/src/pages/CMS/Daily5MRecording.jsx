@@ -311,7 +311,7 @@ const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, 
     );
 };
 
-const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInputChange }) => {
+const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInputChange, disabled }) => {
     const line = allLines.find(l => l.name === selectedLineName);
     const lineId = line?.id || line?._id;
     // console.log(`[ProcessSelect] Row ${recIndex}: Line=${selectedLineName}, ID=${lineId}`);
@@ -338,7 +338,7 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
             className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
             value={formData[`rec_${recIndex}_Process`] || ""}
             onChange={(e) => onInputChange(recIndex, 'Process', e.target.value)}
-            disabled={!lineId}
+            disabled={disabled || !lineId}
         >
             <option value="">{isLoading ? "Loading..." : "Select Process"}</option>
             {machines.map((m, idx) => {
@@ -367,7 +367,7 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
     );
 };
 
-const ProblemSelect = ({ recIndex, value, onChange }) => {
+const ProblemSelect = ({ recIndex, value, onChange, disabled }) => {
     const options = [
         "Associate on planned leave",
         "Absent without information (During start of shift)",
@@ -392,6 +392,7 @@ const ProblemSelect = ({ recIndex, value, onChange }) => {
                     const val = e.target.value;
                     onChange(recIndex, 'Problem', val);
                 }}
+                disabled={disabled}
             >
                 <option value="">Select Problem</option>
                 {options.map((opt, idx) => (
@@ -402,6 +403,7 @@ const ProblemSelect = ({ recIndex, value, onChange }) => {
                 <AutoResizeTextarea
                     placeholder="Enter problem details..."
                     value={value === "Other" ? "" : value}
+                    disabled={disabled}
                     onChange={(e) => onChange(recIndex, 'Problem', e.target.value)}
                     className="text-blue-600 font-bold border-t border-dashed border-blue-200 pt-1"
                 />
@@ -541,6 +543,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
     // Helper to determine if a specific containment field is locked
     const isFieldLocked = (field, isCheckField = false) => {
         if (isReview || !hasEditPermission) return true;
+        if (rowStatus === 'APPROVED' && !authUser?.isAdmin) return true;
         if (rowStatus && !canEditSubmitted5M) return true;
         if (isCheckField && initialFormData[`rec_${recIndex}_${field}`] && !canEditSubmitted5M) return true;
         return false;
@@ -1050,6 +1053,9 @@ const Daily5MRecording = () => {
 
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
     const [isManagePeopleOpen, setIsManagePeopleOpen] = useState(false);
+    const [isAdminRemarkDialogOpen, setIsAdminRemarkDialogOpen] = useState(false);
+    const [adminRemarkText, setAdminRemarkText] = useState('');
+    const [pendingSaveParams, setPendingSaveParams] = useState(null);
     const [emailForPDF, setEmailForPDF] = useState("");
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const tableRef = React.useRef(null);
@@ -1675,43 +1681,66 @@ const Daily5MRecording = () => {
         { key: `rec_${i}_From`,        label: "Deputed From" },
         { key: `rec_${i}_Plan`,        label: "Deputed on Plan" },
         { key: `rec_${i}_OJT`,         label: "OJT Status" },
-        { key: `rec_${i}_Retro1_NA`,   label: "Retroactive Result" },
+        { key: `rec_${i}_Retro1_NA`,   label: "Visual Retro Result" },
+        { key: `rec_${i}_Retro2_NA`,   label: "Dimension Retro Result" },
+        { key: `rec_${i}_Retro3_TQ`,   label: "Total Qty (Retro)" },
+        { key: `rec_${i}_Retro3_NG`,   label: "NG Qty (Retro)" },
         { key: `rec_${i}_FP_Leader`,   label: "Inspector Name" },
         { key: `rec_${i}_FP_PartNo`,   label: "Part No." },
         { key: `rec_${i}_FP_LotNo`,    label: "Lot No." },
-        { key: `rec_${i}_FP_SrNo_1`,   label: "Circuit No." },
-        { key: `rec_${i}_FP1_Chk1`,    label: "Result After Change" },
+        { key: `rec_${i}_FP_SrNo_1`,   label: "Circuit No. 1" },
+        { key: `rec_${i}_FP1_Chk1`,    label: "Visual Check (Circuit 1)" },
+        { key: `rec_${i}_FP1_Chk2`,    label: "Visual Check (Circuit 2)" },
+        { key: `rec_${i}_FP1_Chk3`,    label: "Visual Check (Circuit 3)" },
+        { key: `rec_${i}_FP1_Chk4`,    label: "Visual Check (Circuit 4)" },
+        { key: `rec_${i}_FP1_Chk5`,    label: "Visual Check (Circuit 5)" },
+        { key: `rec_${i}_FP2_Chk1`,    label: "Dimension Check (Circuit 1)" },
+        { key: `rec_${i}_FP2_Chk2`,    label: "Dimension Check (Circuit 2)" },
+        { key: `rec_${i}_FP2_Chk3`,    label: "Dimension Check (Circuit 3)" },
+        { key: `rec_${i}_FP2_Chk4`,    label: "Dimension Check (Circuit 4)" },
+        { key: `rec_${i}_FP2_Chk5`,    label: "Dimension Check (Circuit 5)" },
         { key: `rec_${i}_Result_1`,    label: "QA Shift In-charge" },
         { key: `rec_${i}_Owner_Sign`,  label: "Process Owner" },
     ];
 
-    const getCrimpingMandatoryFields = (i) => [
-        { key: `rec_${i}_Date`,            label: "Date" },
-        { key: `rec_${i}_StationMC`,       label: "Station M/C No" },
-        { key: `rec_${i}_Shift`,           label: "Shift" },
-        { key: `rec_${i}_Type`,            label: "Planned/Un-Planned" },
-        { key: `rec_${i}_Problem`,         label: "Problem" },
-        { key: `rec_${i}_Process`,         label: "Process Name" },
-        { key: `rec_${i}_OperatorName`,    label: "Operator Name" },
-        { key: `rec_${i}_CSL`,             label: "Current Skill Level" },
-        { key: `rec_${i}_ReqSkill`,        label: "Req. Min Skill Level" },
-        { key: `rec_${i}_DeputedPerson`,   label: "Deputy Person Name" },
-        { key: `rec_${i}_EmpCode`,         label: "Employee Code" },
-        { key: `rec_${i}_ActSkill`,        label: "Actual Skill Level" },
-        { key: `rec_${i}_From`,            label: "Deputed From" },
-        { key: `rec_${i}_DeputedOnPlan`,   label: "Deputed on Plan" },
-        { key: `rec_${i}_OJT`,             label: "OJT Status" },
-        { key: `rec_${i}_Retro_C/H_F`,    label: "Retro Standard C/H (F)" },
-        { key: `rec_${i}_Retro_C/H_R`,    label: "Retro Standard C/H (R)" },
-        { key: `rec_${i}_Result_C/H_F`,   label: "Retro Result C/H (F)" },
-        { key: `rec_${i}_InspectorName`,   label: "Inspector Name" },
-        { key: `rec_${i}_PartNo`,          label: "Part No." },
-        { key: `rec_${i}_LotNo`,           label: "Lot No." },
-        { key: `rec_${i}_CircuitNo`,       label: "Circuit No." },
-        { key: `rec_${i}_Setup_C/H_F`,    label: "Setup Verification C/H (F)" },
-        { key: `rec_${i}_QA_Incharge`,     label: "QA Shift In-charge" },
-        { key: `rec_${i}_Process_Owner`,   label: "Process Owner" },
-    ];
+    const getCrimpingMandatoryFields = (i) => {
+        const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
+        const retroFields = params.flatMap(p => [
+            { key: `rec_${i}_Retro_${p}_F`,  label: `Retro Standard ${p} (F)` },
+            { key: `rec_${i}_Retro_${p}_R`,  label: `Retro Standard ${p} (R)` },
+            { key: `rec_${i}_Result_${p}_F`, label: `Retro Result ${p} (F)` },
+            { key: `rec_${i}_Result_${p}_R`, label: `Retro Result ${p} (R)` },
+        ]);
+        const setupFields = params.flatMap(p => [
+            { key: `rec_${i}_Setup_${p}_F`, label: `Setup Verification ${p} (F)` },
+            { key: `rec_${i}_Setup_${p}_R`, label: `Setup Verification ${p} (R)` },
+        ]);
+        return [
+            { key: `rec_${i}_Date`,            label: "Date" },
+            { key: `rec_${i}_StationMC`,       label: "Station M/C No" },
+            { key: `rec_${i}_Shift`,           label: "Shift" },
+            { key: `rec_${i}_Type`,            label: "Planned/Un-Planned" },
+            { key: `rec_${i}_Problem`,         label: "Problem" },
+            { key: `rec_${i}_Process`,         label: "Process Name" },
+            { key: `rec_${i}_OperatorName`,    label: "Operator Name" },
+            { key: `rec_${i}_CSL`,             label: "Current Skill Level" },
+            { key: `rec_${i}_ReqSkill`,        label: "Req. Min Skill Level" },
+            { key: `rec_${i}_DeputedPerson`,   label: "Deputy Person Name" },
+            { key: `rec_${i}_EmpCode`,         label: "Employee Code" },
+            { key: `rec_${i}_ActSkill`,        label: "Actual Skill Level" },
+            { key: `rec_${i}_From`,            label: "Deputed From" },
+            { key: `rec_${i}_DeputedOnPlan`,   label: "Deputed on Plan" },
+            { key: `rec_${i}_OJT`,             label: "OJT Status" },
+            ...retroFields,
+            { key: `rec_${i}_InspectorName`,   label: "Inspector Name" },
+            { key: `rec_${i}_PartNo`,          label: "Part No." },
+            { key: `rec_${i}_LotNo`,           label: "Lot No." },
+            { key: `rec_${i}_CircuitNo`,       label: "Circuit No." },
+            ...setupFields,
+            { key: `rec_${i}_QA_Incharge`,     label: "QA Shift In-charge" },
+            { key: `rec_${i}_Process_Owner`,   label: "Process Owner" },
+        ];
+    };
 
     const handleInputChange = (recIndex, field, value) => {
         setFormData(prev => {
@@ -1743,10 +1772,52 @@ const Daily5MRecording = () => {
             return;
         }
 
+        // Intercept: admin editing a submitted or approved session must provide a remark
+        const isAdminUser = isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+        const lockedStatuses = ['APPROVED', 'SUBMITTED'];
+        if (isAdminUser && lockedStatuses.includes(String(recordStatus).toUpperCase()) && !options.adminRemarks) {
+            setPendingSaveParams({ currentData, options });
+            setAdminRemarkText('');
+            setIsAdminRemarkDialogOpen(true);
+            return;
+        }
+
         const isEvent = currentData && (currentData.nativeEvent || currentData.target);
         const dataToSave = (currentData && !isEvent) ? currentData : formData;
         const skipNavigate = options?.skipNavigate || false;
         const showPreview = options?.showPreview || false;
+
+        if (showPreview) {
+            let hasActiveRows = false;
+            const rowErrors = [];
+            for (let i = 0; i < rowCount; i++) {
+                const isActive = !!(
+                    dataToSave[`rec_${i}_Line`] ||
+                    dataToSave[`rec_${i}_StationMC`] ||
+                    dataToSave[`rec_${i}_OpName`] ||
+                    dataToSave[`rec_${i}_OperatorName`]
+                );
+                if (!isActive) continue;
+                hasActiveRows = true;
+                const mandatoryFields = isCrimping
+                    ? getCrimpingMandatoryFields(i)
+                    : getStandardMandatoryFields(i);
+                const missingLabels = mandatoryFields
+                    .filter(f => !dataToSave[f.key]?.toString().trim())
+                    .map(f => f.label);
+                if (missingLabels.length > 0) rowErrors.push({ row: i + 1, missing: missingLabels });
+            }
+            if (!hasActiveRows) {
+                toast.error("The form is empty. Please fill at least one row before saving.");
+                return;
+            }
+            if (rowErrors.length > 0) {
+                rowErrors.forEach(({ row, missing }) => {
+                    toast.error(`Row ${row}: Missing — ${missing.join(', ')}`, { duration: 7000 });
+                });
+                return;
+            }
+        }
 
         try {
             const payload = {
@@ -1757,12 +1828,15 @@ const Daily5MRecording = () => {
                 line: dataToSave['rec_0_Line'] || dataToSave['rec_0_StationMC'] || "",
                 formType: formType,
                 recordData: dataToSave,
-                sessionId: sessionId
+                sessionId: sessionId,
+                adminRemarks: options.adminRemarks || null
             };
 
             const response = await axiosInstance.post('/api/daily-5m/record/create', payload);
             if (response.data.success && response.data.data) {
-                setCurrentRecordId(response.data.data.id);
+                const newId = response.data.data.id;
+                setCurrentRecordId(newId);
+                navigate(`${location.pathname}?recordId=${newId}`, { replace: true });
             }
 
             toast.success("Record saved successfully!");
@@ -1994,7 +2068,7 @@ const Daily5MRecording = () => {
                                         sectionId={selectedSection}
                                         canApprove={canApprove && !isReview}
                                         authUser={authUser}
-                                        isLocked={isReview || !hasEditPermission || ((!!formData[`rec_${recIndex}_RowStatus`] || checkIsRowFilled(initialFormData, recIndex)) && !canEditSubmitted5M)}
+                                        isLocked={isReview || !hasEditPermission || (formData[`rec_${recIndex}_RowStatus`] === 'APPROVED' && !isAdmin) || ((!!formData[`rec_${recIndex}_RowStatus`] || checkIsRowFilled(initialFormData, recIndex)) && !canEditSubmitted5M)}
                                         isSubmitter={isSubmitter}
                                         handleActionRow={handleActionRow}
                                         skillLevels={skillLevels}
@@ -2007,7 +2081,7 @@ const Daily5MRecording = () => {
                                         {(() => {
                                             const rowStatus = formData[`rec_${recIndex}_RowStatus`];
                                             const isRowInitiallyFilled = checkIsRowFilled(initialFormData, recIndex);
-                                            const isLocked = isReview || !hasEditPermission || ((!!rowStatus || isRowInitiallyFilled) && !canEditSubmitted5M);
+                                            const isLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || ((!!rowStatus || isRowInitiallyFilled) && !canEditSubmitted5M);
                                             return (
                                                 <>
                                                     {/* Row 1 of Record */}
@@ -2243,31 +2317,31 @@ const Daily5MRecording = () => {
                                                                 disabled={isLocked}
                                                             />
                                                         </td>
-                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus && !canEditSubmitted5M)} /></td>
-                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus && !canEditSubmitted5M)} /></td>
+                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M)} /></td>
+                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M)} /></td>
 
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
                                                             <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_1`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_1', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_1`] && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_1`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_1', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_1`] && !canEditSubmitted5M)} />
                                                             </div>
                                                         </td>
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
                                                             <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_2`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_2', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_2`] && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_2`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_2', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_2`] && !canEditSubmitted5M)} />
                                                             </div>
                                                         </td>
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
                                                             <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_3`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_3', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_3`] && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_3`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_3', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_3`] && !canEditSubmitted5M)} />
                                                             </div>
                                                         </td>
 
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <div className="flex flex-col h-full relative min-h-[40px] items-center justify-end pb-1">
-                                                                <AutoResizeTextarea className="text-center text-blue-600 bg-transparent" value={formData[`rec_${recIndex}_Cont1_Remarks`] || "0"} onChange={(e) => handleInputChange(recIndex, 'Cont1_Remarks', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center text-blue-600 bg-transparent" value={formData[`rec_${recIndex}_Cont1_Remarks`] || "0"} onChange={(e) => handleInputChange(recIndex, 'Cont1_Remarks', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M)} />
                                                             </div>
                                                         </td>
 
@@ -3167,6 +3241,67 @@ const Daily5MRecording = () => {
                     </CardContent>
                 </Card>
             )}
+
+            {/* Admin Remark Dialog — required when editing an approved session */}
+            <Dialog open={isAdminRemarkDialogOpen} onOpenChange={(open) => {
+                if (!open) { setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }
+            }}>
+                <DialogContent className="sm:max-w-[480px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-amber-700">
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-600 text-sm font-bold">!</span>
+                            Editing Approved Sheet
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <p className="text-sm text-slate-600">
+                            This sheet has already been <span className="font-semibold text-green-700">Approved</span>. Please provide a remark explaining what you changed and why. This will be logged for audit purposes.
+                        </p>
+                        <div className="space-y-2">
+                            <Label htmlFor="admin-remark-input" className="text-sm font-semibold text-slate-700">
+                                Remark <span className="text-red-500">*</span>
+                            </Label>
+                            <Textarea
+                                id="admin-remark-input"
+                                placeholder="e.g. Corrected operator name in row 3 — entry was misspelled during original recording."
+                                value={adminRemarkText}
+                                onChange={(e) => setAdminRemarkText(e.target.value)}
+                                rows={4}
+                                maxLength={500}
+                                className="resize-none text-sm"
+                            />
+                            <p className={`text-xs text-right ${adminRemarkText.length > 450 ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                                {adminRemarkText.length}/500
+                            </p>
+                        </div>
+                        {adminRemarkText.trim().length > 0 && adminRemarkText.trim().length < 10 && (
+                            <p className="text-xs text-red-500">Remark must be at least 10 characters.</p>
+                        )}
+                    </div>
+                    <DialogFooter className="gap-2">
+                        <Button
+                            variant="ghost"
+                            onClick={() => { setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            disabled={adminRemarkText.trim().length < 10}
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={() => {
+                                if (!pendingSaveParams) return;
+                                const { currentData, options } = pendingSaveParams;
+                                setIsAdminRemarkDialogOpen(false);
+                                setPendingSaveParams(null);
+                                handleSaveRecord(currentData, { ...options, adminRemarks: adminRemarkText.trim() });
+                                setAdminRemarkText('');
+                            }}
+                        >
+                            Save with Remark
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };

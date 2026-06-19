@@ -572,16 +572,22 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const monthName = monthNames[parseInt(month) - 1];
     const [planRows] = await executeQuery(`
-        DECLARE @mCol NVARCHAR(50) = (SELECT TOP 1 COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'requirements' AND COLUMN_NAME IN ('monthName', 'month_name', 'month'));
-        DECLARE @yCol NVARCHAR(50) = (SELECT TOP 1 COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'requirements' AND COLUMN_NAME IN ('year', 'year_val'));
-        DECLARE @pCol NVARCHAR(50) = (SELECT TOP 1 COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'requirements' AND COLUMN_NAME IN ('prodPlan', 'prod_plan', 'count'));
-        DECLARE @sql NVARCHAR(MAX) = 'SELECT SUM(' + QUOTENAME(@pCol) + ') as count FROM requirements WHERE ' + QUOTENAME(@mCol) + ' = @p0 AND ' + QUOTENAME(@yCol) + ' = @p1';
-        EXEC sp_executesql @sql, N'@p0 NVARCHAR(50), @p1 INT', @p0 = ?, @p1 = ?;
-    `, [monthName, year]);
-    const monthlyHiringPlan = planRows[0]?.count || 0;
+        SELECT 
+            SUM(ISNULL(prodPlanFN01, 0)) as planFN01,
+            SUM(ISNULL(prodPlanFN02, 0)) as planFN02
+        FROM requirements 
+        WHERE (monthNumber = ? OR monthName = ?) 
+          AND year = ? 
+          AND LOWER(approvalStatus) IN ('approved', 'system_approved')
+          AND is_active = 1
+    `, [month, monthName, year]);
+
+    const planFN01 = planRows[0]?.planFN01 || 0;
+    const planFN02 = planRows[0]?.planFN02 || 0;
+
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        tableData[`Hiring Plan_${dKey}`] = monthlyHiringPlan;
+        tableData[`Hiring Plan_${dKey}`] = d <= 15 ? planFN01 : planFN02;
     }
 
     // 8. Shift Manpower

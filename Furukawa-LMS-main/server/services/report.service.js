@@ -114,33 +114,66 @@ async function fetchRequirements(dbPool, monthName, yearVal, reportDay = 1) {
 // =================================================
 // STEP 2B: Fetch line-wise required headcount from line_requirements
 // Detailed Attendance Report must use this table, not lines.requirement.
-// Day 1-15 => fn01, Day 16-end => fn02. If FN value is NULL, quantity is used.
+// Day 1-15 => fn01, Day 16-end => fn02. If FN value is NULL, requirement is 0.
 // =================================================
 async function fetchLineRequirements(dbPool, monthNumber, yearVal, reportDay = 1) {
     const reqColumn = reportDay <= 15 ? "fn01" : "fn02";
 
+    const emptyResult = {
+        byLine: new Map(),
+        bySection: new Map()
+    };
+
     try {
-        const rows = (await dbPool.request()
+        // Line-wise requirement for each line row in Detailed Attendance Report.
+        // IMPORTANT: Detailed Attendance Report must use line_requirements only.
+        // It must not fall back to requirements table even if a section has only one line.
+        const lineRows = (await dbPool.request()
             .input("monthNumber", monthNumber)
             .input("yearVal", yearVal)
             .query(`
                 SELECT
                     lr.lineId,
-                    SUM(COALESCE(lr.${reqColumn}, lr.quantity, 0)) AS totalRequired
+                    SUM(ISNULL(lr.${reqColumn}, 0)) AS totalRequired
                 FROM line_requirements lr
                 WHERE lr.requirementMonth = @monthNumber
                   AND lr.requirementYear = @yearVal
+                  AND lr.lineId IS NOT NULL
                   AND (lr.type IS NULL OR UPPER(LTRIM(RTRIM(lr.type))) = 'MONTHLY')
                 GROUP BY lr.lineId
             `)).recordset || [];
 
-        const map = new Map();
-        rows.forEach(r => map.set(Number(r.lineId), Number(r.totalRequired) || 0));
-        console.log(`[fetchLineRequirements] entries: ${map.size}`);
-        return map;
+        // Section-wise total from line_requirements.
+        // We use lr.sectionId first, and if it is NULL, derive the section from lines.sectionId.
+        // This fixes section total mismatch when line rows are present but the section total was
+        // previously calculated from the displayed rows only or from requirements table.
+        const sectionRows = (await dbPool.request()
+            .input("monthNumber", monthNumber)
+            .input("yearVal", yearVal)
+            .query(`
+                SELECT
+                    COALESCE(lr.sectionId, l.sectionId) AS sectionId,
+                    SUM(ISNULL(lr.${reqColumn}, 0)) AS totalRequired
+                FROM line_requirements lr
+                LEFT JOIN [lines] l ON l.id = lr.lineId
+                WHERE lr.requirementMonth = @monthNumber
+                  AND lr.requirementYear = @yearVal
+                  AND COALESCE(lr.sectionId, l.sectionId) IS NOT NULL
+                  AND (lr.type IS NULL OR UPPER(LTRIM(RTRIM(lr.type))) = 'MONTHLY')
+                GROUP BY COALESCE(lr.sectionId, l.sectionId)
+            `)).recordset || [];
+
+        const byLine = new Map();
+        const bySection = new Map();
+
+        lineRows.forEach(r => byLine.set(Number(r.lineId), Number(r.totalRequired) || 0));
+        sectionRows.forEach(r => bySection.set(Number(r.sectionId), Number(r.totalRequired) || 0));
+
+        console.log(`[fetchLineRequirements] byLine entries: ${byLine.size}, bySection entries: ${bySection.size}`);
+        return { byLine, bySection };
     } catch (e) {
         console.error("[fetchLineRequirements] failed:", e.message);
-        return new Map();
+        return emptyResult;
     }
 }
 
@@ -949,7 +982,9 @@ async function _buildManagementBuffer() {
         });
 
         const reqMap = await fetchRequirements(dbPool, monthName, yearVal, reportDay);
-        const lineReqMap = await fetchLineRequirements(dbPool, reportDate.getMonth() + 1, yearVal, reportDay);
+        const lineReqResult = await fetchLineRequirements(dbPool, reportDate.getMonth() + 1, yearVal, reportDay);
+        const lineReqMap = lineReqResult.byLine;
+        const lineReqSectionMap = lineReqResult.bySection;
 
         const handSecRows = (await dbPool.request().query(`
             WITH latest_uhs AS (
@@ -1305,7 +1340,9 @@ async function _buildManagementBuffer() {
                 const secLines = linesBySection.get(sec.sectionId) || [];
                 const att = attSecMap.get(sec.sectionId) || {};
 
-                const secReq = reqMap.get(sc) || 0;
+                // Detailed Attendance Report requirement must come from line_requirements only.
+                // Do not use requirements table here, even if the section has a single line or no active line.
+                const secReq = lineReqSectionMap.get(Number(sec.sectionId)) || 0;
                 const secHand = handSecMap.get(sec.sectionId) || 0;
                 const secAct = getNum(att, "totalPresent");
                 const secOT = getNum(att, "totalOtHrs"); // OT Mandays = section employees OT sum / 8
@@ -1432,6 +1469,10 @@ async function _buildManagementBuffer() {
                         ri++;
                     });
 
+                    // Section total should be the full line_requirements section total.
+                    // If sectionId total is missing for old records, fall back to sum of displayed line rows.
+                    const totalReqForSection = lineReqSectionMap.get(Number(sec.sectionId)) || totReq;
+
                     const secBlockEnd = ri - 1;
 
                     if (secBlockStart < secBlockEnd) {
@@ -1469,7 +1510,7 @@ async function _buildManagementBuffer() {
                         sz: 11
                     });
 
-                    tr.getCell(3).value = totReq;
+                    tr.getCell(3).value = totalReqForSection;
                     styleCell(tr.getCell(3), {
                         bold: true,
                         bg: C.TOTAL_BG,
@@ -1495,7 +1536,7 @@ async function _buildManagementBuffer() {
 
                     tr.getCell(10).value = parseFloat(totOT.toFixed(2));
                     tr.getCell(11).value = parseFloat(totHrs.toFixed(2));
-                    tr.getCell(12).value = getPct(totAct, totReq);
+                    tr.getCell(12).value = getPct(totAct, totalReqForSection);
                     tr.getCell(13).value = getPct(totAct, totHand);
 
                     for (let c = 10; c <= 13; c++) {

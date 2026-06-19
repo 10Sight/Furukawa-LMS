@@ -45,8 +45,14 @@ export const exportFormReport = asyncHandler(async (req, res) => {
         case "Handover Sheet": {
             let hsQuery = `SELECT * FROM handover_sheets WHERE departmentId = ?`;
             const hsParams = [departmentId];
-            if (sectionId) { hsQuery += ` AND sectionId = ?`; hsParams.push(sectionId); }
-            if (date) { hsQuery += ` AND [date] = ?`; hsParams.push(date); }
+            if (sectionId) {
+                hsQuery += ` AND sectionId = ?`;
+                hsParams.push(sectionId);
+            }
+            if (date) {
+                hsQuery += ` AND [date] = ?`;
+                hsParams.push(date);
+            }
             const [hoRows] = await executeQuery(hsQuery, hsParams);
             if (hoRows.length > 0) {
                 formData = {
@@ -58,6 +64,7 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             }
             break;
         }
+
         case "On Job Training Record Sheet":
         case "On Job Training Evaluation Sheet":
             const [ojtRows] = await executeQuery(`
@@ -223,7 +230,7 @@ export const getHeadcountReport = asyncHandler(async (req, res) => {
 });
 
 /**
- * Sync headcount data from real sources (Attendance, User logs)
+ * Sync headcount data from real sources (Attendance, User logs, Requirements)
  */
 export const syncHeadcountData = asyncHandler(async (req, res) => {
     const { departmentId, month, year } = req.query;
@@ -248,14 +255,14 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // 1. Fetch active report clubs
     const [reportingClubs] = await executeQuery("SELECT id, name, sectionIds FROM report_clubs WHERE showInReport = 1");
 
-    // Fetch all eligible users to calculate daily active counts (for accurate absenteeism)
+    // Fetch all eligible users to calculate daily active counts
     const [allEligibleUsers] = await executeQuery(`
         SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary 
         FROM users 
         WHERE (isEmployee = 1 OR isTemporary = 1)
     `);
 
-    // 2. Global Attendance Stats (Net Headcount)
+    // 2. Global Attendance Stats
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
@@ -275,14 +282,15 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
     const dailyTotalsMap = {};
     const presentDataMap = {};
-    netHeadcountData.forEach(row => { if (row.dateKey) presentDataMap[row.dateKey] = row; });
+    netHeadcountData.forEach(row => {
+        if (row.dateKey) presentDataMap[row.dateKey] = row;
+    });
 
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dDate = new Date(dKey);
         const row = presentDataMap[dKey] || {};
 
-        // Calculate total active for this day
         const activeCount = allEligibleUsers.filter(u => {
             const join = u.joiningDate ? new Date(u.joiningDate) : null;
             if (join && join > dDate) return false;
@@ -310,7 +318,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         tableData[`Absenteeism %_${dKey}`] = globalAbsPercent.toFixed(2);
     }
 
-    // Initialize all shift keys with "0" as fallback for all days
+    // Initialize all shift keys with "0"
     const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -348,7 +356,6 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             tableData[`Available_${shiftName}_${dateKey}`] = String(count || 0);
             tableData[`Attendance_${shiftName}_${dateKey}`] = String(count || 0);
 
-            // Accumulate totals
             tableData[`Available_Total_${dateKey}`] = String(Number(tableData[`Available_Total_${dateKey}`] || 0) + count);
             tableData[`Attendance_Total_${dateKey}`] = String(Number(tableData[`Attendance_Total_${dateKey}`] || 0) + count);
         }
@@ -360,7 +367,9 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         let sectionIds = [];
         try {
             sectionIds = JSON.parse(club.sectionIds || "[]");
-        } catch (e) { continue; }
+        } catch (e) {
+            continue;
+        }
 
         if (sectionIds.length === 0) continue;
 
@@ -381,9 +390,10 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         const [clubDailyData] = await executeQuery(clubDailySql, [...sectionIds, start, end]);
 
         const clubPresentMap = {};
-        clubDailyData.forEach(row => { if (row.dateKey) clubPresentMap[row.dateKey] = row; });
+        clubDailyData.forEach(row => {
+            if (row.dateKey) clubPresentMap[row.dateKey] = row;
+        });
 
-        // Normalize sectionIds for comparison
         const normalizedSectionIds = sectionIds.map(String);
 
         for (let d = 1; d <= totalDays; d++) {
@@ -391,7 +401,6 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             const dDate = new Date(dKey);
             const row = clubPresentMap[dKey] || {};
 
-            // Calculate total active in this club's sections for this day
             const activeInClub = allEligibleUsers.filter(u => {
                 if (!normalizedSectionIds.includes(String(u.sectionId))) return false;
                 const join = u.joiningDate ? new Date(u.joiningDate) : null;
@@ -417,7 +426,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         }
     }
 
-    // 4. Hiring Actual (Global)
+    // 4. Hiring Actual
     const joinSql = `
         SELECT 
             CONVERT(VARCHAR, joiningDate, 23) as dateKey, 
@@ -429,7 +438,9 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         GROUP BY CONVERT(VARCHAR, joiningDate, 23)
     `;
     const [joinData] = await executeQuery(joinSql, [start, end]);
-    joinData.forEach(row => { if (row.dateKey) tableData[`Hiring Actual_${row.dateKey}`] = row.count; });
+    joinData.forEach(row => {
+        if (row.dateKey) tableData[`Hiring Actual_${row.dateKey}`] = row.count;
+    });
 
     // 5. Handover Actual
     const handoverSql = `
@@ -439,7 +450,8 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     `;
     const [handoverRows] = await executeQuery(handoverSql, [start, end]);
     const handoverDailyCounts = {};
-    const clubHandoverDailyCounts = {}; // { clubId: { dateKey: count } }
+    const clubHandoverDailyCounts = {};
+
     reportingClubs.forEach(c => clubHandoverDailyCounts[c.id] = {});
 
     handoverRows.forEach(row => {
@@ -450,10 +462,15 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             entriesArr.forEach(e => {
                 if (e.interviewStatus === 'APPROVE') {
                     dailyTotal++;
-                    // Find club for this entry
+
                     reportingClubs.forEach(club => {
                         let clubSectionIds = [];
-                        try { clubSectionIds = typeof club.sectionIds === 'string' ? JSON.parse(club.sectionIds || "[]") : (club.sectionIds || []); } catch (err) { }
+                        try {
+                            clubSectionIds = typeof club.sectionIds === 'string'
+                                ? JSON.parse(club.sectionIds || "[]")
+                                : (club.sectionIds || []);
+                        } catch (err) { }
+
                         if (clubSectionIds.map(String).includes(String(e.sectionId))) {
                             clubHandoverDailyCounts[club.id][dKey] = (clubHandoverDailyCounts[club.id][dKey] || 0) + 1;
                         }
@@ -463,6 +480,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         } catch (e) {
             console.error("Error parsing handover entries:", e);
         }
+
         if (dKey) handoverDailyCounts[dKey] = (handoverDailyCounts[dKey] || 0) + dailyTotal;
     });
 
@@ -474,10 +492,10 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dayHandover = handoverDailyCounts[dKey] || 0;
         cumulativeHandover += dayHandover;
+
         tableData[`Handover Actual_${dKey}`] = dayHandover;
         tableData[`Handed-over after training (Cumulative)_${dKey}`] = cumulativeHandover;
 
-        // Club-level handovers
         reportingClubs.forEach(club => {
             const clubDayHandover = clubHandoverDailyCounts[club.id][dKey] || 0;
             clubCumulativeHandover[club.id] += clubDayHandover;
@@ -485,27 +503,27 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         });
     }
 
-    // 6. Separations (Actual Separations and Cumulative)
+    // 6. Separations
     const nYear = Number(month) === 12 ? Number(year) + 1 : Number(year);
     const nMonth = Number(month) === 12 ? 1 : Number(month) + 1;
     const nextMonthStart = `${nYear}-${String(nMonth).padStart(2, '0')}-01`;
 
-    const leftSql = `SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, 
-                     CONVERT(VARCHAR, COALESCE(leavingDate, updatedAt), 23) as dateKey 
-                     FROM users u 
-                     WHERE (
-                        (leavingDate >= ? AND leavingDate < ?) OR 
-                        (TRIM(LOWER(status)) LIKE 'left%' AND (updatedAt >= ? AND updatedAt < ?))
-                     ) AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+    const leftSql = `
+        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, 
+               CONVERT(VARCHAR, COALESCE(leavingDate, updatedAt), 23) as dateKey 
+        FROM users u 
+        WHERE (
+            (leavingDate >= ? AND leavingDate < ?) OR 
+            (TRIM(LOWER(status)) LIKE 'left%' AND (updatedAt >= ? AND updatedAt < ?))
+        ) 
+        AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
     `;
     const [leftUsers] = await executeQuery(leftSql, [start, nextMonthStart, start, nextMonthStart]);
+
     console.log(`Sync Report [${month}/${year}] Range [${start} to ${nextMonthStart}]: Found ${leftUsers.length} separated users.`);
     if (leftUsers.length > 0) {
         console.log("Separated Users:", leftUsers.map(u => `${u.employeeName} (${u.dateKey})`).join(", "));
     }
-
-    // Separation data is already calculated and will be populated in tableData below.
-    // We skip updating attendance_logs for now due to database check constraints.
 
     let cumulativeLeft = 0;
     const clubCumulativeLeft = {};
@@ -523,6 +541,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
         const dayStats = netHeadcountData.find(r => r.dateKey === dKey);
         if (dayStats?.totalUploaded > 0) lastKnownTotal = dayStats.totalUploaded;
+
         const denom = lastKnownTotal || 1;
 
         tableData[`Left in nos (Daily)_${dKey}`] = dayLeftCount;
@@ -531,10 +550,10 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
         const dailyAttr = (dayLeftCount / denom) * 100;
         const cumAttr = (cumulativeLeft / denom) * 100;
+
         tableData[`Attrition % Daily_${dKey}`] = dailyAttr.toFixed(2);
         tableData[`Attrition % Cumulative_${dKey}`] = cumAttr.toFixed(2);
 
-        // Weekly Attrition (7-day rolling)
         let weeklyLeft = 0;
         for (let i = 0; i < 7; i++) {
             const prevD = d - i;
@@ -543,24 +562,26 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
                 weeklyLeft += leftUsers.filter(l => l.dateKey === prevDKey).length;
             }
         }
+
         const weeklyAttr = (weeklyLeft / denom) * 100;
         tableData[`Weekly Attrition %_${dKey}`] = weeklyAttr.toFixed(2);
 
         tableData[`Gap_${dKey}`] = (cumulativeLeft - (parseFloat(tableData[`Expected Separations (Cumulative)_${dKey}`]) || 0)).toFixed(0);
 
-        // Attrition & Absenteeism of Training Cell (Nos)
-        const dojoAbsent = tableData[`DojoAbsent_${dKey}`] || 0;
+        const dojoAbsent = Number(tableData[`DojoAbsent_${dKey}`] || 0);
         tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`] = dojoAbsent + dojoDayLeftCount;
-        delete tableData[`DojoAbsent_${dKey}`]; // Clean up temp key
+        delete tableData[`DojoAbsent_${dKey}`];
 
-        // Club-level separations
         reportingClubs.forEach(club => {
             let clubSectionIds = [];
             try {
-                clubSectionIds = typeof club.sectionIds === 'string' ? JSON.parse(club.sectionIds || "[]") : (club.sectionIds || []);
-                // Convert all to strings for safe comparison
+                clubSectionIds = typeof club.sectionIds === 'string'
+                    ? JSON.parse(club.sectionIds || "[]")
+                    : (club.sectionIds || []);
                 clubSectionIds = clubSectionIds.map(String);
-            } catch (e) { clubSectionIds = []; }
+            } catch (e) {
+                clubSectionIds = [];
+            }
 
             const clubDayCount = leftUsers.filter(l => l.dateKey === dKey && clubSectionIds.includes(String(l.sectionId))).length;
             clubCumulativeLeft[club.id] = (clubCumulativeLeft[club.id] || 0) + clubDayCount;
@@ -568,40 +589,128 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         });
     }
 
-    // 7. Hiring Plan (Global/Clubs)
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const monthName = monthNames[parseInt(month) - 1];
-    const [planRows] = await executeQuery(`
-        SELECT 
-            SUM(ISNULL(prodPlanFN01, 0)) as planFN01,
-            SUM(ISNULL(prodPlanFN02, 0)) as planFN02
-        FROM requirements 
-        WHERE (monthNumber = ? OR monthName = ?) 
-          AND year = ? 
-          AND LOWER(approvalStatus) IN ('approved', 'system_approved')
-          AND is_active = 1
-    `, [month, monthName, year]);
+    // 7. Requirement Plan from requirements table
+    // Headcount required as per production plan:
+    // Day 1 to 15 = prodPlanFN01
+    // Day 16 onward = prodPlanFN02
+    // Headcount required as per sale plan = salesPlan
+    // Hiring Plan = prodPlan
+    const formatDateKey = (dateObj) => {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
 
-    const planFN01 = planRows[0]?.planFN01 || 0;
-    const planFN02 = planRows[0]?.planFN02 || 0;
+    const visibleRequirementDates = [];
 
+    // Previous month last date because frontend shows this as first column
+    const prevMonthLastDate = new Date(Number(year), Number(month) - 1, 0);
+    visibleRequirementDates.push({
+        dateKey: formatDateKey(prevMonthLastDate),
+        day: prevMonthLastDate.getDate(),
+        monthNumber: prevMonthLastDate.getMonth() + 1,
+        year: prevMonthLastDate.getFullYear()
+    });
+
+    // Current month all dates
     for (let d = 1; d <= totalDays; d++) {
-        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        tableData[`Hiring Plan_${dKey}`] = d <= 15 ? planFN01 : planFN02;
+        const currentDayDate = new Date(Number(year), Number(month) - 1, d);
+        visibleRequirementDates.push({
+            dateKey: formatDateKey(currentDayDate),
+            day: d,
+            monthNumber: Number(month),
+            year: Number(year)
+        });
     }
 
+    const uniqueRequirementMonths = [];
+    const uniqueRequirementMonthKeys = new Set();
+
+    visibleRequirementDates.forEach(item => {
+        const key = `${item.year}-${item.monthNumber}`;
+        if (!uniqueRequirementMonthKeys.has(key)) {
+            uniqueRequirementMonthKeys.add(key);
+            uniqueRequirementMonths.push({
+                year: item.year,
+                monthNumber: item.monthNumber
+            });
+        }
+    });
+
+    let requirementPlanMap = {};
+
+    if (uniqueRequirementMonths.length > 0) {
+        const requirementWhereClause = uniqueRequirementMonths
+            .map(() => `([year] = ? AND monthNumber = ?)`)
+            .join(' OR ');
+
+        const requirementParams = [];
+        uniqueRequirementMonths.forEach(item => {
+            requirementParams.push(item.year);
+            requirementParams.push(item.monthNumber);
+        });
+
+        const [requirementRows] = await executeQuery(`
+            SELECT
+                [year],
+                monthNumber,
+                SUM(ISNULL(salesPlan, 0)) AS salesPlan,
+                SUM(ISNULL(prodPlan, 0)) AS prodPlan,
+                SUM(ISNULL(prodPlanFN01, 0)) AS prodPlanFN01,
+                SUM(ISNULL(prodPlanFN02, 0)) AS prodPlanFN02
+            FROM requirements
+            WHERE ${requirementWhereClause}
+              AND ISNULL(is_active, 1) = 1
+            GROUP BY [year], monthNumber
+        `, requirementParams);
+
+        requirementRows.forEach(row => {
+            const key = `${row.year}-${row.monthNumber}`;
+            requirementPlanMap[key] = {
+                salesPlan: Number(row.salesPlan || 0),
+                prodPlan: Number(row.prodPlan || 0),
+                prodPlanFN01: Number(row.prodPlanFN01 || 0),
+                prodPlanFN02: Number(row.prodPlanFN02 || 0)
+            };
+        });
+    }
+
+    visibleRequirementDates.forEach(item => {
+        const planKey = `${item.year}-${item.monthNumber}`;
+        const plan = requirementPlanMap[planKey] || {
+            salesPlan: 0,
+            prodPlan: 0,
+            prodPlanFN01: 0,
+            prodPlanFN02: 0
+        };
+
+        const productionPlanRequirement = item.day <= 15
+            ? plan.prodPlanFN01
+            : plan.prodPlanFN02;
+
+        tableData[`Headcount required as per production plan_${item.dateKey}`] = productionPlanRequirement;
+        tableData[`Headcount required as per sale plan_${item.dateKey}`] = plan.salesPlan;
+        tableData[`Hiring Plan_${item.dateKey}`] = plan.prodPlan;
+    });
+
     // 8. Shift Manpower
-    const assignedManpowerSql = `SELECT UPPER(ISNULL(shift, '')) as userShift, COUNT(*) as count FROM users WHERE isEmployee = 1 GROUP BY UPPER(ISNULL(shift, ''))`;
+    const assignedManpowerSql = `
+        SELECT UPPER(ISNULL(shift, '')) as userShift, COUNT(*) as count 
+        FROM users 
+        WHERE isEmployee = 1 
+        GROUP BY UPPER(ISNULL(shift, ''))
+    `;
     const [assignedManpowerData] = await executeQuery(assignedManpowerSql);
+
     assignedManpowerData.forEach(row => {
         const shiftKey = Object.keys(shiftMap).find(k => row.userShift.includes(k));
         if (shiftKey) {
             const shiftName = shiftMap[shiftKey];
+
             for (let d = 1; d <= totalDays; d++) {
                 const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 tableData[`Assigned_${shiftName}_${dKey}`] = String(row.count || 0);
-
-                // Accumulate total assigned for each day
                 tableData[`Assigned_Total_${dKey}`] = String(Number(tableData[`Assigned_Total_${dKey}`] || 0) + row.count);
             }
         }
@@ -629,9 +738,7 @@ export const getUserHierarchySnapshot = asyncHandler(async (req, res) => {
     });
 });
 
-
 /**
- * 
  * ==========================================
  * Email Report CRUD Operations
  * ==========================================
@@ -643,7 +750,6 @@ export const getUserHierarchySnapshot = asyncHandler(async (req, res) => {
 export const getMails = asyncHandler(async (req, res) => {
     const mails = await Mail.findAll();
 
-    // Transform data to match frontend expectations
     const mapped = mails.map(m => {
         let freqs = [];
         if (m.isDailyReport) freqs.push('Daily');
@@ -654,11 +760,9 @@ export const getMails = asyncHandler(async (req, res) => {
 
         return {
             id: m.id,
-            // Standard fields (new frontend)
             email: m.email,
             frequency: frequencyStr,
             reportTypes: reportTypesArr,
-            // Compatibility fields (client live frontend)
             toEmails: m.email,
             ccEmails: null,
             formName: reportTypesArr[0] || 'Manpower Report',
@@ -678,14 +782,11 @@ export const createMail = asyncHandler(async (req, res) => {
     try {
         console.log("[DEBUG] createMail Payload received:", req.body);
 
-        // Accept both field naming conventions:
-        // New frontend: { email, frequency, reportTypes }
-        // Live/old frontend: { toEmails, formName, departmentId, isActive, includeTrainer }
         const email = req.body.email || req.body.toEmails || null;
         const { frequency, reportTypes, formName } = req.body;
 
         if (!email) {
-            console.log("[DEBUG] createMail: Missing email (checked both 'email' and 'toEmails')");
+            console.log("[DEBUG] createMail: Missing email");
             return res.status(400).json({ success: false, message: "Email is required" });
         }
 
@@ -698,14 +799,10 @@ export const createMail = asyncHandler(async (req, res) => {
         const isDailyReport = freqArr.includes('daily');
         const isManagementDailyReport = freqArr.includes('management daily') || freqArr.includes('managementdaily') || freqArr.includes('monthly');
 
-        console.log(`[DEBUG] Parsed frequency - Daily: ${isDailyReport}, Management Daily: ${isManagementDailyReport}`);
-
-        // Accept reportTypes array or formName string as the report type
         const typesStr = Array.isArray(reportTypes)
             ? reportTypes.join(', ')
             : (reportTypes || formName || "Manpower");
 
-        console.log("[DEBUG] Calling Mail.create...");
         const newMail = await Mail.create({
             email,
             isDailyReport,
@@ -713,11 +810,17 @@ export const createMail = asyncHandler(async (req, res) => {
             reportTypes: typesStr
         });
 
-        console.log("[DEBUG] Created mail record successfully:", newMail);
-        res.status(201).json({ success: true, data: newMail, message: "Recipient added successfully" });
+        res.status(201).json({
+            success: true,
+            data: newMail,
+            message: "Recipient added successfully"
+        });
     } catch (err) {
         console.error("[DEBUG] createMail ERROR CAUGHT:", err);
-        res.status(400).json({ success: false, message: err.message || "Failed to create email record" });
+        res.status(400).json({
+            success: false,
+            message: err.message || "Failed to create email record"
+        });
     }
 });
 
@@ -737,16 +840,18 @@ export const triggerManualReport = asyncHandler(async (req, res) => {
     const mails = await Mail.findAll();
 
     if (mails.length === 0) {
-        return res.status(200).json({ success: true, data: { recipientCount: 0 }, message: "No recipients configured" });
+        return res.status(200).json({
+            success: true,
+            data: { recipientCount: 0 },
+            message: "No recipients configured"
+        });
     }
 
     try {
         const emailList = mails.map(m => m.email);
 
-        // Import sendBothReports dynamically to avoid circular dependencies if any
         const { sendBothReports } = await import('../services/report.service.js');
 
-        // Send both Excel reports in a single mail
         await sendBothReports(emailList);
 
         res.status(200).json({

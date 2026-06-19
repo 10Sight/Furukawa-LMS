@@ -1232,11 +1232,11 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
             u.role as studentRole,
             u.isTemporary as studentIsTemporary,
             u.currentLevel as studentLevel,
-            u.departmentId as studentDepartmentId,
+            u_hier_resolved.resolvedDeptId as studentDepartmentId,
             u.department as studentDepartmentName,
-            u.sectionId as studentSectionId,
-            u.lineId as studentLineId,
-            u.subSectionId as studentSubSectionId,
+            u_hier_resolved.resolvedSectionId as studentSectionId,
+            u_hier_resolved.resolvedLineId as studentLineId,
+            u_hier_resolved.resolvedSubSectionId as studentSubSectionId,
 
             dept.name as deptName,
             sec.name as secName,
@@ -1251,29 +1251,60 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
                OR (aq.studentEmpId IS NOT NULL AND u2.empId = aq.studentEmpId)
             ORDER BY CASE WHEN CAST(u2.id AS NVARCHAR(255)) = aq.student THEN 0 ELSE 1 END
         ) u
-        LEFT JOIN departments dept ON dept.id = u.departmentId
-        LEFT JOIN [sections] sec ON sec.id = u.sectionId
-        LEFT JOIN [lines] lin ON lin.id = u.lineId
-        LEFT JOIN sub_sections sub ON sub.id = u.subSectionId
+        OUTER APPLY (
+            SELECT TOP 1
+                COALESCE(u_hier_raw.ssId, ss_res.id) as resolvedSubSectionId,
+                COALESCE(u_hier_raw.lId, lin.id) as resolvedLineId,
+                COALESCE(u_hier_raw.sId, sec.id) as resolvedSectionId,
+                COALESCE(u_hier_raw.dId, dept.id) as resolvedDeptId
+            FROM (
+                SELECT
+                    COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) as ssId,
+                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) as lId,
+                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) as sId,
+                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) as dId
+            ) u_hier_raw
+            OUTER APPLY (
+                SELECT TOP 1 ss.id, ss.lineId as ssLineId 
+                FROM sub_sections ss WHERE ss.id = u_hier_raw.ssId
+            ) ss_res
+            OUTER APPLY (
+                SELECT TOP 1 l.id, l.sectionId as lSectionId, l.department as lDeptId
+                FROM [lines] l WHERE l.id = COALESCE(u_hier_raw.lId, ss_res.ssLineId)
+            ) lin
+            OUTER APPLY (
+                SELECT TOP 1 s.id, s.departmentId as sDeptId
+                FROM [sections] s WHERE s.id = COALESCE(u_hier_raw.sId, lin.lSectionId)
+            ) sec
+            OUTER APPLY (
+                SELECT TOP 1 d.id
+                FROM departments d 
+                WHERE d.id = COALESCE(u_hier_raw.dId, sec.sDeptId, lin.lDeptId)
+            ) dept
+        ) u_hier_resolved
+        LEFT JOIN departments dept ON dept.id = u_hier_resolved.resolvedDeptId
+        LEFT JOIN [sections] sec ON sec.id = u_hier_resolved.resolvedSectionId
+        LEFT JOIN [lines] lin ON lin.id = u_hier_resolved.resolvedLineId
+        LEFT JOIN sub_sections sub ON sub.id = u_hier_resolved.resolvedSubSectionId
         WHERE 1=1
     `;
 
     const values = [];
 
     if (departmentId) {
-        sql += " AND u.departmentId = ?";
+        sql += " AND u_hier_resolved.resolvedDeptId = ?";
         values.push(parseInt(departmentId));
     }
     if (sectionId) {
-        sql += " AND u.sectionId = ?";
+        sql += " AND u_hier_resolved.resolvedSectionId = ?";
         values.push(parseInt(sectionId));
     }
     if (lineId) {
-        sql += " AND u.lineId = ?";
+        sql += " AND u_hier_resolved.resolvedLineId = ?";
         values.push(parseInt(lineId));
     }
     if (subSectionId) {
-        sql += " AND u.subSectionId = ?";
+        sql += " AND u_hier_resolved.resolvedSubSectionId = ?";
         values.push(parseInt(subSectionId));
     }
     if (level) {

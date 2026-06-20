@@ -213,10 +213,9 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
       // 4. Test Type Filter
       if (selectedTestType !== "ALL") {
         if (selectedTestType === "dojo" && !quiz.isDojo) return false;
-        if (selectedTestType === "handover" && !quiz.isHandover) return false;
         if (selectedTestType === "theoretical" && !quiz.isTheoretical) return false;
         if (selectedTestType === "multiskilling" && !quiz.isMultiSkilling) return false;
-        if (selectedTestType === "practical" && (quiz.isDojo || quiz.isHandover || quiz.isTheoretical || quiz.isMultiSkilling)) return false;
+        if (selectedTestType === "practical" && (quiz.isDojo || quiz.isTheoretical || quiz.isMultiSkilling)) return false;
       }
 
       // 5. OJT Gating Filter for Non-Dojo quizzes
@@ -572,7 +571,6 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                 <SelectContent>
                   <SelectItem value="ALL">All Types</SelectItem>
                   <SelectItem value="dojo">Dojo Hiring</SelectItem>
-                  <SelectItem value="handover">Handover</SelectItem>
                   <SelectItem value="theoretical">Theoretical</SelectItem>
                   <SelectItem value="multiskilling">Multi Skilling</SelectItem>
                   <SelectItem value="practical">Practical</SelectItem>
@@ -685,11 +683,6 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                               Dojo Hiring
                             </Badge>
                           )}
-                          {quiz.isHandover && (
-                            <Badge className="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/50 text-[10px] font-semibold tracking-wider">
-                              Handover
-                            </Badge>
-                          )}
                           {quiz.isTheoretical && (
                             <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100/50 text-[10px] font-semibold tracking-wider">
                               Theoretical
@@ -700,7 +693,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                               Multi Skilling
                             </Badge>
                           )}
-                          {!quiz.isDojo && !quiz.isHandover && !quiz.isTheoretical && !quiz.isMultiSkilling && (
+                          {!quiz.isDojo && !quiz.isTheoretical && !quiz.isMultiSkilling && (
                             <Badge variant="secondary" className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold tracking-wider">
                               Practical
                             </Badge>

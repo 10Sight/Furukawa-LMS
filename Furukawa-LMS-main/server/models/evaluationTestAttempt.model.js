@@ -1,6 +1,48 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 
+// Mirrors normalizeContentStructure from EvaluationTestAttemptPage.jsx
+const normalizeContentStructure = (structure, fallbackTitle) => {
+    if (!Array.isArray(structure) || structure.length === 0) {
+        return [{ id: "mt-auto", title: fallbackTitle || "Main Title Section", contentSections: [] }];
+    }
+    const isNewFormat = structure.every(item => item && Array.isArray(item.contentSections));
+    if (isNewFormat) {
+        return structure.map(block => ({
+            id: block.id || "mt-auto",
+            title: block.title || "Main Title Section",
+            contentSections: Array.isArray(block.contentSections) ? block.contentSections : []
+        }));
+    }
+    return [{ id: "mt-auto-generated", title: fallbackTitle || "Main Title Section", contentSections: structure }];
+};
+
+// Mirrors getDynamicPerformDateCount from EvaluationTestAttemptPage.jsx
+const getDynamicPerformDateCount = (attemptDataObj, performDatesArr, baseCount) => {
+    let lastEvaluatedColIdx = -1;
+    for (let colIdx = 0; colIdx < 100; colIdx++) {
+        const hasDate = !!(performDatesArr && performDatesArr[colIdx]);
+        let hasGrade = false;
+        for (const qId of Object.keys(attemptDataObj || {})) {
+            if (qId.startsWith("_")) continue;
+            const score = attemptDataObj[qId]?.results?.[colIdx];
+            if (score && score !== "") { hasGrade = true; break; }
+        }
+        if (hasDate || hasGrade) lastEvaluatedColIdx = colIdx;
+    }
+    let count = Math.max(baseCount || 4, lastEvaluatedColIdx + 1);
+    while (count < 100) {
+        const lastColIdx = count - 1;
+        const hasFailure = Object.keys(attemptDataObj || {}).some(qId => {
+            if (qId.startsWith("_")) return false;
+            return attemptDataObj[qId]?.results?.[lastColIdx] === "X";
+        });
+        if (hasFailure) count++;
+        else break;
+    }
+    return count;
+};
+
 class EvaluationTestAttempt {
     constructor(data) {
         this.id = data.id;
@@ -9,14 +51,16 @@ class EvaluationTestAttempt {
         this.employeeNo = data.employeeNo;
         this.educatorName = data.educatorName;
         this.userId = data.userId;
-        
+
         // JSON mapping qId -> { results: ["", "", ...], comment: "" }
         this.attemptData = typeof data.attemptData === 'string'
             ? JSON.parse(data.attemptData)
             : (data.attemptData || {});
-            
+
         this.createdBy = data.createdBy;
         this.createdAt = data.createdAt;
+        this.isHandoverEligible = data.isHandoverEligible;
+        this.passedDate = data.passedDate;
     }
 
     static async init() {
@@ -33,6 +77,8 @@ class EvaluationTestAttempt {
                     createdBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE(),
                     userId INT NULL,
+                    isHandoverEligible BIT DEFAULT 0,
+                    passedDate DATE NULL,
                     CONSTRAINT fk_evaluation_test FOREIGN KEY (testId) REFERENCES evaluation_tests(id) ON DELETE CASCADE
                 )
             END
@@ -42,6 +88,14 @@ class EvaluationTestAttempt {
                 BEGIN
                     ALTER TABLE evaluation_test_attempts ADD userId INT NULL;
                 END
+                IF COL_LENGTH('evaluation_test_attempts', 'isHandoverEligible') IS NULL
+                BEGIN
+                    ALTER TABLE evaluation_test_attempts ADD isHandoverEligible BIT DEFAULT 0;
+                END
+                IF COL_LENGTH('evaluation_test_attempts', 'passedDate') IS NULL
+                BEGIN
+                    ALTER TABLE evaluation_test_attempts ADD passedDate DATE NULL;
+                END
             END
         `;
         try {
@@ -50,6 +104,66 @@ class EvaluationTestAttempt {
         } catch (error) {
             logger.error("Failed to initialize evaluation_test_attempts table", error);
             throw error;
+        }
+    }
+
+    // Determines if a given attemptData qualifies for handover eligibility.
+    // Called from the controller (which already has testId available).
+    static async computeHandoverEligibility(testId, attemptData) {
+        try {
+            if (attemptData._approvedStatus !== "APPROVED" || attemptData._confirmedStatus !== "APPROVED") {
+                return { isHandoverEligible: false, passedDate: null };
+            }
+
+            const [testRows] = await executeQuery(
+                "SELECT performDateCount, contentStructure FROM evaluation_tests WHERE id = ?",
+                [testId]
+            );
+            if (!testRows || testRows.length === 0) {
+                return { isHandoverEligible: false, passedDate: null };
+            }
+
+            const baseCount = testRows[0].performDateCount || 4;
+            let contentStructure;
+            try {
+                contentStructure = typeof testRows[0].contentStructure === "string"
+                    ? JSON.parse(testRows[0].contentStructure)
+                    : (testRows[0].contentStructure || []);
+            } catch {
+                contentStructure = [];
+            }
+
+            const normalized = normalizeContentStructure(contentStructure);
+            const allQIds = [];
+            normalized.forEach(block => {
+                (block.contentSections || []).forEach(content => {
+                    (content.categories || []).forEach(cat => {
+                        (cat.questions || []).forEach(q => allQIds.push(q.id));
+                    });
+                });
+            });
+
+            if (allQIds.length === 0) {
+                return { isHandoverEligible: false, passedDate: null };
+            }
+
+            const performDates = attemptData._performDates || [];
+            const count = getDynamicPerformDateCount(attemptData, performDates, baseCount);
+            const lastColIdx = count - 1;
+
+            const allPassed = allQIds.every(qId => {
+                return attemptData[qId]?.results?.[lastColIdx] === "✓";
+            });
+
+            if (!allPassed) {
+                return { isHandoverEligible: false, passedDate: null };
+            }
+
+            const passedDate = performDates[lastColIdx] || null;
+            return { isHandoverEligible: true, passedDate };
+        } catch (error) {
+            logger.error("computeHandoverEligibility error", error);
+            return { isHandoverEligible: false, passedDate: null };
         }
     }
 
@@ -67,9 +181,9 @@ class EvaluationTestAttempt {
         }
 
         const query = `
-            INSERT INTO evaluation_test_attempts (testId, traineeName, employeeNo, educatorName, attemptData, createdBy, userId)
+            INSERT INTO evaluation_test_attempts (testId, traineeName, employeeNo, educatorName, attemptData, createdBy, userId, isHandoverEligible, passedDate)
             OUTPUT INSERTED.*
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const attemptDataStr = JSON.stringify(data.attemptData || {});
         const [rows] = await executeQuery(query, [
@@ -79,7 +193,9 @@ class EvaluationTestAttempt {
             data.educatorName || "",
             attemptDataStr,
             data.createdBy,
-            resolvedUserId
+            resolvedUserId,
+            data.isHandoverEligible ? 1 : 0,
+            data.passedDate || null
         ]);
         return new EvaluationTestAttempt(rows[0]);
     }
@@ -95,7 +211,7 @@ class EvaluationTestAttempt {
         `;
         const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
-        
+
         const row = rows[0];
         if (typeof row.attemptData === "string") {
             try {
@@ -116,8 +232,8 @@ class EvaluationTestAttempt {
 
     static async findByTestId(testId) {
         const query = `
-            SELECT * FROM evaluation_test_attempts 
-            WHERE testId = ? 
+            SELECT * FROM evaluation_test_attempts
+            WHERE testId = ?
             ORDER BY createdAt DESC
         `;
         const [rows] = await executeQuery(query, [testId]);
@@ -229,11 +345,19 @@ class EvaluationTestAttempt {
             fields.push("createdBy = ?");
             values.push(data.createdBy);
         }
+        if (data.isHandoverEligible !== undefined) {
+            fields.push("isHandoverEligible = ?");
+            values.push(data.isHandoverEligible ? 1 : 0);
+        }
+        if (data.passedDate !== undefined) {
+            fields.push("passedDate = ?");
+            values.push(data.passedDate || null);
+        }
 
         if (fields.length === 0) return await this.findById(id);
 
         const query = `
-            UPDATE evaluation_test_attempts 
+            UPDATE evaluation_test_attempts
             SET ${fields.join(",")}
             WHERE id = ?
         `;

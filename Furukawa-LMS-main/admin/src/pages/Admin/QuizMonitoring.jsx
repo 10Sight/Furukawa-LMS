@@ -154,7 +154,6 @@ const AdminQuizMonitoring = () => {
   // Helper: Display test type tag beautifully
   const getTestTypeBadge = (quiz) => {
     if (quiz?.isDojo) return <Badge className="bg-purple-100 text-purple-700 border border-purple-200">DOJO</Badge>;
-    if (quiz?.isHandover) return <Badge className="bg-amber-100 text-amber-700 border border-amber-200">Handover</Badge>;
     if (quiz?.isTheoretical) return <Badge className="bg-teal-100 text-teal-700 border border-teal-200">Theoretical</Badge>;
     return <Badge className="bg-blue-100 text-blue-700 border border-blue-200">Regular</Badge>;
   };
@@ -297,7 +296,6 @@ const AdminQuizMonitoring = () => {
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="REGULAR">Regular (Standalone)</SelectItem>
                   <SelectItem value="DOJO">DOJO hiring</SelectItem>
-                  <SelectItem value="HANDOVER">Handover Paper</SelectItem>
                   <SelectItem value="THEORETICAL">Theoretical</SelectItem>
                 </SelectContent>
               </Select>

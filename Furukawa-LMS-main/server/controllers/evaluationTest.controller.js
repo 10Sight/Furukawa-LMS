@@ -93,13 +93,20 @@ export const createEvaluationTestAttempt = asyncHandler(async (req, res) => {
         throw new ApiError("Test ID is required for registering an attempt", 400);
     }
 
+    const parsedTestId = parseInt(testId, 10);
+    const { isHandoverEligible, passedDate } = await EvaluationTestAttempt.computeHandoverEligibility(
+        parsedTestId, attemptData || {}
+    );
+
     const newAttempt = await EvaluationTestAttempt.create({
-        testId: parseInt(testId, 10),
+        testId: parsedTestId,
         traineeName,
         employeeNo,
         educatorName,
         attemptData,
-        createdBy
+        createdBy,
+        isHandoverEligible,
+        passedDate
     });
 
     res.status(201).json(
@@ -144,12 +151,20 @@ export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
         throw new ApiError("Evaluation test sheet record not found", 404);
     }
 
+    // Use the incoming attemptData if provided, otherwise fall back to existing
+    const effectiveAttemptData = attemptData ?? existingAttempt.attemptData;
+    const { isHandoverEligible, passedDate } = await EvaluationTestAttempt.computeHandoverEligibility(
+        existingAttempt.testId, effectiveAttemptData
+    );
+
     const updatedAttempt = await EvaluationTestAttempt.update(id, {
         attemptData,
         traineeName,
         employeeNo,
         educatorName,
-        createdBy
+        createdBy,
+        isHandoverEligible,
+        passedDate
     });
 
     res.json(

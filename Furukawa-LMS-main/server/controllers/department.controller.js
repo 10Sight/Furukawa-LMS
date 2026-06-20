@@ -1015,14 +1015,15 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     let sheet = await HandoverSheet.findSpecific(departmentId, sectionId, date);
 
     if (!sheet) {
-        // Automatically find users who passed a handover quiz on this date for this department
+        // Auto-suggest users from both sources: legacy handover quiz AND dojo evaluation test
         let suggestedEntries = [];
         if (date) {
+            // Source 1: Legacy — users who passed a handover quiz on this date
             const [passedUsers] = await executeQuery(`
-                SELECT DISTINCT 
-                    u.id as studentId, 
-                    u.fullName as employeeName, 
-                    u.userName as employeeCode, -- Manual Employee Code (DOJO ID)
+                SELECT DISTINCT
+                    u.id as studentId,
+                    u.fullName as employeeName,
+                    u.userName as employeeCode,
                     u.targetDeptId,
                     u.targetSectionId as sectionId,
                     u.targetLineId as lineId,
@@ -1037,7 +1038,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
                 LEFT JOIN [lines] l ON u.targetLineId = l.id
                 LEFT JOIN machines st ON u.targetStationId = st.id
-                WHERE u.isTemporary = 1 
+                WHERE u.isTemporary = 1
                   AND u.targetDeptId = ?
                   AND q.isHandover = 1
                   AND q.isDojo = 1
@@ -1047,8 +1048,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                   AND (u.status IS NULL OR u.status != 'LEFT')
             `, [departmentId, date]);
 
-            suggestedEntries = passedUsers.map(user => {
-                // Calculate percentage marks
+            const quizSuggested = passedUsers.map(user => {
                 let marksPercent = "0%";
                 try {
                     const questions = JSON.parse(user.quizQuestions || "[]");
@@ -1057,14 +1057,45 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 } catch (e) {
                     console.error("Error calculating marks:", e);
                 }
-
-                return {
-                    ...user,
-                    marks: marksPercent,
-                    passedQuizDate: date,
-                    isAutoSuggested: true
-                };
+                return { ...user, marks: marksPercent, passedQuizDate: date, isAutoSuggested: true };
             });
+
+            // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
+            const [evalUsers] = await executeQuery(`
+                SELECT DISTINCT
+                    u.id as studentId,
+                    u.fullName as employeeName,
+                    u.userName as employeeCode,
+                    u.targetDeptId,
+                    u.targetSectionId as sectionId,
+                    u.targetLineId as lineId,
+                    u.targetSubSectionId as subSectionId,
+                    u.targetStationId as stationId,
+                    l.name as lineName,
+                    st.name as stationName
+                FROM evaluation_test_attempts eta
+                JOIN users u ON eta.userId = u.id
+                LEFT JOIN [lines] l ON u.targetLineId = l.id
+                LEFT JOIN machines st ON u.targetStationId = st.id
+                WHERE eta.isHandoverEligible = 1
+                  AND CAST(eta.passedDate AS DATE) = CAST(? AS DATE)
+                  AND u.targetDeptId = ?
+                  AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                  AND (u.status IS NULL OR u.status != 'LEFT')
+            `, [date, departmentId]);
+
+            const evalSuggested = evalUsers.map(user => ({
+                ...user,
+                marks: "100%",
+                passedQuizDate: date,
+                isAutoSuggested: true
+            }));
+
+            // Merge: deduplicate by studentId; evaluation test entry wins over quiz entry
+            const mergedMap = new Map();
+            quizSuggested.forEach(e => mergedMap.set(e.studentId, e));
+            evalSuggested.forEach(e => mergedMap.set(e.studentId, e));
+            suggestedEntries = [...mergedMap.values()];
         }
 
         return res.status(200).json(
@@ -1072,7 +1103,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 isNew: true,
                 entries: suggestedEntries,
                 date: date
-            }, suggestedEntries.length > 0 ? "Found suggested entries from quizzes" : "No record found")
+            }, suggestedEntries.length > 0 ? "Found suggested entries from evaluations" : "No record found")
         );
     }
 

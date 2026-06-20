@@ -87,7 +87,7 @@ const AddTestPaper = () => {
     subSectionId: [],
     level: "",
     isDojo: false,
-    isHandover: false,
+
     isTheoretical: false,
     isMultiSkilling: false,
     conductedBy: "",
@@ -572,7 +572,7 @@ const AddTestPaper = () => {
         subSectionId: formData.subSectionId,
         level: formData.level,
         isDojo: formData.isDojo,
-        isHandover: formData.isHandover,
+
         isTheoretical: formData.isTheoretical,
         isMultiSkilling: formData.isMultiSkilling,
         conductedBy: formData.conductedBy || "",
@@ -1018,28 +1018,6 @@ const AddTestPaper = () => {
                 </div>
               )}
 
-              {hasButtonPermission("test_paper:is_handover") && (
-                <div className="grid gap-2">
-                  <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
-                  <Select
-                    value={formData.isHandover ? "yes" : "no"}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        isHandover: value === "yes",
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select option" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="no">No</SelectItem>
-                      <SelectItem value="yes">Yes</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
 
               {hasButtonPermission("test_paper:is_theoretical") && (
                 <div className="grid gap-2">

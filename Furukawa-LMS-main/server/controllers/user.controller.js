@@ -206,13 +206,19 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
   if (req.query.dojoHandoverPassedOnly === "true") {
-    whereClauses.push(`EXISTS (
-      SELECT 1 FROM attempted_quizzes aq 
-      JOIN quizzes q ON aq.quiz = q.id 
-      WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
-        AND q.isDojo = 1 
-        AND q.isHandover = 1 
-        AND aq.status = 'PASSED'
+    whereClauses.push(`(
+      EXISTS (
+        SELECT 1 FROM attempted_quizzes aq
+        JOIN quizzes q ON aq.quiz = q.id
+        WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+          AND q.isDojo = 1
+          AND q.isHandover = 1
+          AND aq.status = 'PASSED'
+      )
+      OR EXISTS (
+        SELECT 1 FROM evaluation_test_attempts eta
+        WHERE eta.userId = u.id AND eta.isHandoverEligible = 1
+      )
     )`);
   }
 
@@ -1141,13 +1147,19 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
   if (req.query.dojoHandoverPassedOnly === "true") {
-    whereClauses.push(`EXISTS (
-      SELECT 1 FROM attempted_quizzes aq 
-      JOIN quizzes q ON aq.quiz = q.id 
-      WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
-        AND q.isDojo = 1 
-        AND q.isHandover = 1 
-        AND aq.status = 'PASSED'
+    whereClauses.push(`(
+      EXISTS (
+        SELECT 1 FROM attempted_quizzes aq
+        JOIN quizzes q ON aq.quiz = q.id
+        WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+          AND q.isDojo = 1
+          AND q.isHandover = 1
+          AND aq.status = 'PASSED'
+      )
+      OR EXISTS (
+        SELECT 1 FROM evaluation_test_attempts eta
+        WHERE eta.userId = u.id AND eta.isHandoverEligible = 1
+      )
     )`);
   }
 

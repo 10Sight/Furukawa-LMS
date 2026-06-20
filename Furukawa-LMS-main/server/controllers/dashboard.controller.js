@@ -240,6 +240,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
                   AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
+              AND ISNULL(u.isTemporary, 0) = 0
                   ${hierCondition}
             `;
             const gateParams = [];
@@ -429,8 +430,24 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 CAST(SUM(ISNULL(prodPlanFN02, 0)) AS BIGINT) AS required_fn02
             FROM requirements
             WHERE [year] IN (${yearsInRange.join(",")}) ${filter}
-            AND ISNULL(is_active, 0) = 1
-            AND ISNULL(approvalStatus, 'approved') IN ('approved', 'system_approved')
+            AND (
+                (
+                    ISNULL(is_active, 0) = 1
+                    AND LOWER(LTRIM(RTRIM(ISNULL(approvalStatus, 'approved')))) IN (
+                        'approved',
+                        'system_approved',
+                        'system approved',
+                        'system-approved',
+                        'systemapproved'
+                    )
+                )
+                OR LOWER(LTRIM(RTRIM(ISNULL(approvalStatus, '')))) IN (
+                    'system_approved',
+                    'system approved',
+                    'system-approved',
+                    'systemapproved'
+                )
+            )
             GROUP BY [year], monthName
         `;
 
@@ -490,6 +507,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             SELECT COUNT(DISTINCT u.empId) AS total
             FROM users u
             WHERE ISNULL(u.isDeleted, 0) = 0
+            AND ISNULL(u.isTemporary, 0) = 0
             AND u.empId IS NOT NULL
             AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
             ${userHierCondition}
@@ -521,12 +539,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             LEFT JOIN users u
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                AND ISNULL(u.isTemporary, 0) = 0
             LEFT JOIN user_hierarchy_snapshots uhs
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
+              AND ISNULL(u.isTemporary, 0) = 0
               ${hierCondition}
         `;
         const attParams = [];
@@ -625,7 +645,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 LEFT JOIN user_hierarchy_snapshots uhs
                     ON UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                WHERE u.leavingDate IS NOT NULL
+                WHERE ISNULL(u.isDeleted, 0) = 0
+                AND ISNULL(u.isTemporary, 0) = 0
+                AND u.leavingDate IS NOT NULL
                 AND LTRIM(RTRIM(u.leavingDate)) != ''
             ) parsed
             WHERE parsed.leaving_date IS NOT NULL
@@ -696,12 +718,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             LEFT JOIN users u
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                AND ISNULL(u.isTemporary, 0) = 0
             LEFT JOIN user_hierarchy_snapshots uhs
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
+              AND ISNULL(u.isTemporary, 0) = 0
               ${hierCondition}
         `;
         const absParams = [];
@@ -852,6 +876,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             alias,
         });
 
+        // Dashboard user/master headcount must count only temporary employees.
+        // isTemporary = 1 employees are excluded from all Users Total / total headcount graph denominators.
+        sqlText += `
+            AND ISNULL(${alias}.isTemporary, 0) = 0
+        `;
+
         return sqlText;
     }
 
@@ -892,12 +922,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         LEFT JOIN users u
             ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+            AND ISNULL(u.isTemporary, 0) = 0
         LEFT JOIN user_hierarchy_snapshots uhs
             ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
         WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
           AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND ISNULL(u.isTemporary, 0) = 0
     `;
 
     const shouldUseAttendanceMaster = true;
@@ -988,6 +1020,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
             `;
@@ -1021,6 +1054,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND u.state IS NOT NULL
@@ -1048,6 +1082,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND u.district IS NOT NULL
@@ -1075,6 +1110,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
             `;
@@ -1155,6 +1191,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   ${extraWhere}
@@ -1344,6 +1381,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             LEFT JOIN users u
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                AND ISNULL(u.isTemporary, 0) = 0
             LEFT JOIN user_hierarchy_snapshots uhs
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
@@ -1629,6 +1667,7 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         LEFT JOIN users u
             ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+            AND ISNULL(u.isTemporary, 0) = 0
         LEFT JOIN user_hierarchy_snapshots uhs
             ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
              = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
@@ -1930,6 +1969,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 INNER JOIN users u
                     ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                    AND ISNULL(u.isTemporary, 0) = 0
                 LEFT JOIN user_hierarchy_snapshots uhs
                     ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
@@ -1968,6 +2008,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 INNER JOIN users u
                     ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                    AND ISNULL(u.isTemporary, 0) = 0
                 LEFT JOIN user_hierarchy_snapshots uhs
                     ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
@@ -2007,6 +2048,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND ${joinDateSQL} IS NOT NULL
@@ -2041,6 +2083,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND ${joinDateSQL} IS NOT NULL
@@ -2074,6 +2117,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND ${joinDateSQL} IS NOT NULL
@@ -2107,6 +2151,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND ${joinDateSQL} IS NOT NULL

@@ -263,6 +263,28 @@ export default function SetRequirements() {
 
   const [tableMaxWidth, setTableMaxWidth] = useState("100%");
 
+  // When requirement approval mail opens this page, pre-filter the table
+  // to the linked section so the section head can approve from here.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      const sectionCode = params.get("sectionCode") || "";
+      const month = params.get("month") || "";
+      const year = params.get("year") || "";
+      const approval = params.get("approval") || "";
+
+      if (sectionCode || month || year || approval) {
+        const searchValue = [sectionCode, year].filter(Boolean).join(" ").trim();
+        if (searchValue) {
+          setFilterState((prev) => ({
+            ...prev,
+            search: searchValue,
+          }));
+        }
+      }
+    } catch (_) { }
+  }, []);
+
   useEffect(() => {
     const updateMaxWidth = () => {
       const width = window.innerWidth;
@@ -469,6 +491,7 @@ export default function SetRequirements() {
           approvalStatus: "pending",
           approvalOwnerName: null,
           approvalOwnerEmail: null,
+          isAssigned: req?.isAssigned !== false,
         });
       }
 
@@ -742,7 +765,7 @@ export default function SetRequirements() {
 
   const canApproveRow = (row) => {
     const status = normalizeApprovalStatus(row?.approvalStatus, row?.isActive);
-    return isCustomSectionHead && ["pending", "rejected"].includes(status) && getRowRequirementIds(row).length > 0;
+    return isCustomSectionHead && row.isAssigned !== false && ["pending", "rejected"].includes(status) && getRowRequirementIds(row).length > 0;
   };
 
   const handleApproveRow = async (row) => {
@@ -1367,7 +1390,7 @@ export default function SetRequirements() {
                       })}
 
                       <td className="px-3 py-3 text-right">
-                        {canManageRequirements && (
+                        {canManageRequirements && r.isAssigned !== false && (
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"

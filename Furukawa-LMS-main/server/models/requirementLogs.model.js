@@ -1,147 +1,202 @@
+import mssql from "mssql";
 import { poolPromise } from "../db/connectDB.js";
-import logger from "../logger/winston.logger.js";
 
-const executeSql = async (queryStr, params = [], transactionOrPool = null) => {
+/*
+|--------------------------------------------------------------------------
+| RequirementLog Model
+|--------------------------------------------------------------------------
+| This model is mapped with the new SQL Server table:
+| RequirementUpdateLogs
+|
+| Table columns:
+| log_id, requirement_id, section_id, subsection_id, action_type,
+| old_salesPlan, new_salesPlan,
+| old_prodPlan, new_prodPlan,
+| old_prodPlanFN01, new_prodPlanFN01,
+| old_prodPlanFN02, new_prodPlanFN02,
+| old_values, new_values,
+| employee_id, employee_role, updated_by_name, updated_at
+|--------------------------------------------------------------------------
+*/
+
+const safeJson = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string") return value;
+
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return null;
+    }
+};
+
+const toNumberOrNull = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(String(value).replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : null;
+};
+
+const getValue = (obj, key) => {
+    if (!obj || typeof obj !== "object") return null;
+    return obj[key] !== undefined ? obj[key] : null;
+};
+
+const getRequest = async (transactionOrPool = null) => {
     const activeConn = transactionOrPool || await poolPromise;
     const request = activeConn.request();
-    let formattedQuery = queryStr;
-    for (let i = 0; i < params.length; i++) {
-        const paramName = `p${i}`;
-        request.input(paramName, params[i]);
-        formattedQuery = formattedQuery.replace('?', `@${paramName}`);
-    }
-    const result = await request.query(formattedQuery);
-    return [result.recordset || [], {
-        affectedRows: result.rowsAffected ? result.rowsAffected.reduce((a, b) => a + b, 0) : 0,
-        insertId: result.recordset && result.recordset.length > 0 && result.recordset[0].log_id ? result.recordset[0].log_id : null
-    }];
+    request.timeout = 300000;
+    return request;
 };
 
 const RequirementLog = {
-    async init() {
-        const createTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[requriementLogs]') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE [dbo].[requriementLogs] (
-                    log_id INT IDENTITY(1,1) PRIMARY KEY,
-                    requirement_id INT NOT NULL,
-                    section_id INT NULL,
-                    old_values NVARCHAR(MAX),
-                    new_values NVARCHAR(MAX),
-                    employee_id INT NULL,
-                    employee_role NVARCHAR(50),
-                    created_at DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT FK_requriementLogs_requirements FOREIGN KEY (requirement_id) REFERENCES requirements(id) ON DELETE CASCADE
-                )
-            END
-        `;
+    async create(data = {}, transactionOrPool = null) {
+        const oldValues = data.old_values || data.oldValues || null;
+        const newValues = data.new_values || data.newValues || null;
 
-        const migrationQuery = `
-            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'requriementLogs')
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('requriementLogs') AND name = 'section_id')
-                    ALTER TABLE [dbo].[requriementLogs] ADD section_id INT NULL;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('requriementLogs') AND name = 'old_values')
-                    ALTER TABLE [dbo].[requriementLogs] ADD old_values NVARCHAR(MAX);
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('requriementLogs') AND name = 'new_values')
-                    ALTER TABLE [dbo].[requriementLogs] ADD new_values NVARCHAR(MAX);
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('requriementLogs') AND name = 'created_at')
-                    ALTER TABLE [dbo].[requriementLogs] ADD created_at DATETIME DEFAULT GETDATE();
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('requriementLogs') AND name = 'employee_id')
-                    ALTER TABLE [dbo].[requriementLogs] ADD employee_id INT NULL;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('requriementLogs') AND name = 'employee_role')
-                    ALTER TABLE [dbo].[requriementLogs] ADD employee_role NVARCHAR(50);
-            END
-        `;
+        const oldSalesPlan = data.old_salesPlan ?? getValue(oldValues, "salesPlan");
+        const newSalesPlan = data.new_salesPlan ?? getValue(newValues, "salesPlan");
 
-        try {
-            await executeSql(createTableQuery);
-            await executeSql(migrationQuery);
-            logger.info("requriementLogs table and schema verified");
-        } catch (error) {
-            logger.error("Failed to initialize/migrate requriementLogs table", error);
-        }
-    },
+        const oldProdPlan = data.old_prodPlan ?? getValue(oldValues, "prodPlan");
+        const newProdPlan = data.new_prodPlan ?? getValue(newValues, "prodPlan");
 
-    async create(logData, transaction = null) {
-        let { requirement_id, section_id, old_values, new_values, employee_id, employee_role } = logData;
+        const oldProdPlanFN01 = data.old_prodPlanFN01 ?? getValue(oldValues, "prodPlanFN01");
+        const newProdPlanFN01 = data.new_prodPlanFN01 ?? getValue(newValues, "prodPlanFN01");
 
-        const safeJson = (val) => (typeof val === 'string' ? val : JSON.stringify(val || {}));
+        const oldProdPlanFN02 = data.old_prodPlanFN02 ?? getValue(oldValues, "prodPlanFN02");
+        const newProdPlanFN02 = data.new_prodPlanFN02 ?? getValue(newValues, "prodPlanFN02");
 
-        // Use absolute universally parsed UTC ISO string representation
-        const utcIsoString = new Date().toISOString();
+        const actionType =
+            data.action_type ||
+            data.actionType ||
+            (!oldValues && newValues ? "INSERT" : oldValues && !newValues ? "DELETE" : "UPDATE");
 
-        const query = `
-            INSERT INTO requriementLogs 
-            (requirement_id, section_id, old_values, new_values, employee_id, employee_role, created_at)
-            OUTPUT INSERTED.log_id
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `;
+        const request = await getRequest(transactionOrPool);
 
-        try {
-            const [result, meta] = await executeSql(query, [
+        request.input("requirement_id", mssql.Int, data.requirement_id || data.requirementId || null);
+        request.input("section_id", mssql.Int, data.section_id || data.sectionId || null);
+        request.input("subsection_id", mssql.Int, data.subsection_id || data.subsectionId || null);
+        request.input("action_type", mssql.NVarChar(50), actionType);
+
+        request.input("old_salesPlan", mssql.Float, toNumberOrNull(oldSalesPlan));
+        request.input("new_salesPlan", mssql.Float, toNumberOrNull(newSalesPlan));
+
+        request.input("old_prodPlan", mssql.Float, toNumberOrNull(oldProdPlan));
+        request.input("new_prodPlan", mssql.Float, toNumberOrNull(newProdPlan));
+
+        request.input("old_prodPlanFN01", mssql.Float, toNumberOrNull(oldProdPlanFN01));
+        request.input("new_prodPlanFN01", mssql.Float, toNumberOrNull(newProdPlanFN01));
+
+        request.input("old_prodPlanFN02", mssql.Float, toNumberOrNull(oldProdPlanFN02));
+        request.input("new_prodPlanFN02", mssql.Float, toNumberOrNull(newProdPlanFN02));
+
+        request.input("old_values", mssql.NVarChar(mssql.MAX), safeJson(oldValues));
+        request.input("new_values", mssql.NVarChar(mssql.MAX), safeJson(newValues));
+
+        request.input("employee_id", mssql.Int, data.employee_id || data.employeeId || null);
+        request.input("employee_role", mssql.NVarChar(200), data.employee_role || data.employeeRole || null);
+        request.input("updated_by_name", mssql.NVarChar(510), data.updated_by_name || data.updatedByName || null);
+
+        const result = await request.query(`
+            INSERT INTO RequirementUpdateLogs
+            (
                 requirement_id,
-                section_id || null,
-                safeJson(old_values),
-                safeJson(new_values),
-                employee_id || null,
-                employee_role || null,
-                utcIsoString
-            ], transaction);
+                section_id,
+                subsection_id,
+                action_type,
+                old_salesPlan,
+                new_salesPlan,
+                old_prodPlan,
+                new_prodPlan,
+                old_prodPlanFN01,
+                new_prodPlanFN01,
+                old_prodPlanFN02,
+                new_prodPlanFN02,
+                old_values,
+                new_values,
+                employee_id,
+                employee_role,
+                updated_by_name,
+                updated_at
+            )
+            OUTPUT INSERTED.*
+            VALUES
+            (
+                @requirement_id,
+                @section_id,
+                @subsection_id,
+                @action_type,
+                @old_salesPlan,
+                @new_salesPlan,
+                @old_prodPlan,
+                @new_prodPlan,
+                @old_prodPlanFN01,
+                @new_prodPlanFN01,
+                @old_prodPlanFN02,
+                @new_prodPlanFN02,
+                @old_values,
+                @new_values,
+                @employee_id,
+                @employee_role,
+                @updated_by_name,
+                GETDATE()
+            )
+        `);
 
-            return { log_id: meta.insertId, ...logData };
-        } catch (error) {
-            logger.error("Failed to create audit log in requriementLogs", error);
-            throw error;
-        }
+        return result.recordset?.[0] || null;
     },
 
     async getLogs(filters = {}, options = {}) {
-        const { requirement_id } = filters;
-        const limit = Number(options.limit ?? 200);
-        const offset = Number(options.offset ?? 0);
+        const limit = Math.max(parseInt(options.limit, 10) || 100, 1);
+        const offset = Math.max(parseInt(options.offset, 10) || 0, 0);
 
-        let query = `
-            SELECT 
-                l.*,
-                COALESCE(u.fullName, 'Unknown') as user_name,
-                u.email as user_email,
-                u.avatar as user_avatar,
-                d.name as section_name
-            FROM requriementLogs l
-            LEFT JOIN users u ON l.employee_id = u.id
-            LEFT JOIN [sections] d ON l.section_id = d.id
-            WHERE 1=1
-        `;
+        const request = await getRequest();
 
-        const params = [];
+        request.input("limit", mssql.Int, limit);
+        request.input("offset", mssql.Int, offset);
 
-        if (requirement_id) {
-            query += ` AND l.requirement_id = ?`;
-            params.push(requirement_id);
+        const where = [];
+
+        if (filters.requirement_id !== undefined && filters.requirement_id !== null && filters.requirement_id !== "") {
+            request.input("requirement_id", mssql.Int, Number(filters.requirement_id));
+            where.push("l.requirement_id = @requirement_id");
         }
 
-        // MSSQL Pagination
-        query += ` ORDER BY l.created_at DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`;
-        params.push(offset, limit);
+        if (filters.section_id !== undefined && filters.section_id !== null && filters.section_id !== "") {
+            request.input("section_id", mssql.Int, Number(filters.section_id));
+            where.push("l.section_id = @section_id");
+        }
 
-        const [rows] = await executeSql(query, params);
+        const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-        return rows.map(r => {
-            let oldV = r.old_values;
-            let newV = r.new_values;
-            try { if (typeof oldV === 'string') oldV = JSON.parse(oldV); } catch (e) { }
-            try { if (typeof newV === 'string') newV = JSON.parse(newV); } catch (e) { }
+        const result = await request.query(`
+            SELECT
+                l.*,
 
-            return {
-                ...r,
-                old_values: oldV,
-                new_values: newV
-            };
-        });
-    }
+                r.sectionCode,
+                r.sectionName,
+                r.lineCode,
+                r.lineDescription,
+                r.monthName,
+                r.monthNumber,
+                r.year,
+
+                s.name AS section_name,
+                ss.name AS subsection_name
+            FROM RequirementUpdateLogs l WITH (NOLOCK)
+            LEFT JOIN requirements r WITH (NOLOCK)
+                ON r.id = l.requirement_id
+            LEFT JOIN sections s WITH (NOLOCK)
+                ON s.id = l.section_id
+            LEFT JOIN sub_sections ss WITH (NOLOCK)
+                ON ss.id = l.subsection_id
+            ${whereSql}
+            ORDER BY l.updated_at DESC, l.log_id DESC
+            OFFSET @offset ROWS
+            FETCH NEXT @limit ROWS ONLY
+        `);
+
+        return result.recordset || [];
+    },
 };
-
-RequirementLog.init();
 
 export default RequirementLog;

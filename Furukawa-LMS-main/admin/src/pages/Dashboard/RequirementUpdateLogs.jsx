@@ -112,12 +112,30 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
         const flattened = [];
 
         apiLogs.forEach((log) => {
-            const oldVals = typeof log.old_values === "string" ? safeParse(log.old_values) : (log.old_values || {});
-            const newVals = typeof log.new_values === "string" ? safeParse(log.new_values) : (log.new_values || {});
+            const oldValsRaw = typeof log.old_values === "string" ? safeParse(log.old_values) : (log.old_values || {});
+            const newValsRaw = typeof log.new_values === "string" ? safeParse(log.new_values) : (log.new_values || {});
+
+            // New SQL table stores important numeric columns separately also.
+            // Merge them into old/new objects so existing UI can show row-wise field changes.
+            const oldVals = {
+                ...oldValsRaw,
+                ...(log.old_salesPlan !== undefined && log.old_salesPlan !== null ? { salesPlan: log.old_salesPlan } : {}),
+                ...(log.old_prodPlan !== undefined && log.old_prodPlan !== null ? { prodPlan: log.old_prodPlan } : {}),
+                ...(log.old_prodPlanFN01 !== undefined && log.old_prodPlanFN01 !== null ? { prodPlanFN01: log.old_prodPlanFN01 } : {}),
+                ...(log.old_prodPlanFN02 !== undefined && log.old_prodPlanFN02 !== null ? { prodPlanFN02: log.old_prodPlanFN02 } : {}),
+            };
+
+            const newVals = {
+                ...newValsRaw,
+                ...(log.new_salesPlan !== undefined && log.new_salesPlan !== null ? { salesPlan: log.new_salesPlan } : {}),
+                ...(log.new_prodPlan !== undefined && log.new_prodPlan !== null ? { prodPlan: log.new_prodPlan } : {}),
+                ...(log.new_prodPlanFN01 !== undefined && log.new_prodPlanFN01 !== null ? { prodPlanFN01: log.new_prodPlanFN01 } : {}),
+                ...(log.new_prodPlanFN02 !== undefined && log.new_prodPlanFN02 !== null ? { prodPlanFN02: log.new_prodPlanFN02 } : {}),
+            };
 
             const allKeys = new Set([...Object.keys(oldVals || {}), ...Object.keys(newVals || {})]);
 
-            const createdAt = log.created_at || log.createdAt || log.timestamp || log.time;
+            const createdAt = log.updated_at || log.updatedAt || log.created_at || log.createdAt || log.timestamp || log.time;
             const createdDate = toDateSafe(createdAt) || new Date();
 
             const userName = log.updated_by_name || log.user_name || log.employee_name || log.name || "Unknown";
@@ -141,10 +159,10 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
                 oldVals.subsection_name ||
                 "N/A";
 
-            const refMonth = (newVals.month && newVals.year)
-                ? toDateSafe(`${newVals.month} 1, ${newVals.year}`)
-                : (oldVals.month && oldVals.year)
-                    ? toDateSafe(`${oldVals.month} 1, ${oldVals.year}`)
+            const refMonth = ((newVals.monthName || newVals.month) && newVals.year)
+                ? toDateSafe(`${newVals.monthName || newVals.month} 1, ${newVals.year}`)
+                : ((oldVals.monthName || oldVals.month) && oldVals.year)
+                    ? toDateSafe(`${oldVals.monthName || oldVals.month} 1, ${oldVals.year}`)
                     : (log.referenceMonth || createdDate);
 
             let pushedAny = false;

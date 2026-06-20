@@ -1884,25 +1884,35 @@ const HighchartsPieCard = ({
                 </div>
 
                 {shouldShowBottomValues && chartData.length > 0 && (
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3">
-                        {finalSafeData.map((item, index) => (
-                            <div key={index} className="flex items-center gap-2 text-xs">
-                                <span
-                                    className="w-3 h-3 rounded-sm flex-shrink-0 shadow-sm"
-                                    style={{ backgroundColor: getChartColor(item, index) }}
-                                />
-                                <span className="text-slate-700 font-bold truncate">{item.name}</span>
-                                <span className="font-extrabold text-slate-900 ml-auto text-sm">
-                                    {hasMasterComparison
-                                        ? valueMode === "percentage"
-                                            ? `Attendance ${item.attendanceValue}% / Users ${item.masterValue}%`
-                                            : `Attendance ${item.attendanceCount} / Users ${item.masterCount}`
-                                        : valueMode === "percentage"
-                                            ? `${useCustomPercentage ? Number(item.value).toFixed(2) : item.value}%`
-                                            : `${item.rawValue} (${useCustomPercentage ? Number(item.percentage).toFixed(2) : item.percentage}%)`}
-                                </span>
-                            </div>
-                        ))}
+                    <div className="flex items-center justify-center gap-5 mt-3 flex-wrap">
+                        {hasMasterComparison ? (
+                            <>
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <span
+                                        className="w-4 h-3.5 rounded-sm inline-block shadow-sm"
+                                        style={{ backgroundColor: USER_TOTAL_BAR_COLOR }}
+                                    />
+                                    <span>Users Total</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <span
+                                        className="w-4 h-3.5 rounded-sm inline-block shadow-sm"
+                                        style={{ backgroundColor: DEFAULT_ATTENDANCE_BAR_COLOR }}
+                                    />
+                                    <span>Attendance</span>
+                                </div>
+                            </>
+                        ) : (
+                            finalSafeData.map((item, index) => (
+                                <div key={`${item.name}-${index}`} className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <span
+                                        className="w-4 h-3.5 rounded-sm inline-block shadow-sm"
+                                        style={{ backgroundColor: getChartColor(item, index) }}
+                                    />
+                                    <span className="truncate max-w-[140px]">{item.name}</span>
+                                </div>
+                            ))
+                        )}
                     </div>
                 )}
             </CardContent>

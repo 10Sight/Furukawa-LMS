@@ -150,13 +150,13 @@ const DojoHandoverComparisonChart = () => {
         [groupBy, apiStart, apiEnd]
     );
 
-    // Flat single-series approach (mirrors ContractorWiseOperatorChart):
-    // For each date: [Dept1-Exp, Dept1-Act, Dept2-Exp, Dept2-Act, ...]
-    // x-axis label per slot → dept name (word-wrapped) for Expected, "Act" for Actual.
-    // Date shown once per group on the middle slot; hidden placeholder on all others.
-    const { flatPoints, categories, groupSeparators } = useMemo(() => {
+    // Two-series approach (Expected vs Actual):
+    // For each date, we display each department as a single category slot,
+    // and within that category slot, Highcharts renders 2 bars (Expected and Actual) side-by-side.
+    // The date label is shown once per group under the middle department.
+    const { expectedPoints, actualPoints, categories, groupSeparators } = useMemo(() => {
         if (!deptBreakdown.length || !fullPeriods.length)
-            return { flatPoints: [], categories: [], groupSeparators: [] };
+            return { expectedPoints: [], actualPoints: [], categories: [], groupSeparators: [] };
 
         // Build lookup maps
         const deptDataMap = {};
@@ -173,13 +173,15 @@ const DojoHandoverComparisonChart = () => {
         });
 
         const deptNameMap = {};
-        const deptColorMap = {};
-        orderedDeptIds.forEach((deptId, i) => {
+        orderedDeptIds.forEach((deptId) => {
             deptNameMap[deptId] = departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`;
-            deptColorMap[deptId] = DEPT_COLORS[i % DEPT_COLORS.length];
         });
 
-        const flatPoints = [];
+        const expectedPoints = [];
+        const actualPoints = [];
+        const categories = [];
+        const groupSeparators = [];
+        let currentIdx = 0;
 
         fullPeriods.forEach(period => {
             const periodLabel = formatPeriodLabel(period, groupBy);
@@ -189,118 +191,83 @@ const DojoHandoverComparisonChart = () => {
             });
 
             if (!deptsPresent.length) {
-                flatPoints.push({
-                    y: null, color: 'transparent',
-                    deptName: '', periodLabel,
-                    isExpected: true, isDateSlot: true, isEmpty: true,
+                // Empty slot to represent the date without any department data
+                categories.push(`<span style="color:#94a3b8;font-size:11px;font-weight:600">${periodLabel}</span>`);
+                expectedPoints.push({
+                    y: null,
+                    deptName: '',
+                    periodLabel,
+                    isExpected: true,
+                    isEmpty: true,
                 });
+                actualPoints.push({
+                    y: null,
+                    deptName: '',
+                    periodLabel,
+                    isExpected: false,
+                    isEmpty: true,
+                });
+                currentIdx++;
                 return;
             }
 
             const N = deptsPresent.length;
-            // Target the Expected slot nearest to the group center so the date
-            // always renders below a dept name (never below "Act").
-            // Even N → slot N   (Expected of dept N/2+1), needs -48px left shift.
-            // Odd  N → slot N-1 (Expected of dept ⌈N/2⌉),  needs +48px right shift.
-            const midSlotIdx  = N % 2 === 0 ? N : N - 1;
-            const dateLabelPx = N % 2 === 0 ? -48 : 48;
-            let slotIdx = 0;
+            const midIdx = Math.floor((N - 1) / 2);
 
-            deptsPresent.forEach(deptId => {
-                const color = deptColorMap[deptId];
+            deptsPresent.forEach((deptId, idx) => {
                 const deptName = deptNameMap[deptId];
                 const vals = deptDataMap[deptId][period];
+                const isDateSlot = idx === midIdx;
 
-                flatPoints.push({
-                    y: vals.expected > 0 ? vals.expected : null,
-                    color,
-                    deptName,
-                    periodLabel,
-                    isExpected:     true,
-                    isDateSlot:     slotIdx === midSlotIdx,
-                    dateLabelShift: slotIdx === midSlotIdx ? dateLabelPx : 0,
-                    isEmpty:        false,
-                });
-                slotIdx++;
-
-                flatPoints.push({
-                    y: vals.actual > 0 ? vals.actual : null,
-                    color: ACTUAL_COLOR,
-                    deptName,
-                    periodLabel,
-                    isExpected:     false,
-                    isDateSlot:     slotIdx === midSlotIdx,
-                    dateLabelShift: slotIdx === midSlotIdx ? dateLabelPx : 0,
-                    isEmpty:        false,
-                });
-                slotIdx++;
-            });
-        });
-
-        // x-axis HTML label per slot:
-        //   • empty period   → greyed date
-        //   • Expected slot  → dept name word-wrapped (dept color) + date line
-        //   • Actual slot    → "Act" in blue, padded with invisible lines to match
-        //                      Expected slot height so all bars stay on same baseline
-        const categories = flatPoints.map(p => {
-            if (p.isEmpty) {
-                return `<span style="color:#94a3b8;font-size:11px;font-weight:600">${p.periodLabel}</span>`;
-            }
-
-            const wordCount = p.deptName.split(' ').length;
-            let topHtml;
-
-            if (p.isExpected) {
-                topHtml = p.deptName
+                // Department label
+                const topHtml = deptName
                     .split(' ')
-                    .map(w => `<span style="color:${p.color};font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
+                    .map(w => `<span style="color:#475569;font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
                     .join('<br/>');
-            } else {
-                // Invisible lines to match Expected bar label height, then "Act" on last line
-                const pad = Array(wordCount - 1)
-                    .fill(`<span style="visibility:hidden;font-size:11px;line-height:1.6">M</span>`)
-                    .join('<br/>');
-                const act = `<span style="color:${ACTUAL_COLOR};font-size:11px;font-weight:700;line-height:1.6">Act</span>`;
-                topHtml = wordCount > 1 ? `${pad}<br/>${act}` : act;
-            }
 
-            // margin-left/right expand the label container instead of clipping like position:relative would.
-            // element_center = tick_x + (margin-left - margin-right) / 2
-            // For shift +48: margin-left:96px → center shifts +48px right.
-            // For shift -48: margin-right:96px → center shifts -48px left.
-            const shiftStyle = p.dateLabelShift > 0
-                ? 'margin-left:96px;'
-                : p.dateLabelShift < 0
-                    ? 'margin-right:96px;'
-                    : '';
-            const dateLine = p.isDateSlot
-                ? `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px;${shiftStyle}">${p.periodLabel}</span>`
-                : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${p.periodLabel}</span>`;
+                const dateLine = isDateSlot
+                    ? `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px">${periodLabel}</span>`
+                    : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${periodLabel}</span>`;
 
-            return topHtml + dateLine;
-        });
+                categories.push(topHtml + dateLine);
 
-        // Dashed separator after the last slot of each date group
-        const groupSeparators = [];
-        let i = 0;
-        while (i < flatPoints.length) {
-            const label = flatPoints[i].periodLabel;
-            let j = i;
-            while (j < flatPoints.length && flatPoints[j].periodLabel === label) j++;
-            if (j < flatPoints.length) {
+                expectedPoints.push({
+                    y: vals.expected > 0 ? vals.expected : null,
+                    deptName,
+                    periodLabel,
+                    isExpected: true,
+                    isEmpty: false,
+                });
+
+                actualPoints.push({
+                    y: vals.actual > 0 ? vals.actual : null,
+                    deptName,
+                    periodLabel,
+                    isExpected: false,
+                    isEmpty: false,
+                });
+
+                currentIdx++;
+            });
+
+            // Dash separator after each period group, except the last one
+            if (period !== fullPeriods[fullPeriods.length - 1]) {
                 groupSeparators.push({
-                    value: j - 0.5, width: 1, dashStyle: 'Dash', color: '#cbd5e1', zIndex: 3,
+                    value: currentIdx - 0.5,
+                    width: 1,
+                    dashStyle: 'Dash',
+                    color: '#cbd5e1',
+                    zIndex: 3,
                 });
             }
-            i = j;
-        }
+        });
 
-        return { flatPoints, categories, groupSeparators };
+        return { expectedPoints, actualPoints, categories, groupSeparators };
     }, [deptBreakdown, fullPeriods, groupBy, departments]);
 
-    const SLOT_WIDTH = 96;
-    const needsScroll = flatPoints.length * SLOT_WIDTH > 800;
-    const scrollMinWidth = needsScroll ? flatPoints.length * SLOT_WIDTH : undefined;
+    const SLOT_WIDTH = 120; // 120px slot width to fit two bars nicely
+    const needsScroll = categories.length * SLOT_WIDTH > 800;
+    const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
     const hasAnyData = totalExpected > 0 || totalActual > 0;
 
@@ -314,7 +281,7 @@ const DojoHandoverComparisonChart = () => {
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
             ...(needsScroll && {
-                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
+                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1, opacity: 1 },
             }),
         },
         title: { text: '' },
@@ -340,14 +307,26 @@ const DojoHandoverComparisonChart = () => {
             labels: { style: { fontSize: '13px' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: { enabled: false },
+        legend: {
+            enabled: true,
+            align: 'right',
+            verticalAlign: 'top',
+            layout: 'horizontal',
+            floating: true,
+            y: -15,
+            itemStyle: {
+                fontSize: '12px',
+                fontWeight: '600',
+                color: '#475569'
+            }
+        },
         tooltip: {
             useHTML: true,
             style: { fontSize: '13px' },
             formatter() {
                 if (!this.point.deptName) return `<b>${this.point.periodLabel}</b>: No data`;
                 return (
-                    `<span style="color:${this.point.color}">●</span> ` +
+                    `<span style="color:${this.series.color}">●</span> ` +
                     `<b>${this.point.deptName}</b> — ${this.point.isExpected ? 'Expected' : 'Actual'}<br/>` +
                     `Date: <b>${this.point.periodLabel}</b><br/>` +
                     `Count: <b>${this.y}</b>`
@@ -356,12 +335,12 @@ const DojoHandoverComparisonChart = () => {
         },
         plotOptions: {
             column: {
-                colorByPoint: true,
+                colorByPoint: false,
                 borderRadius: 5,
                 borderWidth: 0,
-                pointPadding: 0.06,
-                groupPadding: 0,
-                maxPointWidth: 80,
+                pointPadding: 0.1,
+                groupPadding: 0.2,
+                maxPointWidth: 40,
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? String(this.y) : ''; },
@@ -373,12 +352,20 @@ const DojoHandoverComparisonChart = () => {
                 },
             },
         },
-        series: [{
-            type: 'column',
-            name: 'Handover',
-            data: flatPoints,
-            showInLegend: false,
-        }],
+        series: [
+            {
+                type: 'column',
+                name: 'Expected Handover',
+                data: expectedPoints,
+                color: '#8b5cf6', // Violet/Purple for Expected
+            },
+            {
+                type: 'column',
+                name: 'Actual Handover',
+                data: actualPoints,
+                color: '#3b82f6', // Blue for Actual
+            }
+        ],
     };
 
     const cfg = INPUT_CONFIG[timeframe];
@@ -550,6 +537,13 @@ const DojoHandoverComparisonChart = () => {
                     </div>
                 ) : (
                     <>
+                        <style>{`
+                            .highcharts-scrollable-mask {
+                                fill: #ffffff !important;
+                                fill-opacity: 1 !important;
+                                opacity: 1 !important;
+                            }
+                        `}</style>
                         <HighchartsReact
                             key={`${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}`}
                             highcharts={Highcharts}

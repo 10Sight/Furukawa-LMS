@@ -18,6 +18,34 @@ export const checkPrivilege = (requiredPrivilegeName) => asyncHandler(async (req
         return next();
     }
 
+    // Map legacy privileges to modern permissions if user has customRole permissions
+    if (req.user.customRole?.permissions) {
+        const permissions = req.user.customRole.permissions;
+        
+        if (requiredPrivilegeName === "user management") {
+            const hasUserPermission = permissions.includes("user:create") || 
+                                     permissions.includes("user:read") || 
+                                     permissions.includes("user:update") || 
+                                     permissions.includes("user:delete") ||
+                                     permissions.includes("dojo_hiring:create") ||
+                                     permissions.includes("dojo_hiring:read") ||
+                                     permissions.includes("dojo_hiring:update") ||
+                                     permissions.includes("dojo_hiring:delete");
+            if (hasUserPermission) {
+                return next();
+            }
+        }
+        
+        if (requiredPrivilegeName === "setrequirement") {
+            const hasRequirementPermission = permissions.includes("line_requirement:update") || 
+                                            permissions.includes("line_requirement:read") ||
+                                            permissions.includes("mps_requirement:upload_excel");
+            if (hasRequirementPermission) {
+                return next();
+            }
+        }
+    }
+
     // 2. Validate input
     if (!requiredPrivilegeName || typeof requiredPrivilegeName !== 'string') {
         throw new ApiError("Invalid privilege check configuration.", 500);

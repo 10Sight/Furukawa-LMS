@@ -1955,6 +1955,7 @@ const Students = () => {
                             student.status
                           )
                         }
+                        disabled={!hasPermission("user:update")}
                       >
                         <SelectTrigger className="w-[140px]">
                           {getStatusBadge(student.status)}

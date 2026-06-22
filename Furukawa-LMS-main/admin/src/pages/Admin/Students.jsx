@@ -20,7 +20,10 @@ import {
   useLazyGetImportTemplateQuery,
   useGetImportLogsQuery,
   useGetImportLogDetailsQuery,
+  useGetUniqueDesignationsQuery,
 } from "@/Redux/AllApi/UserApi";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { IconChevronDown } from "@tabler/icons-react";
 import {
   useGetAllDepartmentsQuery,
   useAddStudentToDepartmentMutation,
@@ -203,6 +206,7 @@ const Students = () => {
     unit: "",
     shift: "",
     date: "",
+    designation: "",
   });
   const [activeTab, setActiveTab] = useState("all");
 
@@ -263,6 +267,9 @@ const Students = () => {
 
 
   // API Hooks
+  const { data: designationsData } = useGetUniqueDesignationsQuery();
+  const uniqueDesignations = designationsData?.data || [];
+
   const {
     data: studentsData,
     isLoading,
@@ -285,6 +292,7 @@ const Students = () => {
       shift: filters.shift,
       date: filters.date,
       includeLeft: "true",
+      designation: filters.designation,
     },
     {
       // Prevent unnecessary refetches
@@ -895,6 +903,7 @@ const Students = () => {
           shift: filters.shift,
           date: filters.date,
           includeLeft: "true",
+          designation: filters.designation,
         }).unwrap();
 
         const batch = result?.data?.users || [];
@@ -1226,6 +1235,7 @@ const Students = () => {
       unit: "",
       shift: "",
       date: "",
+      designation: "",
     });
     setSearchTerm("");
     setActiveTab("all");
@@ -1685,6 +1695,64 @@ const Students = () => {
               </Select>
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Designation</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 justify-between text-left font-normal border-slate-200 hover:bg-slate-50 bg-white"
+                  >
+                    <span className="truncate">
+                      {filters.designation && filters.designation.split(",").filter(Boolean).length > 0
+                        ? `${filters.designation.split(",").filter(Boolean).length} Selected`
+                        : "Select Designation"}
+                    </span>
+                    <IconChevronDown className="h-4 w-4 opacity-50 shrink-0" stroke={2.5} />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2 bg-white border border-slate-200 shadow-md rounded-md z-50" align="start">
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                    {uniqueDesignations.length === 0 ? (
+                      <div className="text-xs text-slate-500 p-2 text-center">No designations found</div>
+                    ) : (
+                      uniqueDesignations.map((designation) => {
+                        const selectedList = filters.designation ? filters.designation.split(",").filter(Boolean) : [];
+                        const isChecked = selectedList.includes(designation);
+                        return (
+                          <div key={designation} className="flex items-center space-x-2 p-1.5 hover:bg-slate-50 rounded cursor-pointer">
+                            <Checkbox
+                              id={`designation-${designation}`}
+                              checked={isChecked}
+                              onCheckedChange={(checked) => {
+                                const selectedList = filters.designation ? filters.designation.split(",").filter(Boolean) : [];
+                                let newList = [...selectedList];
+                                if (checked) {
+                                  newList.push(designation);
+                                } else {
+                                  newList = newList.filter((item) => item !== designation);
+                                }
+                                setFilters((prev) => ({
+                                  ...prev,
+                                  designation: newList.join(","),
+                                }));
+                              }}
+                            />
+                            <label
+                              htmlFor={`designation-${designation}`}
+                              className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1 truncate select-none text-slate-700"
+                            >
+                              {designation}
+                            </label>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
             <div className="flex items-end sm:col-span-2 md:col-span-4 lg:col-span-5 justify-end">
               <Button 
                 variant="outline" 
@@ -1693,7 +1761,7 @@ const Students = () => {
                 onClick={() => setFilters({
                   status: "", dateFrom: "", dateTo: "",
                   departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
-                  unit: "", shift: "", date: ""
+                  unit: "", shift: "", date: "", designation: ""
                 })}
               >
                 <IconX className="w-4 h-4 mr-2" />

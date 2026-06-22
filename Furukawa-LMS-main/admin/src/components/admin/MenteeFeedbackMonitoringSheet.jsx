@@ -24,6 +24,7 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
 
     // Top table data: { [questionId]: { [dayIndex]: "Y" | "N" } }
     const [topTableData, setTopTableData] = useState({});
+    const [originalTopTableData, setOriginalTopTableData] = useState({});
 
     // Bottom table data: Array of 16 objects (0-15) for each day
     const [dailyLogs, setDailyLogs] = useState(
@@ -35,12 +36,76 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
             status2: ''
         }))
     );
+    const [originalDailyLogs, setOriginalDailyLogs] = useState(
+        Array(16).fill(null).map(() => ({
+            associatesFeedback: '',
+            mentorAction: '',
+            status1: '',
+            areaEngineer: '',
+            status2: ''
+        }))
+    );
+
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+
+    const isTopCellLocked = (qId, dayIndex) => {
+        if (readOnly) return true;
+        if (isAdmin) return false;
+        const val = originalTopTableData[qId]?.[dayIndex];
+        return val !== undefined && val !== null && val.toString().trim() !== "";
+    };
+
+    const isDailyLogFieldLocked = (dayIndex, field) => {
+        if (readOnly) return true;
+        if (isAdmin) return false;
+        const val = originalDailyLogs[dayIndex]?.[field];
+        return val !== undefined && val !== null && val.toString().trim() !== "";
+    };
+
+    const didAdminChangeSavedValues = () => {
+        for (const qId of Object.keys(originalTopTableData)) {
+            const originalDays = originalTopTableData[qId] || {};
+            const currentDays = topTableData[qId] || {};
+            for (const dayIndex of Object.keys(originalDays)) {
+                const originalVal = originalDays[dayIndex];
+                if (originalVal !== undefined && originalVal !== null && originalVal.toString().trim() !== "") {
+                    const currentVal = currentDays[dayIndex];
+                    if (String(originalVal).trim() !== String(currentVal || "").trim()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        for (let dayIndex = 0; dayIndex < originalDailyLogs.length; dayIndex++) {
+            const originalLog = originalDailyLogs[dayIndex] || {};
+            const currentLog = dailyLogs[dayIndex] || {};
+            const fields = ['associatesFeedback', 'mentorAction', 'status1', 'areaEngineer', 'status2'];
+            for (const field of fields) {
+                const originalVal = originalLog[field];
+                if (originalVal !== undefined && originalVal !== null && originalVal.toString().trim() !== "") {
+                    const currentVal = currentLog[field];
+                    if (String(originalVal).trim() !== String(currentVal || "").trim()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
 
     useEffect(() => {
         const fetchData = async () => {
             if (!studentId) {
                 setTopTableData({});
+                setOriginalTopTableData({});
                 setDailyLogs(Array(16).fill(null).map(() => ({
+                    associatesFeedback: '',
+                    mentorAction: '',
+                    status1: '',
+                    areaEngineer: '',
+                    status2: ''
+                })));
+                setOriginalDailyLogs(Array(16).fill(null).map(() => ({
                     associatesFeedback: '',
                     mentorAction: '',
                     status1: '',
@@ -53,17 +118,29 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
             try {
                 const res = await axiosInstance.get(`/api/mentee-feedback/${studentId}`);
                 if (res.data.success && !res.data.data.isNew) {
-                    setTopTableData(res.data.data.topTableData || {});
-                    setDailyLogs(res.data.data.dailyLogs || Array(16).fill(null).map(() => ({
+                    const loadedTop = res.data.data.topTableData || {};
+                    const loadedLogs = res.data.data.dailyLogs || Array(16).fill(null).map(() => ({
+                        associatesFeedback: '',
+                        mentorAction: '',
+                        status1: '',
+                        areaEngineer: '',
+                        status2: ''
+                    }));
+                    setTopTableData(loadedTop);
+                    setOriginalTopTableData(JSON.parse(JSON.stringify(loadedTop)));
+                    setDailyLogs(loadedLogs);
+                    setOriginalDailyLogs(JSON.parse(JSON.stringify(loadedLogs)));
+                } else {
+                    setTopTableData({});
+                    setOriginalTopTableData({});
+                    setDailyLogs(Array(16).fill(null).map(() => ({
                         associatesFeedback: '',
                         mentorAction: '',
                         status1: '',
                         areaEngineer: '',
                         status2: ''
                     })));
-                } else {
-                    setTopTableData({});
-                    setDailyLogs(Array(16).fill(null).map(() => ({
+                    setOriginalDailyLogs(Array(16).fill(null).map(() => ({
                         associatesFeedback: '',
                         mentorAction: '',
                         status1: '',
@@ -118,23 +195,32 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
                 dailyLogs,
                 status: "Submitted"
             });
-            return res.data.success === true;
+            if (res.data.success) {
+                setOriginalTopTableData(JSON.parse(JSON.stringify(topTableData)));
+                setOriginalDailyLogs(JSON.parse(JSON.stringify(dailyLogs)));
+                return true;
+            }
+            return false;
         } catch (err) {
             console.error("Failed to save mentee feedback:", err);
             return false;
         }
     };
 
-    useImperativeHandle(ref, () => ({ saveFeedback }));
+    useImperativeHandle(ref, () => ({
+        saveFeedback,
+        didAdminChangeSavedValues
+    }));
 
     const renderDropdownCell = (qId, dayIndex) => {
         const value = topTableData[qId]?.[dayIndex] || "";
+        const isLocked = isTopCellLocked(qId, dayIndex);
         return (
             <select
-                disabled={readOnly}
+                disabled={readOnly || isLocked}
                 value={value}
                 onChange={(e) => handleTopCellChange(qId, dayIndex, e.target.value)}
-                className={`w-full h-8 text-xs font-bold border-none bg-transparent text-center focus:ring-0 appearance-none ${readOnly ? "cursor-default" : "cursor-pointer hover:bg-slate-100 rounded"}`}
+                className={`w-full h-8 text-xs font-bold border-none bg-transparent text-center focus:ring-0 appearance-none ${readOnly || isLocked ? "cursor-default text-gray-500" : "cursor-pointer hover:bg-slate-100 rounded"}`}
             >
                 <option value="">-</option>
                 <option value="Y">Yes</option>
@@ -233,7 +319,7 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
                                         {/* Associates Info */}
                                         <td className="border border-black p-0">
                                             <textarea
-                                                readOnly={readOnly}
+                                                readOnly={readOnly || isDailyLogFieldLocked(idx, 'associatesFeedback')}
                                                 className="w-full h-16 p-1 resize-none outline-none focus:bg-blue-50 text-center"
                                                 value={dailyLogs[idx].associatesFeedback}
                                                 onChange={(e) => handleDailyLogChange(idx, 'associatesFeedback', e.target.value)}
@@ -243,7 +329,7 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
                                         {/* Mentor Action */}
                                         <td className="border border-black p-0">
                                             <textarea
-                                                readOnly={readOnly}
+                                                readOnly={readOnly || isDailyLogFieldLocked(idx, 'mentorAction')}
                                                 className="w-full h-16 p-1 resize-none outline-none focus:bg-blue-50 text-center"
                                                 value={dailyLogs[idx].mentorAction}
                                                 onChange={(e) => handleDailyLogChange(idx, 'mentorAction', e.target.value)}
@@ -253,7 +339,7 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
                                         {/* Status 1 */}
                                         <td className="border border-black p-0">
                                             <select
-                                                disabled={readOnly}
+                                                disabled={readOnly || isDailyLogFieldLocked(idx, 'status1')}
                                                 className="w-full h-16 text-center outline-none bg-transparent cursor-pointer hover:bg-blue-50"
                                                 value={dailyLogs[idx].status1 || ""}
                                                 onChange={(e) => handleDailyLogChange(idx, 'status1', e.target.value)}
@@ -278,7 +364,7 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
                                         {/* Status 2 */}
                                         <td className="border border-black p-0">
                                             <select
-                                                disabled={readOnly}
+                                                disabled={readOnly || isDailyLogFieldLocked(idx, 'status2')}
                                                 className="w-full h-16 text-center outline-none bg-transparent cursor-pointer hover:bg-blue-50"
                                                 value={dailyLogs[idx].status2 || ""}
                                                 onChange={(e) => handleDailyLogChange(idx, 'status2', e.target.value)}

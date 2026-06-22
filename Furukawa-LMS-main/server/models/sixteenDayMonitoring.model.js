@@ -27,6 +27,9 @@ class SixteenDayMonitoring {
         this.approvedBy = data.approvedBy || "";
         this.status = data.status || "Draft";
         this.startDate = data.startDate || "";
+        this.adminRemarksHistory = typeof data.adminRemarksHistory === 'string'
+            ? JSON.parse(data.adminRemarksHistory)
+            : (data.adminRemarksHistory || []);
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -90,6 +93,11 @@ class SixteenDayMonitoring {
                 BEGIN
                     ALTER TABLE sixteen_day_monitorings ADD startDate VARCHAR(255);
                 END
+                -- Add adminRemarksHistory column if missing
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'adminRemarksHistory')
+                BEGIN
+                    ALTER TABLE sixteen_day_monitorings ADD adminRemarksHistory NVARCHAR(MAX);
+                END
             END
         `;
         await executeQuery(query);
@@ -117,14 +125,15 @@ class SixteenDayMonitoring {
         const {
             studentId, attemptNumber, employeeName, employeeCode, processName, dept,
             handoverDate, trgResult, workingWith, lineLeaderName,
-            gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate
+            gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate,
+            adminRemarksHistory
         } = data;
 
         const query = `
             INSERT INTO sixteen_day_monitorings
-            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate)
+            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate, adminRemarksHistory)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -144,7 +153,8 @@ class SixteenDayMonitoring {
             approvedBy || "",
             createdBy,
             status || "Draft",
-            startDate || ""
+            startDate || "",
+            Array.isArray(adminRemarksHistory) ? JSON.stringify(adminRemarksHistory) : (adminRemarksHistory || "[]")
         ];
 
         const [rows] = await executeQuery(query, values);
@@ -156,7 +166,7 @@ class SixteenDayMonitoring {
             UPDATE sixteen_day_monitorings SET
             employeeName = ?, employeeCode = ?, processName = ?, dept = ?, 
             handoverDate = ?, trgResult = ?, workingWith = ?, lineLeaderName = ?, 
-            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, attemptNumber = ?, startDate = ?, updatedBy = ?, updatedAt = GETDATE()
+            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, attemptNumber = ?, startDate = ?, updatedBy = ?, adminRemarksHistory = ?, updatedAt = GETDATE()
             WHERE id = ?
         `;
 
@@ -177,6 +187,7 @@ class SixteenDayMonitoring {
             this.attemptNumber,
             this.startDate || "",
             this.updatedBy,
+            Array.isArray(this.adminRemarksHistory) ? JSON.stringify(this.adminRemarksHistory) : (this.adminRemarksHistory || "[]"),
             this.id
         ];
 

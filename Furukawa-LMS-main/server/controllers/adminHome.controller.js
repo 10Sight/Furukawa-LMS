@@ -361,15 +361,17 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         yearly:  "FORMAT(CAST(updatedAt AS DATE), 'yyyy')",
     };
 
-    // Temp users store their destination in targetDeptId — used for both queries
+    // Temp users store their destination in targetDeptId; after handover it moves to departmentId
     // Accepts comma-separated IDs for multi-select
-    let deptClause = '';
+    let expectedDeptClause = '';
+    let actualDeptClause = '';
     const expectedParams = [start, end];
     const actualParams   = [start, end];
     const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
     if (deptIds.length > 0) {
         const ph = deptIds.map(() => '?').join(',');
-        deptClause = `AND targetDeptId IN (${ph})`;
+        expectedDeptClause = `AND COALESCE(departmentId, targetDeptId) IN (${ph})`;
+        actualDeptClause   = `AND COALESCE(departmentId, targetDeptId) IN (${ph})`;
         expectedParams.push(...deptIds);
         actualParams.push(...deptIds);
     }
@@ -384,26 +386,26 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
           AND expectedHandover IS NOT NULL
           AND expectedHandover >= ?
           AND expectedHandover <= ?
-          ${deptClause}
+          ${expectedDeptClause}
         GROUP BY ${expectedFormatMap[safeGroupBy]}
         ORDER BY period ASC
     `, expectedParams);
 
-    // Per-department expected breakdown (same filters, grouped by period + targetDeptId)
+    // Per-department expected breakdown (same filters, grouped by period + COALESCE(departmentId, targetDeptId))
     const [deptExpectedRows] = await executeQuery(`
         SELECT
             ${expectedFormatMap[safeGroupBy]} AS period,
-            CAST(targetDeptId AS NVARCHAR(20)) AS deptId,
+            CAST(COALESCE(departmentId, targetDeptId) AS NVARCHAR(20)) AS deptId,
             COUNT(*)                           AS expected
         FROM users
         WHERE (isTemporary = 1 OR empId LIKE 'TEMP%')
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND expectedHandover IS NOT NULL
-          AND targetDeptId IS NOT NULL
+          AND COALESCE(departmentId, targetDeptId) IS NOT NULL
           AND expectedHandover >= ?
           AND expectedHandover <= ?
-          ${deptClause}
-        GROUP BY ${expectedFormatMap[safeGroupBy]}, targetDeptId
+          ${expectedDeptClause}
+        GROUP BY ${expectedFormatMap[safeGroupBy]}, COALESCE(departmentId, targetDeptId)
         ORDER BY period ASC
     `, expectedParams);
 
@@ -417,26 +419,26 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND CAST(updatedAt AS DATE) >= ?
           AND CAST(updatedAt AS DATE) <= ?
-          ${deptClause}
+          ${actualDeptClause}
         GROUP BY ${actualFormatMap[safeGroupBy]}
         ORDER BY period ASC
     `, actualParams);
 
-    // Per-department actual breakdown (grouped by period + targetDeptId)
+    // Per-department actual breakdown (grouped by period + COALESCE(departmentId, targetDeptId))
     const [deptActualRows] = await executeQuery(`
         SELECT
             ${actualFormatMap[safeGroupBy]}            AS period,
-            CAST(targetDeptId AS NVARCHAR(20))         AS deptId,
+            CAST(COALESCE(departmentId, targetDeptId) AS NVARCHAR(20))         AS deptId,
             COUNT(*)                                   AS actual
         FROM users
         WHERE empId LIKE 'TEMP%'
           AND isTemporary = 0
           AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND targetDeptId IS NOT NULL
+          AND COALESCE(departmentId, targetDeptId) IS NOT NULL
           AND CAST(updatedAt AS DATE) >= ?
           AND CAST(updatedAt AS DATE) <= ?
-          ${deptClause}
-        GROUP BY ${actualFormatMap[safeGroupBy]}, targetDeptId
+          ${actualDeptClause}
+        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(departmentId, targetDeptId)
         ORDER BY period ASC
     `, actualParams);
 

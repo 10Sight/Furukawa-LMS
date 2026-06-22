@@ -271,6 +271,13 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     params.push(...roles);
   }
   if (req.query.customRoleId) { whereClauses.push("u.customRoleId = ?"); params.push(req.query.customRoleId); }
+  if (req.query.designation) {
+    const designations = req.query.designation.split(",").map(d => d.trim()).filter(Boolean);
+    if (designations.length > 0) {
+      whereClauses.push(`u.designation IN (${designations.map(() => "?").join(",")})`);
+      params.push(...designations);
+    }
+  }
   if (req.query.isEmployee === "true") { whereClauses.push("u.isEmployee = 1"); }
   if (req.query.isTrainer === "true") { whereClauses.push("u.isTrainer = 1"); }
   if (req.query.passedQuizOnly === "true") {
@@ -1246,6 +1253,14 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     )`);
   }
 
+  if (req.query.designation) {
+    const designations = req.query.designation.split(",").map(d => d.trim()).filter(Boolean);
+    if (designations.length > 0) {
+      whereClauses.push(`u.designation IN (${designations.map(() => "?").join(",")})`);
+      params.push(...designations);
+    }
+  }
+
   const { dateFrom, dateTo, status, shift, date } = req.query;
 
   const upperStatus = (status || "").toUpperCase();
@@ -1384,6 +1399,17 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       leftCount: statusCountsData[0]?.leftCount || 0,
     }
   }, "Students fetched successfully"));
+});
+
+export const getUniqueDesignations = asyncHandler(async (req, res) => {
+  const [rows] = await executeQuery(`
+    SELECT DISTINCT designation 
+    FROM users 
+    WHERE designation IS NOT NULL AND designation != '' AND (isDeleted = 0 OR isDeleted IS NULL)
+    ORDER BY designation ASC
+  `);
+  const designations = rows.map(r => r.designation);
+  res.json(new ApiResponse(200, designations, "Unique designations fetched successfully"));
 });
 
 // Other specialized fetches (Mentors, Supervisors, Incharges) can be added similarly using formatUser

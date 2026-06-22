@@ -1228,7 +1228,8 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
                                  targetLineId = NULL,
                                  targetSubSectionId = NULL,
                                  targetStationId = NULL,
-                                 isTemporary = 0 
+                                 isTemporary = 0,
+                                 updatedAt = GETDATE()
                              WHERE id = ?`,
                             [targetDept, targetSect, targetLine, targetSubSect, targetStn, entry.studentId]
                         );

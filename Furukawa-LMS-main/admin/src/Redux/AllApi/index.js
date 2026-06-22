@@ -18,6 +18,7 @@ export {
     useUpdateAvatarMutation,
     useUpdateUserMutation,
     useDeleteUserMutation,
+    useGetUniqueDesignationsQuery,
 } from './UserApi';
 
 // Instructor API exports

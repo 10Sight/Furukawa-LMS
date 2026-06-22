@@ -20,6 +20,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
@@ -33,7 +34,8 @@ import {
     IconEdit,
     IconPlus,
     IconDatabase,
-    IconLayoutDashboard
+    IconLayoutDashboard,
+    IconMessage
 } from "@tabler/icons-react";
 import SixteenDayMonitoringSheet from '@/components/admin/SixteenDayMonitoringSheet';
 import MenteeFeedbackMonitoringSheet from '@/components/admin/MenteeFeedbackMonitoringSheet';
@@ -441,6 +443,7 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                 readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
                                 initialForceNewAttempt={forceNewAttempt}
                                 onAfterSave={handleAfterMonitoringSave}
+                                feedbackRef={feedbackRef}
                             />
 
                             {(hasManagePermission || canViewFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId))) && (
@@ -465,13 +468,14 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Start Date</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Last Date</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Last Update</TableHead>
+                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500 min-w-[150px]">Admin Remarks</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500 text-right pr-6">Action</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {loadingList ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="h-40 text-center text-slate-400">
+                                            <TableCell colSpan={9} className="h-40 text-center text-slate-400">
                                                 <div className="flex flex-col items-center gap-2">
                                                     <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                                                     <span className="text-xs font-medium">Loading operators...</span>
@@ -544,6 +548,47 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                                     <TableCell className="text-xs font-medium text-slate-500">
                                                         {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : "-"}
                                                     </TableCell>
+                                                    <TableCell className="max-w-[180px]">
+                                                        {item.adminRemarksHistory?.length > 0 ? (
+                                                            <div className="flex items-center gap-1.5">
+                                                                <p className="text-xs text-slate-600 truncate flex-1" title={item.adminRemarksHistory[0].remark}>
+                                                                    {item.adminRemarksHistory[0].remark}
+                                                                </p>
+                                                                <Popover>
+                                                                    <PopoverTrigger asChild>
+                                                                        <button className="flex-shrink-0 p-1 rounded hover:bg-slate-100 text-blue-500 hover:text-blue-700 transition-colors" title="View remark history">
+                                                                            <IconEdit size={14} />
+                                                                        </button>
+                                                                    </PopoverTrigger>
+                                                                    <PopoverContent className="w-80 p-0 shadow-xl z-[9999]" align="end">
+                                                                        <div className="p-3 border-b bg-slate-50 rounded-t-md">
+                                                                            <p className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                                                <IconMessage className="w-3.5 h-3.5 text-blue-500" />
+                                                                                Admin Edit History
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                                                                            {item.adminRemarksHistory.map((entry, idx) => (
+                                                                                <div key={idx} className="p-3 space-y-1.5">
+                                                                                    <div className="flex items-center justify-between gap-2">
+                                                                                        <span className="text-xs font-semibold text-slate-700">{entry.adminName}</span>
+                                                                                        <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                                                                                            {new Date(entry.createdAt).toLocaleDateString()}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <p className="text-xs text-slate-600 leading-relaxed border-l-2 border-blue-300 pl-2">
+                                                                                        {entry.remark}
+                                                                                    </p>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </PopoverContent>
+                                                                </Popover>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xs text-slate-300">—</span>
+                                                        )}
+                                                    </TableCell>
                                                     <TableCell className="text-right pr-6">
                                                         <div className="flex justify-end gap-2">
                                                             <Button
@@ -580,7 +625,7 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                         })
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="h-40 text-center">
+                                            <TableCell colSpan={9} className="h-40 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <IconUsersGroup className="w-12 h-12 text-slate-200" />
                                                     <span className="text-sm text-slate-400 font-medium">No operators found for selection</span>

@@ -113,6 +113,7 @@ const SixteenDayMonitoringSheet = ({
     canEditConfig = false,
     initialForceNewAttempt = false,
     onAfterSave = null,
+    feedbackRef = null,
 }) => {
     const [headerInfo, setHeaderInfo] = useState({
         employeeName: studentName || "",
@@ -135,6 +136,8 @@ const SixteenDayMonitoringSheet = ({
     const canApprove = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:approve');
 
     const [gridData, setGridData] = useState({});
+    const [originalGridData, setOriginalGridData] = useState({});
+    const [originalHeaderInfo, setOriginalHeaderInfo] = useState({});
     const [footerData, setFooterData] = useState({});
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -148,17 +151,68 @@ const SixteenDayMonitoringSheet = ({
     const [showHistory, setShowHistory] = useState(false);
     const [sendingEmail, setSendingEmail] = useState(false);
 
+    // Admin Remark Dialog States
+    const [isAdminRemarkDialogOpen, setIsAdminRemarkDialogOpen] = useState(false);
+    const [adminRemarkText, setAdminRemarkText] = useState('');
+    const [pendingSaveParams, setPendingSaveParams] = useState(null);
+
     // Attempt History (Versioning)
     const [historyAttempts, setHistoryAttempts] = useState([]);
     const [selectedAttemptId, setSelectedAttemptId] = useState("");
     const [isForceNewAttempt, setIsForceNewAttempt] = useState(false);
 
-    const isLocked = headerInfo.status === 'Submitted' &&
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const isSheetSaved = !!selectedAttemptId && !isForceNewAttempt;
+
+    const isLocked = (headerInfo.status === 'Submitted' &&
         !authUser?.isAdmin &&
         !authUser?.isTrainer &&
         !canVerify &&
         !canApprove &&
-        !authUser?.customRole?.permissions?.includes('sixteen_day:manage');
+        !authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
+
+    const isCellLocked = (key, type = 'grid') => {
+        if (readOnly) return true;
+        if (isLocked) return true;
+        if (isAdmin) return false;
+        if (!isSheetSaved) return false;
+
+        if (type === 'grid') {
+            const val = originalGridData[key];
+            return val !== undefined && val !== null && val.toString().trim() !== "";
+        } else if (type === 'header') {
+            const val = originalHeaderInfo[key];
+            return val !== undefined && val !== null && val.toString().trim() !== "";
+        }
+        return false;
+    };
+
+    const didAdminChangeSavedValues = () => {
+        for (const key of Object.keys(originalGridData)) {
+            const originalVal = originalGridData[key];
+            if (originalVal !== undefined && originalVal !== null && originalVal.toString().trim() !== "") {
+                const currentVal = gridData[key];
+                if (String(originalVal).trim() !== String(currentVal || "").trim()) {
+                    return true;
+                }
+            }
+        }
+        for (const key of Object.keys(originalHeaderInfo)) {
+            const originalVal = originalHeaderInfo[key];
+            if (originalVal !== undefined && originalVal !== null && originalVal.toString().trim() !== "") {
+                const currentVal = headerInfo[key];
+                if (String(originalVal).trim() !== String(currentVal || "").trim()) {
+                    return true;
+                }
+            }
+        }
+        if (feedbackRef?.current?.didAdminChangeSavedValues) {
+            if (feedbackRef.current.didAdminChangeSavedValues()) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     useEffect(() => {
         const loadInitialData = async () => {
@@ -179,12 +233,16 @@ const SixteenDayMonitoringSheet = ({
                     attemptNumber: 1
                 });
                 setGridData({});
+                setOriginalGridData({});
+                setOriginalHeaderInfo({});
                 setFooterData({});
                 setConfig(DEFAULT_MONITORING_CONFIG_16);
                 return;
             }
 
             setGridData({});
+            setOriginalGridData({});
+            setOriginalHeaderInfo({});
             setFooterData({});
             setLoading(true);
             try {
@@ -198,16 +256,25 @@ const SixteenDayMonitoringSheet = ({
                 const response = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}`);
                 if (response.data.success && response.data.data && !response.data.data.isNew) {
                     const record = response.data.data;
+                    const loadedHeader = {
+                        employeeName: record.employeeName || studentName || "",
+                        employeeCode: record.employeeCode || employeeCode || "",
+                        processName: record.processName || progressData.processName || "",
+                        dept: record.dept || sectionName || departmentName || "",
+                        handoverDate: record.handoverDate || "",
+                        trgResult: record.trgResult || "",
+                        workingWith: record.workingWith || "",
+                        lineLeaderName: record.lineLeaderName || "",
+                        checkedBy: record.checkedBy || "",
+                        verifiedBy: record.verifiedBy || "",
+                        approvedBy: record.approvedBy || "",
+                        status: record.status || "Draft",
+                        attemptNumber: record.attemptNumber || 1,
+                        startDate: record.startDate || "",
+                    };
                     if (initialForceNewAttempt) {
                         setHeaderInfo({
-                            employeeName: record.employeeName || studentName || "",
-                            employeeCode: record.employeeCode || employeeCode || "",
-                            processName: record.processName || progressData.processName || "",
-                            dept: record.dept || sectionName || departmentName || "",
-                            handoverDate: record.handoverDate || "",
-                            trgResult: record.trgResult || "",
-                            workingWith: record.workingWith || "",
-                            lineLeaderName: record.lineLeaderName || "",
+                            ...loadedHeader,
                             checkedBy: "",
                             verifiedBy: "",
                             approvedBy: "",
@@ -216,32 +283,21 @@ const SixteenDayMonitoringSheet = ({
                             startDate: "",
                         });
                         setGridData({});
+                        setOriginalGridData({});
+                        setOriginalHeaderInfo({});
                         setSelectedAttemptId("");
                         setIsForceNewAttempt(true);
                     } else {
-                        setHeaderInfo({
-                            employeeName: record.employeeName || studentName || "",
-                            employeeCode: record.employeeCode || employeeCode || "",
-                            processName: record.processName || progressData.processName || "",
-                            dept: record.dept || sectionName || departmentName || "",
-                            handoverDate: record.handoverDate || "",
-                            trgResult: record.trgResult || "",
-                            workingWith: record.workingWith || "",
-                            lineLeaderName: record.lineLeaderName || "",
-                            checkedBy: record.checkedBy || "",
-                            verifiedBy: record.verifiedBy || "",
-                            approvedBy: record.approvedBy || "",
-                            status: record.status || "Draft",
-                            attemptNumber: record.attemptNumber || 1,
-                            startDate: record.startDate || "",
-                        });
+                        setHeaderInfo(loadedHeader);
                         setGridData(record.gridData || {});
+                        setOriginalGridData(record.gridData || {});
+                        setOriginalHeaderInfo(loadedHeader);
                         setSelectedAttemptId(record.id);
                         setIsForceNewAttempt(false);
                     }
                 } else {
                     const header = response.data.data?.headerInfo || {};
-                    setHeaderInfo({
+                    const newHeader = {
                         employeeName: studentName || "",
                         employeeCode: employeeCode || "",
                         processName: progressData.processName || "",
@@ -256,8 +312,11 @@ const SixteenDayMonitoringSheet = ({
                         status: "Draft",
                         attemptNumber: 1,
                         startDate: "",
-                    });
+                    };
+                    setHeaderInfo(newHeader);
                     setGridData({});
+                    setOriginalGridData({});
+                    setOriginalHeaderInfo(newHeader);
                     setSelectedAttemptId("");
                     setIsForceNewAttempt(false);
                 }
@@ -295,6 +354,8 @@ const SixteenDayMonitoringSheet = ({
             if (String(e.detail.studentId) === String(studentId)) {
                 setIsForceNewAttempt(true);
                 setGridData({});
+                setOriginalGridData({});
+                setOriginalHeaderInfo({});
                 setHeaderInfo(prev => ({
                     ...prev,
                     status: "Draft",
@@ -320,7 +381,7 @@ const SixteenDayMonitoringSheet = ({
             const res = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}?recordId=${attemptId}`);
             if (res.data.success) {
                 const record = res.data.data;
-                setHeaderInfo({
+                const loadedHeader = {
                     employeeName: record.employeeName || "",
                     employeeCode: record.employeeCode || "",
                     processName: record.processName || "",
@@ -335,8 +396,11 @@ const SixteenDayMonitoringSheet = ({
                     status: record.status || "Draft",
                     attemptNumber: record.attemptNumber || 1,
                     startDate: record.startDate || "",
-                });
+                };
+                setHeaderInfo(loadedHeader);
                 setGridData(record.gridData || {});
+                setOriginalGridData(record.gridData || {});
+                setOriginalHeaderInfo(loadedHeader);
             }
         } catch (err) {
             toast.error("Failed to load attempt data");
@@ -441,13 +505,22 @@ const SixteenDayMonitoringSheet = ({
         return true;
     };
 
-    const handleSave = async (finalStatus = null, isSubmit = false) => {
+    const handleSave = async (finalStatus = null, isSubmit = false, adminRemark = null) => {
         if (!studentId) {
             toast.error("Student selection is required to save data");
             return;
         }
 
         const targetStatus = finalStatus || headerInfo.status || "Draft";
+
+        // Intercept: admin editing a saved sheet must provide a remark if they modified already saved values
+        if (isAdmin && isSheetSaved && didAdminChangeSavedValues() && !adminRemark) {
+            setPendingSaveParams({ finalStatus, isSubmit });
+            setAdminRemarkText('');
+            setIsAdminRemarkDialogOpen(true);
+            return;
+        }
+
         if (isSubmit && !isDay16Filled()) {
             toast.error("Day-16 performance column must be completely filled before submitting.");
             return;
@@ -469,12 +542,20 @@ const SixteenDayMonitoringSheet = ({
                 status: targetStatus,
                 isNewAttempt: isForceNewAttempt,
                 recordId: selectedAttemptId,
-                triggerEmail: isSubmit
+                triggerEmail: isSubmit,
+                adminRemark: adminRemark || undefined
             };
 
             const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId || 0}`, payload);
             if (response.data.success) {
-                setHeaderInfo(prev => ({ ...prev, status: targetStatus, startDate: computedStartDate }));
+                const finalHeader = {
+                    ...headerInfo,
+                    status: targetStatus,
+                    startDate: computedStartDate
+                };
+                setHeaderInfo(finalHeader);
+                setOriginalGridData(gridData);
+                setOriginalHeaderInfo(finalHeader);
                 setIsForceNewAttempt(false);
                 fetchHistoryAttempts();
                 toast.success(`Monitoring ${targetStatus === 'Submitted' ? 'Submitted' : 'Saved'} successfully`);
@@ -488,6 +569,8 @@ const SixteenDayMonitoringSheet = ({
             toast.error(error.response?.data?.message || "Failed to save data");
         } finally {
             setSaving(false);
+            setPendingSaveParams(null);
+            setAdminRemarkText('');
         }
     };
 
@@ -512,15 +595,16 @@ const SixteenDayMonitoringSheet = ({
     };
 
     const handleHeaderChange = (field, value) => {
-        if (readOnly || !studentId) return;
+        if (readOnly || isLocked || isCellLocked(field, 'header') || !studentId) return;
         setHeaderInfo(prev => ({ ...prev, [field]: value }));
     };
 
     const handleGridChange = (rowId, colId, value) => {
-        if (readOnly || !studentId) return;
+        const cellKey = `${rowId}_${colId}`;
+        if (readOnly || isLocked || isCellLocked(cellKey, 'grid') || !studentId) return;
         setGridData(prev => ({
             ...prev,
-            [`${rowId}_${colId}`]: value
+            [cellKey]: value
         }));
     };
 
@@ -997,7 +1081,7 @@ const SixteenDayMonitoringSheet = ({
                                         <div className="w-40 p-1 font-bold">Station Name</div>
                                         <div className="flex-1 p-1 border-l border-black h-full">
                                             <input
-                                                disabled={readOnly || isLocked}
+                                                disabled={readOnly || isLocked || isCellLocked('processName', 'header')}
                                                 className="w-full h-full bg-transparent border-none outline-none px-1 font-semibold text-blue-700"
                                                 value={headerInfo.processName}
                                                 onChange={e => handleHeaderChange('processName', e.target.value)}
@@ -1014,32 +1098,38 @@ const SixteenDayMonitoringSheet = ({
                                     <div className="flex border-b border-black h-10 items-center">
                                         <div className="w-40 p-1 font-bold">Handover Date</div>
                                         <div className="flex-1 p-1 border-l border-black h-full flex items-center font-semibold text-blue-700">:
-                                            <Popover>
-                                                <PopoverTrigger asChild>
-                                                    <div className="px-1 cursor-pointer hover:bg-blue-50/50 underline decoration-dotted decoration-blue-300">
-                                                        {headerInfo.handoverDate || "Select Date"}
-                                                    </div>
-                                                </PopoverTrigger>
-                                                <PopoverContent className="w-auto p-0 z-[9999]" align="start">
-                                                    <Calendar
-                                                        mode="single"
-                                                        selected={headerInfo.handoverDate ? new Date(headerInfo.handoverDate) : undefined}
-                                                        onSelect={(date) => {
-                                                            if (date) {
-                                                                handleHeaderChange('handoverDate', format(date, "yyyy-MM-dd"));
-                                                            }
-                                                        }}
-                                                        initialFocus
-                                                    />
-                                                </PopoverContent>
-                                            </Popover>
+                                            {readOnly || isLocked || isCellLocked('handoverDate', 'header') ? (
+                                                <span className="px-1 font-semibold text-blue-700">
+                                                    {headerInfo.handoverDate || "-"}
+                                                </span>
+                                            ) : (
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <div className="px-1 cursor-pointer hover:bg-blue-50/50 underline decoration-dotted decoration-blue-300">
+                                                            {headerInfo.handoverDate || "Select Date"}
+                                                        </div>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-auto p-0 z-[9999]" align="start">
+                                                        <Calendar
+                                                            mode="single"
+                                                            selected={headerInfo.handoverDate ? new Date(headerInfo.handoverDate) : undefined}
+                                                            onSelect={(date) => {
+                                                                if (date) {
+                                                                    handleHeaderChange('handoverDate', format(date, "yyyy-MM-dd"));
+                                                                }
+                                                            }}
+                                                            initialFocus
+                                                        />
+                                                    </PopoverContent>
+                                                </Popover>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex border-b border-black h-10 items-center">
                                         <div className="w-40 p-1 font-bold">Trg. Result</div>
                                         <div className="flex-1 p-1 border-l border-black h-full">
                                             <input
-                                                disabled={readOnly || isLocked}
+                                                disabled={readOnly || isLocked || isCellLocked('trgResult', 'header')}
                                                 className="w-full h-full bg-transparent border-none outline-none px-1 font-semibold text-blue-700"
                                                 value={headerInfo.trgResult}
                                                 onChange={e => handleHeaderChange('trgResult', e.target.value)}
@@ -1051,7 +1141,7 @@ const SixteenDayMonitoringSheet = ({
                                         <div className="w-40 p-1 font-bold">Working With</div>
                                         <div className="flex-1 p-1 border-l border-black h-full">
                                             <input
-                                                disabled={readOnly || isLocked}
+                                                disabled={readOnly || isLocked || isCellLocked('workingWith', 'header')}
                                                 className="w-full h-full bg-transparent border-none outline-none px-1 font-semibold text-blue-700"
                                                 value={headerInfo.workingWith}
                                                 onChange={e => handleHeaderChange('workingWith', e.target.value)}
@@ -1065,7 +1155,7 @@ const SixteenDayMonitoringSheet = ({
                                             : {lineNamePart || (headerInfo.lineLeaderName?.includes(' / ') ? headerInfo.lineLeaderName.split(' / ')[0] : "")}
                                             {lineLeaderOptions.length > 0 ? (
                                                 <select
-                                                    disabled={readOnly || isLocked}
+                                                    disabled={readOnly || isLocked || isCellLocked('lineLeaderName', 'header')}
                                                     className="ml-1 bg-transparent border-none outline-none text-blue-700 font-semibold cursor-pointer"
                                                     value={headerInfo.lineLeaderName?.includes(' / ') ? headerInfo.lineLeaderName.split(' / ')[1] : (lineNamePart ? "" : headerInfo.lineLeaderName)}
                                                     onChange={(e) => {
@@ -1081,7 +1171,7 @@ const SixteenDayMonitoringSheet = ({
                                                 </select>
                                             ) : (
                                                 <input
-                                                    disabled={readOnly || isLocked}
+                                                    disabled={readOnly || isLocked || isCellLocked('lineLeaderName', 'header')}
                                                     className="ml-1 flex-1 bg-transparent border-none outline-none text-blue-700 font-semibold"
                                                     value={headerInfo.lineLeaderName?.includes(' / ') ? headerInfo.lineLeaderName.split(' / ')[1] : (lineNamePart ? "" : headerInfo.lineLeaderName)}
                                                     onChange={(e) => {
@@ -1116,6 +1206,19 @@ const SixteenDayMonitoringSheet = ({
                                             let selectedDate = undefined;
                                             try { if (val && val.includes('-')) selectedDate = parse(val, "dd-MMM-yy", new Date()); } catch (e) { }
 
+                                            if (readOnly || isLocked || isCellLocked(`attendance_date_${dayIdx}`, 'grid')) {
+                                                return (
+                                                    <th key={i} colSpan="11" className="border-r border-black text-center h-16 font-bold text-[14px] p-0 bg-slate-50/50">
+                                                        <div className="flex flex-col items-center justify-center h-full w-full py-1">
+                                                            <span>Day-{dayIdx}</span>
+                                                            <span className="text-[16px] text-blue-900 font-semibold">
+                                                                ({val || "-"})
+                                                            </span>
+                                                        </div>
+                                                    </th>
+                                                );
+                                            }
+
                                             return (
                                                 <th key={i} colSpan="11" className="border-r border-black text-center h-16 font-bold text-[14px] p-0">
                                                     <Popover>
@@ -1144,6 +1247,19 @@ const SixteenDayMonitoringSheet = ({
                                             const val = gridData[`attendance_date_${dayIdx}`] || "";
                                             let selectedDate = undefined;
                                             try { if (val && val.includes('-')) selectedDate = parse(val, "dd-MMM-yy", new Date()); } catch (e) { }
+
+                                            if (readOnly || isLocked || isCellLocked(`attendance_date_${dayIdx}`, 'grid')) {
+                                                return (
+                                                    <th key={i} rowSpan="2" className="border-r border-black min-w-[85px] text-[14px] font-bold p-0 bg-slate-50/50">
+                                                        <div className="flex flex-col items-center justify-center h-full w-full py-1">
+                                                            <span>Day-{dayIdx}</span>
+                                                            <span className="text-[10px] text-blue-900 font-semibold">
+                                                                ({val || "-"})
+                                                            </span>
+                                                        </div>
+                                                    </th>
+                                                );
+                                            }
 
                                             return (
                                                 <th key={i} rowSpan="2" className="border-r border-black min-w-[85px] text-[14px] font-bold p-0">
@@ -1216,7 +1332,7 @@ const SixteenDayMonitoringSheet = ({
                                                                                     <div className="relative flex items-center justify-center min-w-[50px] h-full">
                                                                                         <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                                         <input
-                                                                                            disabled={readOnly || isLocked}
+                                                                                            disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_${sub.id}_${i}`, 'grid')}
                                                                                             className={`absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] font-bold p-1 focus:bg-blue-50 outline-none ${sub.colorClass || 'text-black'}`}
                                                                                             value={val}
                                                                                             onChange={(e) => handleGridChange(row.id, `${dayPrefix}_${sub.id}_${i}`, e.target.value)}
@@ -1229,7 +1345,7 @@ const SixteenDayMonitoringSheet = ({
                                                                             <div className="relative flex items-center justify-center min-w-[80px] h-full">
                                                                                 <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_${sub.id}_avg`] || "00"}</span>
                                                                                 <input
-                                                                                    disabled={readOnly || isLocked}
+                                                                                    disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_${sub.id}_avg`, 'grid')}
                                                                                     className={`absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] p-1 font-bold outline-none ${sub.colorClass || 'text-black'}`}
                                                                                     value={gridData[`${row.id}_${dayPrefix}_${sub.id}_avg`] || ""}
                                                                                     onChange={(e) => handleGridChange(row.id, `${dayPrefix}_${sub.id}_avg`, e.target.value)}
@@ -1245,7 +1361,7 @@ const SixteenDayMonitoringSheet = ({
                                                                             <div className="relative flex items-center justify-center min-w-[70px] h-full">
                                                                                 <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                                 <input
-                                                                                    disabled={readOnly || sub.id === 'achievement'}
+                                                                                    disabled={readOnly || sub.id === 'achievement' || isLocked || isCellLocked(`${row.id}_${dayKey}_${sub.id}`, 'grid')}
                                                                                     className={`absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] font-bold py-1 focus:bg-blue-50 outline-none ${sub.colorClass || 'text-blue-700'}`}
                                                                                     value={val}
                                                                                     onChange={(e) => handleGridChange(row.id, `${dayKey}_${sub.id}`, e.target.value)}
@@ -1272,7 +1388,6 @@ const SixteenDayMonitoringSheet = ({
                                                                 {row.label}
                                                             </td>
                                                             <td className="border-r border-black text-center align-middle font-bold text-[14px] min-w-[150px] bg-gray-50/10">{row.weight}</td>
-
                                                             {daysDetailed.map(dayPrefix => (
                                                                 <React.Fragment key={dayPrefix}>
                                                                     {row.type === 'cycle' ? (
@@ -1284,7 +1399,7 @@ const SixteenDayMonitoringSheet = ({
                                                                                         <div className="relative flex items-center justify-center min-w-[50px] h-full">
                                                                                             <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                                             <input
-                                                                                                disabled={readOnly || isLocked}
+                                                                                                disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_${i}`, 'grid')}
                                                                                                 className="absolute inset-0 w-full h-full text-center bg-transparent border-none font-bold text-blue-700 text-[14px] p-1 focus:bg-blue-50 outline-none"
                                                                                                 value={val}
                                                                                                 onChange={(e) => handleGridChange(row.id, `${dayPrefix}_${i}`, e.target.value)}
@@ -1297,7 +1412,7 @@ const SixteenDayMonitoringSheet = ({
                                                                                 <div className="relative flex items-center justify-center min-w-[80px] h-full text-blue-700">
                                                                                     <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_avg`] || "00"}</span>
                                                                                     <input
-                                                                                        disabled={readOnly || isLocked}
+                                                                                        disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_avg`, 'grid')}
                                                                                         className="absolute inset-0 w-full h-full text-center bg-transparent border-none text-blue-700 font-bold text-[14px] p-1 outline-none"
                                                                                         value={gridData[`${row.id}_${dayPrefix}_avg`] || ""}
                                                                                         onChange={(e) => handleGridChange(row.id, `${dayPrefix}_avg`, e.target.value)}
@@ -1310,7 +1425,7 @@ const SixteenDayMonitoringSheet = ({
                                                                             <div className="relative flex items-center justify-center min-w-[100px] h-full">
                                                                                 <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}`] || "00"}</span>
                                                                                 <input
-                                                                                    disabled={readOnly || isLocked}
+                                                                                    disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}`, 'grid')}
                                                                                     className="absolute inset-0 w-full h-full text-center bg-transparent font-bold border-none text-[14px] text-blue-700 focus:bg-blue-50 outline-none"
                                                                                     value={gridData[`${row.id}_${dayPrefix}`] || ""}
                                                                                     onChange={(e) => handleGridChange(row.id, dayPrefix, e.target.value)}
@@ -1320,7 +1435,6 @@ const SixteenDayMonitoringSheet = ({
                                                                     )}
                                                                 </React.Fragment>
                                                             ))}
-
                                                             {daysSummary.map(dayKey => {
                                                                 const val = gridData[`${row.id}_${dayKey}`] || "";
                                                                 return (
@@ -1328,7 +1442,7 @@ const SixteenDayMonitoringSheet = ({
                                                                         <div className="relative flex items-center justify-center min-w-[70px] h-full">
                                                                             <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                             <input
-                                                                                disabled={readOnly || isLocked}
+                                                                                disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayKey}`, 'grid')}
                                                                                 className="absolute inset-0 w-full h-full text-center bg-transparent font-bold border-none text-blue-700 text-[14px] outline-none"
                                                                                 value={val}
                                                                                 onChange={e => handleGridChange(row.id, dayKey, e.target.value)}
@@ -1475,6 +1589,14 @@ const SixteenDayMonitoringSheet = ({
                                                     console.error("Date parse error", e);
                                                 }
 
+                                                if (readOnly || isLocked || isCellLocked(`attendance_date_${i + 1}`, 'grid')) {
+                                                    return (
+                                                        <td key={i} className="border-r border-black min-w-[50px] p-0 h-full text-center font-bold text-[13px] text-blue-900 bg-slate-50/50">
+                                                            {val || "-"}
+                                                        </td>
+                                                    );
+                                                }
+
                                                 return (
                                                     <td key={i} className="border-r border-black min-w-[50px] p-0 h-full">
                                                         <Popover>
@@ -1522,7 +1644,7 @@ const SixteenDayMonitoringSheet = ({
                                                         <div className="relative flex items-center justify-center min-w-[50px] h-12">
                                                             <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                             <input
-                                                                disabled={readOnly || isLocked}
+                                                                disabled={readOnly || isLocked || isCellLocked(`attendance_actual_${i + 1}`, 'grid')}
                                                                 className="absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] h-full outline-none font-bold text-blue-900"
                                                                 value={val}
                                                                 onChange={e => handleGridChange('attendance', `actual_${i + 1}`, e.target.value)}
@@ -1553,12 +1675,13 @@ const SixteenDayMonitoringSheet = ({
                                                     <td key={i} className="border-r border-black p-0 h-full">
                                                         <div className="relative flex items-center justify-center min-w-[50px] h-12">
                                                             <input
+                                                                disabled={readOnly || isLocked || isCellLocked(`attendance_checked_${i + 1}`, 'grid')}
                                                                 className="w-full h-full text-center bg-transparent border-none text-[11px] font-bold outline-none text-blue-900 placeholder:text-gray-300 px-1"
                                                                 placeholder="SIGN"
                                                                 value={val}
                                                                 onChange={e => handleGridChange('attendance', `checked_${i + 1}`, e.target.value)}
                                                                 onFocus={(e) => {
-                                                                    if (!val && !readOnly) {
+                                                                    if (!val && !readOnly && !isLocked && !isCellLocked(`attendance_checked_${i + 1}`, 'grid')) {
                                                                         handleGridChange('attendance', `checked_${i + 1}`, authUser?.fullName || authUser?.name || "");
                                                                     }
                                                                 }}
@@ -1573,6 +1696,7 @@ const SixteenDayMonitoringSheet = ({
                                             <td className="border-r border-black font-bold p-2 text-[14px] uppercase">GAP OBSERVED</td>
                                             <td className="min-w-[100px] border-r border-black p-0 h-full">
                                                 <input
+                                                    disabled={readOnly || isLocked || isCellLocked('attendGap', 'grid')}
                                                     className="w-full h-full text-center border-none outline-none font-bold text-[14px] text-blue-900"
                                                     value={gridData[`attendGap`] || "0"}
                                                     onChange={(e) => handleGridChange('attendGap', '', e.target.value)}
@@ -1734,7 +1858,7 @@ const SixteenDayMonitoringSheet = ({
                                             <div className="text-center w-1/3 flex flex-col justify-between py-2 gap-2">
                                                 <div className="flex items-center justify-between mb-auto h-8 px-2">
                                                     <span className="text-[13px]">Verified By:-</span>
-                                                    {canVerify && !isLocked && (
+                                                    {canVerify && !isLocked && !isCellLocked('verifiedBy', 'header') && (
                                                         <div className="flex gap-2 items-center">
                                                             {!headerInfo.verifiedBy ? (
                                                                 <>
@@ -1782,7 +1906,7 @@ const SixteenDayMonitoringSheet = ({
                                             <div className="text-center w-1/3 flex flex-col justify-between py-2 gap-2">
                                                 <div className="flex items-center justify-between mb-auto h-8 px-2">
                                                     <span className="text-[13px]">Approved By:-</span>
-                                                    {canApprove && !isLocked && (
+                                                    {canApprove && !isLocked && !isCellLocked('approvedBy', 'header') && (
                                                         <div className="flex gap-2 items-center">
                                                             {!headerInfo.approvedBy ? (
                                                                 <>
@@ -1833,10 +1957,13 @@ const SixteenDayMonitoringSheet = ({
                                         <div className="bg-gray-100 p-2 font-bold text-[13px] border-b border-black text-center uppercase tracking-wider">Comment (If Any) ***</div>
                                         <div className="flex-1 p-0 flex">
                                             <textarea
-                                                disabled={readOnly || isLocked}
+                                                disabled={readOnly || isLocked || isCellLocked('comment', 'grid')}
                                                 className="flex-1 h-full border-none bg-transparent p-3 text-[14px] outline-none resize-none font-medium leading-relaxed"
-                                                value={footerData.comment || ""}
-                                                onChange={e => handleFooterChange('comment', e.target.value)}
+                                                value={gridData.comment || ""}
+                                                onChange={e => {
+                                                    if (readOnly || isLocked || isCellLocked('comment', 'grid') || !studentId) return;
+                                                    setGridData(prev => ({ ...prev, comment: e.target.value }));
+                                                }}
                                                 placeholder="Write any observation or comments here..."
                                             />
                                             <div className="w-1/4 h-full flex flex-col items-center justify-center text-center border-l border-black bg-gray-50/30 gap-1">
@@ -1924,6 +2051,62 @@ const SixteenDayMonitoringSheet = ({
                             )) : <div className="text-center py-8 text-gray-400">No history found</div>}
                         </div>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Admin Remark Dialog — required when editing a saved session */}
+            <Dialog open={isAdminRemarkDialogOpen} onOpenChange={(open) => {
+                if (!open) { setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }
+            }}>
+                <DialogContent className="max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-amber-600">
+                            <ShieldCheck className="w-5 h-5" />
+                            Admin Edit Verification
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                            This sheet has already been saved. Please provide a remark explaining what you changed and why. This will be logged for audit purposes.
+                        </p>
+                        <div className="space-y-2">
+                            <Label htmlFor="admin-remark-input" className="text-sm font-semibold text-slate-700">
+                                Remark <span className="text-red-500">*</span>
+                            </Label>
+                            <Textarea
+                                id="admin-remark-input"
+                                placeholder="Detail the modifications (e.g. corrected Day 4 cycle time actual score)..."
+                                value={adminRemarkText}
+                                onChange={(e) => setAdminRemarkText(e.target.value)}
+                                className="min-h-[100px] text-xs resize-none"
+                                maxLength={500}
+                            />
+                            <p className={`text-xs text-right ${adminRemarkText.length > 450 ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                                {adminRemarkText.length}/500
+                            </p>
+                        </div>
+                        {adminRemarkText.trim().length > 0 && adminRemarkText.trim().length < 10 && (
+                            <p className="text-xs text-red-500">Remark must be at least 10 characters.</p>
+                        )}
+                    </div>
+                    <DialogFooter className="gap-2">
+                        <Button 
+                            variant="ghost" 
+                            onClick={() => { setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }}
+                            className="text-xs"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            disabled={adminRemarkText.trim().length < 10}
+                            onClick={() => {
+                                handleSave(pendingSaveParams.finalStatus, pendingSaveParams.isSubmit, adminRemarkText.trim());
+                            }}
+                            className="text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                        >
+                            Save with Remark
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

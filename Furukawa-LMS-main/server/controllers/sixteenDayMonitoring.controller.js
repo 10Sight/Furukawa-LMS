@@ -37,11 +37,11 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
     let query = `
         SELECT 
             u.id, u.fullName, u.empId, u.avatar,
-            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber, m.startDate, m.gridData,
+            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber, m.startDate, m.gridData, m.adminRemarksHistory,
             stats.totalAttempts, stats.rejectedCount
         FROM users u
         LEFT JOIN (
-            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber, startDate, gridData,
+            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber, startDate, gridData, adminRemarksHistory,
                    ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
             FROM sixteen_day_monitorings
         ) m ON u.id = m.studentId AND m.rn = 1
@@ -86,6 +86,15 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
             }
         } else {
             row.gridData = {};
+        }
+        if (row.adminRemarksHistory) {
+            try {
+                row.adminRemarksHistory = JSON.parse(row.adminRemarksHistory);
+            } catch (e) {
+                row.adminRemarksHistory = [];
+            }
+        } else {
+            row.adminRemarksHistory = [];
         }
         return row;
     });
@@ -189,7 +198,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         employeeName, employeeCode, processName, dept,
         handoverDate, trgResult, workingWith, lineLeaderName,
         gridData, checkedBy, verifiedBy, approvedBy, status,
-        isNewAttempt, recordId, startDate
+        isNewAttempt, recordId, startDate, adminRemark
     } = req.body;
 
     let sheet;
@@ -197,6 +206,19 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet = await SixteenDayMonitoring.findById(recordId);
     } else if (!isNewAttempt) {
         sheet = await SixteenDayMonitoring.findByStudentId(sid);
+    }
+
+    let updatedHistory = [];
+    if (sheet && !isNewAttempt) {
+        updatedHistory = Array.isArray(sheet.adminRemarksHistory) ? sheet.adminRemarksHistory : [];
+    }
+
+    if (adminRemark && adminRemark.trim()) {
+        updatedHistory.push({
+            adminName: req.user?.fullName || req.user?.name || "Admin",
+            remark: adminRemark.trim(),
+            createdAt: new Date().toISOString()
+        });
     }
 
     if (sheet && !isNewAttempt) {
@@ -215,6 +237,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet.status = status || sheet.status;
         sheet.startDate = startDate;
         sheet.updatedBy = req.user?.fullName || req.user?.name;
+        sheet.adminRemarksHistory = updatedHistory;
         await sheet.save();
     } else {
         // Find latest attempt number
@@ -238,7 +261,8 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             approvedBy,
             createdBy: req.user?.fullName || req.user?.name,
             status: status || "Draft",
-            startDate
+            startDate,
+            adminRemarksHistory: updatedHistory
         });
     }
 

@@ -2077,15 +2077,11 @@ const Students = () => {
                         No trainee found
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {searchTerm ||
-                          statusFilter !== "ALL" ||
-                          departmentFilter !== "ALL"
+                        {activeFilters.length > 0
                           ? "Try adjusting your search or filters"
                           : "Add your first operator to get started"}
                       </p>
-                      {(searchTerm ||
-                        statusFilter !== "ALL" ||
-                        departmentFilter !== "ALL") && (
+                      {activeFilters.length > 0 && (
                           <Button
                             variant="outline"
                             onClick={clearFilters}

@@ -59,6 +59,24 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     currentUser?.role === "ADMIN" ||
     hasPermission("test_paper:delete");
 
+  const assignedSections = useMemo(() => {
+    const rawAssigned = Array.isArray(currentUser?.sections) ? [...currentUser.sections] : [];
+    if (currentUser?.sectionId) rawAssigned.push(currentUser.sectionId);
+    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+  }, [currentUser]);
+
+  const assignedLines = useMemo(() => {
+    const rawAssigned = Array.isArray(currentUser?.lines) ? [...currentUser.lines] : [];
+    if (currentUser?.lineId) rawAssigned.push(currentUser.lineId);
+    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+  }, [currentUser]);
+
+  const assignedSubSections = useMemo(() => {
+    const rawAssigned = Array.isArray(currentUser?.subSections) ? [...currentUser.subSections] : [];
+    if (currentUser?.subSectionId) rawAssigned.push(currentUser.subSectionId);
+    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+  }, [currentUser]);
+
   const [selectedDepartment, setSelectedDepartment] = useState(() => {
     if (!isAuthorizedToAccessAll && currentUser?.departmentId) {
       return String(currentUser.departmentId);
@@ -67,22 +85,22 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
   });
 
   const [selectedSection, setSelectedSection] = useState(() => {
-    if (!isAuthorizedToAccessAll && currentUser?.sectionId) {
-      return String(currentUser.sectionId);
+    if (!isAuthorizedToAccessAll && assignedSections.length === 1) {
+      return assignedSections[0];
     }
     return "ALL";
   });
 
   const [selectedLine, setSelectedLine] = useState(() => {
-    if (!isAuthorizedToAccessAll && currentUser?.lineId) {
-      return String(currentUser.lineId);
+    if (!isAuthorizedToAccessAll && assignedLines.length === 1) {
+      return assignedLines[0];
     }
     return "ALL";
   });
 
   const [selectedSubSection, setSelectedSubSection] = useState(() => {
-    if (!isAuthorizedToAccessAll && currentUser?.subSectionId) {
-      return String(currentUser.subSectionId);
+    if (!isAuthorizedToAccessAll && assignedSubSections.length === 1) {
+      return assignedSubSections[0];
     }
     return "ALL";
   });
@@ -100,7 +118,14 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     selectedDepartment !== "ALL" ? selectedDepartment : null,
     { skip: selectedDepartment === "ALL" }
   );
-  const sections = sectionsData?.data || [];
+  const rawSections = sectionsData?.data || [];
+
+  const sections = useMemo(() => {
+    if (isAuthorizedToAccessAll || assignedSections.length === 0) {
+      return rawSections;
+    }
+    return rawSections.filter(sec => assignedSections.includes(String(sec.id || sec._id)));
+  }, [rawSections, isAuthorizedToAccessAll, assignedSections]);
 
   // Fetch all lines
   const { data: linesData } = useGetLinesQuery();
@@ -108,14 +133,17 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Filtered lines based on selectedSection
   const lines = useMemo(() => {
+    let result = allLines;
     if (selectedSection !== "ALL") {
-      return allLines.filter(l => String(l.sectionId || l._id) === selectedSection);
+      result = result.filter(l => String(l.sectionId || l._id) === selectedSection);
+    } else if (selectedDepartment !== "ALL") {
+      result = result.filter(l => String(l.department || l.departmentId) === selectedDepartment);
     }
-    if (selectedDepartment !== "ALL") {
-      return allLines.filter(l => String(l.department || l.departmentId) === selectedDepartment);
+    if (!isAuthorizedToAccessAll && assignedLines.length > 0) {
+      result = result.filter(l => assignedLines.includes(String(l.id || l._id)));
     }
-    return allLines;
-  }, [allLines, selectedSection, selectedDepartment]);
+    return result;
+  }, [allLines, selectedSection, selectedDepartment, isAuthorizedToAccessAll, assignedLines]);
 
   // Fetch all sub-sections for rendering names
   const { data: subSectionsData } = useGetSubSectionsQuery({ limit: 1000 });
@@ -125,16 +153,19 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Filtered sub-sections options based on selectedLine
   const filteredSubSections = useMemo(() => {
+    let result = subSections;
     if (selectedLine !== "ALL") {
-      return subSections.filter(s => String(s.lineId) === selectedLine);
-    }
-    if (selectedSection !== "ALL") {
+      result = result.filter(s => String(s.lineId) === selectedLine);
+    } else if (selectedSection !== "ALL") {
       // Find lines that belong to this section
       const sectionLineIds = allLines.filter(l => String(l.sectionId) === selectedSection).map(l => String(l.id || l._id));
-      return subSections.filter(s => sectionLineIds.includes(String(s.lineId)));
+      result = result.filter(s => sectionLineIds.includes(String(s.lineId)));
     }
-    return subSections;
-  }, [subSections, selectedLine, selectedSection, allLines]);
+    if (!isAuthorizedToAccessAll && assignedSubSections.length > 0) {
+      result = result.filter(s => assignedSubSections.includes(String(s.id || s._id)));
+    }
+    return result;
+  }, [subSections, selectedLine, selectedSection, allLines, isAuthorizedToAccessAll, assignedSubSections]);
 
   // Fetch active config levels
   const { data: activeConfigData } = useGetActiveConfigQuery();
@@ -229,9 +260,9 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   const handleReset = () => {
     setSelectedDepartment(!isAuthorizedToAccessAll && currentUser?.departmentId ? String(currentUser.departmentId) : "ALL");
-    setSelectedSection(!isAuthorizedToAccessAll && currentUser?.sectionId ? String(currentUser.sectionId) : "ALL");
-    setSelectedLine(!isAuthorizedToAccessAll && currentUser?.lineId ? String(currentUser.lineId) : "ALL");
-    setSelectedSubSection(!isAuthorizedToAccessAll && currentUser?.subSectionId ? String(currentUser.subSectionId) : "ALL");
+    setSelectedSection(!isAuthorizedToAccessAll && assignedSections.length === 1 ? assignedSections[0] : "ALL");
+    setSelectedLine(!isAuthorizedToAccessAll && assignedLines.length === 1 ? assignedLines[0] : "ALL");
+    setSelectedSubSection(!isAuthorizedToAccessAll && assignedSubSections.length === 1 ? assignedSubSections[0] : "ALL");
     setSelectedLevel("ALL");
     setSelectedTestType("ALL");
     setSearchTerm("");
@@ -471,7 +502,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   setSelectedLine("ALL");
                   setSelectedSubSection("ALL");
                 }}
-                disabled={(!isAuthorizedToAccessAll && !!currentUser?.sectionId) || selectedDepartment === "ALL"}
+                disabled={(!isAuthorizedToAccessAll && assignedSections.length === 1) || selectedDepartment === "ALL"}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={selectedDepartment === "ALL" ? "Select department first" : "Select Section"} />
@@ -495,7 +526,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   setSelectedLine(val);
                   setSelectedSubSection("ALL");
                 }}
-                disabled={(!isAuthorizedToAccessAll && !!currentUser?.lineId) || (selectedSection === "ALL" && selectedDepartment === "ALL")}
+                disabled={(!isAuthorizedToAccessAll && assignedLines.length === 1) || (selectedSection === "ALL" && selectedDepartment === "ALL")}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={
@@ -520,7 +551,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
               <Select
                 value={selectedSubSection}
                 onValueChange={setSelectedSubSection}
-                disabled={(!isAuthorizedToAccessAll && !!currentUser?.subSectionId) || (selectedLine === "ALL" && selectedSection === "ALL")}
+                disabled={(!isAuthorizedToAccessAll && assignedSubSections.length === 1) || (selectedLine === "ALL" && selectedSection === "ALL")}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={

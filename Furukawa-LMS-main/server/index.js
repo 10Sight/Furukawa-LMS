@@ -481,6 +481,7 @@ const startServer = async () => {
         await UserHierarchySnapshot.init();
         await MenteeFeedback.init();
         await import("./models/abnormalCondition.model.js").then(m => m.default.init());
+        await import("./models/designationShutter.model.js").then(m => m.default.init());
 
         server.listen(PORT, () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);

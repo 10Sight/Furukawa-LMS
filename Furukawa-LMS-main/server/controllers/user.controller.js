@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import DesignationShutter from "../models/designationShutter.model.js";
 import validator from "validator";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -204,7 +205,10 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 10000);
   const offset = (page - 1) * limit;
 
-  let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let whereClauses = [
+    "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
+    "(u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+  ];
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(
       EXISTS (
@@ -1151,7 +1155,8 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   let whereClauses = [
     "((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))",
     "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
-    "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
+    "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
+    "(u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
   ];
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(
@@ -1406,6 +1411,7 @@ export const getUniqueDesignations = asyncHandler(async (req, res) => {
     SELECT DISTINCT designation
     FROM users
     WHERE designation IS NOT NULL AND designation != '' AND (isDeleted = 0 OR isDeleted IS NULL)
+      AND designation NOT IN (SELECT designation FROM designation_shutters)
     ORDER BY designation ASC
   `);
   const designations = rows.map(r => r.designation);
@@ -1415,16 +1421,32 @@ export const getUniqueDesignations = asyncHandler(async (req, res) => {
 export const getDesignationsWithCounts = asyncHandler(async (req, res) => {
   const [rows] = await executeQuery(`
     SELECT
-      designation,
+      u.designation,
       COUNT(*) AS totalCount,
-      SUM(CASE WHEN (status IS NULL OR status != 'LEFT') THEN 1 ELSE 0 END) AS activeCount
-    FROM users
-    WHERE designation IS NOT NULL AND designation != '' AND (isDeleted = 0 OR isDeleted IS NULL)
-      AND (isTemporary = 0 OR isTemporary IS NULL)
-    GROUP BY designation
-    ORDER BY designation ASC
+      SUM(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) AS activeCount,
+      CASE WHEN ds.designation IS NOT NULL THEN 1 ELSE 0 END AS isShuttered
+    FROM users u
+    LEFT JOIN designation_shutters ds ON ds.designation = u.designation
+    WHERE u.designation IS NOT NULL AND u.designation != '' AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+      AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
+    GROUP BY u.designation, ds.designation
+    ORDER BY u.designation ASC
   `);
   res.json(new ApiResponse(200, rows, "Designations with counts fetched successfully"));
+});
+
+export const shutterDesignation = asyncHandler(async (req, res) => {
+  const { designation } = req.body;
+  if (!designation) throw new ApiError(400, "designation is required");
+  await DesignationShutter.shutter(designation);
+  res.json(new ApiResponse(200, null, `Designation "${designation}" shuttered successfully`));
+});
+
+export const unshutterDesignation = asyncHandler(async (req, res) => {
+  const { designation } = req.body;
+  if (!designation) throw new ApiError(400, "designation is required");
+  await DesignationShutter.unshutter(designation);
+  res.json(new ApiResponse(200, null, `Designation "${designation}" unshuttered successfully`));
 });
 
 // Other specialized fetches (Mentors, Supervisors, Incharges) can be added similarly using formatUser

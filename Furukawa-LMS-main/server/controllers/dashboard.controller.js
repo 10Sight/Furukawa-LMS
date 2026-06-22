@@ -510,6 +510,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             AND ISNULL(u.isTemporary, 0) = 0
             AND u.empId IS NOT NULL
             AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+            AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
             ${userHierCondition}
         `;
         const snapshotParams = [];
@@ -547,6 +548,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
               AND ISNULL(u.isTemporary, 0) = 0
+              AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
               ${hierCondition}
         `;
         const attParams = [];
@@ -649,6 +651,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 AND ISNULL(u.isTemporary, 0) = 0
                 AND u.leavingDate IS NOT NULL
                 AND LTRIM(RTRIM(u.leavingDate)) != ''
+                AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
             ) parsed
             WHERE parsed.leaving_date IS NOT NULL
             AND parsed.leaving_date >= '${sqlStartDate}'
@@ -726,6 +729,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
               AND ISNULL(u.isTemporary, 0) = 0
+              AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
               ${hierCondition}
         `;
         const absParams = [];
@@ -880,6 +884,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // isTemporary = 1 employees are excluded from all Users Total / total headcount graph denominators.
         sqlText += `
             AND ISNULL(${alias}.isTemporary, 0) = 0
+        `;
+
+        // Exclude users whose designation is shuttered.
+        sqlText += `
+            AND (${alias}.designation IS NULL OR ${alias}.designation = '' OR ${alias}.designation NOT IN (SELECT designation FROM designation_shutters))
         `;
 
         return sqlText;

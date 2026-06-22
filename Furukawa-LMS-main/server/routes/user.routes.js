@@ -28,6 +28,8 @@ import {
   getNextTemporaryId,
   getUniqueDesignations,
   getDesignationsWithCounts,
+  shutterDesignation,
+  unshutterDesignation,
 } from "../controllers/user.controller.js";
 import { AvailableUserRoles } from "../constants.js";
 
@@ -127,6 +129,8 @@ router.patch(
 );
 router.get("/designations/unique", verifyJWT, getUniqueDesignations);
 router.get("/designations/counts", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getDesignationsWithCounts);
+router.post("/designations/shutter", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), shutterDesignation);
+router.post("/designations/unshutter", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), unshutterDesignation);
 router.get("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getUserById);
 router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE]), checkUserUpdatePrivilege, updateUser);
 router.delete("/bulk", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), checkPrivilege("user management"), bulkDeleteUsers);

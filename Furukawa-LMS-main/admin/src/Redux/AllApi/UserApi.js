@@ -19,7 +19,8 @@ export const userApi = createApi({
             query: () => ({
                 url: "/api/users/designations/unique",
                 method: "GET"
-            })
+            }),
+            providesTags: ['User'],
         }),
 
         getDesignationsWithCounts: builder.query({
@@ -267,6 +268,24 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User'],
         }),
+
+        shutterDesignation: builder.mutation({
+            query: (designation) => ({
+                url: "/api/users/designations/shutter",
+                method: "POST",
+                data: { designation },
+            }),
+            invalidatesTags: ['User'],
+        }),
+
+        unshutterDesignation: builder.mutation({
+            query: (designation) => ({
+                url: "/api/users/designations/unshutter",
+                method: "POST",
+                data: { designation },
+            }),
+            invalidatesTags: ['User'],
+        }),
     }),
 });
 
@@ -296,4 +315,6 @@ export const {
     useDojoRegisterMutation,
     useGetUniqueDesignationsQuery,
     useGetDesignationsWithCountsQuery,
+    useShutterDesignationMutation,
+    useUnshutterDesignationMutation,
 } = userApi;

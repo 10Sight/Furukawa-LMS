@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useGetDesignationsWithCountsQuery } from "@/Redux/AllApi/UserApi";
+import { useGetDesignationsWithCountsQuery, useShutterDesignationMutation, useUnshutterDesignationMutation } from "@/Redux/AllApi/UserApi";
 import {
     Table,
     TableBody,
@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { IconSearch, IconId, IconUsers, IconChevronRight, IconLoader } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 const DesignationsPage = () => {
     const navigate = useNavigate();
@@ -19,6 +21,23 @@ const DesignationsPage = () => {
 
     const { data: response, isLoading, isError } = useGetDesignationsWithCountsQuery();
     const designations = response?.data || [];
+
+    const [shutterDesignation] = useShutterDesignationMutation();
+    const [unshutterDesignation] = useUnshutterDesignationMutation();
+
+    const handleShutterToggle = async (designation, currentlyShuttered) => {
+        try {
+            if (currentlyShuttered) {
+                await unshutterDesignation(designation).unwrap();
+                toast.success(`"${designation}" is now visible`);
+            } else {
+                await shutterDesignation(designation).unwrap();
+                toast.success(`"${designation}" is now hidden`);
+            }
+        } catch {
+            toast.error("Failed to update shutter status");
+        }
+    };
 
     const filtered = useMemo(() => {
         if (!search.trim()) return designations;
@@ -87,13 +106,14 @@ const DesignationsPage = () => {
                             <TableHead className="font-semibold">Designation</TableHead>
                             <TableHead className="text-center font-semibold">Active Operators</TableHead>
                             <TableHead className="text-center font-semibold">Total Operators</TableHead>
+                            <TableHead className="text-center font-semibold">Shutter</TableHead>
                             <TableHead className="w-10" />
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {isLoading && (
                             <TableRow>
-                                <TableCell colSpan={5} className="text-center py-16">
+                                <TableCell colSpan={6} className="text-center py-16">
                                     <div className="flex flex-col items-center gap-2 text-gray-400">
                                         <IconLoader size={28} className="animate-spin" />
                                         <span className="text-sm">Loading designations...</span>
@@ -104,7 +124,7 @@ const DesignationsPage = () => {
 
                         {isError && (
                             <TableRow>
-                                <TableCell colSpan={5} className="text-center py-16 text-red-500 text-sm">
+                                <TableCell colSpan={6} className="text-center py-16 text-red-500 text-sm">
                                     Failed to load designations. Please try again.
                                 </TableCell>
                             </TableRow>
@@ -112,7 +132,7 @@ const DesignationsPage = () => {
 
                         {!isLoading && !isError && filtered.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={5} className="text-center py-16">
+                                <TableCell colSpan={6} className="text-center py-16">
                                     <div className="flex flex-col items-center gap-2 text-gray-400">
                                         <IconUsers size={32} />
                                         <span className="text-sm">
@@ -147,6 +167,12 @@ const DesignationsPage = () => {
                                     <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                                         {row.totalCount ?? 0}
                                     </Badge>
+                                </TableCell>
+                                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                                    <Switch
+                                        checked={!!row.isShuttered}
+                                        onCheckedChange={() => handleShutterToggle(row.designation, !!row.isShuttered)}
+                                    />
                                 </TableCell>
                                 <TableCell className="text-gray-400">
                                     <IconChevronRight size={16} />

@@ -19,6 +19,7 @@ export {
     useUpdateUserMutation,
     useDeleteUserMutation,
     useGetUniqueDesignationsQuery,
+    useGetDesignationsWithCountsQuery,
 } from './UserApi';
 
 // Instructor API exports

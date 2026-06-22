@@ -44,6 +44,7 @@ export const translations = {
     "nav.backToMainMenu": "Back to Main Menu",
     "nav.dojoHiring": "DOJO Hiring",
     "nav.contractors": "Contractors",
+    "nav.designations": "Designations",
 
     "nav.profile": "Profile",
     "nav.department": "Department",
@@ -189,6 +190,7 @@ export const translations = {
     "nav.backToMainMenu": "मुख्य मेनू पर वापस",
     "nav.dojoHiring": "DOJO भर्ती",
     "nav.contractors": "ठेकेदार",
+    "nav.designations": "पदनाम",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "प्रशासक जानकारी",
@@ -293,6 +295,7 @@ export const translations = {
     "nav.backToMainMenu": "メインメニューに戻る",
     "nav.dojoHiring": "DOJO採用",
     "nav.contractors": "コントラクター",
+    "nav.designations": "役職",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理者情報",
@@ -397,6 +400,7 @@ export const translations = {
     "nav.backToMainMenu": "返回主菜单",
     "nav.dojoHiring": "DOJO招聘",
     "nav.contractors": "承包商",
+    "nav.designations": "职务",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "管理员信息",
@@ -501,6 +505,7 @@ export const translations = {
     "nav.backToMainMenu": "Назад в главное меню",
     "nav.dojoHiring": "Наем в DOJO",
     "nav.contractors": "Подрядчики",
+    "nav.designations": "Должности",
 
     // Skill Matrix
     "skillMatrix.adminInfo": "Информация об администраторе",

@@ -96,6 +96,8 @@ const DojoCandidateDetail = lazy(() => import("./pages/Admin/DojoCandidateDetail
 const OnJobTraining = lazy(() => import("./pages/Admin/OnJobTraining"));
 const Contractors = lazy(() => import("./pages/Admin/Contractors"));
 const ContractorDetail = lazy(() => import("./pages/Admin/ContractorDetail"));
+const DesignationsPage = lazy(() => import("./pages/Admin/DesignationsPage"));
+const DesignationUsersPage = lazy(() => import("./pages/Admin/DesignationUsersPage"));
 
 
 const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
@@ -326,6 +328,8 @@ const App = () => {
             } />
             <Route path="contractors" element={<Contractors />} />
             <Route path="contractors/:contractorId" element={<ContractorDetail />} />
+            <Route path="designations" element={<DesignationsPage />} />
+            <Route path="designations/:designationName" element={<DesignationUsersPage />} />
             <Route path="settings" element={<AdminSettings />} />
           </Route>
 
@@ -514,6 +518,8 @@ const App = () => {
             <Route path="learning/create" element={<CreateLearningComparison />} />
             <Route path="learning/edit/:id" element={<EditLearningComparison />} />
             <Route path="learning/:id" element={<LearningComparisonDetail />} />
+            <Route path="designations" element={<DesignationsPage />} />
+            <Route path="designations/:designationName" element={<DesignationUsersPage />} />
           </Route>
         </Routes>
       </Suspense>

@@ -27,6 +27,7 @@ import {
   getTemporaryUsers,
   getNextTemporaryId,
   getUniqueDesignations,
+  getDesignationsWithCounts,
 } from "../controllers/user.controller.js";
 import { AvailableUserRoles } from "../constants.js";
 
@@ -125,6 +126,7 @@ router.patch(
   updateAvatar
 );
 router.get("/designations/unique", verifyJWT, getUniqueDesignations);
+router.get("/designations/counts", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getDesignationsWithCounts);
 router.get("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getUserById);
 router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE]), checkUserUpdatePrivilege, updateUser);
 router.delete("/bulk", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), checkPrivilege("user management"), bulkDeleteUsers);

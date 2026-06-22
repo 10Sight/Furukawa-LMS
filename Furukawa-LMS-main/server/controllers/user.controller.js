@@ -1403,13 +1403,28 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
 export const getUniqueDesignations = asyncHandler(async (req, res) => {
   const [rows] = await executeQuery(`
-    SELECT DISTINCT designation 
-    FROM users 
+    SELECT DISTINCT designation
+    FROM users
     WHERE designation IS NOT NULL AND designation != '' AND (isDeleted = 0 OR isDeleted IS NULL)
     ORDER BY designation ASC
   `);
   const designations = rows.map(r => r.designation);
   res.json(new ApiResponse(200, designations, "Unique designations fetched successfully"));
+});
+
+export const getDesignationsWithCounts = asyncHandler(async (req, res) => {
+  const [rows] = await executeQuery(`
+    SELECT
+      designation,
+      COUNT(*) AS totalCount,
+      SUM(CASE WHEN (status IS NULL OR status != 'LEFT') THEN 1 ELSE 0 END) AS activeCount
+    FROM users
+    WHERE designation IS NOT NULL AND designation != '' AND (isDeleted = 0 OR isDeleted IS NULL)
+      AND (isTemporary = 0 OR isTemporary IS NULL)
+    GROUP BY designation
+    ORDER BY designation ASC
+  `);
+  res.json(new ApiResponse(200, rows, "Designations with counts fetched successfully"));
 });
 
 // Other specialized fetches (Mentors, Supervisors, Incharges) can be added similarly using formatUser

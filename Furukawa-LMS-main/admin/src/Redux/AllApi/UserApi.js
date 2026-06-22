@@ -22,6 +22,14 @@ export const userApi = createApi({
             })
         }),
 
+        getDesignationsWithCounts: builder.query({
+            query: () => ({
+                url: "/api/users/designations/counts",
+                method: "GET"
+            }),
+            providesTags: ['User'],
+        }),
+
         getUserById: builder.query({
             query: (id) => ({
                 url: `/api/users/${id}`,
@@ -287,4 +295,5 @@ export const {
     useChangePasswordMutation,
     useDojoRegisterMutation,
     useGetUniqueDesignationsQuery,
+    useGetDesignationsWithCountsQuery,
 } = userApi;

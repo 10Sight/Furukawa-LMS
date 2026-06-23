@@ -48,12 +48,12 @@ class OnJobTraining {
             CREATE TABLE on_job_trainings (
                 id INT IDENTITY(1,1) PRIMARY KEY,
                 student VARCHAR(255) NULL,
-                name VARCHAR(255) DEFAULT 'Level-1 Practical Evaluation of On the Job Training',
+                name NVARCHAR(255) DEFAULT 'Level-1 Practical Evaluation of On the Job Training',
                 department VARCHAR(255) NOT NULL,
-                section VARCHAR(255),
-                line VARCHAR(255) NULL,
-                subSection VARCHAR(255),
-                machine VARCHAR(255) NULL,
+                section NVARCHAR(255),
+                line NVARCHAR(255) NULL,
+                subSection NVARCHAR(255),
+                machine NVARCHAR(255) NULL,
                 entries NVARCHAR(MAX),
                 scoring NVARCHAR(MAX),
                 totalMarks DECIMAL(10, 2) DEFAULT 36,
@@ -64,10 +64,10 @@ class OnJobTraining {
                 remarks NVARCHAR(MAX),
                 remarkImage NVARCHAR(MAX),
                 
-                areaLine VARCHAR(255),
+                areaLine NVARCHAR(255),
                 trainingDate DATE,
-                trainingGivenBy VARCHAR(255),
-                trainingTopic VARCHAR(255),
+                trainingGivenBy NVARCHAR(255),
+                trainingTopic NVARCHAR(255),
                 trainingStartTime VARCHAR(50),
                 trainingEndTime VARCHAR(50),
                 trainingDetail NVARCHAR(MAX),
@@ -87,21 +87,44 @@ class OnJobTraining {
             BEGIN
                 IF COL_LENGTH('on_job_trainings', 'section') IS NULL
                 BEGIN
-                    ALTER TABLE on_job_trainings ADD section VARCHAR(255);
+                    ALTER TABLE on_job_trainings ADD section NVARCHAR(255);
                 END
                 IF COL_LENGTH('on_job_trainings', 'subSection') IS NULL
                 BEGIN
-                    ALTER TABLE on_job_trainings ADD subSection VARCHAR(255);
+                    ALTER TABLE on_job_trainings ADD subSection NVARCHAR(255);
                 END
                 IF COL_LENGTH('on_job_trainings', 'trainingLog') IS NULL
                 BEGIN
                     ALTER TABLE on_job_trainings ADD trainingLog NVARCHAR(MAX);
                 END
                 
-                -- Ensure student, line, and machine columns are nullable
+                -- Ensure student, line, and machine columns are nullable and updated to appropriate types
                 ALTER TABLE on_job_trainings ALTER COLUMN student VARCHAR(255) NULL;
-                ALTER TABLE on_job_trainings ALTER COLUMN [line] VARCHAR(255) NULL;
-                ALTER TABLE on_job_trainings ALTER COLUMN machine VARCHAR(255) NULL;
+                
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'line' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN [line] NVARCHAR(255) NULL;
+                
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'machine' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN machine NVARCHAR(255) NULL;
+
+                -- Alter other existing columns to NVARCHAR to support Unicode (Hindi, etc.)
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'name' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN name NVARCHAR(255) NULL;
+
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'section' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN section NVARCHAR(255) NULL;
+
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'subSection' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN subSection NVARCHAR(255) NULL;
+
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'areaLine' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN areaLine NVARCHAR(255) NULL;
+
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'trainingGivenBy' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN trainingGivenBy NVARCHAR(255) NULL;
+
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'trainingTopic' AND DATA_TYPE = 'varchar')
+                    ALTER TABLE on_job_trainings ALTER COLUMN trainingTopic NVARCHAR(255) NULL;
             END
         `;
         try {

@@ -82,7 +82,7 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                 trainingDetail: data.trainingDetail || "",
                 trainingDetailImage: data.trainingDetailImage || null,
                 trainingLog: (data.trainingLog && data.trainingLog.length > 0)
-                    ? data.trainingLog
+                    ? data.trainingLog.map(item => ({ ...item }))
                     : (data.trainingDetail || data.trainingDetailImage)
                         ? [{ id: 1, image: data.trainingDetailImage, description: data.trainingDetail }]
                         : [{ id: 1, image: null, description: "" }],
@@ -447,8 +447,11 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                                                         if (file) {
                                                                             const reader = new FileReader();
                                                                             reader.onloadend = () => {
-                                                                                const newLog = [...trainingData.trainingLog];
-                                                                                newLog[index].image = reader.result;
+                                                                                const newLog = trainingData.trainingLog.map((logItem, idx) => 
+                                                                                    idx === index 
+                                                                                        ? { ...logItem, image: reader.result } 
+                                                                                        : logItem
+                                                                                );
                                                                                 setTrainingData(prev => ({ ...prev, trainingLog: newLog }));
                                                                             };
                                                                             reader.readAsDataURL(file);
@@ -477,8 +480,11 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                                         {!readOnly && (
                                                             <button
                                                                 onClick={() => {
-                                                                    const newLog = [...trainingData.trainingLog];
-                                                                    newLog[index].image = null;
+                                                                    const newLog = trainingData.trainingLog.map((logItem, idx) => 
+                                                                        idx === index 
+                                                                            ? { ...logItem, image: null } 
+                                                                            : logItem
+                                                                    );
                                                                     setTrainingData(prev => ({ ...prev, trainingLog: newLog }));
                                                                 }}
                                                                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -497,8 +503,11 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                                     placeholder={`${index + 1}. Enter description...`}
                                                     value={log.description}
                                                     onChange={(e) => {
-                                                        const newLog = [...trainingData.trainingLog];
-                                                        newLog[index].description = e.target.value;
+                                                        const newLog = trainingData.trainingLog.map((logItem, idx) => 
+                                                            idx === index 
+                                                                ? { ...logItem, description: e.target.value } 
+                                                                : logItem
+                                                        );
                                                         setTrainingData(prev => ({ ...prev, trainingLog: newLog }));
                                                     }}
                                                 />

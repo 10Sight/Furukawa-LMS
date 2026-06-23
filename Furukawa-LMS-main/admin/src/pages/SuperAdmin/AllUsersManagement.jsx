@@ -113,6 +113,7 @@ const AllUsersManagement = () => {
     lines: [],
     subSections: [],
     stations: [],
+    shift: "",
   });
 
   // API hooks
@@ -340,35 +341,49 @@ const AllUsersManagement = () => {
 
   const handleOpenEditModal = (user) => {
     const rawDepts = typeof user.departments === 'string' ? JSON.parse(user.departments || "[]") : (user.departments || []);
-    const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length
+    const deptsFieldSet = user.departments !== undefined && user.departments !== null;
+    const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length > 0
       ? rawDepts.map(String)
-      : ((user.departmentId || user.DepartmentId) ? [String(user.departmentId || user.DepartmentId)] : (user.department?._id ? [String(user.department._id)] : []));
+      : (!deptsFieldSet && (user.departmentId || user.DepartmentId)) ? [String(user.departmentId || user.DepartmentId)]
+      : (!deptsFieldSet && user.department?._id) ? [String(user.department._id)]
+      : [];
 
     const rawStations = typeof user.stations === 'string' ? JSON.parse(user.stations || "[]") : (user.stations || []);
-    const resolvedStations = Array.isArray(rawStations) && rawStations.length
+    const stationsFieldSet = user.stations !== undefined && user.stations !== null;
+    const resolvedStations = Array.isArray(rawStations) && rawStations.length > 0
       ? rawStations.map(String)
-      : ((user.stationId || user.StationId) ? [String(user.stationId || user.StationId)] : []);
+      : (!stationsFieldSet && (user.stationId || user.StationId)) ? [String(user.stationId || user.StationId)]
+      : [];
 
-    const resolvedSections = [
-      ...new Set([
-        ...(user.sectionId ? [String(user.sectionId)] : []),
-        ...(user.assignments || []).map(a => String(a.sectionId))
-      ])
-    ].filter(Boolean);
+    const rawSections = typeof user.sections === 'string' ? JSON.parse(user.sections || "[]") : (user.sections || []);
+    const sectionsFieldSet = user.sections !== undefined && user.sections !== null;
+    const resolvedSections = Array.isArray(rawSections) && rawSections.length > 0
+      ? rawSections.map(String)
+      : !sectionsFieldSet ? [...new Set([
+          ...(user.sectionId ? [String(user.sectionId)] : []),
+          ...(user.assignments || []).map(a => String(a.sectionId))
+        ])].filter(Boolean)
+      : [];
 
-    const resolvedLines = [
-      ...new Set([
-        ...(user.lineId ? [String(user.lineId)] : []),
-        ...(user.assignments || []).map(a => String(a.lineId))
-      ])
-    ].filter(Boolean);
+    const rawLines = typeof user.lines === 'string' ? JSON.parse(user.lines || "[]") : (user.lines || []);
+    const linesFieldSet = user.lines !== undefined && user.lines !== null;
+    const resolvedLines = Array.isArray(rawLines) && rawLines.length > 0
+      ? rawLines.map(String)
+      : !linesFieldSet ? [...new Set([
+          ...(user.lineId ? [String(user.lineId)] : []),
+          ...(user.assignments || []).map(a => String(a.lineId))
+        ])].filter(Boolean)
+      : [];
 
-    const resolvedSubSections = [
-      ...new Set([
-        ...(user.subSectionId ? [String(user.subSectionId)] : []),
-        ...(user.assignments || []).map(a => String(a.subSectionId))
-      ])
-    ].filter(Boolean);
+    const rawSubSections = typeof user.subSections === 'string' ? JSON.parse(user.subSections || "[]") : (user.subSections || []);
+    const subSectionsFieldSet = user.subSections !== undefined && user.subSections !== null;
+    const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length > 0
+      ? rawSubSections.map(String)
+      : !subSectionsFieldSet ? [...new Set([
+          ...(user.subSectionId ? [String(user.subSectionId)] : []),
+          ...(user.assignments || []).map(a => String(a.subSectionId))
+        ])].filter(Boolean)
+      : [];
 
     const resolvedShiftSchedule = typeof user.shiftSchedule === 'string'
       ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
@@ -412,6 +427,7 @@ const AllUsersManagement = () => {
         lines: [],
         subSections: [],
         stations: [],
+        shift: "",
       });
       refetch();
     } catch (error) {
@@ -532,6 +548,8 @@ const AllUsersManagement = () => {
     const rawDepts = typeof user.departments === 'string'
       ? JSON.parse(user.departments || "[]")
       : (user.departments || []);
+    // departments: [] is authoritative — only fall back when field was never set
+    const departmentsFieldSet = user.departments !== undefined && user.departments !== null;
     if (Array.isArray(rawDepts) && rawDepts.length > 0 && allDepartments.length > 0) {
       const names = rawDepts.map(id => {
         const d = allDepartments.find(dept => String(getDeptId(dept)) === String(id));
@@ -539,19 +557,27 @@ const AllUsersManagement = () => {
       }).filter(Boolean);
       if (names.length > 0) return names;
     }
-    if (Array.isArray(user.assignments) && user.assignments.length > 0) {
-      const names = [...new Set(user.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
-      if (names.length > 0) return names;
+    if (!departmentsFieldSet) {
+      if (Array.isArray(user.assignments) && user.assignments.length > 0) {
+        const names = [...new Set(user.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+        if (names.length > 0) return names;
+      }
+      if (user.deptName && user.deptName.toLowerCase() !== "none") return [user.deptName];
     }
-    return (user.deptName && user.deptName.toLowerCase() !== "none") ? [user.deptName] : [];
+    return [];
   };
 
   const getUserSectionNames = (user) => {
-    if (Array.isArray(user.assignments) && user.assignments.length > 0) {
-      const names = [...new Set(user.assignments.map(a => a.sectionName).filter(n => n && n.toLowerCase() !== "none"))];
-      if (names.length > 0) return names;
+    // sectionName is a denormalized field; only use it when sections is not explicitly set
+    const sectionsFieldSet = user.sections !== undefined && user.sections !== null;
+    if (!sectionsFieldSet) {
+      if (Array.isArray(user.assignments) && user.assignments.length > 0) {
+        const names = [...new Set(user.assignments.map(a => a.sectionName).filter(n => n && n.toLowerCase() !== "none"))];
+        if (names.length > 0) return names;
+      }
+      return (user.sectionName && user.sectionName.toLowerCase() !== "none") ? [user.sectionName] : [];
     }
-    return (user.sectionName && user.sectionName.toLowerCase() !== "none") ? [user.sectionName] : [];
+    return [];
   };
 
   const getRoleColor = (role) => {
@@ -766,6 +792,25 @@ const AllUsersManagement = () => {
                     </Select>
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="shift" className="text-sm font-medium">Default Shift (Optional)</Label>
+                    <Select
+                      value={newUser.shift || "none"}
+                      onValueChange={(value) => setNewUser({ ...newUser, shift: value === "none" ? "" : value })}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select shift" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="A">Shift A</SelectItem>
+                        <SelectItem value="B">Shift B</SelectItem>
+                        <SelectItem value="C">Shift C</SelectItem>
+                        <SelectItem value="G">Shift G</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <Separator className="my-2" />
                   
                   <div className="space-y-4 pt-2">
@@ -957,6 +1002,29 @@ const AllUsersManagement = () => {
                               {role.name}
                             </SelectItem>
                           ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-shift" className="text-sm font-medium">
+                        Default Shift (Optional)
+                      </Label>
+                      <Select
+                        value={selectedUser.shift || "none"}
+                        onValueChange={(value) =>
+                          setSelectedUser({ ...selectedUser, shift: value === "none" ? "" : value })
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select shift" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="A">Shift A</SelectItem>
+                          <SelectItem value="B">Shift B</SelectItem>
+                          <SelectItem value="C">Shift C</SelectItem>
+                          <SelectItem value="G">Shift G</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

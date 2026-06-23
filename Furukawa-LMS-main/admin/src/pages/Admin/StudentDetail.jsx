@@ -316,6 +316,15 @@ const StudentDetail = () => {
     return map[shift] || "bg-gray-100 text-gray-800 border-gray-200";
   };
 
+  const scheduledShiftToday = useMemo(() => {
+    const schedule = typeof student?.shiftSchedule === 'string'
+      ? (() => { try { return JSON.parse(student.shiftSchedule); } catch { return {}; } })()
+      : (student?.shiftSchedule || {});
+    const now = new Date();
+    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return schedule[key] || null;
+  }, [student?.shiftSchedule]);
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -433,9 +442,10 @@ const StudentDetail = () => {
                     Temporary
                   </Badge>
                 )}
-                {student.shift && (
-                  <Badge className={`text-sm py-0.5 px-3 ${shiftBadgeClass(student.shift)}`}>
-                    Shift {student.shift}
+                {(scheduledShiftToday || student.shift) && (
+                  <Badge className={`text-sm py-0.5 px-3 ${shiftBadgeClass(scheduledShiftToday || student.shift)}`}>
+                    Shift {scheduledShiftToday || student.shift}
+                    {scheduledShiftToday && " (Today)"}
                   </Badge>
                 )}
               </div>
@@ -509,8 +519,15 @@ const StudentDetail = () => {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Shift</label>
-              {student.shift ? (
-                <Badge className={`w-fit ${shiftBadgeClass(student.shift)}`}>Shift {student.shift}</Badge>
+              {(scheduledShiftToday || student.shift) ? (
+                <div className="flex flex-col gap-1">
+                  <Badge className={`w-fit ${shiftBadgeClass(scheduledShiftToday || student.shift)}`}>
+                    Shift {scheduledShiftToday || student.shift}
+                  </Badge>
+                  {scheduledShiftToday && (
+                    <span className="text-[10px] text-emerald-600 font-medium">Scheduled today</span>
+                  )}
+                </div>
               ) : (
                 <span className="text-sm text-muted-foreground">Not Assigned</span>
               )}
@@ -806,6 +823,18 @@ const StudentDetail = () => {
                   <Badge className={`text-sm py-1 px-3 ${shiftBadgeClass(student.shift)}`}>
                     Shift {student.shift}
                   </Badge>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Not Assigned</span>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-2">Today's Shift</p>
+                {scheduledShiftToday ? (
+                  <Badge className={`text-sm py-1 px-3 ${shiftBadgeClass(scheduledShiftToday)}`}>
+                    Shift {scheduledShiftToday}
+                  </Badge>
+                ) : student.shift ? (
+                  <span className="text-sm text-muted-foreground">Using default (Shift {student.shift})</span>
                 ) : (
                   <span className="text-sm text-muted-foreground">Not Assigned</span>
                 )}

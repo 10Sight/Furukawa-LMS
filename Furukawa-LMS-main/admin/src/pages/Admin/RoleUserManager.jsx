@@ -104,6 +104,8 @@ export default function RoleUserManager() {
         const rawDepts = typeof user.departments === 'string'
             ? JSON.parse(user.departments || "[]")
             : (user.departments || []);
+        // departments: [] is authoritative — only fall back when field was never set
+        const departmentsFieldSet = user.departments !== undefined && user.departments !== null;
         if (Array.isArray(rawDepts) && rawDepts.length > 0 && allDepts.length > 0) {
             const names = rawDepts.map(id => {
                 const d = allDepts.find(dept => String(dept.id || dept._id) === String(id));
@@ -111,11 +113,14 @@ export default function RoleUserManager() {
             }).filter(Boolean);
             if (names.length > 0) return names;
         }
-        if (Array.isArray(user.assignments) && user.assignments.length > 0) {
-            const names = [...new Set(user.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
-            if (names.length > 0) return names;
+        if (!departmentsFieldSet) {
+            if (Array.isArray(user.assignments) && user.assignments.length > 0) {
+                const names = [...new Set(user.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+                if (names.length > 0) return names;
+            }
+            if (user.deptName && user.deptName.toLowerCase() !== "none") return [user.deptName];
         }
-        return (user.deptName && user.deptName.toLowerCase() !== "none") ? [user.deptName] : [];
+        return [];
     };
 
     const getSectionNames = (user) => {
@@ -994,29 +999,40 @@ function EditUserDialog({ isOpen, setIsOpen, user, currentRoleId, onSuccess }) {
     useEffect(() => {
         if (user && isOpen) {
             const rawDepts = typeof user.departments === 'string' ? JSON.parse(user.departments || "[]") : (user.departments || []);
-            const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length
+            const deptsFieldSet = user.departments !== undefined && user.departments !== null;
+            const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length > 0
                 ? rawDepts.map(String)
-                : ((user.departmentId || user.DepartmentId) ? [String(user.departmentId || user.DepartmentId)] : (user.department?._id ? [String(user.department._id)] : []));
+                : (!deptsFieldSet && (user.departmentId || user.DepartmentId)) ? [String(user.departmentId || user.DepartmentId)]
+                : (!deptsFieldSet && user.department?._id) ? [String(user.department._id)]
+                : [];
 
             const rawStations = typeof user.stations === 'string' ? JSON.parse(user.stations || "[]") : (user.stations || []);
-            const resolvedStations = Array.isArray(rawStations) && rawStations.length
+            const stationsFieldSet = user.stations !== undefined && user.stations !== null;
+            const resolvedStations = Array.isArray(rawStations) && rawStations.length > 0
                 ? rawStations.map(String)
-                : ((user.stationId || user.StationId) ? [String(user.stationId || user.StationId)] : []);
+                : (!stationsFieldSet && (user.stationId || user.StationId)) ? [String(user.stationId || user.StationId)]
+                : [];
 
             const rawSections = typeof user.sections === 'string' ? JSON.parse(user.sections || "[]") : (user.sections || []);
-            const resolvedSections = Array.isArray(rawSections) && rawSections.length
+            const sectionsFieldSet = user.sections !== undefined && user.sections !== null;
+            const resolvedSections = Array.isArray(rawSections) && rawSections.length > 0
                 ? rawSections.map(String)
-                : (user.sectionId ? [String(user.sectionId)] : []);
+                : (!sectionsFieldSet && user.sectionId) ? [String(user.sectionId)]
+                : [];
 
             const rawLines = typeof user.lines === 'string' ? JSON.parse(user.lines || "[]") : (user.lines || []);
-            const resolvedLines = Array.isArray(rawLines) && rawLines.length
+            const linesFieldSet = user.lines !== undefined && user.lines !== null;
+            const resolvedLines = Array.isArray(rawLines) && rawLines.length > 0
                 ? rawLines.map(String)
-                : (user.lineId ? [String(user.lineId)] : []);
+                : (!linesFieldSet && user.lineId) ? [String(user.lineId)]
+                : [];
 
             const rawSubSections = typeof user.subSections === 'string' ? JSON.parse(user.subSections || "[]") : (user.subSections || []);
-            const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length
+            const subSectionsFieldSet = user.subSections !== undefined && user.subSections !== null;
+            const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length > 0
                 ? rawSubSections.map(String)
-                : (user.subSectionId ? [String(user.subSectionId)] : []);
+                : (!subSectionsFieldSet && user.subSectionId) ? [String(user.subSectionId)]
+                : [];
 
             setEditUser({
                 fullName: user.fullName || "",

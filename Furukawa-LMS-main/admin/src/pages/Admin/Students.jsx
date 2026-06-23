@@ -200,6 +200,7 @@ const Students = () => {
     incharge: "",
     contractorId: "",
     shiftSchedule: {},
+    shift: "",
   });
   const [formErrors, setFormErrors] = useState({});
   const [showFilters, setShowFilters] = useState(false);
@@ -528,6 +529,7 @@ const Students = () => {
       incharge: "",
       contractorId: "",
       shiftSchedule: {},
+      shift: "",
     });
 
     setFormErrors({});
@@ -629,6 +631,7 @@ const Students = () => {
         incharge: formData.incharge?.trim() || null,
         customRoleId: formData.customRoleId || null,
         contractorId: formData.contractorId ? Number(formData.contractorId) : null,
+        shift: formData.shift === "none" ? null : formData.shift || null,
       };
 
 
@@ -701,6 +704,7 @@ const Students = () => {
         unit: updateData.unit,
         contractorId: updateData.contractorId ? Number(updateData.contractorId) : null,
         shiftSchedule: updateData.shiftSchedule || {},
+        shift: updateData.shift === "none" ? null : updateData.shift || null,
       };
 
 
@@ -1080,29 +1084,40 @@ const Students = () => {
     setSelectedStudent(student);
 
     const rawDepts = typeof student.departments === 'string' ? JSON.parse(student.departments || "[]") : (student.departments || []);
-    const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length
+    const deptsFieldSet = student.departments !== undefined && student.departments !== null;
+    const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length > 0
       ? rawDepts.map(String)
-      : ((student.departmentId || student.DepartmentId) ? [String(student.departmentId || student.DepartmentId)] : (student.department?._id ? [String(student.department._id)] : []));
+      : (!deptsFieldSet && (student.departmentId || student.DepartmentId)) ? [String(student.departmentId || student.DepartmentId)]
+      : (!deptsFieldSet && student.department?._id) ? [String(student.department._id)]
+      : [];
 
     const rawStations = typeof student.stations === 'string' ? JSON.parse(student.stations || "[]") : (student.stations || []);
-    const resolvedStations = Array.isArray(rawStations) && rawStations.length
+    const stationsFieldSet = student.stations !== undefined && student.stations !== null;
+    const resolvedStations = Array.isArray(rawStations) && rawStations.length > 0
       ? rawStations.map(String)
-      : ((student.stationId || student.StationId) ? [String(student.stationId || student.StationId)] : []);
+      : (!stationsFieldSet && (student.stationId || student.StationId)) ? [String(student.stationId || student.StationId)]
+      : [];
 
     const rawSections = typeof student.sections === 'string' ? JSON.parse(student.sections || "[]") : (student.sections || []);
-    const resolvedSections = Array.isArray(rawSections) && rawSections.length
+    const sectionsFieldSet = student.sections !== undefined && student.sections !== null;
+    const resolvedSections = Array.isArray(rawSections) && rawSections.length > 0
       ? rawSections.map(String)
-      : (student.sectionId ? [String(student.sectionId)] : []);
+      : (!sectionsFieldSet && student.sectionId) ? [String(student.sectionId)]
+      : [];
 
     const rawLines = typeof student.lines === 'string' ? JSON.parse(student.lines || "[]") : (student.lines || []);
-    const resolvedLines = Array.isArray(rawLines) && rawLines.length
+    const linesFieldSet = student.lines !== undefined && student.lines !== null;
+    const resolvedLines = Array.isArray(rawLines) && rawLines.length > 0
       ? rawLines.map(String)
-      : (student.lineId ? [String(student.lineId)] : []);
+      : (!linesFieldSet && student.lineId) ? [String(student.lineId)]
+      : [];
 
     const rawSubSections = typeof student.subSections === 'string' ? JSON.parse(student.subSections || "[]") : (student.subSections || []);
-    const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length
+    const subSectionsFieldSet = student.subSections !== undefined && student.subSections !== null;
+    const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length > 0
       ? rawSubSections.map(String)
-      : (student.subSectionId ? [String(student.subSectionId)] : []);
+      : (!subSectionsFieldSet && student.subSectionId) ? [String(student.subSectionId)]
+      : [];
 
     setFormData({
       fullName: student.fullName || "",
@@ -1139,6 +1154,7 @@ const Students = () => {
       reasonOfLeaving: student.reasonOfLeaving || student.ReasonOfLeaving || "",
       customRoleId: (student.customRoleId || student.CustomRoleId) ? String(student.customRoleId || student.CustomRoleId) : "",
       shiftSchedule: typeof student.shiftSchedule === 'string' ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })() : (student.shiftSchedule || {}),
+      shift: student.shift || "",
     });
 
     setIsEditDialogOpen(true);
@@ -1216,6 +1232,8 @@ const Students = () => {
 
   const getDepartmentInfo = (student) => {
     const rawDepts = typeof student.departments === 'string' ? JSON.parse(student.departments || "[]") : (student.departments || []);
+    // departments: [] is authoritative "no department" — only fall back when the field was never set
+    const departmentsFieldSet = student.departments !== undefined && student.departments !== null;
     let deptNames = [];
     if (Array.isArray(rawDepts) && rawDepts.length > 0) {
       deptNames = rawDepts.map(id => {
@@ -1223,17 +1241,17 @@ const Students = () => {
         return d ? d.name : null;
       }).filter(Boolean);
     }
-    // Fallback: unique dept names from machine assignments
-    if (deptNames.length === 0 && student.assignments?.length > 0) {
-      deptNames = [...new Set(student.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
-    }
-    // Fallback: single department object
-    if (deptNames.length === 0 && student.department?.name) {
-      deptNames = [student.department.name];
-    }
-    // Fallback: deptName string
-    if (deptNames.length === 0 && student.deptName && student.deptName.toLowerCase() !== "none") {
-      deptNames = [student.deptName];
+    // Only use stale fallbacks when 'departments' was not explicitly returned by the API
+    if (!departmentsFieldSet) {
+      if (deptNames.length === 0 && student.assignments?.length > 0) {
+        deptNames = [...new Set(student.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+      }
+      if (deptNames.length === 0 && student.department?.name) {
+        deptNames = [student.department.name];
+      }
+      if (deptNames.length === 0 && student.deptName && student.deptName.toLowerCase() !== "none") {
+        deptNames = [student.deptName];
+      }
     }
 
     const assignedSections = [...new Set((student.assignments || []).map(a => a.sectionName).filter(Boolean))];
@@ -1383,6 +1401,9 @@ const Students = () => {
       </div>
     );
   }
+
+  const todayLabel = format(new Date(), "dd MMM yyyy");
+  const todayKey   = format(new Date(), "yyyy-MM-dd");
 
   return (
     <Tabs defaultValue="operators" className="w-full space-y-6">
@@ -1959,7 +1980,6 @@ const Students = () => {
                 <TableHead className="w-[100px]">Emp Code</TableHead>
                 <TableHead className="w-[100px]">Primary Level</TableHead>
                 <TableHead className="w-[120px]">Date</TableHead>
-                <TableHead className="w-[80px]">Shift</TableHead>
                 <TableHead className="w-[120px]">Scheduled Shift</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Status</TableHead>
@@ -2026,29 +2046,14 @@ const Students = () => {
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500 whitespace-nowrap">
-                      {safeDateFormat(student.logDate, "dd MMM yyyy") || "-"}
+                      {todayLabel}
                     </TableCell>
                     <TableCell>
                       {(() => {
                         const schedule = typeof student.shiftSchedule === 'string'
                           ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })()
                           : (student.shiftSchedule || {});
-                        const rawDate = student.logDate || filters.date;
-                        const activeDate = rawDate ? dateToInputFormat(rawDate) : format(new Date(), "yyyy-MM-dd");
-                        const activeShift = schedule[activeDate] || student.logShift || student.shift;
-                        if (!activeShift) return <span className="text-gray-400 text-xs">-</span>;
-                        const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
-                        return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[activeShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{activeShift}</span>;
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      {(() => {
-                        const schedule = typeof student.shiftSchedule === 'string'
-                          ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })()
-                          : (student.shiftSchedule || {});
-                        const rawDate = student.logDate || filters.date;
-                        const activeDate = rawDate ? dateToInputFormat(rawDate) : format(new Date(), "yyyy-MM-dd");
-                        const scheduledShift = schedule[activeDate];
+                        const scheduledShift = schedule[todayKey];
                         if (!scheduledShift) return <span className="text-gray-400 text-xs">-</span>;
                         const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
                         return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[scheduledShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{scheduledShift}</span>;
@@ -2626,6 +2631,25 @@ const Students = () => {
               </Select>
             </div>
 
+            <div className="grid gap-2">
+              <Label htmlFor="shift">Default Shift</Label>
+              <Select
+                value={formData.shift || "none"}
+                onValueChange={(val) => setFormData({ ...formData, shift: val === "none" ? "" : val })}
+              >
+                <SelectTrigger id="shift">
+                  <SelectValue placeholder="Select shift (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="A">Shift A</SelectItem>
+                  <SelectItem value="B">Shift B</SelectItem>
+                  <SelectItem value="C">Shift C</SelectItem>
+                  <SelectItem value="G">Shift G</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Contact Details */}
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
@@ -3087,6 +3111,25 @@ const Students = () => {
                   {contractorsList.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-shift">Default Shift</Label>
+              <Select
+                value={formData.shift || "none"}
+                onValueChange={(val) => setFormData({ ...formData, shift: val === "none" ? "" : val })}
+              >
+                <SelectTrigger id="edit-shift">
+                  <SelectValue placeholder="Select shift (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="A">Shift A</SelectItem>
+                  <SelectItem value="B">Shift B</SelectItem>
+                  <SelectItem value="C">Shift C</SelectItem>
+                  <SelectItem value="G">Shift G</SelectItem>
                 </SelectContent>
               </Select>
             </div>

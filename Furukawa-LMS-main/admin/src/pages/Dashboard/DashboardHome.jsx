@@ -200,6 +200,45 @@ const ScrollableTopChart = ({ dataLength = 0, children }) => {
     );
 };
 
+const MANPOWER_DAY_MIN_WIDTH = 150;
+
+const getManpowerChartInnerWidth = (dataLength = 0) => {
+    const safeLength = Number(dataLength) || 0;
+    return `${Math.max(safeLength, TOP_VISIBLE_DAYS) * MANPOWER_DAY_MIN_WIDTH}px`;
+};
+
+const ScrollableManpowerChart = ({ dataLength = 0, children }) => {
+    const scrollRef = useRef(null);
+
+    useEffect(() => {
+        const node = scrollRef.current;
+        if (!node) return;
+
+        window.requestAnimationFrame(() => {
+            node.scrollLeft = node.scrollWidth;
+        });
+    }, [dataLength]);
+
+    return (
+        <div className={`w-full relative ${TOP_CHART_HEIGHT_CLASS}`}>
+            <div
+                ref={scrollRef}
+                className="absolute inset-0 overflow-x-auto overflow-y-hidden pb-2 overscroll-x-contain"
+            >
+                <div
+                    className="h-full relative"
+                    style={{
+                        width: getManpowerChartInnerWidth(dataLength),
+                        minWidth: getManpowerChartInnerWidth(dataLength),
+                    }}
+                >
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const getCompactChartInnerWidth = (dataLength = 0) => {
     const safeLength = Number(dataLength) || 0;
     // Compact width for bottom employee master bar charts.
@@ -2312,13 +2351,17 @@ const ContractorPrefixChartCard = ({
     const chartData = convertComparisonToValueMode(data, valueMode).map(item => ({
         ...item,
         name: cleanDisplayName(item.name),
-        attendanceValue: Number(item.attendanceValue || 0),
-        masterValue: Number(item.masterValue || 0),
-        attendanceCount: Number(item.attendanceCount || 0),
-        masterCount: Number(item.masterCount || 0),
+        value: Number(item.value || 0),
+        rawValue: Number(item.rawValue ?? item.actualPresent ?? item.attendanceValue ?? 0),
+        actualPresent: Number(item.actualPresent ?? item.attendanceValue ?? item.rawValue ?? item.value ?? 0),
+        totalHeadcount: Number(item.totalHeadcount ?? item.masterValue ?? item.employeeCount ?? 0),
+        attendanceValue: Number(item.attendanceValue ?? item.actualPresent ?? item.rawValue ?? item.value ?? 0),
+        masterValue: Number(item.masterValue ?? item.totalHeadcount ?? item.employeeCount ?? 0),
+        attendanceCount: Number(item.attendanceCount ?? item.actualPresent ?? item.attendanceValue ?? 0),
+        masterCount: Number(item.masterCount ?? item.totalHeadcount ?? item.masterValue ?? 0),
     }));
     const valueSuffix = valueMode === "percentage" ? "%" : "";
-    const hasMasterComparison = chartData.some(item => Number(item.masterValue || 0) > 0);
+    const hasMasterComparison = true;
     const isEmpty = !chartData || chartData.length === 0;
 
     return (
@@ -2354,7 +2397,7 @@ const ContractorPrefixChartCard = ({
                     {isLoading && <ChartLoader />}
 
                     {!isLoading && isEmpty && (
-                        <EmptyState text="No contractor prefix data found" />
+                        <EmptyState text="No contractor data found" />
                     )}
 
                     <ResponsiveContainer width="100%" height="100%">
@@ -2364,12 +2407,6 @@ const ContractorPrefixChartCard = ({
                             barCategoryGap="25%"
                             barGap={24}
                         >
-                            <defs>
-                                <linearGradient id="contractorPrefixGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#2563eb" stopOpacity={1} />
-                                    <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.82} />
-                                </linearGradient>
-                            </defs>
 
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
 
@@ -2394,7 +2431,7 @@ const ContractorPrefixChartCard = ({
                                 <>
                                     <Bar
                                         dataKey="masterValue"
-                                        name="Users Total"
+                                        name="Total Headcount"
                                         fill={USER_TOTAL_BAR_COLOR}
                                         radius={[7, 7, 0, 0]}
                                         maxBarSize={34}
@@ -2402,7 +2439,7 @@ const ContractorPrefixChartCard = ({
                                     />
                                     <Bar
                                         dataKey="attendanceValue"
-                                        name="Attendance"
+                                        name="Actual Present"
                                         fill="#2563eb"
                                         radius={[7, 7, 0, 0]}
                                         maxBarSize={34}
@@ -2423,10 +2460,15 @@ const ContractorPrefixChartCard = ({
                 </ScrollableContractorChart>
 
                 <SimpleLegend
-                    items={[
-                        ...(hasMasterComparison ? [{ color: USER_TOTAL_BAR_COLOR, label: 'Users Total' }] : []),
-                        { color: '#2563eb', label: 'Attendance' },
-                    ]}
+                    items={hasMasterComparison
+                        ? [
+                            { color: USER_TOTAL_BAR_COLOR, label: 'Total Headcount' },
+                            { color: '#2563eb', label: 'Actual Present' },
+                        ]
+                        : [
+                            { color: '#2563eb', label: 'Actual Present' },
+                        ]
+                    }
                 />
             </CardContent>
         </Card>
@@ -3082,7 +3124,7 @@ const DashboardHome = () => {
                 </CardHeader>
 
                 <CardContent className="px-2 pb-4 pt-2">
-                    <ScrollableTopChart dataLength={manpowerData.length}>
+                    <ScrollableManpowerChart dataLength={manpowerData.length}>
                         {(manpowerLoading || manpowerFetching) && <ChartLoader />}
                         {!(manpowerLoading || manpowerFetching) && manpowerData.length === 0 && (
                             <EmptyState text="No data found for selected filters" />
@@ -3092,8 +3134,8 @@ const DashboardHome = () => {
                             <ComposedChart
                                 data={manpowerData}
                                 margin={{ top: 66, right: 48, left: 4, bottom: 8 }}
-                                barCategoryGap="20%"
-                                barGap={8}
+                                barCategoryGap="22%"
+                                barGap={14}
                             >
                                 <defs>
                                     <linearGradient id="headcountGrad" x1="0" y1="0" x2="0" y2="1">
@@ -3131,7 +3173,7 @@ const DashboardHome = () => {
                                     name="Required"
                                     fill="#ea580c"
                                     radius={[4, 4, 0, 0]}
-                                    maxBarSize={18}
+                                    maxBarSize={28}
                                     label={renderBarValueLabel("#ea580c", "", 13)}
                                 />
 
@@ -3142,7 +3184,7 @@ const DashboardHome = () => {
                                             name="Actual Present"
                                             fill="url(#presentGrad)"
                                             radius={[4, 4, 0, 0]}
-                                            maxBarSize={20}
+                                            maxBarSize={28}
                                             label={renderBarValueLabel("#2563eb", "", 13)}
                                         />
 
@@ -3151,7 +3193,7 @@ const DashboardHome = () => {
                                             name="Current Headcount"
                                             fill="url(#headcountGrad)"
                                             radius={[4, 4, 0, 0]}
-                                            maxBarSize={20}
+                                            maxBarSize={28}
                                             label={renderBarValueLabel("#7c5a00", "", 13)}
                                         />
                                     </>
@@ -3223,7 +3265,7 @@ const DashboardHome = () => {
 
                             </ComposedChart>
                         </ResponsiveContainer>
-                    </ScrollableTopChart>
+                    </ScrollableManpowerChart>
 
                     <SimpleLegend
                         items={[
@@ -3295,7 +3337,7 @@ const DashboardHome = () => {
 
             <ContractorPrefixChartCard
                 title="Contractor"
-                subtitle={withAttendanceDateSubtitle(`Contractor ${graphValueModes.contractorPrefix === "percentage" ? "percentage" : "count"} grouped by contractor column`, contractorPrefixStats)}
+                subtitle={withAttendanceDateSubtitle(`Contractor total headcount vs actual present grouped by users contractor column`, contractorPrefixStats)}
                 data={contractorPrefixData}
                 isLoading={contractorPrefixLoading || contractorPrefixFetching}
                 valueMode={graphValueModes.contractorPrefix}

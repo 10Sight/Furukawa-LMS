@@ -28,8 +28,10 @@ const MONTH_NAMES = [
 ];
 
 const getPct = (num, den) => {
-    if (!den || den === 0) return "#DIV/0!";
-    return Math.round((num / den) * 100) + "%";
+    const numerator = Number(num) || 0;
+    const denominator = Number(den) || 0;
+    if (!denominator) return "0%";
+    return Math.round((numerator / denominator) * 100) + "%";
 };
 
 const getNum = (obj, key) => parseFloat(Number(obj?.[key] || 0).toFixed(2));
@@ -230,94 +232,41 @@ async function fetchAvailableMPBySection(dbPool, todayStr) {
 
     const makeMap = (rows) => {
         const map = new Map();
-        rows.forEach(r => map.set(r.sectionId, r));
+        rows.forEach(r => map.set(Number(r.sectionId), r));
         return map;
     };
 
     try {
+        // OT Mandays = section employees' SUM(attendance_logs.otHrs) / 8
+        // Mapping: users.sectionId -> attendance_logs.payCode = users.empId
         const rows = (await dbPool.request()
             .input("todayDate", todayStr)
             .query(`
-                WITH latest_uhs AS (
-                    SELECT *
-                    FROM (
-                        SELECT
-                            uhs.*,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY UPPER(LTRIM(RTRIM(uhs.employeeid)))
-                                ORDER BY uhs.id DESC
-                            ) AS rn
-                        FROM user_hierarchy_snapshots uhs
-                        WHERE uhs.employeeid IS NOT NULL
-                          AND LTRIM(RTRIM(uhs.employeeid)) <> ''
-                    ) x
-                    WHERE x.rn = 1
-                )
                 SELECT
-                    s.id AS sectionId,
+                    u.sectionId AS sectionId,
                     COUNT(DISTINCT al.payCode) AS totalPresent,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs
-                FROM attendance_logs al
-                INNER JOIN latest_uhs uhs
-                    ON  UPPER(LTRIM(RTRIM(uhs.employeeid))) = UPPER(LTRIM(RTRIM(al.payCode)))
+                FROM users u
+                INNER JOIN attendance_logs al
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                 INNER JOIN sections s
-                    ON  UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(uhs.section_unicode)))
-                    AND s.isActive = 1
-                WHERE CONVERT(VARCHAR, al.date, 23) = ${dateFilter}
-                  AND al.payCode IS NOT NULL
+                    ON s.id = u.sectionId
+                    AND ISNULL(s.isActive, 1) = 1
+                WHERE CONVERT(VARCHAR, al.[date], 23) = ${dateFilter}
+                  AND u.sectionId IS NOT NULL
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
+                  AND ISNULL(u.isDeleted, 0) = 0
                   AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
-                  AND ISNULL(uhs.section_unicode,'') <> ''
-                GROUP BY s.id
+                GROUP BY u.sectionId
             `)).recordset || [];
 
-        console.log(`[fetchAvailableMPBySection] primary rows Yesterday: ${rows.length}`);
+        console.log(`[fetchAvailableMPBySection] users.sectionId rows Yesterday: ${rows.length}`);
         return makeMap(rows);
 
-    } catch (e1) {
-        console.error("[fetchAvailableMPBySection] primary failed:", e1.message);
-    }
-
-    try {
-        const rows = (await dbPool.request()
-            .input("todayDate", todayStr)
-            .query(`
-                WITH latest_uhs AS (
-                    SELECT *
-                    FROM (
-                        SELECT
-                            uhs.*,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY UPPER(LTRIM(RTRIM(uhs.employeeid)))
-                                ORDER BY uhs.id DESC
-                            ) AS rn
-                        FROM user_hierarchy_snapshots uhs
-                        WHERE uhs.employeeid IS NOT NULL
-                          AND LTRIM(RTRIM(uhs.employeeid)) <> ''
-                    ) x
-                    WHERE x.rn = 1
-                )
-                SELECT
-                    s.id AS sectionId,
-                    COUNT(DISTINCT al.cardNo) AS totalPresent,
-                    CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs
-                FROM attendance_logs al
-                INNER JOIN latest_uhs uhs
-                    ON  UPPER(LTRIM(RTRIM(uhs.employeeid))) = UPPER(LTRIM(RTRIM(al.cardNo)))
-                INNER JOIN sections s
-                    ON  UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(uhs.section_unicode)))
-                    AND s.isActive = 1
-                WHERE CONVERT(VARCHAR, al.date, 23) = ${dateFilter}
-                  AND al.cardNo IS NOT NULL
-                  AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
-                  AND ISNULL(uhs.section_unicode,'') <> ''
-                GROUP BY s.id
-            `)).recordset || [];
-
-        console.log(`[fetchAvailableMPBySection] fallback rows Yesterday: ${rows.length}`);
-        return makeMap(rows);
-
-    } catch (e2) {
-        console.error("[fetchAvailableMPBySection] fallback failed:", e2.message);
+    } catch (e) {
+        console.error("[fetchAvailableMPBySection] failed:", e.message);
         return new Map();
     }
 }
@@ -331,34 +280,18 @@ async function fetchShiftAttendanceBySection(dbPool, todayStr) {
 
     const makeMap = (rows) => {
         const map = new Map();
-        rows.forEach(r => map.set(r.sectionId, r));
+        rows.forEach(r => map.set(Number(r.sectionId), r));
         return map;
     };
 
-    const baseCte = `
-        WITH latest_uhs AS (
-            SELECT *
-            FROM (
-                SELECT
-                    uhs.*,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY UPPER(LTRIM(RTRIM(uhs.employeeid)))
-                        ORDER BY uhs.id DESC
-                    ) AS rn
-                FROM user_hierarchy_snapshots uhs
-                WHERE uhs.employeeid IS NOT NULL
-                  AND LTRIM(RTRIM(uhs.employeeid)) <> ''
-            ) x
-            WHERE x.rn = 1
-        )`;
-
     try {
+        // Section-wise shift + OT Mandays direct from users table hierarchy.
+        // Mapping: users.sectionId -> users.empId -> attendance_logs.payCode
         const rows = (await dbPool.request()
             .input("todayDate", todayStr)
             .query(`
-                ${baseCte}
                 SELECT
-                    s.id AS sectionId,
+                    u.sectionId AS sectionId,
                     COUNT(DISTINCT al.payCode) AS totalPresent,
                     SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
                     SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
@@ -366,59 +299,28 @@ async function fetchShiftAttendanceBySection(dbPool, todayStr) {
                     SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                     CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                FROM attendance_logs al
-                INNER JOIN latest_uhs uhs
-                    ON  UPPER(LTRIM(RTRIM(uhs.employeeid))) = UPPER(LTRIM(RTRIM(al.payCode)))
+                FROM users u
+                INNER JOIN attendance_logs al
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                 INNER JOIN sections s
-                    ON  UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(uhs.section_unicode)))
-                    AND s.isActive = 1
-                WHERE CONVERT(VARCHAR, al.date, 23) = ${prevDayFilter}
-                  AND al.payCode IS NOT NULL
+                    ON s.id = u.sectionId
+                    AND ISNULL(s.isActive, 1) = 1
+                WHERE CONVERT(VARCHAR, al.[date], 23) = ${prevDayFilter}
+                  AND u.sectionId IS NOT NULL
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
+                  AND ISNULL(u.isDeleted, 0) = 0
                   AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
-                  AND ISNULL(uhs.section_unicode,'') <> ''
-                GROUP BY s.id
+                GROUP BY u.sectionId
             `)).recordset || [];
 
-        console.log(`[fetchShiftAttendanceBySection] primary rows Yesterday: ${rows.length}`);
+        console.log(`[fetchShiftAttendanceBySection] users.sectionId rows Yesterday: ${rows.length}`);
         return makeMap(rows);
 
-    } catch (e1) {
-        console.error("[fetchShiftAttendanceBySection] primary failed:", e1.message);
-
-        try {
-            const rows = (await dbPool.request()
-                .input("todayDate", todayStr)
-                .query(`
-                    ${baseCte}
-                    SELECT
-                        s.id AS sectionId,
-                        COUNT(DISTINCT al.cardNo) AS totalPresent,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
-                        CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
-                        CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                    FROM attendance_logs al
-                    INNER JOIN latest_uhs uhs
-                        ON  UPPER(LTRIM(RTRIM(uhs.employeeid))) = UPPER(LTRIM(RTRIM(al.cardNo)))
-                    INNER JOIN sections s
-                        ON  UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(uhs.section_unicode)))
-                        AND s.isActive = 1
-                    WHERE CONVERT(VARCHAR, al.date, 23) = ${prevDayFilter}
-                      AND al.cardNo IS NOT NULL
-                      AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
-                      AND ISNULL(uhs.section_unicode,'') <> ''
-                    GROUP BY s.id
-                `)).recordset || [];
-
-            console.log(`[fetchShiftAttendanceBySection] fallback rows Yesterday: ${rows.length}`);
-            return makeMap(rows);
-
-        } catch (e2) {
-            console.error("[fetchShiftAttendanceBySection] fallback failed:", e2.message);
-            return new Map();
-        }
+    } catch (e) {
+        console.error("[fetchShiftAttendanceBySection] failed:", e.message);
+        return new Map();
     }
 }
 
@@ -431,34 +333,18 @@ async function fetchShiftAttendanceByLine(dbPool, todayStr) {
 
     const makeMap = (rows) => {
         const map = new Map();
-        rows.forEach(r => map.set(r.lineId, r));
+        rows.forEach(r => map.set(Number(r.lineId), r));
         return map;
     };
 
-    const baseCte = `
-        WITH latest_uhs AS (
-            SELECT *
-            FROM (
-                SELECT
-                    uhs.*,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY UPPER(LTRIM(RTRIM(uhs.employeeid)))
-                        ORDER BY uhs.id DESC
-                    ) AS rn
-                FROM user_hierarchy_snapshots uhs
-                WHERE uhs.employeeid IS NOT NULL
-                  AND LTRIM(RTRIM(uhs.employeeid)) <> ''
-            ) x
-            WHERE x.rn = 1
-        )`;
-
     try {
+        // Line-wise shift + OT Mandays direct from users table hierarchy.
+        // Mapping: users.lineId -> users.empId -> attendance_logs.payCode
         const rows = (await dbPool.request()
             .input("todayDate", todayStr)
             .query(`
-                ${baseCte}
                 SELECT
-                    l.id AS lineId,
+                    u.lineId AS lineId,
                     COUNT(DISTINCT al.payCode) AS totalPresent,
                     SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
                     SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
@@ -466,59 +352,81 @@ async function fetchShiftAttendanceByLine(dbPool, todayStr) {
                     SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                     CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                FROM attendance_logs al
-                INNER JOIN latest_uhs uhs
-                    ON  UPPER(LTRIM(RTRIM(uhs.employeeid))) = UPPER(LTRIM(RTRIM(al.payCode)))
+                FROM users u
+                INNER JOIN attendance_logs al
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                 INNER JOIN [lines] l
-                    ON  UPPER(LTRIM(RTRIM(l.uniCode))) = UPPER(LTRIM(RTRIM(uhs.line_unicode)))
-                    AND l.isActive = 1
-                WHERE CONVERT(VARCHAR, al.date, 23) = ${prevDayFilter}
-                  AND al.payCode IS NOT NULL
+                    ON l.id = u.lineId
+                    AND ISNULL(l.isActive, 1) = 1
+                WHERE CONVERT(VARCHAR, al.[date], 23) = ${prevDayFilter}
+                  AND u.lineId IS NOT NULL
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
+                  AND ISNULL(u.isDeleted, 0) = 0
                   AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
-                  AND ISNULL(uhs.line_unicode,'') <> ''
-                GROUP BY l.id
+                GROUP BY u.lineId
             `)).recordset || [];
 
-        console.log(`[fetchShiftAttendanceByLine] primary rows Yesterday: ${rows.length}`);
+        console.log(`[fetchShiftAttendanceByLine] users.lineId rows Yesterday: ${rows.length}`);
         return makeMap(rows);
 
-    } catch (e1) {
-        console.error("[fetchShiftAttendanceByLine] primary failed:", e1.message);
+    } catch (e) {
+        console.error("[fetchShiftAttendanceByLine] failed:", e.message);
+        return new Map();
+    }
+}
 
-        try {
-            const rows = (await dbPool.request()
-                .input("todayDate", todayStr)
-                .query(`
-                    ${baseCte}
-                    SELECT
-                        l.id AS lineId,
-                        COUNT(DISTINCT al.cardNo) AS totalPresent,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
-                        SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
-                        CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
-                        CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                    FROM attendance_logs al
-                    INNER JOIN latest_uhs uhs
-                        ON  UPPER(LTRIM(RTRIM(uhs.employeeid))) = UPPER(LTRIM(RTRIM(al.cardNo)))
-                    INNER JOIN [lines] l
-                        ON  UPPER(LTRIM(RTRIM(l.uniCode))) = UPPER(LTRIM(RTRIM(uhs.line_unicode)))
-                        AND l.isActive = 1
-                    WHERE CONVERT(VARCHAR, al.date, 23) = ${prevDayFilter}
-                      AND al.cardNo IS NOT NULL
-                      AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
-                      AND ISNULL(uhs.line_unicode,'') <> ''
-                    GROUP BY l.id
-                `)).recordset || [];
+// =================================================
+// STEP 6B: Fetch shift-wise attendance by department
+// Management report top summary uses this direct department-wise OT Mandays.
+// =================================================
+async function fetchShiftAttendanceByDepartment(dbPool, todayStr) {
+    const prevDayFilter = "CONVERT(VARCHAR, DATEADD(day, -1, CAST(@todayDate AS DATE)), 23)";
 
-            console.log(`[fetchShiftAttendanceByLine] fallback rows Yesterday: ${rows.length}`);
-            return makeMap(rows);
+    const makeMap = (rows) => {
+        const map = new Map();
+        rows.forEach(r => map.set(Number(r.deptId), r));
+        return map;
+    };
 
-        } catch (e2) {
-            console.error("[fetchShiftAttendanceByLine] fallback failed:", e2.message);
-            return new Map();
-        }
+    try {
+        // Department-wise shift + OT Mandays direct from users table hierarchy.
+        // Mapping: users.departmentId -> users.empId -> attendance_logs.payCode
+        const rows = (await dbPool.request()
+            .input("todayDate", todayStr)
+            .query(`
+                SELECT
+                    u.departmentId AS deptId,
+                    COUNT(DISTINCT al.payCode) AS totalPresent,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
+                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
+                    CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
+                    CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
+                FROM users u
+                INNER JOIN attendance_logs al
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                INNER JOIN departments d
+                    ON d.id = u.departmentId
+                    AND ISNULL(d.isDeleted, 0) = 0
+                WHERE CONVERT(VARCHAR, al.[date], 23) = ${prevDayFilter}
+                  AND u.departmentId IS NOT NULL
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
+                  AND ISNULL(u.isDeleted, 0) = 0
+                  AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
+                GROUP BY u.departmentId
+            `)).recordset || [];
+
+        console.log(`[fetchShiftAttendanceByDepartment] users.departmentId rows Yesterday: ${rows.length}`);
+        return makeMap(rows);
+
+    } catch (e) {
+        console.error("[fetchShiftAttendanceByDepartment] failed:", e.message);
+        return new Map();
     }
 }
 
@@ -1050,6 +958,7 @@ async function _buildManagementBuffer() {
 
         const attSecMap = await fetchShiftAttendanceBySection(dbPool, todayStr);
         const attLineMap = await fetchShiftAttendanceByLine(dbPool, todayStr);
+        const attDeptMap = await fetchShiftAttendanceByDepartment(dbPool, todayStr);
 
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet("Management Daily");
@@ -1189,18 +1098,21 @@ async function _buildManagementBuffer() {
 
             sections.forEach(s => {
                 const sc = (s.section_code || "").toUpperCase().trim();
-                const att = attSecMap.get(s.sectionId) || {};
 
                 dReq += reqMap.get(sc) || 0;
                 dHand += handSecMap.get(s.sectionId) || 0;
-                dGen += getNum(att, "shiftGeneral");
-                dA += getNum(att, "shiftA");
-                dB += getNum(att, "shiftB");
-                dC += getNum(att, "shiftC");
-                dAct += getNum(att, "totalPresent");
-                dOT += getNum(att, "totalOtHrs");
-                dHrs += getNum(att, "totalHrsWorked");
             });
+
+            // Department-wise attendance/OT is calculated from all employees in users.departmentId.
+            // OT Mandays = SUM(attendance_logs.otHrs) / 8.
+            const deptAtt = attDeptMap.get(Number(deptId)) || {};
+            dGen = getNum(deptAtt, "shiftGeneral");
+            dA = getNum(deptAtt, "shiftA");
+            dB = getNum(deptAtt, "shiftB");
+            dC = getNum(deptAtt, "shiftC");
+            dAct = getNum(deptAtt, "totalPresent");
+            dOT = getNum(deptAtt, "totalOtHrs");
+            dHrs = getNum(deptAtt, "totalHrsWorked");
 
             grReq += dReq;
             grHand += dHand;
@@ -1517,14 +1429,14 @@ async function _buildManagementBuffer() {
                         styleCell(row.getCell(3), { sz: 11 });
                         setYellow(row.getCell(3));
 
-                        row.getCell(4).value = lHand || "";
-                        row.getCell(5).value = lGen || "";
-                        row.getCell(6).value = lA || "";
-                        row.getCell(7).value = lB || "";
-                        row.getCell(8).value = lC || "";
-                        row.getCell(9).value = lAct || "";
-                        row.getCell(10).value = lOT !== 0 ? parseFloat(lOT.toFixed(2)) : "";
-                        row.getCell(11).value = lHrs !== 0 ? parseFloat(lHrs.toFixed(2)) : "";
+                        row.getCell(4).value = Number(lHand) || 0;
+                        row.getCell(5).value = Number(lGen) || 0;
+                        row.getCell(6).value = Number(lA) || 0;
+                        row.getCell(7).value = Number(lB) || 0;
+                        row.getCell(8).value = Number(lC) || 0;
+                        row.getCell(9).value = Number(lAct) || 0;
+                        row.getCell(10).value = parseFloat((Number(lOT) || 0).toFixed(2));
+                        row.getCell(11).value = parseFloat((Number(lHrs) || 0).toFixed(2));
                         row.getCell(12).value = getPct(lAct, lReq);
                         row.getCell(13).value = getPct(lAct, lHand);
 
@@ -1585,12 +1497,12 @@ async function _buildManagementBuffer() {
                     setYellow(tr.getCell(3));
 
                     [
-                        [4, totHand],
-                        [5, totGen],
-                        [6, totA],
-                        [7, totB],
-                        [8, totC],
-                        [9, totAct]
+                        [4, secHand],
+                        [5, secGen],
+                        [6, secA],
+                        [7, secB],
+                        [8, secC],
+                        [9, secAct]
                     ].forEach(([c, v]) => {
                         tr.getCell(c).value = v;
                         styleCell(tr.getCell(c), {
@@ -1600,10 +1512,10 @@ async function _buildManagementBuffer() {
                         });
                     });
 
-                    tr.getCell(10).value = parseFloat(totOT.toFixed(2));
-                    tr.getCell(11).value = parseFloat(totHrs.toFixed(2));
-                    tr.getCell(12).value = getPct(totAct, totalReqForSection);
-                    tr.getCell(13).value = getPct(totAct, totHand);
+                    tr.getCell(10).value = parseFloat((Number(secOT) || 0).toFixed(2));
+                    tr.getCell(11).value = parseFloat((Number(secHrs) || 0).toFixed(2));
+                    tr.getCell(12).value = getPct(secAct, totalReqForSection);
+                    tr.getCell(13).value = getPct(secAct, secHand);
 
                     for (let c = 10; c <= 13; c++) {
                         styleCell(tr.getCell(c), {

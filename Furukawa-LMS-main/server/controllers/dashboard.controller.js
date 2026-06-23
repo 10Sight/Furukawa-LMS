@@ -1047,7 +1047,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
           AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND ISNULL(u.isTemporary, 0) = 0
+          AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) = 'PRESENT'
     `;
+
+    // IMPORTANT SHIFT/ALL FIX:
+    // All comparison/pie charts (Skill Level, Gender, State, District, Designation, Leader/Expert)
+    // now count only PRESENT attendance rows. Without this, ALL shift included rows whose shift/status
+    // came as Absent/other values, so ALL count became different from A+B+C+G selected one by one.
 
     const shouldUseAttendanceMaster = true;
 
@@ -1441,15 +1447,32 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         };
 
         try {
+            // EDUCATION ATTENDANCE FIX:
+            // Education graph attendance count must match direct DB logic:
+            // attendance_logs + users, grouped by users.education, COUNT(DISTINCT u.empId).
+            // Temporary/contractor employees are included here because education graph is expected
+            // to count the same employees as the attendance upload.
+            // PRESENT status is used so ALL shift does not include rows where shift/status is Absent.
             let attendanceSql = `
                 SELECT
                     ${columnSql} AS rawName,
-                    COUNT(DISTINCT al.payCode) AS total
-                ${attendanceMasterBaseFrom}
+                    COUNT(DISTINCT u.empId) AS total
+                FROM attendance_logs al
+                INNER JOIN users u
+                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs
+                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
+                  AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
+                  AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) = 'PRESENT'
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
             `;
 
             const attendanceParams = [];
-            attendanceSql = addUserMasterFilters(attendanceSql, attendanceParams, "u");
+            attendanceSql = addRawUserHierarchyFilters(attendanceSql, attendanceParams, "u");
             attendanceSql = addStateDistrictFilters(attendanceSql, attendanceParams, { includeState, includeDistrict });
             attendanceSql = addShiftFilter(attendanceSql, attendanceParams, "al");
             attendanceSql += `
@@ -1644,169 +1667,222 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     }
 
     try {
-        const contractorMap = {};
+        // ============================================================
+        // CONTRACTOR GRAPH COMPARISON FIX
+        // Requirement:
+        // Contractor graph me 2 bars dikhengi:
+        // 1) Total Headcount (yellow) = users table ke contractor column se.
+        // 2) Actual Present (blue) = attendance_logs me payCode = users.empId,
+        //    selected date/range + PRESENT status + attendance shift filter se.
+        //
+        // Important:
+        // Contractor employees often have isTemporary = 1, so contractor graph
+        // me addUserMasterFilters() use nahi karna. Warna contractor data exclude ho jayega.
+        // ============================================================
 
-        const contractorColumnSql = `
-        ISNULL(
-            NULLIF(LTRIM(RTRIM(CAST(u.contractor AS NVARCHAR(510)))), ''),
-            LEFT(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))), 3)
-        )
-    `;
+        const contractorColumnSql = `UPPER(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))))`;
 
-        const addContractor = (prefix, key, value) => {
-            const cleanPrefix = normalizeChartName(prefix);
+        const appendContractorHierarchyFilter = ({ sqlText, params, idColumn, textColumns = [], ids = [], names = [], alias = "u" }) => {
+            const numericIds = (ids || [])
+                .map(id => parseInt(id, 10))
+                .filter(id => !Number.isNaN(id));
 
-            if (!contractorMap[cleanPrefix]) {
-                contractorMap[cleanPrefix] = {
-                    name: cleanPrefix,
-                    value: 0,
-                    attendanceValue: 0,
-                    masterValue: 0,
-                    rawValue: 0,
-                    percentage: 0,
-                };
+            const parts = [];
+
+            if (numericIds.length) {
+                const placeholders = numericIds.map(() => "?").join(",");
+                parts.push(`${alias}.${idColumn} IN (${placeholders})`);
+                params.push(...numericIds);
             }
 
-            contractorMap[cleanPrefix][key] = Number(value || 0);
+            const cleanNames = (names || [])
+                .map(name => String(name || "").trim())
+                .filter(Boolean);
+
+            if (cleanNames.length && textColumns.length) {
+                const namePlaceholders = cleanNames
+                    .map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))")
+                    .join(",");
+
+                const nameParts = textColumns.map(column =>
+                    `UPPER(LTRIM(RTRIM(CAST(${alias}.${column} AS NVARCHAR(510))))) IN (${namePlaceholders})`
+                );
+
+                parts.push(`(${nameParts.join(" OR ")})`);
+
+                // Each text column has its own placeholder set.
+                textColumns.forEach(() => params.push(...cleanNames));
+            }
+
+            if (!parts.length) return sqlText;
+            return `${sqlText} AND (${parts.join(" OR ")})`;
         };
 
-        // ============================================================
-        // 1) ATTENDANCE BAR: attendance_logs se aayega
-        // Agar attendance query fail/zero ho jaye, graph blank nahi hoga.
-        // ============================================================
-        try {
-            let contractorAttendanceSql = `
-            SELECT
-                ${contractorColumnSql} AS prefix,
-                COUNT(DISTINCT al.payCode) AS total
-            FROM attendance_logs al
-            LEFT JOIN users u
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                AND ISNULL(u.isTemporary, 0) = 0
-            LEFT JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-            WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
-              AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
-              AND al.payCode IS NOT NULL
-              AND LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))) != ''
-        `;
+        const applyContractorCommonFilters = (sqlText, params, { applyUserShift = false, applyAttendanceShift = false } = {}) => {
+            let nextSql = sqlText;
 
-            const contractorAttendanceParams = [];
-
-            contractorAttendanceSql = addUserMasterFilters(contractorAttendanceSql, contractorAttendanceParams, "u");
-            contractorAttendanceSql = addStateDistrictFilters(contractorAttendanceSql, contractorAttendanceParams);
-
-            // Attendance shift attendance_logs.shift se hi filter hoga
-            contractorAttendanceSql = addShiftFilter(contractorAttendanceSql, contractorAttendanceParams, "al");
-
-            contractorAttendanceSql += `
-            GROUP BY ${contractorColumnSql}
-            ORDER BY total DESC
-        `;
-
-            const [contractorAttendanceRows] = await executeQuery(
-                contractorAttendanceSql,
-                contractorAttendanceParams
-            );
-
-            contractorAttendanceRows.forEach(row => {
-                addContractor(row.prefix, "attendanceValue", row.total);
+            nextSql = appendContractorHierarchyFilter({
+                sqlText: nextSql,
+                params,
+                idColumn: "departmentId",
+                textColumns: ["[department]"],
+                ids: departmentIds,
+                names: departmentNames,
+                alias: "u",
             });
-        } catch (e) {
-            console.warn("[DASHBOARD] Contractor attendance query failed:", e.message);
-        }
 
-        // ============================================================
-        // 2) USERS TOTAL BAR: direct users table se aayega
-        // IMPORTANT: Isme attendance_logs ka join bilkul nahi hoga.
-        // Shift users.shift se filter hoga.
-        // ============================================================
-        try {
-            let contractorMasterSql = `
+            nextSql = appendContractorHierarchyFilter({
+                sqlText: nextSql,
+                params,
+                idColumn: "sectionId",
+                textColumns: ["[section]", "[sub_section]"],
+                ids: sectionIds,
+                names: sectionNames,
+                alias: "u",
+            });
+
+            nextSql = appendContractorHierarchyFilter({
+                sqlText: nextSql,
+                params,
+                idColumn: "lineId",
+                textColumns: ["[line]"],
+                ids: lineIds,
+                names: lineNames,
+                alias: "u",
+            });
+
+            // State/District filters users table ke state/district se apply honge.
+            nextSql = addStateDistrictFilters(nextSql, params, { alias: "u" });
+
+            // Total headcount par shift filter apply nahi hoga.
+            // Shift filter sirf actual present bar par attendance_logs.shift se apply hoga.
+            if (applyUserShift) {
+                // Intentionally skipped for contractor total headcount.
+                // Total Headcount users table ka fixed contractor-wise total rahega.
+            }
+            if (applyAttendanceShift) {
+                nextSql = addShiftFilter(nextSql, params, "al");
+            }
+
+            return nextSql;
+        };
+
+        let contractorTotalSql = `
             SELECT
-                ${contractorColumnSql} AS prefix,
-                COUNT(DISTINCT u.empId) AS total
+                ${contractorColumnSql} AS contractorName,
+                COUNT(DISTINCT UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))) AS totalHeadcount
             FROM users u
-            LEFT JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE ISNULL(u.isDeleted, 0) = 0
               AND u.empId IS NOT NULL
               AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+              AND NULLIF(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))), '') IS NOT NULL
         `;
-
-            const contractorMasterParams = [];
-
-            contractorMasterSql = addUserMasterFilters(contractorMasterSql, contractorMasterParams, "u");
-            contractorMasterSql = addStateDistrictFilters(contractorMasterSql, contractorMasterParams);
-
-            // IMPORTANT:
-            // Users Total / dark yellow bar par shift filter apply nahi hoga.
-            // Department, section, line, state, district filters apply rahenge.
-            // Shift filter sirf Attendance / purple bar par apply hoga.
-
-            contractorMasterSql += `
+        const contractorTotalParams = [];
+        contractorTotalSql = applyContractorCommonFilters(contractorTotalSql, contractorTotalParams, { applyUserShift: false });
+        contractorTotalSql += `
             GROUP BY ${contractorColumnSql}
-            ORDER BY total DESC
         `;
 
-            const [contractorMasterRows] = await executeQuery(
-                contractorMasterSql,
-                contractorMasterParams
-            );
+        let contractorPresentSql = `
+            SELECT
+                ${contractorColumnSql} AS contractorName,
+                COUNT(DISTINCT UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))) AS actualPresent
+            FROM attendance_logs al
+            INNER JOIN users u
+                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
+                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+            WHERE ISNULL(u.isDeleted, 0) = 0
+              AND u.empId IS NOT NULL
+              AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+              AND NULLIF(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))), '') IS NOT NULL
+              AND CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
+              AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
+              AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) = 'PRESENT'
+        `;
+        const contractorPresentParams = [];
+        contractorPresentSql = applyContractorCommonFilters(contractorPresentSql, contractorPresentParams, { applyAttendanceShift: true });
+        contractorPresentSql += `
+            GROUP BY ${contractorColumnSql}
+        `;
 
-            contractorMasterRows.forEach(row => {
-                addContractor(row.prefix, "masterValue", row.total);
+        const [contractorTotalRows, contractorPresentRows] = await Promise.all([
+            executeQuery(contractorTotalSql, contractorTotalParams).then(([rows]) => rows || []),
+            executeQuery(contractorPresentSql, contractorPresentParams).then(([rows]) => rows || []),
+        ]);
+
+        const contractorMap = new Map();
+
+        (contractorTotalRows || []).forEach(row => {
+            const contractorName = normalizeChartName(row.contractorName);
+            if (!contractorName || contractorName === "Not Provided") return;
+
+            contractorMap.set(contractorName, {
+                name: contractorName,
+                totalHeadcount: Number(row.totalHeadcount || 0),
+                actualPresent: 0,
             });
-        } catch (e) {
-            console.warn("[DASHBOARD] Contractor users total query failed:", e.message);
-        }
+        });
 
-        const totalMasterEmployees = Object.values(contractorMap).reduce(
-            (sum, item) => sum + Number(item.masterValue || 0),
+        (contractorPresentRows || []).forEach(row => {
+            const contractorName = normalizeChartName(row.contractorName);
+            if (!contractorName || contractorName === "Not Provided") return;
+
+            const existing = contractorMap.get(contractorName) || {
+                name: contractorName,
+                totalHeadcount: 0,
+                actualPresent: 0,
+            };
+
+            existing.actualPresent = Number(row.actualPresent || 0);
+            contractorMap.set(contractorName, existing);
+        });
+
+        const contractorTotalHeadcount = Array.from(contractorMap.values()).reduce(
+            (sum, row) => sum + Number(row.totalHeadcount || 0),
             0
         );
 
-        const contractorDenominator =
-            totalMasterEmployees > 0
-                ? totalMasterEmployees
-                : await getUsersTotalDenominator();
+        const contractorTotalPresent = Array.from(contractorMap.values()).reduce(
+            (sum, row) => sum + Number(row.actualPresent || 0),
+            0
+        );
 
-        pieCharts.contractorPrefix = Object.values(contractorMap)
-            .map(item => {
-                const attendanceCount = Number(item.attendanceValue || 0);
-                const masterCount = Number(item.masterValue || 0);
+        const contractorDenominator = Math.max(contractorTotalHeadcount, contractorTotalPresent, 0);
+
+        pieCharts.contractorPrefix = Array.from(contractorMap.values())
+            .map(row => {
+                const totalHeadcount = Number(row.totalHeadcount || 0);
+                const actualPresent = Number(row.actualPresent || 0);
+                const attendancePercentage = contractorDenominator > 0
+                    ? Number(((actualPresent / contractorDenominator) * 100).toFixed(1))
+                    : 0;
+                const masterPercentage = contractorDenominator > 0
+                    ? Number(((totalHeadcount / contractorDenominator) * 100).toFixed(1))
+                    : 0;
 
                 return {
-                    ...item,
-                    value: attendanceCount,
-                    rawValue: attendanceCount,
-                    percentage:
-                        contractorDenominator > 0
-                            ? Number(((attendanceCount / contractorDenominator) * 100).toFixed(1))
-                            : 0,
-                    attendancePercentage:
-                        contractorDenominator > 0
-                            ? Number(((attendanceCount / contractorDenominator) * 100).toFixed(1))
-                            : 0,
-                    masterPercentage:
-                        contractorDenominator > 0
-                            ? Number(((masterCount / contractorDenominator) * 100).toFixed(1))
-                            : 0,
+                    name: row.name,
+                    value: actualPresent,
+                    rawValue: actualPresent,
+                    employeeCount: totalHeadcount,
+                    actualPresent,
+                    totalHeadcount,
+                    attendanceValue: actualPresent,
+                    masterValue: totalHeadcount,
+                    attendanceCount: actualPresent,
+                    masterCount: totalHeadcount,
+                    percentage: attendancePercentage,
+                    attendancePercentage,
+                    masterPercentage,
                     totalEmployees: contractorDenominator,
                     denominatorTotal: contractorDenominator,
                 };
             })
-            .filter(item => Number(item.attendanceValue || 0) > 0 || Number(item.masterValue || 0) > 0)
-            .sort((a, b) => {
-                const attendanceDiff = Number(b.attendanceValue || 0) - Number(a.attendanceValue || 0);
-                if (attendanceDiff !== 0) return attendanceDiff;
-                return Number(b.masterValue || 0) - Number(a.masterValue || 0);
-            });
+            .filter(item => item.name && (Number(item.masterValue || 0) > 0 || Number(item.attendanceValue || 0) > 0))
+            .sort((a, b) => Number(b.masterValue || 0) - Number(a.masterValue || 0));
     } catch (e) {
-        console.warn("[DASHBOARD] Contractor prefix comparison chart failed:", e.message);
+        console.warn("[DASHBOARD] Contractor comparison chart failed:", e.message);
+        pieCharts.contractorPrefix = [];
     }
 
     return res.status(200).json(
@@ -1834,7 +1910,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     attendanceDateAvailable: true,
                     shift: selectedShiftValue || "ALL",
                     attendanceLogic:
-                        "Contractor graph: labels are fetched from users.contractor column, with Emp ID first three characters only as fallback when contractor is blank. Attendance/purple bar uses attendance_logs and selected shift. Users Total/dark yellow bar uses users table and ignores shift, but department/section/line/state/district filters still apply.",
+                        "Contractor graph: Total Headcount comes from users.contractor and does not change on shift selection. Actual Present comes from attendance_logs joined with users.empId = attendance_logs.payCode, and only this blue bar is affected by attendance_logs.shift filter. Department/section/line/state/district filters still apply.",
                 },
                 debug: {
                     requiredStartDate: sqlStartDate,

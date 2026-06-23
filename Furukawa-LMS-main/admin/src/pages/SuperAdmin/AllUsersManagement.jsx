@@ -1818,14 +1818,7 @@ const AllUsersManagement = () => {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {(() => {
-                          const schedule = typeof user.shiftSchedule === 'string'
-                            ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
-                            : (user.shiftSchedule || {});
-                          const rawDate = user.logDate || filters.date;
-                          const activeDate = rawDate
-                            ? (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : String(rawDate).substring(0, 10))
-                            : format(new Date(), "yyyy-MM-dd");
-                          const activeShift = schedule[activeDate] || user.logShift || user.shift;
+                          const activeShift = user.logShift || user.shift;
                           if (!activeShift) return <span className="text-gray-400">-</span>;
                           const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
                           return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[activeShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{activeShift}</span>;
@@ -2022,14 +2015,7 @@ const AllUsersManagement = () => {
                         <div>
                           <p className="text-gray-400 mb-0.5">Shift</p>
                           {(() => {
-                            const schedule = typeof user.shiftSchedule === 'string'
-                              ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
-                              : (user.shiftSchedule || {});
-                            const rawDate = user.logDate || filters.date;
-                            const activeDate = rawDate
-                              ? (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : String(rawDate).substring(0, 10))
-                              : format(new Date(), "yyyy-MM-dd");
-                            const activeShift = schedule[activeDate] || user.logShift || user.shift;
+                            const activeShift = user.logShift || user.shift;
                             if (!activeShift) return <p className="font-medium text-gray-400">-</p>;
                             const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
                             return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[activeShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{activeShift}</span>;

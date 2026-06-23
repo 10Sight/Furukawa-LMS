@@ -739,6 +739,42 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
             setCreateDepartment(String(assignableDepartments[0].id || assignableDepartments[0]._id));
     }, [isRestricted, createOpen, assignableDepartments, createDepartment]);
 
+    // Auto-select evaluation filters for restricted users
+    React.useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !evalDepartment)
+            setEvalDepartment(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+    }, [isRestricted, assignableDepartments, evalDepartment]);
+
+    React.useEffect(() => {
+        if (!isRestricted || !evalDepartment) return;
+        const secs = filterSections(evalSectionsData?.data);
+        if (secs.length === 1 && !evalSection)
+            setEvalSection(String(secs[0].id || secs[0]._id));
+    }, [isRestricted, evalDepartment, evalSectionsData, evalSection]);
+
+    // Auto-select observance filters for restricted users
+    React.useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !observanceDepartment)
+            setObservanceDepartment(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+    }, [isRestricted, assignableDepartments, observanceDepartment]);
+
+    React.useEffect(() => {
+        if (!isRestricted || !observanceDepartment) return;
+        const secs = filterSections(observanceSectionsData?.data);
+        if (secs.length === 1 && !observanceSection)
+            setObservanceSection(String(secs[0].id || secs[0]._id));
+    }, [isRestricted, observanceDepartment, observanceSectionsData, observanceSection]);
+
+    // Pre-fill create dialog section for restricted users when opened
+    React.useEffect(() => {
+        if (!isRestricted || !createOpen || !createDepartment) return;
+        const secs = filterSections(createSectionsData?.data);
+        if (secs.length === 1 && !createSection)
+            setCreateSection(String(secs[0].id || secs[0]._id));
+    }, [isRestricted, createOpen, createDepartment, createSectionsData, createSection]);
+
     const handleSignature = (role, status) => {
         if (!user) {
             toast.error("Please log in to sign the document");

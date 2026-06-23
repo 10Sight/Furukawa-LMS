@@ -41,6 +41,8 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
   const [rangeAnchor, setRangeAnchor] = useState(null); // first click in range mode
   const [pendingShift, setPendingShift] = useState("A");
 
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(currentMonth)),
     end: endOfWeek(endOfMonth(currentMonth)),
@@ -68,7 +70,7 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
           const [start, end] = isBefore(anchor, clicked)
             ? [anchor, clicked]
             : [clicked, anchor];
-          const range = eachDayOfInterval({ start, end }).map(fmt);
+          const range = eachDayOfInterval({ start, end }).map(fmt).filter((k) => k >= todayStr);
           setSelectedDates(range);
           setRangeAnchor(null);
         }
@@ -98,7 +100,10 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
   };
 
   const clearAll = () => {
-    onChange({});
+    const pastShifts = Object.fromEntries(
+      Object.entries(schedule).filter(([k]) => k < todayStr)
+    );
+    onChange(pastShifts);
     setSelectedDates([]);
     setRangeAnchor(null);
   };
@@ -176,6 +181,7 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
         {days.map((day) => {
           const key = fmt(day);
           const inMonth = isSameMonth(day, currentMonth);
+          const isPast = key < todayStr;
           const scheduled = schedule[key];
           const selected = isSelected(day);
           const todayFlag = isToday(day);
@@ -185,12 +191,13 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
             <button
               type="button"
               key={key}
-              onClick={() => inMonth && handleDayClick(day)}
-              disabled={!inMonth}
+              onClick={() => inMonth && !isPast && handleDayClick(day)}
+              disabled={!inMonth || isPast}
               className={cn(
                 "relative flex flex-col items-center justify-start rounded-lg py-1.5 min-h-[48px] transition-all select-none",
                 !inMonth && "opacity-0 pointer-events-none",
-                inMonth && !selected && "hover:bg-gray-50 cursor-pointer",
+                isPast && "opacity-50 cursor-not-allowed bg-gray-50/50",
+                inMonth && !isPast && !selected && "hover:bg-gray-50 cursor-pointer",
                 selected && "bg-gray-900 text-white",
                 isAnchor && "ring-2 ring-gray-900 ring-offset-1",
                 todayFlag && !selected && "ring-1 ring-blue-400"
@@ -198,7 +205,7 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
             >
               <span className={cn(
                 "text-xs font-medium leading-none",
-                selected ? "text-white" : todayFlag ? "text-blue-600 font-bold" : "text-gray-700"
+                isPast ? "text-gray-400" : selected ? "text-white" : todayFlag ? "text-blue-600 font-bold" : "text-gray-700"
               )}>
                 {format(day, "d")}
               </span>
@@ -207,6 +214,8 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
                   "mt-1 text-[9px] font-semibold px-1 py-0.5 rounded border leading-none",
                   selected
                     ? "bg-white/20 text-white border-white/30"
+                    : isPast
+                    ? "opacity-60 " + shiftStyle(scheduled)
                     : shiftStyle(scheduled)
                 )}>
                   {scheduled}

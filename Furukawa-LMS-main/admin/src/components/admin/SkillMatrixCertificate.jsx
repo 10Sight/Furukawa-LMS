@@ -100,11 +100,11 @@ const getPeriodFromDate = (date = new Date()) => {
     return `${year}-Q${quarter}`;
 };
 
-const SkillMatrixCertificate = ({ 
-    studentId, 
-    studentName, 
-    employeeCode, 
-    departmentId = 'GLOBAL', 
+const SkillMatrixCertificate = ({
+    studentId,
+    studentName,
+    employeeCode,
+    departmentId = 'GLOBAL',
     subSectionId,
     initialSheetId,
     onBackToList
@@ -556,11 +556,10 @@ const SkillMatrixCertificate = ({
                             <button
                                 key={s.id}
                                 onClick={() => setSelectedSheetId(s.id)}
-                                className={`px-3 py-1.5 rounded-full font-bold transition-all flex items-center gap-1.5 ${
-                                    String(selectedSheetId) === String(s.id)
+                                className={`px-3 py-1.5 rounded-full font-bold transition-all flex items-center gap-1.5 ${String(selectedSheetId) === String(s.id)
                                         ? "bg-slate-800 text-white shadow-sm"
                                         : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
-                                }`}
+                                    }`}
                             >
                                 <span>Sheet {s.sheetIndex} ({s.period})</span>
                                 {s.isActive && (
@@ -569,7 +568,7 @@ const SkillMatrixCertificate = ({
                             </button>
                         ))}
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                         {onBackToList && (
                             <Button
@@ -606,11 +605,11 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Date of evaluation</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input 
-                                        type="text" 
-                                        className="w-full text-center outline-none bg-transparent" 
-                                        value={headerData.dateOfEvaluation} 
-                                        onChange={e => setHeaderData({ ...headerData, dateOfEvaluation: e.target.value })} 
+                                    <input
+                                        type="text"
+                                        className="w-full text-center outline-none bg-transparent"
+                                        value={headerData.dateOfEvaluation}
+                                        onChange={e => setHeaderData({ ...headerData, dateOfEvaluation: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -652,11 +651,11 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Employee No.</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input 
-                                        type="text" 
-                                        className="w-full text-center outline-none bg-transparent" 
-                                        value={headerData.employeeNo} 
-                                        onChange={e => setHeaderData({ ...headerData, employeeNo: e.target.value })} 
+                                    <input
+                                        type="text"
+                                        className="w-full text-center outline-none bg-transparent"
+                                        value={headerData.employeeNo}
+                                        onChange={e => setHeaderData({ ...headerData, employeeNo: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -664,11 +663,11 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Process in charge</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input 
-                                        type="text" 
-                                        className="w-full text-center outline-none bg-transparent" 
-                                        value={headerData.processInCharge} 
-                                        onChange={e => setHeaderData({ ...headerData, processInCharge: e.target.value })} 
+                                    <input
+                                        type="text"
+                                        className="w-full text-center outline-none bg-transparent"
+                                        value={headerData.processInCharge}
+                                        onChange={e => setHeaderData({ ...headerData, processInCharge: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -676,11 +675,11 @@ const SkillMatrixCertificate = ({
                             <div className="flex">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-[10px]">Skill check Responsible person :</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white flex items-center justify-center">
-                                    <input 
-                                        type="text" 
-                                        className="w-full text-center outline-none text-xs bg-transparent" 
-                                        value={headerData.resultPerson} 
-                                        onChange={e => setHeaderData({ ...headerData, resultPerson: e.target.value })} 
+                                    <input
+                                        type="text"
+                                        className="w-full text-center outline-none text-xs bg-transparent"
+                                        value={headerData.resultPerson}
+                                        onChange={e => setHeaderData({ ...headerData, resultPerson: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -705,10 +704,10 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black" >
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Doc.No.</div>
                                 <div className="w-[60%] p-1 text-xs">
-                                    <input 
-                                        className="w-full outline-none bg-transparent" 
-                                        value={docData.docNo} 
-                                        onChange={e => setDocData({ ...docData, docNo: e.target.value })} 
+                                    <input
+                                        className="w-full outline-none bg-transparent"
+                                        value={docData.docNo}
+                                        onChange={e => setDocData({ ...docData, docNo: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -716,10 +715,10 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Rev.No</div>
                                 <div className="w-[60%] p-1 text-xs">
-                                    <input 
-                                        className="w-full outline-none text-xs bg-transparent" 
-                                        value={docData.revNo || ''} 
-                                        onChange={e => setDocData({ ...docData, revNo: e.target.value })} 
+                                    <input
+                                        className="w-full outline-none text-xs bg-transparent"
+                                        value={docData.revNo || ''}
+                                        onChange={e => setDocData({ ...docData, revNo: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -727,10 +726,10 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Rev Date</div>
                                 <div className="w-[60%] p-1 text-xs">
-                                    <input 
-                                        className="w-full outline-none text-xs bg-transparent" 
-                                        value={docData.revDate || ''} 
-                                        onChange={e => setDocData({ ...docData, revDate: e.target.value })} 
+                                    <input
+                                        className="w-full outline-none text-xs bg-transparent"
+                                        value={docData.revDate || ''}
+                                        onChange={e => setDocData({ ...docData, revDate: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -738,10 +737,10 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Date of issue</div>
                                 <div className="w-[60%] p-1 text-xs">
-                                    <input 
-                                        className="w-full outline-none bg-transparent" 
-                                        value={docData.dateOfIssue} 
-                                        onChange={e => setDocData({ ...docData, dateOfIssue: e.target.value })} 
+                                    <input
+                                        className="w-full outline-none bg-transparent"
+                                        value={docData.dateOfIssue}
+                                        onChange={e => setDocData({ ...docData, dateOfIssue: e.target.value })}
                                         disabled={!isActiveSheet}
                                     />
                                 </div>
@@ -907,14 +906,14 @@ const SkillMatrixCertificate = ({
                                                         </select>
                                                         {currentData.standard === 'OK' && (
                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                 <span className="font-bold text-gray-500">OK</span>
-                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
+                                                                <span className="font-bold text-gray-500">OK</span>
+                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
                                                             </div>
                                                         )}
                                                         {currentData.standard === 'NG' && (
                                                             <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                 <span className="font-bold text-gray-500">NG</span>
-                                                                 <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
+                                                                <span className="font-bold text-gray-500">NG</span>
+                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -959,7 +958,7 @@ const SkillMatrixCertificate = ({
                         <DialogTitle>Create New Sheet</DialogTitle>
                     </DialogHeader>
                     <div className="py-4 text-sm text-gray-700">
-                        Create a new certificate evaluation sheet for <strong>{getPeriodFromDate()}</strong>? 
+                        Create a new certificate evaluation sheet for <strong>{getPeriodFromDate()}</strong>?
                         The current sheet will become inactive and read-only.
                     </div>
                     <DialogFooter className="flex gap-2">

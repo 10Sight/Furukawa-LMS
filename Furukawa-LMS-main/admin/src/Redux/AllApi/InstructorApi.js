@@ -22,7 +22,7 @@ export const instructorApi = createApi({
                 method: "GET",
                 params: { page, limit, search, status, unit, sortBy, order, departmentId, sectionId, lineId, subSectionId, stationId, shift, dateFrom, dateTo, date, sixteenDayApprovedOnly, includeLeft, includeTemporary, dojoHandoverPassedOnly, designation }
             }),
-            providesTags: ['Instructor'],
+            providesTags: ['Instructor', 'User'],
         }),
         getAllMentors: builder.query({
             query: ({ page = 1, limit = 10, search = "", status = "", unit = "" } = {}) => ({

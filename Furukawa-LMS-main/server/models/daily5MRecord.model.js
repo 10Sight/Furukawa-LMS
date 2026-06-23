@@ -131,11 +131,12 @@ class Daily5MRecord {
 
         for (let i = 0; i < rowCount; i++) {
             // Check if row has any significant data
-            const hasData = recordData[`rec_${i}_Date`] || 
-                            recordData[`rec_${i}_Line`] || 
-                            recordData[`rec_${i}_StationMC`] || 
-                            recordData[`rec_${i}_OpName`];
-            
+            const hasData = recordData[`rec_${i}_Date`] ||
+                            recordData[`rec_${i}_Line`] ||
+                            recordData[`rec_${i}_StationMC`] ||
+                            recordData[`rec_${i}_OpName`] ||
+                            recordData[`rec_${i}_OperatorName`];
+
             if (hasData) {
                 activeRows++;
                 const rowStatus = recordData[`rec_${i}_RowStatus`];
@@ -159,6 +160,20 @@ class Daily5MRecord {
         const dataJson = JSON.stringify(data);
         const aggregateStatus = this.calculateAggregateStatus(data);
 
+        // Preserve the original submitter so that a QA Incharge approving rows
+        // doesn't overwrite submittedBy with their own ID (which would trigger
+        // the self-approval restriction on subsequent loads).
+        let finalSubmittedBy = submittedBy;
+        if (sessionId) {
+            const [originalRows] = await executeQuery(
+                `SELECT TOP 1 submittedBy FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt ASC`,
+                [sessionId]
+            );
+            if (originalRows && originalRows.length > 0 && originalRows[0].submittedBy) {
+                finalSubmittedBy = originalRows[0].submittedBy;
+            }
+        }
+
         const query = `
             INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, createdAt, updatedAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETUTCDATE(), GETUTCDATE());
@@ -166,7 +181,7 @@ class Daily5MRecord {
         `;
 
         const [rows] = await executeQuery(query, [
-            departmentId, sectionId || null, date, shift, line, formType, dataJson, submittedBy, sessionId || null, aggregateStatus, adminRemarks || null
+            departmentId, sectionId || null, date, shift, line, formType, dataJson, finalSubmittedBy, sessionId || null, aggregateStatus, adminRemarks || null
         ]);
 
         const newId = rows[0].id;
@@ -468,12 +483,12 @@ class Daily5MRecord {
                     // Check up to 20 rows
                     for (let i = 0; i < 20; i++) {
                         const rowStatus = data[`rec_${i}_RowStatus`];
-                        const hasData = data[`rec_${i}_Date`] || 
-                                        data[`rec_${i}_Line`] || 
-                                        data[`rec_${i}_StationMC`] || 
-                                        data[`rec_${i}_OpName`];
+                        const hasData = data[`rec_${i}_Date`] ||
+                                        data[`rec_${i}_Line`] ||
+                                        data[`rec_${i}_StationMC`] ||
+                                        data[`rec_${i}_OpName`] ||
+                                        data[`rec_${i}_OperatorName`];
 
-                        // If any identifying field is filled, consider the row filled
                         if (hasData) {
                             rowCount++;
                             if (rowStatus === 'APPROVED') approvedRows++;
@@ -560,7 +575,7 @@ class Daily5MRecord {
             }
 
             for (let i = 0; i < 20; i++) {
-                const hasData = data[`rec_${i}_Date`] || data[`rec_${i}_Line`] || data[`rec_${i}_StationMC`] || data[`rec_${i}_OpName`];
+                const hasData = data[`rec_${i}_Date`] || data[`rec_${i}_Line`] || data[`rec_${i}_StationMC`] || data[`rec_${i}_OpName`] || data[`rec_${i}_OperatorName`];
                 if (hasData) {
                     const status = data[`rec_${i}_RowStatus`] || 'PENDING';
                     

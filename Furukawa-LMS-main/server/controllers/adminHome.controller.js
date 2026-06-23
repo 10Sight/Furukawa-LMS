@@ -247,10 +247,10 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
  * Groups dojo-hired users by creation period.
  *
  * Identity rule: a row is a dojo hire if it was ever created as temporary.
- * We use (empId LIKE 'TEMP%' OR isTemporary = 1) so we capture:
+ * We use (expectedHandover IS NOT NULL OR isTemporary = 1) so we capture:
  *   - Users still in the pipeline      → isTemporary = 1
- *   - Users promoted/handed-over        → isTemporary = 0 but empId still starts TEMP
- *   - Bulk-imported users whose empId   → may not start with TEMP, caught by isTemporary = 1
+ *   - Users promoted/handed-over        → isTemporary = 0 but expectedHandover was set
+ *   - Supports actual/permanent empIds from day one (not just TEMP-prefixed IDs)
  * The union avoids double-counting because it's a single-row predicate.
  */
 export const getDojoHiringTrend = asyncHandler(async (req, res) => {
@@ -306,7 +306,7 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
             SUM(CASE WHEN gender = 'FEMALE' THEN 1 ELSE 0 END)                         AS femaleCount,
             SUM(CASE WHEN gender NOT IN ('MALE','FEMALE') OR gender IS NULL THEN 1 ELSE 0 END) AS otherCount
         FROM users
-        WHERE (empId LIKE 'TEMP%' OR isTemporary = 1)
+        WHERE (expectedHandover IS NOT NULL OR isTemporary = 1)
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND COALESCE(joiningDate, CAST(createdAt AS DATE)) >= ?
           AND COALESCE(joiningDate, CAST(createdAt AS DATE)) <= ?
@@ -324,7 +324,7 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
 /**
  * Get Dojo Handover Comparison for Admin Home page
  * Expected Handover: dojo users grouped by their expectedHandover date
- * Actual Handover:   handed-over users (empId LIKE 'TEMP%' AND isTemporary=0) grouped by updatedAt
+ * Actual Handover:   handed-over users (expectedHandover IS NOT NULL AND isTemporary=0) grouped by updatedAt
  */
 export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
     const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
@@ -381,7 +381,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
             ${expectedFormatMap[safeGroupBy]} AS period,
             COUNT(*)                          AS expected
         FROM users
-        WHERE (isTemporary = 1 OR empId LIKE 'TEMP%')
+        WHERE (isTemporary = 1 OR expectedHandover IS NOT NULL)
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND expectedHandover IS NOT NULL
           AND expectedHandover >= ?
@@ -398,7 +398,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
             CAST(COALESCE(departmentId, targetDeptId) AS NVARCHAR(20)) AS deptId,
             COUNT(*)                           AS expected
         FROM users
-        WHERE (isTemporary = 1 OR empId LIKE 'TEMP%')
+        WHERE (isTemporary = 1 OR expectedHandover IS NOT NULL)
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND expectedHandover IS NOT NULL
           AND COALESCE(departmentId, targetDeptId) IS NOT NULL
@@ -414,7 +414,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
             ${actualFormatMap[safeGroupBy]} AS period,
             COUNT(*)                        AS actual
         FROM users
-        WHERE empId LIKE 'TEMP%'
+        WHERE expectedHandover IS NOT NULL
           AND isTemporary = 0
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND CAST(updatedAt AS DATE) >= ?
@@ -431,7 +431,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
             CAST(COALESCE(departmentId, targetDeptId) AS NVARCHAR(20))         AS deptId,
             COUNT(*)                                   AS actual
         FROM users
-        WHERE empId LIKE 'TEMP%'
+        WHERE expectedHandover IS NOT NULL
           AND isTemporary = 0
           AND (isDeleted = 0 OR isDeleted IS NULL)
           AND COALESCE(departmentId, targetDeptId) IS NOT NULL

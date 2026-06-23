@@ -267,10 +267,11 @@ const SkillUpgradationWrapper = () => {
                                     Back to Plans
                                 </Button>
                             </div>
-                            <SkillUpgradationPlan 
-                                 students={students} 
-                                 departmentId={dept} 
-                                 sectionId={section} 
+                            <SkillUpgradationPlan
+                                 students={students}
+                                 isLoadingStudents={isFetchingStudents}
+                                 departmentId={dept}
+                                 sectionId={section}
                                  year={selectedPlan.year}
                             />
                         </div>

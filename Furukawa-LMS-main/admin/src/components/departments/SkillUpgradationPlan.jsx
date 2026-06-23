@@ -74,7 +74,7 @@ const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChan
     );
 };
 
-const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) => {
+const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, year }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
@@ -88,6 +88,7 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) 
     const [searchText, setSearchText] = useState("");
     const [rows, setRows] = useState([]);
     const [hasLoaded, setHasLoaded] = useState(false);
+    const [removedUserIds, setRemovedUserIds] = useState(new Set());
 
     // Fetch lines for model & line selection helper
     const { data: deptLines } = useGetLinesByDepartmentQuery(departmentId, {
@@ -110,73 +111,80 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) 
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(false);
 
-    // Reset loading state when department/section/year changes
+    // Reset state when department/section/year changes
     useEffect(() => {
         setHasLoaded(false);
         setRows([]);
+        setRemovedUserIds(new Set());
     }, [departmentId, sectionId, year]);
 
-    // Initialize rows when both students and plan details are ready
+    // Initialize rows when both students and plan data are ready
     useEffect(() => {
-        if (isLoadingPlan || hasLoaded || students.length === 0) return;
+        if (isLoadingPlan || isLoadingStudents || hasLoaded) return;
 
-        const savedRows = [];
-        const savedUserIds = Object.keys(tableData || {});
+        const savedRemovedIds = new Set(tableData.__removedUserIds || []);
+        const finalRows = [];
+        const seenUserIds = new Set();
 
-        savedUserIds.forEach((userId) => {
-            const user = students.find(s => String(s._id || s.id) === String(userId));
+        // 1. Auto-populate all assigned students (skip removed ones)
+        students.forEach((student) => {
+            const userId = String(student._id || student.id);
+            if (savedRemovedIds.has(userId)) return;
+            seenUserIds.add(userId);
             const data = tableData[userId] || {};
-            savedRows.push({
+            finalRows.push({
                 rowId: userId,
-                userId: userId,
-                userName: user?.fullName || user?.name || data.userName || "",
-                cardNo: user?.cardNo || user?.username || user?.empId || data.cardNo || "",
+                userId,
+                userName: student.fullName || student.name || data.userName || "",
+                cardNo: student.cardNo || student.username || student.empId || data.cardNo || "",
                 shift: data.shift || "",
-                modelLine: data.modelLine || "",
-                station: data.station || "",
-                q1Skill: data.q1Skill || "",
-                q1Date: data.q1Date || "",
-                q1DateActual: data.q1DateActual || "",
-                q1Status: data.q1Status || "",
-                q2Skill: data.q2Skill || "",
-                q2Date: data.q2Date || "",
-                q2DateActual: data.q2DateActual || "",
-                q2Status: data.q2Status || "",
-                q3Skill: data.q3Skill || "",
-                q3Date: data.q3Date || "",
-                q3DateActual: data.q3DateActual || "",
-                q3Status: data.q3Status || "",
-                q4Skill: data.q4Skill || "",
-                q4Date: data.q4Date || "",
-                q4DateActual: data.q4DateActual || "",
-                q4Status: data.q4Status || ""
+                modelLine: data.modelLine || student.lineName || "",
+                station: data.station || student.subSectionName || "",
+                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "",
+                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "",
+                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "",
+                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "",
             });
         });
 
-        // Pad to 25 rows
+        // 2. Preserve saved entries for users no longer in the section (historical data)
+        Object.keys(tableData).forEach((userId) => {
+            if (userId === "__removedUserIds") return;
+            if (seenUserIds.has(userId)) return;
+            if (savedRemovedIds.has(userId)) return;
+            const data = tableData[userId];
+            finalRows.push({
+                rowId: userId,
+                userId,
+                userName: data.userName || "",
+                cardNo: data.cardNo || "",
+                shift: data.shift || "",
+                modelLine: data.modelLine || "",
+                station: data.station || "",
+                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "",
+                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "",
+                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "",
+                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "",
+            });
+        });
+
+        // 3. Pad to minimum 25 rows with blank entries
         const totalRowsNeeded = 25;
-        const currentCount = savedRows.length;
-        if (currentCount < totalRowsNeeded) {
-            for (let i = currentCount; i < totalRowsNeeded; i++) {
-                savedRows.push({
-                    rowId: `temp-${i}-${Date.now()}`,
-                    userId: "",
-                    userName: "",
-                    cardNo: "",
-                    shift: "",
-                    modelLine: "",
-                    station: "",
-                    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
-                    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
-                    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
-                    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
-                });
-            }
+        while (finalRows.length < totalRowsNeeded) {
+            finalRows.push({
+                rowId: `temp-${finalRows.length}-${Math.random()}`,
+                userId: "", userName: "", cardNo: "", shift: "", modelLine: "", station: "",
+                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
+                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
+                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
+                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "",
+            });
         }
 
-        setRows(savedRows);
+        setRemovedUserIds(savedRemovedIds);
+        setRows(finalRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, hasLoaded]);
+    }, [tableData, students, isLoadingPlan, isLoadingStudents, hasLoaded]);
 
     useEffect(() => {
         if (!departmentId) return;
@@ -229,8 +237,11 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) 
         ]);
     };
 
-    const handleRemoveEmployee = (rowId) => {
+    const handleRemoveEmployee = (rowId, userId) => {
         setRows(prev => prev.filter(row => row.rowId !== rowId));
+        if (userId) {
+            setRemovedUserIds(prev => new Set([...prev, String(userId)]));
+        }
         toast.success("Row removed from sheet");
     };
 
@@ -260,6 +271,8 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) 
         rows.forEach(row => {
             if (row.userId) {
                 newTableData[row.userId] = {
+                    userName: row.userName || "",
+                    cardNo: row.cardNo || "",
                     shift: row.shift,
                     modelLine: row.modelLine || "",
                     station: row.station || "",
@@ -282,6 +295,9 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) 
                 };
             }
         });
+        if (removedUserIds.size > 0) {
+            newTableData.__removedUserIds = [...removedUserIds];
+        }
 
         try {
             setIsSaving(true);
@@ -736,7 +752,7 @@ const SkillUpgradationPlan = ({ students = [], departmentId, sectionId, year }) 
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => handleRemoveEmployee(rowId)}
+                                                    onClick={() => handleRemoveEmployee(rowId, row.userId)}
                                                     className="text-red-500 hover:text-red-700 p-1 h-auto"
                                                     title="Remove Row"
                                                 >

@@ -60,9 +60,8 @@ const calculateUserEfficiency = (op) => {
     if (!evalData) return 0;
     let parsed = evalData;
     if (typeof evalData === 'string') { try { parsed = JSON.parse(evalData); } catch { return 0; } }
-    const l4Keys = ['3-0', '3-1', '3-2', '3-3', '3-4'];
-    if (l4Keys.every(k => parsed[k]?.standard === 'OK')) return 100;
-    for (const key of ['2-0', '1-1', '0-2']) {
+    // L4: '3-5', L3: '2-0', L2: '1-2', L1: '0-2'
+    for (const key of ['3-5', '2-0', '1-2', '0-2']) {
         const d = parsed[key];
         if (d?.standard === 'OK') return Math.min(parseFloat(d.okVal) || 0, 100);
     }

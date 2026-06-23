@@ -535,7 +535,7 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
             FROM attendance_logs
             WHERE userId = u.id AND [shift] IS NOT NULL AND [date] = dates.attendanceDate
         ) al_shift
-        LEFT JOIN skill_matrix_evaluations sme ON u.id = sme.studentId
+        LEFT JOIN skill_matrix_evaluations sme ON u.id = sme.studentId AND sme.isActive = 1
         WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND u.role IN ('STUDENT', 'CUSTOM')
           AND (u.status IS NULL OR u.status != 'LEFT')
@@ -709,8 +709,11 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
     let levelUpgraded = false;
     let newLevel = null;
 
-    // Only update student stats and sync matrix if this sheet is the active one!
-    if (existingSheet.isActive) {
+    const hasEvalData = Object.keys(parsedEvalData).length > 0;
+
+    // Only update student stats and sync matrix if this sheet is active AND has evaluated data.
+    // Saving an empty active sheet must not overwrite the operator's current efficiency/level.
+    if (existingSheet.isActive && hasEvalData) {
         try {
             const student = await User.findById(studentId);
             if (student) {

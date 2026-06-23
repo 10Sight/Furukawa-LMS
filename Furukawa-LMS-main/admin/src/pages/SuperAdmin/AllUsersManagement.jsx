@@ -31,7 +31,7 @@ import {
   useUpdateUserMutation as useSuperAdminUpdateUserMutation,
   usePermanentDeleteUserMutation
 } from "@/Redux/AllApi/SuperAdminApi";
-import { useGetUniqueDesignationsQuery } from "@/Redux/AllApi/UserApi";
+import { useGetUniqueDesignationsQuery, useBulkUpdateShiftScheduleMutation } from "@/Redux/AllApi/UserApi";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
@@ -43,6 +43,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { FormSelect } from "@/components/form/FormSelect";
+import ShiftScheduler from "@/components/admin/ShiftScheduler";
 
 // shadcn/ui components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,6 +70,12 @@ const AllUsersManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [shiftUser, setShiftUser] = useState(null);
+  const [shiftScheduleDraft, setShiftScheduleDraft] = useState({});
+  const [showBulkShiftModal, setShowBulkShiftModal] = useState(false);
+  const [bulkShiftScheduleDraft, setBulkShiftScheduleDraft] = useState({});
+  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
   const [showDebugInfo, setShowDebugInfo] = useState(false);
@@ -324,6 +331,7 @@ const AllUsersManagement = () => {
   const [createUser] = useSuperAdminCreateUserMutation();
   const [updateUser] = useSuperAdminUpdateUserMutation();
   const [deleteUser] = usePermanentDeleteUserMutation();
+  const [bulkUpdateShiftSchedule] = useBulkUpdateShiftScheduleMutation();
 
   const users = usersData?.data?.users || [];
   const totalPages = usersData?.data?.totalPages || 1;
@@ -362,13 +370,18 @@ const AllUsersManagement = () => {
       ])
     ].filter(Boolean);
 
+    const resolvedShiftSchedule = typeof user.shiftSchedule === 'string'
+      ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+      : (user.shiftSchedule || {});
+
     setSelectedUser({
       ...user,
       departments: resolvedDepts,
       sections: resolvedSections,
       lines: resolvedLines,
       subSections: resolvedSubSections,
-      stations: resolvedStations
+      stations: resolvedStations,
+      shiftSchedule: resolvedShiftSchedule,
     });
     setShowEditModal(true);
   };
@@ -423,6 +436,48 @@ const AllUsersManagement = () => {
     } catch (error) {
       console.error("Error updating user:", error);
       toast.error(error?.data?.message || "Failed to update user");
+    }
+  };
+
+  const handleOpenShiftModal = (user) => {
+    const resolved = typeof user.shiftSchedule === 'string'
+      ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+      : (user.shiftSchedule || {});
+    setShiftUser(user);
+    setShiftScheduleDraft(resolved);
+    setShowShiftModal(true);
+  };
+
+  const handleSaveBulkShift = async () => {
+    if (Object.keys(bulkShiftScheduleDraft).length === 0) {
+      toast.error("No shift changes to apply. Use the calendar to assign shifts first.");
+      return;
+    }
+    if (isBulkSubmitting) return;
+    setIsBulkSubmitting(true);
+    try {
+      const payload = { ids: selectedUsers, shiftSchedulePatch: bulkShiftScheduleDraft };
+      const result = await bulkUpdateShiftSchedule(payload).unwrap();
+      toast.success(result?.message || "Shift schedule updated successfully!");
+      setShowBulkShiftModal(false);
+      setBulkShiftScheduleDraft({});
+      refetch();
+    } catch (error) {
+      toast.error(error?.data?.message || "Failed to update shift schedules");
+    } finally {
+      setIsBulkSubmitting(false);
+    }
+  };
+
+  const handleSaveShift = async () => {
+    if (!shiftUser) return;
+    try {
+      await updateUser({ id: shiftUser._id, shiftSchedule: shiftScheduleDraft }).unwrap();
+      toast.success("Shift schedule saved!");
+      setShowShiftModal(false);
+      refetch();
+    } catch (error) {
+      toast.error(error?.data?.message || "Failed to save shift schedule");
     }
   };
 
@@ -1041,6 +1096,77 @@ const AllUsersManagement = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Shift Schedule Dialog */}
+          <Dialog open={showShiftModal} onOpenChange={setShowShiftModal}>
+            <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <IconCalendar className="w-5 h-5 text-blue-600" />
+                  Shift Schedule
+                  {shiftUser && (
+                    <span className="text-sm font-normal text-gray-500 ml-1">— {shiftUser.fullName}</span>
+                  )}
+                </DialogTitle>
+                <DialogDescription className="text-sm">
+                  Assign date-wise shifts for this user. Changes are saved only when you click "Save".
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-2">
+                <ShiftScheduler
+                  schedule={shiftScheduleDraft}
+                  onChange={setShiftScheduleDraft}
+                />
+              </div>
+              <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setShowShiftModal(false)} className="w-full sm:w-auto">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveShift}
+                  className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                >
+                  Save Shift Schedule
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Bulk Shift Schedule Dialog */}
+          <Dialog open={showBulkShiftModal} onOpenChange={(open) => { setShowBulkShiftModal(open); if (!open) setBulkShiftScheduleDraft({}); }}>
+            <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <IconCalendar className="w-5 h-5 text-indigo-600" />
+                  Bulk Shift Schedule
+                  <span className="text-sm font-normal text-gray-500 ml-1">
+                    — {selectedUsers.length} selected user{selectedUsers.length !== 1 ? "s" : ""}
+                  </span>
+                </DialogTitle>
+                <DialogDescription className="text-sm">
+                  Assign shifts for the selected users. These shifts will be <strong>merged</strong> into each user's existing schedule — dates not assigned here are untouched.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-2">
+                <ShiftScheduler
+                  schedule={bulkShiftScheduleDraft}
+                  onChange={setBulkShiftScheduleDraft}
+                />
+              </div>
+              <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => { setShowBulkShiftModal(false); setBulkShiftScheduleDraft({}); }} className="w-full sm:w-auto">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveBulkShift}
+                  disabled={isBulkSubmitting || Object.keys(bulkShiftScheduleDraft).length === 0}
+                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800"
+                >
+                  {isBulkSubmitting ? "Saving..." : "Save Shift Schedule"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -1408,6 +1534,19 @@ const AllUsersManagement = () => {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Shift Date</label>
+              <div className="relative">
+                <IconCalendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <Input
+                  type="date"
+                  value={filters.date}
+                  onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+                  className="pl-9 h-9"
+                />
+              </div>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Designation</label>
               <Popover>
                 <PopoverTrigger asChild>
@@ -1526,6 +1665,13 @@ const AllUsersManagement = () => {
                   <IconTrash className="w-4 h-4" />
                   <span>Delete</span>
                 </button>
+                <button
+                  onClick={() => { setBulkShiftScheduleDraft({}); setShowBulkShiftModal(true); }}
+                  className="flex items-center space-x-1 px-3 py-1 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 transition-colors"
+                >
+                  <IconCalendar className="w-4 h-4" />
+                  <span>Schedule Shift</span>
+                </button>
               </div>
             )}
 
@@ -1578,6 +1724,9 @@ const AllUsersManagement = () => {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Shift
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Scheduled Shift
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
@@ -1668,7 +1817,34 @@ const AllUsersManagement = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {user.logShift || user.shift || "-"}
+                        {(() => {
+                          const schedule = typeof user.shiftSchedule === 'string'
+                            ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+                            : (user.shiftSchedule || {});
+                          const rawDate = user.logDate || filters.date;
+                          const activeDate = rawDate
+                            ? (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : String(rawDate).substring(0, 10))
+                            : format(new Date(), "yyyy-MM-dd");
+                          const activeShift = schedule[activeDate] || user.logShift || user.shift;
+                          if (!activeShift) return <span className="text-gray-400">-</span>;
+                          const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                          return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[activeShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{activeShift}</span>;
+                        })()}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {(() => {
+                          const schedule = typeof user.shiftSchedule === 'string'
+                            ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+                            : (user.shiftSchedule || {});
+                          const rawDate = user.logDate || filters.date;
+                          const activeDate = rawDate
+                            ? (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : String(rawDate).substring(0, 10))
+                            : format(new Date(), "yyyy-MM-dd");
+                          const scheduledShift = schedule[activeDate];
+                          if (!scheduledShift) return <span className="text-gray-400">-</span>;
+                          const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                          return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[scheduledShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{scheduledShift}</span>;
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(user.logStatus || ((filters.date || (filters.dateFrom && filters.dateTo)) ? "Absent" : user.status))}`}>
@@ -1738,6 +1914,13 @@ const AllUsersManagement = () => {
                             title="Edit User"
                           >
                             <IconEdit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenShiftModal(user)}
+                            className="p-1.5 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded transition-colors"
+                            title="Shift Schedule"
+                          >
+                            <IconCalendar className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => navigate('/cms/daily-5m-recording', { state: { playUser: user } })}
@@ -1813,6 +1996,13 @@ const AllUsersManagement = () => {
                             <IconEdit className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => handleOpenShiftModal(user)}
+                            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                            title="Shift Schedule"
+                          >
+                            <IconCalendar className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => navigate('/cms/daily-5m-recording', { state: { playUser: user } })}
                             className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
                             title="Start Action"
@@ -1831,7 +2021,35 @@ const AllUsersManagement = () => {
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 mt-4 text-xs">
                         <div>
                           <p className="text-gray-400 mb-0.5">Shift</p>
-                          <p className="font-medium text-gray-700">{user.logShift || user.shift || "-"}</p>
+                          {(() => {
+                            const schedule = typeof user.shiftSchedule === 'string'
+                              ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+                              : (user.shiftSchedule || {});
+                            const rawDate = user.logDate || filters.date;
+                            const activeDate = rawDate
+                              ? (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : String(rawDate).substring(0, 10))
+                              : format(new Date(), "yyyy-MM-dd");
+                            const activeShift = schedule[activeDate] || user.logShift || user.shift;
+                            if (!activeShift) return <p className="font-medium text-gray-400">-</p>;
+                            const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                            return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[activeShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{activeShift}</span>;
+                          })()}
+                        </div>
+                        <div>
+                          <p className="text-gray-400 mb-0.5">Scheduled Shift</p>
+                          {(() => {
+                            const schedule = typeof user.shiftSchedule === 'string'
+                              ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+                              : (user.shiftSchedule || {});
+                            const rawDate = user.logDate || filters.date;
+                            const activeDate = rawDate
+                              ? (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : String(rawDate).substring(0, 10))
+                              : format(new Date(), "yyyy-MM-dd");
+                            const scheduledShift = schedule[activeDate];
+                            if (!scheduledShift) return <p className="font-medium text-gray-400">-</p>;
+                            const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                            return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[scheduledShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{scheduledShift}</span>;
+                          })()}
                         </div>
                         <div>
                           <p className="text-gray-400 mb-0.5">Department</p>

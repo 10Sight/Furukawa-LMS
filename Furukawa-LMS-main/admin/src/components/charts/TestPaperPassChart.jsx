@@ -20,6 +20,7 @@ import {
 } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import useTranslate from "@/hooks/useTranslate";
 
 const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -41,15 +42,17 @@ const toApiDates = (timeframe, rawStart, rawEnd) => {
     return { startDate: rawStart, endDate: rawEnd };
 };
 
-const formatPeriodLabel = (period, groupBy) => {
+const formatPeriodLabel = (period, groupBy, language = 'en') => {
     if (!period) return '';
     if (groupBy === 'yearly') return period;
+    const localeMap = { en: 'en-US', hi: 'hi-IN', ja: 'ja-JP', zh: 'zh-CN', ru: 'ru-RU' };
+    const activeLocale = localeMap[language] || 'en-US';
     if (groupBy === 'daily') {
-        return new Date(`${period}T00:00:00`).toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+        return new Date(`${period}T00:00:00`).toLocaleDateString(activeLocale, { day: '2-digit', month: 'short' });
     }
     const [year, month] = period.split('-');
     return new Date(Number(year), Number(month) - 1, 1)
-        .toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        .toLocaleDateString(activeLocale, { month: 'short', year: 'numeric' });
 };
 
 const EMPTY_RESULT = { passedTheoretical: 0, failedTheoretical: 0, passedPractical: 0, failedPractical: 0 };
@@ -121,6 +124,7 @@ const getDefaultDates = (timeframe) => {
 
 /* ── Reusable sub-chart ── */
 const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSeries, categories, chartKey, needsScroll, scrollMinWidth }) => {
+    const { t } = useTranslate();
     const totalPassed   = passedSeries.reduce((a, b) => a + b, 0);
     const totalFailed   = failedSeries.reduce((a, b) => a + b, 0);
     const totalAttempts = totalPassed + totalFailed;
@@ -155,7 +159,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
         yAxis: {
             min:           0,
             allowDecimals: false,
-            title:         { text: 'Attempts', style: { color: '#94a3b8', fontSize: '11px' } },
+            title:         { text: t('charts.attempts'), style: { color: '#94a3b8', fontSize: '11px' } },
             gridLineColor: '#f1f5f9',
             labels:        { style: { fontSize: '11px' } },
         },
@@ -171,13 +175,13 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
             useHTML: true,
             formatter() {
                 const p = this.points;
-                const passed = p.find(x => x.series.name === 'Passed')?.y ?? 0;
-                const failed = p.find(x => x.series.name === 'Failed')?.y ?? 0;
+                const passed = p.find(x => x.series.name === t('charts.passed'))?.y ?? 0;
+                const failed = p.find(x => x.series.name === t('charts.failed'))?.y ?? 0;
                 return (
                     `<b style="color:#0f172a">${this.x}</b><br/>` +
-                    `<span style="color:#16a34a">●</span> Passed: <b>${passed}</b><br/>` +
-                    `<span style="color:#dc2626">●</span> Failed: <b>${failed}</b><br/>` +
-                    `<span style="color:#6b7280">Total: <b style="color:#0f172a">${passed + failed}</b></span>`
+                    `<span style="color:#16a34a">●</span> ${t('charts.passed')}: <b>${passed}</b><br/>` +
+                    `<span style="color:#dc2626">●</span> ${t('charts.failed')}: <b>${failed}</b><br/>` +
+                    `<span style="color:#6b7280">${t('charts.total')}: <b style="color:#0f172a">${passed + failed}</b></span>`
                 );
             },
         },
@@ -199,8 +203,8 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
             },
         },
         series: [
-            { type: 'column', name: 'Passed', data: passedSeries, color: '#16a34a' },
-            { type: 'column', name: 'Failed', data: failedSeries, color: '#dc2626' },
+            { type: 'column', name: t('charts.passed'), data: passedSeries, color: '#16a34a' },
+            { type: 'column', name: t('charts.failed'), data: failedSeries, color: '#dc2626' },
         ],
     };
 
@@ -215,15 +219,15 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
 
             <div className="grid grid-cols-3 gap-3">
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
-                    <span className="text-xs font-bold text-green-700">Passed</span>
+                    <span className="text-xs font-bold text-green-700">{t('charts.totalPassed')}</span>
                     <span className="text-sm font-black text-green-900">{totalPassed}</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-50">
-                    <span className="text-xs font-bold text-red-700">Failed</span>
+                    <span className="text-xs font-bold text-red-700">{t('charts.totalFailed')}</span>
                     <span className="text-sm font-black text-red-900">{totalFailed}</span>
                 </div>
                 <div className={`flex items-center justify-between p-2.5 rounded-lg ${passRate >= 70 ? 'bg-green-50' : 'bg-amber-50'}`}>
-                    <span className={`text-xs font-bold ${passRate >= 70 ? 'text-green-600' : 'text-amber-600'}`}>Pass Rate</span>
+                    <span className={`text-xs font-bold ${passRate >= 70 ? 'text-green-600' : 'text-amber-600'}`}>{t('charts.passRate')}</span>
                     <span className={`text-sm font-black ${passRate >= 70 ? 'text-green-900' : 'text-amber-900'}`}>{passRate > 0 ? `${passRate}%` : '—'}</span>
                 </div>
             </div>
@@ -234,6 +238,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
 /* ══════════════════════════════════════════════════════════════ */
 
 const TestPaperPassChart = () => {
+    const { t, language } = useTranslate();
     const [timeframe,    setTimeframe]    = useState('daily');
     const [rawStart,     setRawStart]     = useState(() => getDefaultDates('daily').rawStart);
     const [rawEnd,       setRawEnd]       = useState(() => getDefaultDates('daily').rawEnd);
@@ -266,7 +271,7 @@ const TestPaperPassChart = () => {
         [groupBy, apiStart, apiEnd, rawTrendByResult]
     );
 
-    const categories = periods.map(p => formatPeriodLabel(p, groupBy));
+    const categories = periods.map(p => formatPeriodLabel(p, groupBy, language));
 
     const theoreticalPassedSeries = resultRows.map(r => Number(r.passedTheoretical) || 0);
     const theoreticalFailedSeries = resultRows.map(r => Number(r.failedTheoretical) || 0);
@@ -303,10 +308,10 @@ const TestPaperPassChart = () => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconCertificate className="h-5 w-5 text-blue-600" />
-                            DOJO Candidates Test Analytics
+                            {t('charts.testAnalytics')}
                         </CardTitle>
                         <CardDescription>
-                            Date-wise pass / fail performance for Theoretical and Practical tests
+                            {t('charts.testAnalyticsDesc')}
                         </CardDescription>
                     </div>
                 </div>
@@ -315,13 +320,13 @@ const TestPaperPassChart = () => {
                 <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            Timeframe
+                            {t('charts.timeframe')}
                         </Label>
                         <div className="flex gap-1">
                             {[
-                                { key: 'daily',   label: 'Daily'   },
-                                { key: 'monthly', label: 'Monthly' },
-                                { key: 'yearly',  label: 'Yearly'  },
+                                { key: 'daily',   label: t('charts.daily')   },
+                                { key: 'monthly', label: t('charts.monthly') },
+                                { key: 'yearly',  label: t('charts.yearly')  },
                             ].map(({ key, label }) => (
                                 <Button
                                     key={key}
@@ -337,7 +342,7 @@ const TestPaperPassChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.from')}</Label>
                         <Input
                             type={cfg.type}
                             value={rawStart}
@@ -351,7 +356,7 @@ const TestPaperPassChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.to')}</Label>
                         <Input
                             type={cfg.type}
                             value={rawEnd}
@@ -365,13 +370,13 @@ const TestPaperPassChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Department</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('nav.department')}</Label>
                         <Select value={departmentId} onValueChange={setDepartmentId}>
                             <SelectTrigger className="h-8 w-44 text-xs">
-                                <SelectValue placeholder="All Departments" />
+                                <SelectValue placeholder={t('charts.allDepartments')} />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">All Departments</SelectItem>
+                                <SelectItem value="all">{t('charts.allDepartments')}</SelectItem>
                                 {departments.map(dept => (
                                     <SelectItem key={dept.id} value={String(dept.id)}>{dept.name}</SelectItem>
                                 ))}
@@ -380,15 +385,15 @@ const TestPaperPassChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Worker Type</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.workerType')}</Label>
                         <Select value={isDojo} onValueChange={setIsDojo}>
                             <SelectTrigger className="h-8 w-36 text-xs">
-                                <SelectValue placeholder="All Types" />
+                                <SelectValue placeholder={t('charts.allTypes')} />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">All Types</SelectItem>
-                                <SelectItem value="false">Operator</SelectItem>
-                                <SelectItem value="true">Dojo</SelectItem>
+                                <SelectItem value="all">{t('charts.allTypes')}</SelectItem>
+                                <SelectItem value="false">{t('charts.operator')}</SelectItem>
+                                <SelectItem value="true">{t('charts.dojo')}</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -400,7 +405,7 @@ const TestPaperPassChart = () => {
                         onClick={handleReset}
                     >
                         <IconRefresh className="h-3.5 w-3.5 mr-1" />
-                        Reset
+                        {t('charts.reset')}
                     </Button>
                 </div>
             </CardHeader>
@@ -414,17 +419,17 @@ const TestPaperPassChart = () => {
                             className="w-20 h-20 object-contain animate-pulse"
                         />
                         <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
-                            Loading
+                            {t('charts.loading')}
                         </p>
                     </div>
                 ) : error ? (
                     <div className="h-[360px] flex flex-col items-center justify-center text-red-500 gap-2">
-                        <p className="text-sm font-semibold">Failed to load test paper statistics.</p>
+                        <p className="text-sm font-semibold">{t('charts.failedToLoadTestPaper')}</p>
                     </div>
                 ) : (
                     <>
                         <PassFailChart
-                            title="Theoretical Test Performance"
+                            title={t('charts.theoreticalTestPerf')}
                             icon={IconSchool}
                             iconColor="text-blue-500"
                             passedSeries={theoreticalPassedSeries}
@@ -438,7 +443,7 @@ const TestPaperPassChart = () => {
                         <div className="border-t border-slate-100" />
 
                         <PassFailChart
-                            title="Practical Test Performance"
+                            title={t('charts.practicalTestPerf')}
                             icon={IconClipboardCheck}
                             iconColor="text-orange-500"
                             passedSeries={practicalPassedSeries}

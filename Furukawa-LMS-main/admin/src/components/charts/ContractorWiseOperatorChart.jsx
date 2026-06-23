@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { IconBuilding, IconCalendar, IconRefresh } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import useTranslate from "@/hooks/useTranslate";
 
 const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -32,15 +33,18 @@ const toApiDates = (timeframe, rawStart, rawEnd) => {
     return { startDate: rawStart, endDate: rawEnd };
 };
 
-const formatPeriodLabel = (period, groupBy) => {
+const localeMap = { en: 'en-US', hi: 'hi-IN', ja: 'ja-JP', zh: 'zh-CN', ru: 'ru-RU' };
+
+const formatPeriodLabel = (period, groupBy, language = 'en') => {
     if (!period) return '';
     if (groupBy === 'yearly') return period;
+    const locale = localeMap[language] || 'en-US';
     if (groupBy === 'daily') {
-        return new Date(`${period}T00:00:00`).toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+        return new Date(`${period}T00:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' });
     }
     const [year, month] = period.split('-');
     return new Date(Number(year), Number(month) - 1, 1)
-        .toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        .toLocaleDateString(locale, { month: 'short', year: 'numeric' });
 };
 
 const getPeriodKey = (dateStr, groupBy) => {
@@ -102,6 +106,7 @@ const getDefaultDates = (timeframe) => {
 };
 
 const ContractorWiseOperatorChart = () => {
+    const { t, language } = useTranslate();
     const [timeframe, setTimeframe] = useState('daily');
     const [rawStart,  setRawStart]  = useState(() => getDefaultDates('daily').rawStart);
     const [rawEnd,    setRawEnd]    = useState(() => getDefaultDates('daily').rawEnd);
@@ -163,7 +168,7 @@ const ContractorWiseOperatorChart = () => {
         const flatPoints = [];
 
         periods.forEach(period => {
-            const periodLabel = formatPeriodLabel(period, timeframe);
+            const periodLabel = formatPeriodLabel(period, timeframe, language);
             const present = contractorNames.filter(n => (matrix[period]?.[n] || 0) > 0);
 
             if (!present.length) {
@@ -238,7 +243,7 @@ const ContractorWiseOperatorChart = () => {
         }
 
         return { periods, contractorNames, flatPoints, categories, groupSeparators };
-    }, [allUsers, contractorIdToName, timeframe, startDate, endDate]);
+    }, [allUsers, contractorIdToName, timeframe, startDate, endDate, language]);
 
     // Summary
     const totalOperators = flatPoints.reduce((sum, p) => sum + (p.y || 0), 0);
@@ -352,10 +357,10 @@ const ContractorWiseOperatorChart = () => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconBuilding className="h-5 w-5 text-blue-600" />
-                            Contractor Wise DOJO Candidates
+                            {t('charts.contractorWiseDojo')}
                         </CardTitle>
                         <CardDescription>
-                            Operators joined per contractor — grouped by joining date
+                            {t('charts.contractorWiseDojoDesc')}
                         </CardDescription>
                     </div>
                 </div>
@@ -365,13 +370,13 @@ const ContractorWiseOperatorChart = () => {
 
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            Timeframe
+                            {t('charts.timeframe')}
                         </Label>
                         <div className="flex gap-1">
                             {[
-                                { key: 'daily',   label: 'Daily (30d)'   },
-                                { key: 'monthly', label: 'Monthly (12m)' },
-                                { key: 'yearly',  label: 'Yearly (5y)'   },
+                                { key: 'daily',   label: t('charts.daily30d')   },
+                                { key: 'monthly', label: t('charts.monthly12m') },
+                                { key: 'yearly',  label: t('charts.yearly5y')   },
                             ].map(({ key, label }) => (
                                 <Button
                                     key={key}
@@ -387,7 +392,7 @@ const ContractorWiseOperatorChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.from')}</Label>
                         <Input
                             type={cfg.type}
                             value={rawStart}
@@ -401,7 +406,7 @@ const ContractorWiseOperatorChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.to')}</Label>
                         <Input
                             type={cfg.type}
                             value={rawEnd}
@@ -421,7 +426,7 @@ const ContractorWiseOperatorChart = () => {
                         onClick={handleReset}
                     >
                         <IconRefresh className="h-3.5 w-3.5 mr-1" />
-                        Reset
+                        {t('charts.reset')}
                     </Button>
                 </div>
             </CardHeader>
@@ -435,18 +440,18 @@ const ContractorWiseOperatorChart = () => {
                             className="w-20 h-20 object-contain animate-pulse"
                         />
                         <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
-                            Loading
+                            {t('charts.loading')}
                         </p>
                     </div>
                 ) : error ? (
                     <div className="h-[560px] flex flex-col items-center justify-center text-red-500 gap-2">
-                        <p className="text-sm font-semibold">Failed to load contractor data.</p>
+                        <p className="text-sm font-semibold">{t('charts.failedToLoadContractor')}</p>
                     </div>
                 ) : !hasAnyData ? (
                     <div className="h-[560px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">No operator joining data for this period.</p>
-                        <p className="text-xs opacity-60">Try adjusting the timeframe or date range above.</p>
+                        <p className="text-sm font-medium">{t('charts.noOperatorJoiningData')}</p>
+                        <p className="text-xs opacity-60">{t('charts.adjustTimeframeOrRange')}</p>
                     </div>
                 ) : (
                     <>
@@ -459,22 +464,22 @@ const ContractorWiseOperatorChart = () => {
                         {/* Summary strip */}
                         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                <span className="text-xs font-bold text-blue-700">Total Joined</span>
+                                <span className="text-xs font-bold text-blue-700">{t('charts.totalJoined')}</span>
                                 <span className="text-sm font-black text-blue-900">{totalOperators}</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                                <span className="text-xs font-bold text-slate-600">Contractors</span>
+                                <span className="text-xs font-bold text-slate-600">{t('charts.contractors')}</span>
                                 <span className="text-sm font-black text-slate-800">{contractorNames.length}</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-50">
-                                <span className="text-xs font-bold text-emerald-700 truncate pr-1">Top Contractor</span>
+                                <span className="text-xs font-bold text-emerald-700 truncate pr-1">{t('charts.topContractor')}</span>
                                 <span className="text-xs font-black text-emerald-900 truncate max-w-[80px]" title={topContractor?.name}>
                                     {topContractor?.name ?? '—'}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
                                 <span className="text-xs font-bold text-slate-500">
-                                    {timeframe === 'daily' ? 'Days' : timeframe === 'monthly' ? 'Months' : 'Years'} Tracked
+                                    {timeframe === 'daily' ? t('charts.daysTracked') : timeframe === 'monthly' ? t('charts.monthsTracked') : t('charts.yearsTracked')}
                                 </span>
                                 <span className="text-sm font-black text-slate-800">{periods.length}</span>
                             </div>

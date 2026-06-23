@@ -179,6 +179,7 @@ export const formatUser = (u) => {
       : (u.stationName || sanitize(u.stationNo) || ""),
     fromInfo: [u.deptName || sanitize(u.department), u.sectionName || sanitize(u.section), u.lineName || sanitize(u.line), u.subSectionName || sanitize(u.sub_section), u.stationName || sanitize(u.stationNo)].filter(Boolean).join(' / '),
     currentSkill,
+    shiftSchedule: parseJSON(u.shiftSchedule, {}),
     targetDeptId: u.targetDeptId,
     targetSectionId: u.targetSectionId,
     targetLineId: u.targetLineId,
@@ -559,7 +560,7 @@ export const createUser = asyncHandler(async (req, res) => {
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
-    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "sections", "lines", "subSections", "contractorId"
+    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "sections", "lines", "subSections", "contractorId", "shiftSchedule"
   ];
 
   const values = fields.map(f => {
@@ -573,6 +574,7 @@ export const createUser = asyncHandler(async (req, res) => {
     if (f === 'sections') return JSON.stringify(sections);
     if (f === 'lines') return JSON.stringify(lines);
     if (f === 'subSections') return JSON.stringify(subSections);
+    if (f === 'shiftSchedule') return JSON.stringify(typeof data[f] === 'object' && data[f] !== null ? data[f] : {});
     if (['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f)) return data[f] ? 1 : 0;
     return data[f] || null;
   });
@@ -713,7 +715,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "contractor", "contractorId", "expectedHandover",
     "customRoleId", "currentLevel", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
-    "departments", "stations", "sections", "lines", "subSections"
+    "departments", "stations", "sections", "lines", "subSections", "shiftSchedule"
   ];
 
   const oldUser = rows[0];
@@ -810,6 +812,9 @@ export const updateUser = asyncHandler(async (req, res) => {
       } else if (f === "subSections") {
         updates.push("subSections = ?");
         values.push(JSON.stringify(parseArray(data[f])));
+      } else if (f === "shiftSchedule") {
+        updates.push("shiftSchedule = ?");
+        values.push(JSON.stringify(typeof data[f] === 'object' && data[f] !== null ? data[f] : {}));
       } else {
         updates.push(`${f} = ?`);
         values.push(['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f) ? (data[f] ? 1 : 0) : (data[f] === undefined ? null : data[f]));
@@ -1872,7 +1877,7 @@ export const getNextTemporaryId = asyncHandler(async (req, res) => {
   const cleanPrefix = prefix.replace(/-/g, '');
 
   const [rows] = await executeQuery(`
-    SELECT empId FROM users 
+    SELECT empId FROM users
     WHERE empId LIKE ? AND isTemporary = 1
     ORDER BY empId DESC
   `, [`${cleanPrefix}%`]);
@@ -1901,4 +1906,103 @@ export const getNextTemporaryId = asyncHandler(async (req, res) => {
   const nextId = `${cleanPrefix}${randomPart}${formattedSeq}`;
 
   res.json(new ApiResponse(200, { nextId }, "Next sequence generated"));
+});
+
+/**
+ * Bulk Update Shift Schedule
+ * Merges the provided shiftSchedulePatch into each targeted user's existing shiftSchedule.
+ * Patch values of null/"" delete a date key; any valid shift value ("A","B","C","G") sets it.
+ * Uses a single SELECT + single CASE-WHEN UPDATE to avoid N+1 queries.
+ */
+export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
+  const { ids, isAllSelected, filters, shiftSchedulePatch } = req.body;
+
+  if (!shiftSchedulePatch || typeof shiftSchedulePatch !== 'object' || Array.isArray(shiftSchedulePatch)) {
+    throw new ApiError("shiftSchedulePatch is required and must be a date→shift object", 400);
+  }
+
+  // Resolve which user IDs to target
+  let userIds = [];
+
+  if (isAllSelected) {
+    let whereClauses = [
+      "isEmployee = 1",
+      "(isTrainer = 0 OR isTrainer IS NULL)",
+      "(isDeleted = 0 OR isDeleted IS NULL)",
+    ];
+    let params = [];
+
+    if (filters?.search) {
+      const t = `%${filters.search}%`;
+      whereClauses.push("(fullName LIKE ? OR userName LIKE ? OR empId LIKE ?)");
+      params.push(t, t, t);
+    }
+    if (filters?.status && filters.status !== "ALL") {
+      whereClauses.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters?.unit && filters.unit !== "ALL") {
+      whereClauses.push("unit = ?");
+      params.push(filters.unit);
+    }
+    if (filters?.departmentId && filters.departmentId !== "ALL") {
+      whereClauses.push("(departmentId = ? OR department = ?)");
+      params.push(filters.departmentId, filters.departmentId);
+    }
+
+    const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+    const [rows] = await executeQuery(`SELECT id FROM users ${whereSQL}`, params);
+    userIds = rows.map(r => r.id);
+  } else {
+    if (!ids?.length) throw new ApiError("No IDs provided", 400);
+    userIds = ids;
+  }
+
+  if (userIds.length === 0) {
+    return res.json(new ApiResponse(200, { updated: 0 }, "No users matched the criteria"));
+  }
+
+  // Fetch all existing shiftSchedules in one query
+  const inPlaceholders = userIds.map(() => "?").join(",");
+  const [users] = await executeQuery(
+    `SELECT id, shiftSchedule FROM users WHERE id IN (${inPlaceholders})`,
+    userIds
+  );
+
+  if (users.length === 0) {
+    return res.json(new ApiResponse(200, { updated: 0 }, "No matching users found in database"));
+  }
+
+  // Merge patch into each user's schedule in memory
+  const updates = users.map(u => {
+    const existing = parseJSON(u.shiftSchedule, {});
+    const merged = { ...existing };
+    for (const [date, shift] of Object.entries(shiftSchedulePatch)) {
+      if (shift === null || shift === "") {
+        delete merged[date];
+      } else {
+        merged[date] = shift;
+      }
+    }
+    return { id: u.id, shiftSchedule: JSON.stringify(merged) };
+  });
+
+  // Single UPDATE using CASE WHEN — 2 total DB round-trips regardless of user count
+  const cases = updates.map(() => "WHEN ? THEN ?").join(" ");
+  const caseParams = updates.flatMap(u => [u.id, u.shiftSchedule]);
+  const updatedIds = updates.map(u => u.id);
+  const updatedPlaceholders = updatedIds.map(() => "?").join(",");
+
+  await executeQuery(
+    `UPDATE users SET shiftSchedule = CASE id ${cases} END WHERE id IN (${updatedPlaceholders})`,
+    [...caseParams, ...updatedIds]
+  );
+
+  await logAudit(req.user.id, "BULK_UPDATE_SHIFT_SCHEDULE", {
+    count: updates.length,
+    isAllSelected: !!isAllSelected,
+    datesModified: Object.keys(shiftSchedulePatch).length,
+  });
+
+  res.json(new ApiResponse(200, { updated: updates.length }, `Shift schedule updated for ${updates.length} user${updates.length !== 1 ? "s" : ""}`));
 });

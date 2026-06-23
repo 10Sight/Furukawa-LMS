@@ -169,8 +169,7 @@ export const FormSelect = ({
                             className="flex items-center gap-1 px-2 py-0.5 text-xs font-normal bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
                           >
                             <span className="truncate max-w-[120px]">{label}</span>
-                            <button
-                              type="button"
+                            <span
                               onClick={(e) => {
                                 e.stopPropagation();
                                 e.preventDefault();
@@ -182,7 +181,7 @@ export const FormSelect = ({
                               <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
-                            </button>
+                            </span>
                           </Badge>
                         );
                       })}

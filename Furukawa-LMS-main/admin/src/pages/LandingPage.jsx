@@ -172,7 +172,7 @@ const LandingPage = () => {
                         size="icon"
                         className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                         onClick={() => navigate(settingsPath)}
-                        title="Settings"
+                        title={t('nav.settings')}
                     >
                         <IconSettings className="h-4 w-4" />
                     </Button>
@@ -249,13 +249,13 @@ const LandingPage = () => {
 
                 <div className="space-y-2">
                     <h1 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-800 via-blue-700 to-indigo-700 bg-clip-text text-transparent">
-                        DIGITAL GATEWAY
+                        {t('landing.title')}
                     </h1>
                     <p className="text-[10px] sm:text-[11px] font-semibold text-slate-400 uppercase tracking-[0.2em]">
                         DOJO 2.0
                     </p>
                     <p className="text-slate-500 text-xs sm:text-sm pt-1">
-                        Select a portal to continue
+                        {t('landing.subtitle')}
                     </p>
                 </div>
             </div>
@@ -279,13 +279,13 @@ const LandingPage = () => {
                                 <LayoutGrid className="w-6 h-6 sm:w-8 sm:h-8" />
                             </div>
                             <div className="space-y-2">
-                                <h3 className="text-lg sm:text-xl font-bold text-slate-900">MPS Portal</h3>
+                                <h3 className="text-lg sm:text-xl font-bold text-slate-900">{t('landing.mpsTitle')}</h3>
                                 <p className="text-xs sm:text-sm text-slate-500 leading-relaxed px-2">
-                                    Manpower Planning System.
+                                    {t('landing.mpsDesc')}
                                 </p>
                             </div>
                             <div className="flex items-center gap-1 text-blue-500 text-xs sm:text-sm font-medium opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200">
-                                Enter Portal <ArrowRight className="w-4 h-4" />
+                                {t('landing.enterPortal')} <ArrowRight className="w-4 h-4" />
                             </div>
                         </CardContent>
                     </Card>
@@ -302,13 +302,13 @@ const LandingPage = () => {
                                 <BookOpen className="w-6 h-6 sm:w-8 sm:h-8" />
                             </div>
                             <div className="space-y-2">
-                                <h3 className="text-lg sm:text-xl font-bold text-slate-900">SDP Portal</h3>
+                                <h3 className="text-lg sm:text-xl font-bold text-slate-900">{t('landing.sdpTitle')}</h3>
                                 <p className="text-xs sm:text-sm text-slate-500 leading-relaxed px-2">
-                                    Skill Development Program.
+                                    {t('landing.sdpDesc')}
                                 </p>
                             </div>
                             <div className="flex items-center gap-1 text-green-500 text-xs sm:text-sm font-medium opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200">
-                                Enter Portal <ArrowRight className="w-4 h-4" />
+                                {t('landing.enterPortal')} <ArrowRight className="w-4 h-4" />
                             </div>
                         </CardContent>
                     </Card>
@@ -325,13 +325,13 @@ const LandingPage = () => {
                                 <MonitorPlay className="w-6 h-6 sm:w-8 sm:h-8" />
                             </div>
                             <div className="space-y-2">
-                                <h3 className="text-lg sm:text-xl font-bold text-slate-900">CMS Portal</h3>
+                                <h3 className="text-lg sm:text-xl font-bold text-slate-900">{t('landing.cmsTitle')}</h3>
                                 <p className="text-xs sm:text-sm text-slate-500 leading-relaxed px-2">
-                                    Check Sheet Management System.
+                                    {t('landing.cmsDesc')}
                                 </p>
                             </div>
                             <div className="flex items-center gap-1 text-purple-500 text-xs sm:text-sm font-medium opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200">
-                                Enter Portal <ArrowRight className="w-4 h-4" />
+                                {t('landing.enterPortal')} <ArrowRight className="w-4 h-4" />
                             </div>
                         </CardContent>
                     </Card>
@@ -342,7 +342,7 @@ const LandingPage = () => {
             {/* Footer */}
             <div className="mt-16 text-center">
                 <p className="text-slate-400 text-xs">
-                    © 2024 Furukawa Minda Electric Pvt Ltd. All rights reserved.
+                    {t('landing.copyright')}
                 </p>
             </div>
 

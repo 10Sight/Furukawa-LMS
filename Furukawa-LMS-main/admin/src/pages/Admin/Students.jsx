@@ -15,6 +15,7 @@ import {
   useUpdateUserMutation,
   useDeleteUserMutation,
   useBulkDeleteUsersMutation,
+  useBulkUpdateShiftScheduleMutation,
   useImportEmployeesMutation,
   useLazyExportStudentsQuery,
   useLazyGetImportTemplateQuery,
@@ -110,6 +111,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { getMediaUrl } from "@/utils/mediaUtils";
 import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
 import StudentLevelManager from "@/components/admin/StudentLevelManager";
+import ShiftScheduler from "@/components/admin/ShiftScheduler";
 
 
 const normalizeStatus = (status) => {
@@ -148,8 +150,14 @@ const Students = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [isBulkShiftDialogOpen, setIsBulkShiftDialogOpen] = useState(false);
+  const [bulkShiftScheduleDraft, setBulkShiftScheduleDraft] = useState({});
+  const [isBulkShiftSubmitting, setIsBulkShiftSubmitting] = useState(false);
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isShiftDialogOpen, setIsShiftDialogOpen] = useState(false);
+  const [shiftStudent, setShiftStudent] = useState(null);
+  const [shiftScheduleDraft, setShiftScheduleDraft] = useState({});
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [isAllSelectedAcrossPages, setIsAllSelectedAcrossPages] = useState(false);
@@ -191,6 +199,7 @@ const Students = () => {
     supervisor: "",
     incharge: "",
     contractorId: "",
+    shiftSchedule: {},
   });
   const [formErrors, setFormErrors] = useState({});
   const [showFilters, setShowFilters] = useState(false);
@@ -205,7 +214,7 @@ const Students = () => {
     stationId: "",
     unit: "",
     shift: "",
-    date: "",
+    date: format(new Date(), "yyyy-MM-dd"),
     designation: "",
   });
   const [activeTab, setActiveTab] = useState("all");
@@ -317,6 +326,7 @@ const Students = () => {
   const [updateStudent] = useUpdateUserMutation();
   const [deleteStudent] = useDeleteUserMutation();
   const [bulkDeleteUsers] = useBulkDeleteUsersMutation();
+  const [bulkUpdateShiftSchedule] = useBulkUpdateShiftScheduleMutation();
   const [assignStudent] = useAddStudentToDepartmentMutation();
   const [importEmployees] = useImportEmployeesMutation();
   const [triggerGetTemplate] = useLazyGetImportTemplateQuery();
@@ -517,6 +527,7 @@ const Students = () => {
       supervisor: "",
       incharge: "",
       contractorId: "",
+      shiftSchedule: {},
     });
 
     setFormErrors({});
@@ -689,6 +700,7 @@ const Students = () => {
         customRoleId: updateData.customRoleId || null,
         unit: updateData.unit,
         contractorId: updateData.contractorId ? Number(updateData.contractorId) : null,
+        shiftSchedule: updateData.shiftSchedule || {},
       };
 
 
@@ -724,6 +736,27 @@ const Students = () => {
       const errorMessage =
         error?.data?.message || error?.message || "Failed to delete student";
       showToast("error", errorMessage);
+    }
+  };
+
+  const handleOpenShiftDialog = (student) => {
+    const resolved = typeof student.shiftSchedule === 'string'
+      ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })()
+      : (student.shiftSchedule || {});
+    setShiftStudent(student);
+    setShiftScheduleDraft(resolved);
+    setIsShiftDialogOpen(true);
+  };
+
+  const handleSaveStudentShift = async () => {
+    if (!shiftStudent) return;
+    try {
+      await updateStudent({ id: shiftStudent._id, shiftSchedule: shiftScheduleDraft }).unwrap();
+      showToast("success", "Shift schedule saved!");
+      setIsShiftDialogOpen(false);
+      refetch();
+    } catch (error) {
+      showToast("error", error?.data?.message || "Failed to save shift schedule");
     }
   };
 
@@ -763,6 +796,39 @@ const Students = () => {
       showToast("error", errorMessage);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveBulkShift = async () => {
+    if (Object.keys(bulkShiftScheduleDraft).length === 0) {
+      showToast("error", "No shift changes to apply. Use the calendar to assign shifts first.");
+      return;
+    }
+    if (isBulkShiftSubmitting) return;
+    setIsBulkShiftSubmitting(true);
+    try {
+      const payload = isAllSelectedAcrossPages
+        ? {
+            isAllSelected: true,
+            filters: {
+              search: debouncedSearchTerm,
+              status: filters.status,
+              unit: filters.unit,
+              departmentId: filters.departmentId,
+            },
+            shiftSchedulePatch: bulkShiftScheduleDraft,
+          }
+        : { ids: selectedIds, shiftSchedulePatch: bulkShiftScheduleDraft };
+
+      const result = await bulkUpdateShiftSchedule(payload).unwrap();
+      showToast("success", result?.message || "Shift schedule updated successfully!");
+      setIsBulkShiftDialogOpen(false);
+      setBulkShiftScheduleDraft({});
+      refetch();
+    } catch (error) {
+      showToast("error", error?.data?.message || "Failed to update shift schedules");
+    } finally {
+      setIsBulkShiftSubmitting(false);
     }
   };
 
@@ -1072,6 +1138,7 @@ const Students = () => {
       leavingDate: safeDateToISO(student.leavingDate || student.LeavingDate),
       reasonOfLeaving: student.reasonOfLeaving || student.ReasonOfLeaving || "",
       customRoleId: (student.customRoleId || student.CustomRoleId) ? String(student.customRoleId || student.CustomRoleId) : "",
+      shiftSchedule: typeof student.shiftSchedule === 'string' ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })() : (student.shiftSchedule || {}),
     });
 
     setIsEditDialogOpen(true);
@@ -1234,7 +1301,7 @@ const Students = () => {
       stationId: "",
       unit: "",
       shift: "",
-      date: "",
+      date: format(new Date(), "yyyy-MM-dd"),
       designation: "",
     });
     setSearchTerm("");
@@ -1696,6 +1763,19 @@ const Students = () => {
             </div>
 
             <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Shift Date</label>
+              <div className="relative">
+                <IconCalendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <Input
+                  type="date"
+                  value={filters.date}
+                  onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+                  className="pl-9 h-9"
+                />
+              </div>
+            </div>
+
+            <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Designation</label>
               <Popover>
                 <PopoverTrigger asChild>
@@ -1761,7 +1841,7 @@ const Students = () => {
                 onClick={() => setFilters({
                   status: "", dateFrom: "", dateTo: "",
                   departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
-                  unit: "", shift: "", date: "", designation: ""
+                  unit: "", shift: "", date: format(new Date(), "yyyy-MM-dd"), designation: ""
                 })}
               >
                 <IconX className="w-4 h-4 mr-2" />
@@ -1827,6 +1907,15 @@ const Students = () => {
                     Clear Selection
                   </Button>
                   <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setBulkShiftScheduleDraft({}); setIsBulkShiftDialogOpen(true); }}
+                    className="bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200"
+                  >
+                    <IconCalendar className="h-4 w-4 mr-2" />
+                    Bulk Shift Schedule
+                  </Button>
+                  <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => setIsBulkDeleteDialogOpen(true)}
@@ -1870,6 +1959,8 @@ const Students = () => {
                 <TableHead className="w-[100px]">Emp Code</TableHead>
                 <TableHead className="w-[100px]">Primary Level</TableHead>
                 <TableHead className="w-[120px]">Date</TableHead>
+                <TableHead className="w-[80px]">Shift</TableHead>
+                <TableHead className="w-[120px]">Scheduled Shift</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Department</TableHead>
@@ -1936,6 +2027,32 @@ const Students = () => {
                     </TableCell>
                     <TableCell className="text-sm text-gray-500 whitespace-nowrap">
                       {safeDateFormat(student.logDate, "dd MMM yyyy") || "-"}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const schedule = typeof student.shiftSchedule === 'string'
+                          ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })()
+                          : (student.shiftSchedule || {});
+                        const rawDate = student.logDate || filters.date;
+                        const activeDate = rawDate ? dateToInputFormat(rawDate) : format(new Date(), "yyyy-MM-dd");
+                        const activeShift = schedule[activeDate] || student.logShift || student.shift;
+                        if (!activeShift) return <span className="text-gray-400 text-xs">-</span>;
+                        const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                        return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[activeShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{activeShift}</span>;
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const schedule = typeof student.shiftSchedule === 'string'
+                          ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })()
+                          : (student.shiftSchedule || {});
+                        const rawDate = student.logDate || filters.date;
+                        const activeDate = rawDate ? dateToInputFormat(rawDate) : format(new Date(), "yyyy-MM-dd");
+                        const scheduledShift = schedule[activeDate];
+                        if (!scheduledShift) return <span className="text-gray-400 text-xs">-</span>;
+                        const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                        return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[scheduledShift] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{scheduledShift}</span>;
+                      })()}
                     </TableCell>
                     <TableCell>
                       <div>
@@ -2023,7 +2140,7 @@ const Students = () => {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex justify-end space-x-1">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2031,7 +2148,7 @@ const Students = () => {
                                 variant="ghost"
                                 size="sm"
                                 onClick={(e) => {
-                                  e.stopPropagation(); // Stop event propagation
+                                  e.stopPropagation();
                                   openEditDialog(student);
                                 }}
                                 className="h-8 w-8 p-0"
@@ -2052,10 +2169,31 @@ const Students = () => {
                                 variant="ghost"
                                 size="sm"
                                 onClick={(e) => {
-                                  e.stopPropagation(); // Stop event propagation
+                                  e.stopPropagation();
+                                  handleOpenShiftDialog(student);
+                                }}
+                                className="h-8 w-8 p-0 text-indigo-600"
+                              >
+                                <IconCalendar className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Shift schedule</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   openDeleteDialog(student);
                                 }}
-                                className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                className="h-8 w-8 p-0 text-red-600"
                               >
                                 <IconTrash className="h-4 w-4" />
                               </Button>
@@ -2071,7 +2209,7 @@ const Students = () => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-10">
+                  <TableCell colSpan={10} className="text-center py-10">
                     <div className="flex flex-col items-center space-y-3">
                       <IconUsers className="h-12 w-12 text-muted-foreground/60" />
                       <p className="text-muted-foreground font-medium">
@@ -3132,6 +3270,77 @@ const Students = () => {
             >
               {isSubmitting && <IconLoader className="h-4 w-4 animate-spin" />}
               {isSubmitting ? "Updating..." : "Update Operator"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shift Schedule Dialog */}
+      <Dialog open={isShiftDialogOpen} onOpenChange={setIsShiftDialogOpen}>
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconCalendar className="h-5 w-5 text-indigo-600" />
+              Shift Schedule
+              {shiftStudent && (
+                <span className="text-sm font-normal text-gray-500 ml-1">— {shiftStudent.fullName}</span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Assign date-wise shifts for this operator. Click "Save" to apply changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <ShiftScheduler
+              schedule={shiftScheduleDraft}
+              onChange={setShiftScheduleDraft}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsShiftDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveStudentShift}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              Save Shift Schedule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Shift Schedule Dialog */}
+      <Dialog open={isBulkShiftDialogOpen} onOpenChange={(open) => { setIsBulkShiftDialogOpen(open); if (!open) setBulkShiftScheduleDraft({}); }}>
+        <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconCalendar className="h-5 w-5 text-indigo-600" />
+              Bulk Shift Schedule
+              <span className="text-sm font-normal text-gray-500 ml-1">
+                — {isAllSelectedAcrossPages ? `All ${studentsData?.data?.totalUsers || "matching"} operators` : `${selectedIds.length} selected`}
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Assign shifts for the selected operators. These shifts will be <strong>merged</strong> into each operator's existing schedule — existing dates not in this selection are untouched.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <ShiftScheduler
+              schedule={bulkShiftScheduleDraft}
+              onChange={setBulkShiftScheduleDraft}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setIsBulkShiftDialogOpen(false); setBulkShiftScheduleDraft({}); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveBulkShift}
+              disabled={isBulkShiftSubmitting || Object.keys(bulkShiftScheduleDraft).length === 0}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {isBulkShiftSubmitting ? "Saving..." : "Save Shift Schedule"}
             </Button>
           </DialogFooter>
         </DialogContent>

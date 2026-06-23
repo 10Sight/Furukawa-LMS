@@ -5,6 +5,7 @@ import { useGetSkillMatrixEfficiencySummaryQuery } from '@/Redux/AllApi/SkillMat
 import { useGetSubSectionsQuery } from '@/Redux/AllApi/SubSectionApi';
 import { Skeleton } from "@/components/ui/skeleton";
 import { IconChartBar, IconChartPie, IconFilter, IconX, IconEye, IconEyeOff } from "@tabler/icons-react";
+import useTranslate from "@/hooks/useTranslate";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SHIFT_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -20,24 +21,27 @@ const getAttBarColor = (name) => {
     if (name.includes('Absent')) return 'red';
     return '#8b5cf6';
 };
-const FrozenLegend = ({ minEffVisible, allUsersColor = "#f59e0b", allUsersLabel = "Total Efficiency", presentLabel = "Present Efficiency", absentLabel = "Absent Efficiency" }) => (
-    <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
-        {minEffVisible && (
+const FrozenLegend = ({ minEffVisible, allUsersColor = "#f59e0b", allUsersLabel, presentLabel, absentLabel }) => {
+    const { t } = useTranslate();
+    return (
+        <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
+            {minEffVisible && (
+                <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
+                    <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> {t('charts.minEff')}
+                </span>
+            )}
             <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> Min Efficiency
+                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: allUsersColor }} /> {allUsersLabel || t('charts.totalEff')}
             </span>
-        )}
-        <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-            <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: allUsersColor }} /> {allUsersLabel}
-        </span>
-        <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-            <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> {presentLabel}
-        </span>
-        <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-            <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> {absentLabel}
-        </span>
-    </div>
-);
+            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
+                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> {presentLabel || t('charts.presentEff')}
+            </span>
+            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
+                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> {absentLabel || t('charts.absentEff')}
+            </span>
+        </div>
+    );
+};
 
 const GRAD = {
     dept: ['#6366f1', '#4f46e5'],
@@ -68,12 +72,12 @@ const calculateUserEfficiency = (op) => {
 const getAvg = (arr) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100 : 0;
 const getSum = (arr) => arr.reduce((a, b) => a + b, 0);
 const getOpDate = (op) => op.attendanceDate || op.date || op.logDate || '';
-const getDateText = (f) => {
+const getDateText = (f, t) => {
     const today = new Date().toLocaleDateString('en-CA');
     const from = f.dateFrom || today;
     const to = f.dateTo || today;
-    if (from === to) return `Date: ${from}`;
-    return `Date: ${from} to ${to}`;
+    if (from === to) return `${t('charts.date')}: ${from}`;
+    return `${t('charts.date')}: ${from} ${t('charts.to').toLowerCase()} ${to}`;
 };
 
 // Bar label renderer: always outside and above the bar with the respective outsideColor.
@@ -196,6 +200,7 @@ const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, all
 
 // ─── MultiSelectDropdown ──────────────────────────────────────────────────────
 const MultiSelectDropdown = ({ label, options, value = [], onChange }) => {
+    const { t } = useTranslate();
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
     useEffect(() => {
@@ -208,10 +213,10 @@ const MultiSelectDropdown = ({ label, options, value = [], onChange }) => {
     const clearAll = () => onChange([]);
 
     const buttonLabel = value.length === 0
-        ? 'All'
+        ? t('charts.all')
         : value.length === 1
             ? (options.find(o => o.value === value[0])?.label ?? value[0])
-            : `${value.length} selected`;
+            : `${t('charts.selected')}: ${value.length}`;
 
     return (
         <div ref={ref} className="relative z-20">
@@ -234,7 +239,7 @@ const MultiSelectDropdown = ({ label, options, value = [], onChange }) => {
                     <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-100">
                         <input type="checkbox" checked={value.length === 0} onChange={clearAll}
                             className="accent-indigo-600 w-4 h-4 flex-shrink-0" />
-                        <span className="text-[13px] font-bold text-slate-700">All</span>
+                        <span className="text-[13px] font-bold text-slate-700">{t('charts.all')}</span>
                     </label>
                     {options.map(opt => (
                         <label key={opt.value} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 cursor-pointer">
@@ -258,45 +263,46 @@ const initF = () => {
 };
 
 const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, shiftOpts, showDept, showSection, showLine, hideLegend = false, hideShift = false }) => {
+    const { t } = useTranslate();
     const hasFilter = filter.deptIds?.length || filter.sectionIds?.length || filter.lineIds?.length || filter.shifts?.length || filter.dateFrom || filter.dateTo;
     return (
         <div className="flex flex-wrap gap-2.5 items-center mt-4 pt-4 border-t border-slate-100">
             {showDept && (
-                <MultiSelectDropdown label="Dept"
+                <MultiSelectDropdown label={t('nav.department')}
                     options={deptOpts}
                     value={filter.deptIds}
                     onChange={v => setFilter(f => ({ ...f, deptIds: v, sectionIds: [], lineIds: [] }))} />
             )}
             {showSection && sectionOpts.length > 0 && (
-                <MultiSelectDropdown label="Section"
+                <MultiSelectDropdown label={t('charts.section')}
                     options={sectionOpts}
                     value={filter.sectionIds}
                     onChange={v => setFilter(f => ({ ...f, sectionIds: v, lineIds: [] }))} />
             )}
             {showLine && lineOpts.length > 0 && (
-                <MultiSelectDropdown label="Line"
+                <MultiSelectDropdown label={t('charts.lineLevel')}
                     options={lineOpts}
                     value={filter.lineIds}
                     onChange={v => setFilter(f => ({ ...f, lineIds: v }))} />
             )}
             {!hideShift && (
-                <MultiSelectDropdown label="Shift"
+                <MultiSelectDropdown label={t('charts.shift')}
                     options={shiftOpts.map((s, idx) => ({
                         value: s,
-                        label: `Shift ${s}`,
+                        label: `${t('charts.shift')} ${s}`,
                         color: SHIFT_COLORS[idx % SHIFT_COLORS.length]
                     }))}
                     value={filter.shifts}
                     onChange={v => setFilter(f => ({ ...f, shifts: v }))} />
             )}
             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm">
-                <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">From</span>
+                <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{t('charts.from')}</span>
                 <input type="date" value={filter.dateFrom}
                     onChange={e => setFilter(f => ({ ...f, dateFrom: e.target.value }))}
                     className="text-[13px] text-slate-600 bg-transparent outline-none cursor-pointer w-32" />
             </div>
             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm">
-                <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">To</span>
+                <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{t('charts.to')}</span>
                 <input type="date" value={filter.dateTo}
                     onChange={e => setFilter(f => ({ ...f, dateTo: e.target.value }))}
                     className="text-[13px] text-slate-600 bg-transparent outline-none cursor-pointer w-32" />
@@ -304,34 +310,33 @@ const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, shift
             {hasFilter && (
                 <button onClick={() => setFilter(initF())}
                     className="flex items-center gap-1.5 text-[13px] font-bold text-rose-500 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-lg transition-all">
-                    <IconX className="h-4 w-4" /> Clear
+                    <IconX className="h-4 w-4" /> {t('charts.clear')}
                 </button>
             )}
         </div>
     );
 };
 
-
-
 // ─── Shift Legend (for stacked mode) ─────────────────────────────────────────
 const ShiftLegend = ({ shifts }) => {
+    const { t } = useTranslate();
     if (shifts.length <= 1) return null;
     return (
         <div className="flex flex-wrap gap-4 mt-4 pt-3 border-t border-slate-50">
-            <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider self-center">Shifts:</span>
+            <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider self-center">{t('charts.shifts')}:</span>
             {shifts.map((s, i) => (
                 <span key={s} className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-600">
                     <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: SHIFT_COLORS[i % SHIFT_COLORS.length] }} />
-                    Shift {s}
+                    {t('charts.shift')} {s}
                 </span>
             ))}
         </div>
     );
 };
 
-
 // ─── Summary capsules below each chart ────────────────────────────────────────
 const SummaryCapsules = ({ data, dotColor = "#f59e0b", label }) => {
+    const { t } = useTranslate();
     if (!data.length) return null;
     const overallAll = getAvg(data.map(d => d.allEfficiency));
     const overallPres = getAvg(data.map(d => d.presEfficiency));
@@ -346,47 +351,50 @@ const SummaryCapsules = ({ data, dotColor = "#f59e0b", label }) => {
                     </div>
                     <div className="flex flex-col items-end flex-shrink-0 ml-2">
                         <span className="text-[13px] font-bold text-slate-800">{item.allEfficiency}%</span>
-                        <span className="text-[12px] text-emerald-600">P: {item.presEfficiency}%</span>
-                        <span className="text-[11px] text-rose-500">A: {item.absEfficiency}%</span>
+                        <span className="text-[12px] text-emerald-600">{t('charts.present')[0]}: {item.presEfficiency}%</span>
+                        <span className="text-[11px] text-rose-500">{t('charts.absent')[0]}: {item.absEfficiency}%</span>
                     </div>
                 </div>
             ))}
             <div className="col-span-2 sm:col-span-3 lg:col-span-4 flex items-center justify-between p-3.5 rounded-xl mt-1"
                 style={{ backgroundColor: `${dotColor}15`, border: `1px solid ${dotColor}30` }}>
-                <span className="text-sm font-bold" style={{ color: dotColor }}>{label} — Total: {overallAll}% | Present: {overallPres}% | Absent: {overallAbs}%</span>
+                <span className="text-sm font-bold" style={{ color: dotColor }}>{label} — {t('charts.total')}: {overallAll}% | {t('charts.present')}: {overallPres}% | {t('charts.absent')}: {overallAbs}%</span>
             </div>
         </div>
     );
 };
 
 // ─── Chart Section Wrapper ────────────────────────────────────────────────────
-const ChartSection = ({ badge, title, dateText, tag, statsVisible, onToggleStats, children }) => (
-    <div className="space-y-3 p-7 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
-        <div className="flex items-center justify-between border-b pb-4 border-slate-100">
-            <div className="flex flex-col">
-                <h4 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
-                    {badge}
-                    {title}
-                </h4>
-                {dateText && <span className="text-[12px] font-bold text-slate-400 mt-1 uppercase tracking-wider">{dateText}</span>}
+const ChartSection = ({ badge, title, dateText, tag, statsVisible, onToggleStats, children }) => {
+    const { t } = useTranslate();
+    return (
+        <div className="space-y-3 p-7 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between border-b pb-4 border-slate-100">
+                <div className="flex flex-col">
+                    <h4 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
+                        {badge}
+                        {title}
+                    </h4>
+                    {dateText && <span className="text-[12px] font-bold text-slate-400 mt-1 uppercase tracking-wider">{dateText}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={onToggleStats}
+                        className="flex items-center gap-1.5 text-[13px] font-bold px-3 py-1.5 rounded-lg border transition-all duration-200
+                            bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                        {statsVisible
+                            ? <><IconEyeOff className="h-4 w-4" /> {t('charts.hideStats')}</>
+                            : <><IconEye className="h-4 w-4" /> {t('charts.showStats')}</>
+                        }
+                    </button>
+                    {tag}
+                </div>
             </div>
-            <div className="flex items-center gap-2">
-                <button
-                    onClick={onToggleStats}
-                    className="flex items-center gap-1.5 text-[13px] font-bold px-3 py-1.5 rounded-lg border transition-all duration-200
-                        bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                >
-                    {statsVisible
-                        ? <><IconEyeOff className="h-4 w-4" /> Hide Stats</>
-                        : <><IconEye className="h-4 w-4" /> Show Stats</>
-                    }
-                </button>
-                {tag}
-            </div>
+            {children}
         </div>
-        {children}
-    </div>
-);
+    );
+};
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
 const EmptyState = ({ msg = 'No data found', sub }) => (
@@ -429,6 +437,7 @@ const ViewToggle = ({ view, onChange }) => (
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const EfficiencyChart = () => {
+    const { t } = useTranslate();
     const [f1, setF1] = useState(initF());
     const [f2, setF2] = useState(initF());
     const [f3, setF3] = useState(initF());
@@ -439,6 +448,16 @@ const EfficiencyChart = () => {
     const [statVis, setStatVis] = useState({ c1: false, c2: false, c3: false, c4: false, c5: false, c6: false });
     const toggleStat = (key) => setStatVis(prev => ({ ...prev, [key]: !prev[key] }));
     const [attendanceView, setAttendanceView] = useState('bar');
+
+    const translateStatus = (name) => {
+        if (name === 'Min Efficiency') return t('charts.minEff');
+        if (name === 'Total Efficiency') return t('charts.totalEff');
+        if (name === 'Present Efficiency') return t('charts.presentEff');
+        if (name === 'Absent Efficiency') return t('charts.absentEff');
+        if (name === 'Present') return t('charts.present');
+        if (name === 'Absent') return t('charts.absent');
+        return name;
+    };
 
     const { data: summaryData, isLoading, error } = useGetSkillMatrixEfficiencySummaryQuery();
     const rawOps = useMemo(() => summaryData?.data || [], [summaryData]);
@@ -826,6 +845,8 @@ const EfficiencyChart = () => {
         return items;
     }, [opsAll5, opsAtt5, f5, targetsByLine, targetsBySection, targetsByDept, globalEffTarget]);
 
+    const d5Mapped = useMemo(() => d5.map(item => ({ ...item, displayName: translateStatus(item.name) })), [d5, t]);
+
     // Chart 6: Operator-wise (single bar — overall efficiency, color-coded by attendance)
     const d6 = useMemo(() => {
         const statusMap = {};
@@ -857,7 +878,7 @@ const EfficiencyChart = () => {
     if (error) return (
         <Card className="col-span-1 lg:col-span-2 border border-red-200 shadow-sm rounded-3xl bg-red-50/10">
             <CardContent className="p-6 text-center text-red-500 font-medium">
-                Failed to load efficiency charts. Please refresh the page.
+                {t('charts.failedToLoadEff')}
             </CardContent>
         </Card>
     );
@@ -894,10 +915,10 @@ const EfficiencyChart = () => {
 
                     {/* ── CHART 1: Attendance-Wise Efficiency ── */}
                     <ChartSection
-                        badge={<span className="text-violet-600">Chart 1:</span>}
-                        title="Attendance-Wise Efficiency"
-                        dateText={getDateText(f5)}
-                        tag={<span className="bg-violet-50 text-violet-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">By Status</span>}
+                        badge={<span className="text-violet-600">{t('charts.chart1')}</span>}
+                        title={t('charts.attendanceWiseEff')}
+                        dateText={getDateText(f5, t)}
+                        tag={<span className="bg-violet-50 text-violet-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.byStatus')}</span>}
                         statsVisible={statVis.c5} onToggleStats={() => toggleStat('c5')}
                     >
                         <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
@@ -909,20 +930,20 @@ const EfficiencyChart = () => {
                             showDept={true} showSection={true} showLine={true} hideLegend={true} />
                         {(globalEffTarget.min != null) && (
                             <div className="flex flex-wrap items-center gap-4 mt-3">
-                                <span className="text-[12px] text-slate-400 italic">Min Efficiency target: avg across all sub-sections</span>
+                                <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgAll')}</span>
                             </div>
                         )}
-                        {d5.length > 0 ? (
+                        {d5Mapped.length > 0 ? (
                             <>
                                 {attendanceView === 'bar' ? (
                                     <>
-                                        <ChartWrapper data={d5} minW={160}>
-                                            <BarChart data={d5} margin={commonMargin} barCategoryGap="35%">
+                                        <ChartWrapper data={d5Mapped} minW={160}>
+                                            <BarChart data={d5Mapped} margin={commonMargin} barCategoryGap="35%">
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
-                                                <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
+                                                <XAxis dataKey="displayName" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
                                                 <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                                 <Bar dataKey="efficiency" radius={[10, 10, 0, 0]} maxBarSize={52}>
-                                                    {d5.map((entry, i) => (
+                                                    {d5Mapped.map((entry, i) => (
                                                         <Cell key={i} fill={getAttBarColor(entry.name)} opacity={entry.isTarget ? 0.65 : 1} />
                                                     ))}
                                                     <LabelList dataKey="efficiency" content={barLabel(0, '#1e293b')} />
@@ -930,19 +951,19 @@ const EfficiencyChart = () => {
                                             </BarChart>
                                         </ChartWrapper>
                                         <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
-                                            {d5.some(item => item.isTarget) && (
+                                            {d5Mapped.some(item => item.isTarget) && (
                                                 <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                    <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> Min Efficiency
+                                                    <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> {t('charts.minEff')}
                                                 </span>
                                             )}
                                             <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#f59e0b' }} /> Total Efficiency
+                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#f59e0b' }} /> {t('charts.totalEff')}
                                             </span>
                                             <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> Present Efficiency
+                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> {t('charts.presentEff')}
                                             </span>
                                             <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> Absent Efficiency
+                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> {t('charts.absentEff')}
                                             </span>
                                         </div>
                                     </>
@@ -951,16 +972,16 @@ const EfficiencyChart = () => {
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
                                                 <Pie
-                                                    data={d5.filter(item => !item.isTarget)}
+                                                    data={d5Mapped.filter(item => !item.isTarget)}
                                                     dataKey="efficiency"
-                                                    nameKey="name"
+                                                    nameKey="displayName"
                                                     cx="50%"
                                                     cy="50%"
                                                     outerRadius={130}
                                                     label={({ name, value }) => `${name}: ${value}%`}
                                                     labelLine
                                                 >
-                                                    {d5.filter(item => !item.isTarget).map((entry, idx) => (
+                                                    {d5Mapped.filter(item => !item.isTarget).map((entry, idx) => (
                                                         <Cell key={`att-${idx}`} fill={getAttBarColor(entry.name)} />
                                                     ))}
                                                 </Pie>
@@ -972,20 +993,20 @@ const EfficiencyChart = () => {
                                 )}
                                 {statVis.c5 && (
                                     <div className="mt-5 grid grid-cols-3 gap-3 pt-5 border-t border-slate-100">
-                                        {d5.filter(item => !item.isTarget).map(item => (
+                                        {d5Mapped.filter(item => !item.isTarget).map(item => (
                                             <div key={item.name}
                                                 className="flex flex-col gap-1 p-3.5 rounded-xl border"
                                                 style={{ backgroundColor: `${getAttBarColor(item.name)}15`, borderColor: `${getAttBarColor(item.name)}30` }}>
                                                 <div className="flex items-center justify-between">
-                                                    <p className="text-sm font-bold" style={{ color: getAttBarColor(item.name) }}>{item.displayName || item.name}</p>
+                                                    <p className="text-sm font-bold" style={{ color: getAttBarColor(item.name) }}>{item.displayName}</p>
                                                     <span className="text-lg font-black text-slate-800">{item.efficiency}%</span>
                                                 </div>
                                                 <p className="text-[12px] text-slate-500">
-                                                    {item.evaluated} evaluated / {item.count} total
+                                                    {item.evaluated} {t('charts.evaluatedOf')} {item.count} {t('charts.totalLower')}
                                                 </p>
                                                 {item.count > item.evaluated && (
                                                     <p className="text-[11px] font-semibold text-amber-500">
-                                                        {item.count - item.evaluated} not yet evaluated
+                                                        {item.count - item.evaluated} {t('charts.notYetEvaluated')}
                                                     </p>
                                                 )}
                                             </div>
@@ -993,15 +1014,15 @@ const EfficiencyChart = () => {
                                     </div>
                                 )}
                             </>
-                        ) : <EmptyState msg="No Attendance Data" sub="Adjust filters to see data." />}
+                        ) : <EmptyState msg={t('charts.noAttendanceData')} sub={t('charts.adjustFiltersData')} />}
                     </ChartSection>
 
                     {/* ── CHART 2: Department Averages ── */}
                     <ChartSection
-                        badge={<span className="text-indigo-600">Chart 2:</span>}
-                        title="Department Wise Efficiency"
-                        dateText={getDateText(f1)}
-                        tag={<span className="bg-indigo-50 text-indigo-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Dept Level</span>}
+                        badge={<span className="text-indigo-600">{t('charts.chart2')}</span>}
+                        title={t('charts.deptWiseEff')}
+                        dateText={getDateText(f1, t)}
+                        tag={<span className="bg-indigo-50 text-indigo-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.deptLevel')}</span>}
                         statsVisible={statVis.c1} onToggleStats={() => toggleStat('c1')}
                     >
                         <ChartFilter filter={f1} setFilter={setF1}
@@ -1009,7 +1030,7 @@ const EfficiencyChart = () => {
                             shiftOpts={allShifts}
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
                         <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">Min Efficiency target: avg of sub-section targets in each dept</span>
+                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgDept')}</span>
                         </div>
                         {d1.length > 0 ? (
                             <>
@@ -1018,32 +1039,32 @@ const EfficiencyChart = () => {
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
                                         <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name="Min Efficiency" fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
-                                        <Bar dataKey="allEfficiency" name="Total Efficiency" fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
                                         </Bar>
-                                        <Bar dataKey="presEfficiency" name="Present Efficiency" fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
                                         </Bar>
-                                        <Bar dataKey="absEfficiency" name="Absent Efficiency" fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
                                         </Bar>
                                     </BarChart>
                                 </ChartWrapper>
                                 <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
-                                {statVis.c1 && <SummaryCapsules data={d1} dotColor="#f59e0b" label="Department Efficiency" />}
+                                {statVis.c1 && <SummaryCapsules data={d1} dotColor="#f59e0b" label={t('charts.deptEfficiency')} />}
                             </>
-                        ) : <EmptyState msg="No Department Data" />}
+                        ) : <EmptyState msg={t('charts.noDeptData')} />}
                     </ChartSection>
 
                     {/* ── CHART 3: Section Averages ── */}
                     <ChartSection
-                        badge={<span className="text-emerald-600">Chart 3:</span>}
-                        title="Section Wise Efficiency"
-                        dateText={getDateText(f2)}
-                        tag={<span className="bg-emerald-50 text-emerald-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Section Level</span>}
+                        badge={<span className="text-emerald-600">{t('charts.chart3')}</span>}
+                        title={t('charts.sectionWiseEff')}
+                        dateText={getDateText(f2, t)}
+                        tag={<span className="bg-emerald-50 text-emerald-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.sectionLevel')}</span>}
                         statsVisible={statVis.c2} onToggleStats={() => toggleStat('c2')}
                     >
                         <ChartFilter filter={f2} setFilter={setF2}
@@ -1051,7 +1072,7 @@ const EfficiencyChart = () => {
                             shiftOpts={allShifts}
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
                         <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">Min Efficiency target: avg of sub-section targets in each section</span>
+                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgSection')}</span>
                         </div>
                         {d2.length > 0 ? (
                             <>
@@ -1060,32 +1081,32 @@ const EfficiencyChart = () => {
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
                                         <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name="Min Efficiency" fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
-                                        <Bar dataKey="allEfficiency" name="Total Efficiency" fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
                                         </Bar>
-                                        <Bar dataKey="presEfficiency" name="Present Efficiency" fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
                                         </Bar>
-                                        <Bar dataKey="absEfficiency" name="Absent Efficiency" fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
                                         </Bar>
                                     </BarChart>
                                 </ChartWrapper>
                                 <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
-                                {statVis.c2 && <SummaryCapsules data={d2} dotColor="#f59e0b" label="Section Efficiency" />}
+                                {statVis.c2 && <SummaryCapsules data={d2} dotColor="#f59e0b" label={t('charts.sectionEfficiency')} />}
                             </>
-                        ) : <EmptyState msg="No Section Data" sub="Select a department to narrow sections." />}
+                        ) : <EmptyState msg={t('charts.noSectionData')} sub={t('charts.selectDeptSections')} />}
                     </ChartSection>
 
                     {/* ── CHART 4: Line Averages ── */}
                     <ChartSection
-                        badge={<span className="text-amber-600">Chart 4:</span>}
-                        title="Line Wise Efficiency"
-                        dateText={getDateText(f3)}
-                        tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Line Level</span>}
+                        badge={<span className="text-amber-600">{t('charts.chart4')}</span>}
+                        title={t('charts.lineWiseEff')}
+                        dateText={getDateText(f3, t)}
+                        tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.lineLevel')}</span>}
                         statsVisible={statVis.c3} onToggleStats={() => toggleStat('c3')}
                     >
                         <ChartFilter filter={f3} setFilter={setF3}
@@ -1093,7 +1114,7 @@ const EfficiencyChart = () => {
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={false} hideShift={false} />
                         <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">Min Efficiency target: avg of sub-section targets in each line</span>
+                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgLine')}</span>
                         </div>
                         {d3.length > 0 ? (
                             <>
@@ -1102,32 +1123,32 @@ const EfficiencyChart = () => {
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
                                         <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name="Min Efficiency" fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
-                                        <Bar dataKey="allEfficiency" name="Total Efficiency" fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
                                         </Bar>
-                                        <Bar dataKey="presEfficiency" name="Present Efficiency" fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
                                         </Bar>
-                                        <Bar dataKey="absEfficiency" name="Absent Efficiency" fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
                                         </Bar>
                                     </BarChart>
                                 </ChartWrapper>
                                 <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
-                                {statVis.c3 && <SummaryCapsules data={d3} dotColor="#f59e0b" label="Line Efficiency" />}
+                                {statVis.c3 && <SummaryCapsules data={d3} dotColor="#f59e0b" label={t('charts.lineEfficiency')} />}
                             </>
-                        ) : <EmptyState msg="No Line Data" sub="Select a section to see lines." />}
+                        ) : <EmptyState msg={t('charts.noLineData')} sub={t('charts.selectSectionLines')} />}
                     </ChartSection>
 
                     {/* ── CHART 5: Sub-section Averages ── */}
                     <ChartSection
-                        badge={<span className="text-amber-600">Chart 5:</span>}
-                        title="Sub-section Wise Efficiency"
-                        dateText={getDateText(f4)}
-                        tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Sub-section</span>}
+                        badge={<span className="text-amber-600">{t('charts.chart5')}</span>}
+                        title={t('charts.subsectionWiseEff')}
+                        dateText={getDateText(f4, t)}
+                        tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.subsection')}</span>}
                         statsVisible={statVis.c4} onToggleStats={() => toggleStat('c4')}
                     >
                         <ChartFilter filter={f4} setFilter={setF4}
@@ -1135,7 +1156,7 @@ const EfficiencyChart = () => {
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={true} hideShift={false} />
                         <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">Min Efficiency target: shown only for sub-sections with targets set</span>
+                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetShownOnly')}</span>
                         </div>
                         {d4.length > 0 ? (
                             <>
@@ -1144,32 +1165,32 @@ const EfficiencyChart = () => {
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
                                         <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name="Min Efficiency" fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
-                                        <Bar dataKey="allEfficiency" name="Total Efficiency" fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
                                         </Bar>
-                                        <Bar dataKey="presEfficiency" name="Present Efficiency" fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
                                         </Bar>
-                                        <Bar dataKey="absEfficiency" name="Absent Efficiency" fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
                                         </Bar>
                                     </BarChart>
                                 </ChartWrapper>
                                 <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
-                                {statVis.c4 && <SummaryCapsules data={d4} dotColor="#f59e0b" label="Sub-section Efficiency" />}
+                                {statVis.c4 && <SummaryCapsules data={d4} dotColor="#f59e0b" label={t('charts.subsectionEfficiency')} />}
                             </>
-                        ) : <EmptyState msg="No Sub-section Data" sub="Select a line to see sub-sections." />}
+                        ) : <EmptyState msg={t('charts.noSubsectionData')} sub={t('charts.selectLineSubsections')} />}
                     </ChartSection>
 
                     {/* ── CHART 6: Operator-Wise Efficiency ── */}
                     <ChartSection
-                        badge={<span className="text-sky-600">Chart 6:</span>}
-                        title="Operator-Wise Efficiency"
-                        dateText={getDateText(f6)}
-                        tag={<span className="bg-sky-50 text-sky-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">Individual</span>}
+                        badge={<span className="text-sky-600">{t('charts.chart6')}</span>}
+                        title={t('charts.operatorWiseEff')}
+                        dateText={getDateText(f6, t)}
+                        tag={<span className="bg-sky-50 text-sky-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.individual')}</span>}
                         statsVisible={statVis.c6} onToggleStats={() => toggleStat('c6')}
                     >
                         <ChartFilter filter={f6} setFilter={setF6}
@@ -1201,32 +1222,32 @@ const EfficiencyChart = () => {
                                 {/* Legend for Chart 6 only at bottom center */}
                                 <div className="flex justify-center items-center gap-5 mt-4">
                                     <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                        <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> Present
+                                        <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> {t('charts.present')}
                                     </span>
                                     <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                        <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> Absent
+                                        <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> {t('charts.absent')}
                                     </span>
                                 </div>
                                 {statVis.c6 && (
                                     <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-5 border-t border-slate-100">
                                         <div className="col-span-2 flex items-center justify-between p-3.5 rounded-xl bg-sky-50 border border-sky-100">
-                                            <span className="text-sm font-bold text-sky-700">Overall Avg Efficiency</span>
+                                            <span className="text-sm font-bold text-sky-700">{t('charts.overallAvgEfficiency')}</span>
                                             <span className="text-sm font-black text-sky-900">
                                                 {d6.length > 0 ? getAvg(d6.map(op => op.efficiency)) : 0}%
                                             </span>
                                         </div>
                                         <div className="flex items-center justify-between p-3.5 rounded-xl bg-emerald-50 border border-emerald-100">
-                                            <span className="text-sm font-bold text-emerald-700">Present</span>
+                                            <span className="text-sm font-bold text-emerald-700">{t('charts.present')}</span>
                                             <span className="text-sm font-black text-emerald-900">{d6.filter(op => PRESENT_STATUSES.has(op.status)).length}</span>
                                         </div>
                                         <div className="flex items-center justify-between p-3.5 rounded-xl bg-rose-50 border border-rose-100">
-                                            <span className="text-sm font-bold text-rose-700">Absent</span>
+                                            <span className="text-sm font-bold text-rose-700">{t('charts.absent')}</span>
                                             <span className="text-sm font-black text-rose-900">{d6.filter(op => !PRESENT_STATUSES.has(op.status)).length}</span>
                                         </div>
                                     </div>
                                 )}
                             </>
-                        ) : <EmptyState msg="No Operator Data" sub="Adjust filters to see operators." />}
+                        ) : <EmptyState msg={t('charts.noOperatorData')} sub={t('charts.adjustFiltersOperators')} />}
                     </ChartSection>
 
                 </div>

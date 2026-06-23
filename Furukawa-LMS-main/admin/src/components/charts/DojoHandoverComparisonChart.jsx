@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { IconArrowsTransferDown, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import useTranslate from "@/hooks/useTranslate";
 
 const _now = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -28,14 +29,17 @@ const toApiDates = (timeframe, rawStart, rawEnd) => {
     return { startDate: rawStart, endDate: rawEnd };
 };
 
-const formatPeriodLabel = (period, groupBy) => {
+const localeMap = { en: 'en-US', hi: 'hi-IN', ja: 'ja-JP', zh: 'zh-CN', ru: 'ru-RU' };
+
+const formatPeriodLabel = (period, groupBy, language = 'en') => {
     if (!period) return '';
     if (groupBy === 'yearly') return period;
+    const locale = localeMap[language] || 'en-US';
     if (groupBy === 'daily') {
-        return new Date(`${period}T00:00:00`).toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+        return new Date(`${period}T00:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' });
     }
     const [year, month] = period.split('-');
-    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
 };
 
 const EMPTY_ROW = { expected: 0, actual: 0 };
@@ -111,6 +115,7 @@ const getDefaultDates = (timeframe) => {
 };
 
 const DojoHandoverComparisonChart = () => {
+    const { t, language } = useTranslate();
     const [timeframe, setTimeframe] = useState('daily');
     const [rawStart, setRawStart] = useState(() => getDefaultDates('daily').rawStart);
     const [rawEnd, setRawEnd] = useState(() => getDefaultDates('daily').rawEnd);
@@ -184,7 +189,7 @@ const DojoHandoverComparisonChart = () => {
         let currentIdx = 0;
 
         fullPeriods.forEach(period => {
-            const periodLabel = formatPeriodLabel(period, groupBy);
+            const periodLabel = formatPeriodLabel(period, groupBy, language);
             const deptsPresent = orderedDeptIds.filter(id => {
                 const v = deptDataMap[id]?.[period];
                 return v && (v.expected > 0 || v.actual > 0);
@@ -263,7 +268,7 @@ const DojoHandoverComparisonChart = () => {
         });
 
         return { expectedPoints, actualPoints, categories, groupSeparators };
-    }, [deptBreakdown, fullPeriods, groupBy, departments]);
+    }, [deptBreakdown, fullPeriods, groupBy, departments, language]);
 
     const SLOT_WIDTH = 120; // 120px slot width to fit two bars nicely
     const needsScroll = categories.length * SLOT_WIDTH > 800;
@@ -324,10 +329,10 @@ const DojoHandoverComparisonChart = () => {
             useHTML: true,
             style: { fontSize: '13px' },
             formatter() {
-                if (!this.point.deptName) return `<b>${this.point.periodLabel}</b>: No data`;
+                if (!this.point.deptName) return `<b>${this.point.periodLabel}</b>: ${t('charts.noData')}`;
                 return (
                     `<span style="color:${this.series.color}">●</span> ` +
-                    `<b>${this.point.deptName}</b> — ${this.point.isExpected ? 'Expected' : 'Actual'}<br/>` +
+                    `<b>${this.point.deptName}</b> — ${this.point.isExpected ? t('charts.expectedHandover') : t('charts.actualHandover')}<br/>` +
                     `Date: <b>${this.point.periodLabel}</b><br/>` +
                     `Count: <b>${this.y}</b>`
                 );
@@ -355,13 +360,13 @@ const DojoHandoverComparisonChart = () => {
         series: [
             {
                 type: 'column',
-                name: 'Expected Handover',
+                name: t('charts.expectedHandover'),
                 data: expectedPoints,
                 color: '#8b5cf6', // Violet/Purple for Expected
             },
             {
                 type: 'column',
-                name: 'Actual Handover',
+                name: t('charts.actualHandover'),
                 data: actualPoints,
                 color: '#3b82f6', // Blue for Actual
             }
@@ -370,10 +375,10 @@ const DojoHandoverComparisonChart = () => {
 
     const cfg = INPUT_CONFIG[timeframe];
     const deptLabel = selectedDepts.length === 0
-        ? 'All Departments'
+        ? t('charts.allDepartments')
         : selectedDepts.length === 1
             ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
-            : `${selectedDepts.length} Departments`;
+            : `${selectedDepts.length} ${t('nav.departments')}`;
 
     const handleTimeframeChange = (tf) => {
         const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
@@ -400,10 +405,10 @@ const DojoHandoverComparisonChart = () => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconArrowsTransferDown className="h-5 w-5 text-blue-600" />
-                            Dojo Handover Comparison
+                            {t('charts.dojoHandoverComparison')}
                         </CardTitle>
                         <CardDescription>
-                            Expected vs Actual handover counts by date — grouped by target department
+                            {t('charts.dojoHandoverComparisonDesc')}
                         </CardDescription>
                     </div>
                 </div>
@@ -413,13 +418,13 @@ const DojoHandoverComparisonChart = () => {
 
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            Timeframe
+                            {t('charts.timeframe')}
                         </Label>
                         <div className="flex gap-1">
                             {[
-                                { key: 'daily', label: 'Daily (30d)' },
-                                { key: 'monthly', label: 'Monthly (12m)' },
-                                { key: 'yearly', label: 'Yearly (5y)' },
+                                { key: 'daily', label: t('charts.daily30d') },
+                                { key: 'monthly', label: t('charts.monthly12m') },
+                                { key: 'yearly', label: t('charts.yearly5y') },
                             ].map(({ key, label }) => (
                                 <Button
                                     key={key}
@@ -435,7 +440,7 @@ const DojoHandoverComparisonChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.from')}</Label>
                         <Input
                             type={cfg.type}
                             value={rawStart}
@@ -449,7 +454,7 @@ const DojoHandoverComparisonChart = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.to')}</Label>
                         <Input
                             type={cfg.type}
                             value={rawEnd}
@@ -464,7 +469,7 @@ const DojoHandoverComparisonChart = () => {
 
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            Target Department
+                            {t('charts.targetDepartment')}
                         </Label>
                         <Popover>
                             <PopoverTrigger asChild>
@@ -494,7 +499,7 @@ const DojoHandoverComparisonChart = () => {
                                         className="mt-2 w-full text-xs text-slate-400 hover:text-slate-700 text-center py-1 border-t border-slate-100"
                                         onClick={() => setSelectedDepts([])}
                                     >
-                                        Clear selection
+                                        {t('charts.clearSelection')}
                                     </button>
                                 )}
                             </PopoverContent>
@@ -508,7 +513,7 @@ const DojoHandoverComparisonChart = () => {
                         onClick={handleReset}
                     >
                         <IconRefresh className="h-3.5 w-3.5 mr-1" />
-                        Reset
+                        {t('charts.reset')}
                     </Button>
                 </div>
             </CardHeader>
@@ -522,18 +527,18 @@ const DojoHandoverComparisonChart = () => {
                             className="w-20 h-20 object-contain animate-pulse"
                         />
                         <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
-                            Loading
+                            {t('charts.loading')}
                         </p>
                     </div>
                 ) : error ? (
                     <div className="h-[560px] flex flex-col items-center justify-center text-red-500 gap-2">
-                        <p className="text-sm font-semibold">Failed to load handover comparison.</p>
+                        <p className="text-sm font-semibold">{t('charts.failedToLoadHandover')}</p>
                     </div>
                 ) : !hasAnyData ? (
                     <div className="h-[560px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">No handover data found for this period.</p>
-                        <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>
+                        <p className="text-sm font-medium">{t('charts.noHandoverData')}</p>
+                        <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>
                     </div>
                 ) : (
                     <>
@@ -553,20 +558,20 @@ const DojoHandoverComparisonChart = () => {
                         {/* Summary strip */}
                         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                                <span className="text-xs font-bold text-slate-600">Total Expected</span>
+                                <span className="text-xs font-bold text-slate-600">{t('charts.totalExpected')}</span>
                                 <span className="text-sm font-black text-slate-800">{totalExpected}</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                <span className="text-xs font-bold text-blue-700">Total Actual</span>
+                                <span className="text-xs font-bold text-blue-700">{t('charts.totalActual')}</span>
                                 <span className="text-sm font-black text-blue-900">{totalActual}</span>
                             </div>
                             <div className={`flex items-center justify-between p-2.5 rounded-lg ${achievementRate >= 100 ? 'bg-green-50' : 'bg-amber-50'}`}>
-                                <span className={`text-xs font-bold ${achievementRate >= 100 ? 'text-green-600' : 'text-amber-600'}`}>Achievement</span>
+                                <span className={`text-xs font-bold ${achievementRate >= 100 ? 'text-green-600' : 'text-amber-600'}`}>{t('charts.achievement')}</span>
                                 <span className={`text-sm font-black ${achievementRate >= 100 ? 'text-green-900' : 'text-amber-900'}`}>{achievementRate}%</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
                                 <span className="text-xs font-bold text-slate-500">
-                                    {timeframe === 'daily' ? 'Days' : timeframe === 'monthly' ? 'Months' : 'Years'} Tracked
+                                    {timeframe === 'daily' ? t('charts.daysTracked') : timeframe === 'monthly' ? t('charts.monthsTracked') : t('charts.yearsTracked')}
                                 </span>
                                 <span className="text-sm font-black text-slate-800">{fullPeriods.length}</span>
                             </div>

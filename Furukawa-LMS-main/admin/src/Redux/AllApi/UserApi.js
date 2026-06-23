@@ -286,6 +286,15 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User'],
         }),
+
+        bulkUpdateShiftSchedule: builder.mutation({
+            query: (data) => ({
+                url: "/api/users/bulk-shift",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ['User'],
+        }),
     }),
 });
 
@@ -317,4 +326,5 @@ export const {
     useGetDesignationsWithCountsQuery,
     useShutterDesignationMutation,
     useUnshutterDesignationMutation,
+    useBulkUpdateShiftScheduleMutation,
 } = userApi;

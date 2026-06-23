@@ -306,6 +306,16 @@ const StudentDetail = () => {
     );
   };
 
+  const shiftBadgeClass = (shift) => {
+    const map = {
+      A: "bg-blue-100 text-blue-800 border-blue-200",
+      B: "bg-emerald-100 text-emerald-800 border-emerald-200",
+      C: "bg-purple-100 text-purple-800 border-purple-200",
+      G: "bg-amber-100 text-amber-800 border-amber-200",
+    };
+    return map[shift] || "bg-gray-100 text-gray-800 border-gray-200";
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -418,6 +428,16 @@ const StudentDetail = () => {
                     {student.subSectionName} Eff: {subSecEff}
                   </Badge>
                 )}
+                {student.isTemporary && (
+                  <Badge className="bg-amber-500 text-white border-amber-600 text-sm py-0.5 px-3">
+                    Temporary
+                  </Badge>
+                )}
+                {student.shift && (
+                  <Badge className={`text-sm py-0.5 px-3 ${shiftBadgeClass(student.shift)}`}>
+                    Shift {student.shift}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-muted-foreground">@{student.userName}</p>
@@ -438,39 +458,6 @@ const StudentDetail = () => {
           </Button>
         </div>
       </div>
-
-      {/* Course Progress Overview */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <IconChartBar className="h-5 w-5" />
-            Course Progress
-          </CardTitle>
-          <CardDescription>Progress per enrolled course</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {progressList && progressList.length > 0 ? (
-            <div className="space-y-4">
-              {progressList.map((p, i) => (
-                <div key={p._id || i} className="space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="font-medium">{p.course?.title || 'Course'}</span>
-                    <span className="text-muted-foreground">{p.progressPercent || 0}%</span>
-                  </div>
-                  <div className="w-full bg-muted rounded h-2">
-                    <div className="bg-blue-600 h-2 rounded" style={{ width: `${p.progressPercent || 0}%` }} />
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Level: {p.currentLevel || 'L1'} • Modules: {p.completedModules?.length || 0}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-muted-foreground text-sm">No course progress available.</div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Employee & Personal Information */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -508,6 +495,27 @@ const StudentDetail = () => {
               <div className="text-sm font-semibold text-indigo-700">{student.designation || "Operator"}</div>
             </div>
             <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Contractor</label>
+              <div className="flex items-center gap-2 text-sm">
+                <IconBuilding className="h-4 w-4 text-slate-500" />
+                <span className="font-medium">{student.contractor || "N/A"}</span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Employee Type</label>
+              <Badge className={`w-fit ${student.isTemporary ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-blue-100 text-blue-800 border-blue-200"}`}>
+                {student.isTemporary ? "Temporary" : "Regular"}
+              </Badge>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Shift</label>
+              {student.shift ? (
+                <Badge className={`w-fit ${shiftBadgeClass(student.shift)}`}>Shift {student.shift}</Badge>
+              ) : (
+                <span className="text-sm text-muted-foreground">Not Assigned</span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Department(s)</label>
               <div className="flex flex-wrap gap-1">
                 {getDeptNames(student).length > 0
@@ -543,6 +551,28 @@ const StudentDetail = () => {
                 <span>{subSecEff}</span>
               </div>
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Joining Date</label>
+              <div className="flex items-center gap-2 text-sm">
+                <IconCalendar className="h-4 w-4 text-green-500" />
+                <span className="font-medium">{student.joiningDate ? safeLocaleDate(student.joiningDate) : "—"}</span>
+              </div>
+            </div>
+            {(student.leavingDate || student.status === "LEFT") && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Leaving Date</label>
+                <div className="flex items-center gap-2 text-sm">
+                  <IconCalendar className="h-4 w-4 text-red-500" />
+                  <span className="font-medium text-red-600">{student.leavingDate ? safeLocaleDate(student.leavingDate) : "—"}</span>
+                </div>
+              </div>
+            )}
+            {student.reasonOfLeaving && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason of Leaving</label>
+                <p className="text-sm text-red-600 font-medium">{student.reasonOfLeaving}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -684,6 +714,30 @@ const StudentDetail = () => {
                       {student.joiningDate ? safeLocaleDate(student.joiningDate) : (student.createdAt ? safeLocaleDate(student.createdAt) : "—")}
                     </p>
                   </div>
+                  {student.leavingDate && (
+                    <div className="group">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Leaving Date</p>
+                      <p className="text-sm font-medium text-red-600">{safeLocaleDate(student.leavingDate)}</p>
+                    </div>
+                  )}
+                  {student.contractor && (
+                    <div className="group">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Contractor</p>
+                      <p className="text-sm font-medium">{student.contractor}</p>
+                    </div>
+                  )}
+                  {student.expectedHandover && (
+                    <div className="group">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Expected Handover</p>
+                      <p className="text-sm font-medium text-indigo-600">{safeLocaleDate(student.expectedHandover)}</p>
+                    </div>
+                  )}
+                  {student.reasonOfLeaving && (
+                    <div className="group">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Reason of Leaving</p>
+                      <p className="text-sm font-medium text-red-600">{student.reasonOfLeaving}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -734,6 +788,95 @@ const StudentDetail = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Shift Schedule */}
+      <Card>
+        <CardHeader className="pb-3 border-b bg-slate-50/50">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <IconCalendar className="h-5 w-5 text-slate-600" />
+            Shift Schedule
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-2">Default Shift</p>
+                {student.shift ? (
+                  <Badge className={`text-sm py-1 px-3 ${shiftBadgeClass(student.shift)}`}>
+                    Shift {student.shift}
+                  </Badge>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Not Assigned</span>
+                )}
+              </div>
+              {student.shiftSchedule && Object.keys(student.shiftSchedule).length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-2">Schedule Summary</p>
+                  <div className="flex flex-wrap gap-2">
+                    {["A", "B", "C", "G"].map(s => {
+                      const count = Object.values(student.shiftSchedule || {}).filter(v => v === s).length;
+                      if (!count) return null;
+                      return (
+                        <span key={s} className={`text-xs px-2.5 py-1 rounded-full border font-medium ${shiftBadgeClass(s)}`}>
+                          Shift {s}: {count} day{count !== 1 ? "s" : ""}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div>
+              {student.shiftSchedule && Object.keys(student.shiftSchedule).length > 0 ? (
+                (() => {
+                  const now = new Date();
+                  const year = now.getFullYear();
+                  const month = now.getMonth();
+                  const firstDay = new Date(year, month, 1);
+                  const lastDay = new Date(year, month + 1, 0);
+                  const startPad = firstDay.getDay();
+                  const calDays = [];
+                  for (let i = 0; i < startPad; i++) calDays.push(null);
+                  for (let d = 1; d <= lastDay.getDate(); d++) calDays.push(d);
+                  const SHIFT_COLORS = {
+                    A: "bg-blue-50 text-blue-700 border-blue-200",
+                    B: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                    C: "bg-purple-50 text-purple-700 border-purple-200",
+                    G: "bg-amber-50 text-amber-700 border-amber-200",
+                  };
+                  const monthLabel = firstDay.toLocaleString("default", { month: "long", year: "numeric" });
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground text-center">{monthLabel}</p>
+                      <div className="grid grid-cols-7 gap-0.5 text-center text-[9px]">
+                        {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
+                          <div key={d} className="font-bold text-muted-foreground py-0.5">{d}</div>
+                        ))}
+                        {calDays.map((d, i) => {
+                          if (!d) return <div key={`pad-${i}`} />;
+                          const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                          const shift = student.shiftSchedule?.[dateKey];
+                          return (
+                            <div key={d} className={`rounded py-0.5 border ${shift ? SHIFT_COLORS[shift] || "bg-gray-50 text-gray-700 border-gray-200" : "border-transparent text-gray-600"}`}>
+                              <div className="leading-none">{d}</div>
+                              {shift && <div className="font-bold leading-none mt-0.5">{shift}</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="flex items-center justify-center text-sm text-muted-foreground py-8 border border-dashed rounded-lg">
+                  No shift schedule configured
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

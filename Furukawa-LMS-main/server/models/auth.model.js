@@ -79,6 +79,7 @@ class User {
         this.isIncharge = !!data.isIncharge;
         this.customRoleId = data.customRoleId || null;
         this.customRole = data.customRole || null;
+        this.shiftSchedule = typeof data.shiftSchedule === 'string' ? (() => { try { return JSON.parse(data.shiftSchedule); } catch (e) { return {}; } })() : (data.shiftSchedule || {});
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
         this.ojt = typeof data.ojt === 'string' ? JSON.parse(data.ojt) : (data.ojt || []);
@@ -214,7 +215,8 @@ class User {
                 { name: 'lines', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
                 { name: 'subSections', type: 'NVARCHAR(MAX) DEFAULT \'[]\'' },
                 { name: 'expectedHandover', type: 'DATE NULL' },
-                { name: 'contractorId', type: 'INT NULL' }
+                { name: 'contractorId', type: 'INT NULL' },
+                { name: 'shiftSchedule', type: "NVARCHAR(MAX) DEFAULT '{}'" }
             ];
 
             for (const col of columnsToAdd) {
@@ -398,7 +400,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt", "ojt", "expectedHandover"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt", "ojt", "expectedHandover", "shiftSchedule"
         ];
 
         // Apply defaults if fields are missing in userData
@@ -429,8 +431,8 @@ class User {
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
-                return JSON.stringify(val || (field === 'avatar' ? {} : []));
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt', 'shiftSchedule'].includes(field)) {
+                return JSON.stringify(val || (field === 'avatar' ? {} : (field === 'shiftSchedule' ? {} : [])));
             }
             if (val === undefined || val === "") return null;
             return val;
@@ -729,7 +731,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt", "expectedHandover"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt", "expectedHandover", "shiftSchedule"
         ];
 
         if (this.stations && Array.isArray(this.stations) && this.stations.length > 0) {
@@ -753,7 +755,7 @@ class User {
         const setClause = definedFields.map(field => `${field} = ?`).join(", ");
         const values = definedFields.map(field => {
             const val = this[field];
-            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt'].includes(field)) {
+            if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt', 'shiftSchedule'].includes(field)) {
                 return typeof val === 'object' ? JSON.stringify(val) : val;
             }
             if (val instanceof Date) return val;

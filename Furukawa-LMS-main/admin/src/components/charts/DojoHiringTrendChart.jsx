@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { IconUsers, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import useTranslate from "@/hooks/useTranslate";
 
 const _now        = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -41,15 +42,18 @@ const toApiDates = (timeframe, rawStart, rawEnd) => {
     return { startDate: rawStart, endDate: rawEnd };
 };
 
+const localeMap = { en: 'en-US', hi: 'hi-IN', ja: 'ja-JP', zh: 'zh-CN', ru: 'ru-RU' };
+
 // Human-readable x-axis label per groupBy
-const formatPeriodLabel = (period, groupBy) => {
+const formatPeriodLabel = (period, groupBy, language = 'en') => {
     if (!period) return '';
     if (groupBy === 'yearly') return period;
+    const locale = localeMap[language] || 'en-US';
     if (groupBy === 'daily') {
-        return new Date(`${period}T00:00:00`).toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+        return new Date(`${period}T00:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' });
     }
     const [year, month] = period.split('-');
-    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
 };
 
 // Build the complete list of periods in [start, end] so every slot shows
@@ -125,6 +129,7 @@ const getDefaultDates = (timeframe) => {
 };
 
 const DojoHiringTrendChart = () => {
+    const { t, language } = useTranslate();
     const [viewMode,     setViewMode]     = useState('total');
     const [timeframe,    setTimeframe]    = useState('daily');
     const [rawStart,     setRawStart]     = useState(() => getDefaultDates('daily').rawStart);
@@ -157,7 +162,7 @@ const DojoHiringTrendChart = () => {
         [groupBy, apiStart, apiEnd, rawTrend]
     );
 
-    const categories   = trend.map(r => formatPeriodLabel(r.period, groupBy));
+    const categories   = trend.map(r => formatPeriodLabel(r.period, groupBy, language));
     const totalSeries  = trend.map(r => Number(r.total)       || 0);
     const maleSeries   = trend.map(r => Number(r.maleCount)   || 0);
     const femaleSeries = trend.map(r => Number(r.femaleCount) || 0);
@@ -186,10 +191,10 @@ const DojoHiringTrendChart = () => {
         setSelectedDepts(prev => checked ? [...prev, id] : prev.filter(x => x !== id));
 
     const deptLabel = selectedDepts.length === 0
-        ? 'All Departments'
+        ? t('charts.allDepartments')
         : selectedDepts.length === 1
             ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
-            : `${selectedDepts.length} Departments`;
+            : `${selectedDepts.length} ${t('nav.departments')}`;
 
     // ── Highcharts shared base ────────────────────────────────────────────────
     // Each category slot is ~72px wide. When total width exceeds the card (~800px),
@@ -291,7 +296,7 @@ const DojoHiringTrendChart = () => {
         },
         series: [{
             type: 'column',
-            name: 'New Hires',
+            name: t('charts.newHires'),
             data: totalSeries,
             color: '#3b82f6',
         }],
@@ -312,10 +317,10 @@ const DojoHiringTrendChart = () => {
             pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
         },
         series: [
-            { type: 'column', name: 'Male',   data: maleSeries,   color: '#3b82f6' },
-            { type: 'column', name: 'Female', data: femaleSeries, color: '#ec4899' },
+            { type: 'column', name: t('charts.male'),   data: maleSeries,   color: '#3b82f6' },
+            { type: 'column', name: t('charts.female'), data: femaleSeries, color: '#ec4899' },
             ...(otherSeries.some(v => v > 0)
-                ? [{ type: 'column', name: 'Other', data: otherSeries, color: '#94a3b8' }]
+                ? [{ type: 'column', name: t('charts.other'), data: otherSeries, color: '#94a3b8' }]
                 : []),
         ],
     });
@@ -332,10 +337,10 @@ const DojoHiringTrendChart = () => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconUsers className="h-5 w-5 text-blue-600" />
-                            Dojo Hiring Trend
+                            {t('charts.dojoHiringTrend')}
                         </CardTitle>
                         <CardDescription>
-                            Historical new hires — counts include handed-over &amp; promoted candidates
+                            {t('charts.dojoHiringTrendDesc')}
                         </CardDescription>
                     </div>
 
@@ -347,7 +352,7 @@ const DojoHiringTrendChart = () => {
                             className="h-8 px-3 text-xs"
                             onClick={() => setViewMode('total')}
                         >
-                            Total
+                            {t('charts.total')}
                         </Button>
                         <Button
                             variant={viewMode === 'gender' ? 'default' : 'outline'}
@@ -355,7 +360,7 @@ const DojoHiringTrendChart = () => {
                             className="h-8 px-3 text-xs"
                             onClick={() => setViewMode('gender')}
                         >
-                            By Gender
+                            {t('charts.byGender')}
                         </Button>
                     </div>
                 </div>
@@ -366,13 +371,13 @@ const DojoHiringTrendChart = () => {
                     {/* Timeframe preset */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            Timeframe
+                            {t('charts.timeframe')}
                         </Label>
                         <div className="flex gap-1">
                             {[
-                                { key: 'daily',   label: 'Daily (30d)' },
-                                { key: 'monthly', label: 'Monthly (12m)' },
-                                { key: 'yearly',  label: 'Yearly (5y)' },
+                                { key: 'daily',   label: t('charts.daily30d') },
+                                { key: 'monthly', label: t('charts.monthly12m') },
+                                { key: 'yearly',  label: t('charts.yearly5y') },
                             ].map(({ key, label }) => (
                                 <Button
                                     key={key}
@@ -390,7 +395,7 @@ const DojoHiringTrendChart = () => {
                     {/* Custom From date */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            From
+                            {t('charts.from')}
                         </Label>
                         <Input
                             type={cfg.type}
@@ -407,7 +412,7 @@ const DojoHiringTrendChart = () => {
                     {/* Custom To date */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            To
+                            {t('charts.to')}
                         </Label>
                         <Input
                             type={cfg.type}
@@ -424,7 +429,7 @@ const DojoHiringTrendChart = () => {
                     {/* Department */}
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            Department
+                            {t('nav.department')}
                         </Label>
                         <Popover>
                             <PopoverTrigger asChild>
@@ -454,14 +459,13 @@ const DojoHiringTrendChart = () => {
                                         className="mt-2 w-full text-xs text-slate-400 hover:text-slate-700 text-center py-1 border-t border-slate-100"
                                         onClick={() => setSelectedDepts([])}
                                     >
-                                        Clear selection
+                                        {t('charts.clearSelection')}
                                     </button>
                                 )}
                             </PopoverContent>
                         </Popover>
                     </div>
 
-                    {/* Reset */}
                     <Button
                         variant="ghost"
                         size="sm"
@@ -469,7 +473,7 @@ const DojoHiringTrendChart = () => {
                         onClick={handleReset}
                     >
                         <IconRefresh className="h-3.5 w-3.5 mr-1" />
-                        Reset
+                        {t('charts.reset')}
                     </Button>
                 </div>
             </CardHeader>
@@ -484,18 +488,18 @@ const DojoHiringTrendChart = () => {
                             className="w-20 h-20 object-contain animate-pulse"
                         />
                         <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
-                            Loading
+                            {t('charts.loading')}
                         </p>
                     </div>
                 ) : error ? (
                     <div className="h-[360px] flex flex-col items-center justify-center text-red-500 gap-2">
-                        <p className="text-sm font-semibold">Failed to load hiring trend.</p>
+                        <p className="text-sm font-semibold">{t('charts.failedToLoadHiringTrend')}</p>
                     </div>
                 ) : grandTotal === 0 ? (
                     <div className="h-[360px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">No hiring data found for this period.</p>
-                        <p className="text-xs opacity-60">Try adjusting the timeframe or filters above.</p>
+                        <p className="text-sm font-medium">{t('charts.noHiringData')}</p>
+                        <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>
                     </div>
                 ) : (
                     <>
@@ -508,20 +512,20 @@ const DojoHiringTrendChart = () => {
                         {/* Summary strip */}
                         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                <span className="text-xs font-bold text-blue-700">Total Hired</span>
+                                <span className="text-xs font-bold text-blue-700">{t('charts.totalHired')}</span>
                                 <span className="text-sm font-black text-blue-900">{grandTotal}</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                                <span className="text-xs font-bold text-slate-600">Male</span>
+                                <span className="text-xs font-bold text-slate-600">{t('charts.male')}</span>
                                 <span className="text-sm font-black text-slate-800">{totalMale}</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-pink-50">
-                                <span className="text-xs font-bold text-pink-600">Female</span>
+                                <span className="text-xs font-bold text-pink-600">{t('charts.female')}</span>
                                 <span className="text-sm font-black text-pink-900">{totalFemale}</span>
                             </div>
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
                                 <span className="text-xs font-bold text-slate-500">
-                                    {timeframe === 'daily' ? 'Days' : timeframe === 'monthly' ? 'Months' : 'Years'} Tracked
+                                    {timeframe === 'daily' ? t('charts.daysTracked') : timeframe === 'monthly' ? t('charts.monthsTracked') : t('charts.yearsTracked')}
                                 </span>
                                 <span className="text-sm font-black text-slate-800">{trend.length}</span>
                             </div>

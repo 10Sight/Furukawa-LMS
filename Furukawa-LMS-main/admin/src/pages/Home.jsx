@@ -35,6 +35,7 @@ import ContractorWiseOperatorChart from "@/components/charts/ContractorWiseOpera
 import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
 import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { IconUserPlus } from "@tabler/icons-react";
+import useTranslate from "@/hooks/useTranslate";
 
 // Reusable StatCard component
 const StatCard = ({ title, value, description, icon: Icon, iconBgColor, iconColor, isLoading, trend, linkTo }) => {
@@ -106,6 +107,7 @@ const QuickActionCard = ({ title, description, icon: Icon, linkTo, color = "blue
 };
 
 const Home = () => {
+  const { t } = useTranslate();
   const [dateRange, setDateRange] = React.useState({ startDate: '', endDate: '' });
 
   // API calls for all stats
@@ -163,46 +165,46 @@ const Home = () => {
       {/* Main Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Operators"
+          title={t('home.totalOperators')}
           value={totalStudents}
-          description="All registered operators"
+          description={t('home.registeredOperators')}
           icon={IconUsers}
           iconBgColor="bg-blue-100"
           iconColor="text-blue-600"
           isLoading={studentsLoading}
           linkTo="/admin/employees"
-          trend={{ type: 'positive', value: `${activeStudents} active` }}
+          trend={{ type: 'positive', value: `${activeStudents} ${t('home.active')}` }}
         />
 
 
         <StatCard
-          title="Total Sections"
+          title={t('home.totalSections')}
           value={totalDepartments}
-          description="Learning groups"
+          description={t('home.learningGroups')}
           icon={IconCalendar}
           iconBgColor="bg-purple-100"
           iconColor="text-purple-600"
           isLoading={departmentsLoading}
           linkTo="/admin/departments"
-          trend={{ type: 'positive', value: `${activeDepartments} active` }}
+          trend={{ type: 'positive', value: `${activeDepartments} ${t('home.active')}` }}
         />
 
         <StatCard
-          title="Total Courses"
+          title={t('home.totalCourses')}
           value={totalCourses}
-          description="Available courses"
+          description={t('home.availableCourses')}
           icon={IconBook}
           iconBgColor="bg-orange-100"
           iconColor="text-orange-600"
           isLoading={coursesLoading}
           linkTo="/admin/courses"
-          trend={{ type: 'positive', value: `${publishedCourses} published` }}
+          trend={{ type: 'positive', value: `${publishedCourses} ${t('home.published')}` }}
         />
 
         <StatCard
-          title="Dojo Hiring"
+          title={t('home.dojoHiring')}
           value={totalDojoUsers}
-          description="Temporary candidates"
+          description={t('home.tempCandidates')}
           icon={IconUserPlus}
           iconBgColor="bg-pink-100"
           iconColor="text-pink-600"
@@ -231,12 +233,12 @@ const Home = () => {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <IconActivity className="h-5 w-5" />
-                Recent Activity
+                {t('home.recentActivity')}
               </CardTitle>
-              <CardDescription>Latest system events</CardDescription>
+              <CardDescription>{t('home.latestSystemEvents')}</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/analytics">View All</Link>
+              <Link to="/admin/analytics">{t('home.viewAll')}</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -259,14 +261,14 @@ const Home = () => {
                     <div className="h-2 w-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-900 truncate">
-                        {activity.action || 'System activity'}
+                        {activity.action || t('home.systemActivity')}
                       </p>
                       <p className="text-xs text-gray-500">
                         {activity.user?.fullName || 'System'} • {new Date(activity.createdAt).toLocaleDateString()}
                       </p>
                     </div>
                     <Badge variant="outline" className="text-xs">
-                      {activity.action?.split(' ')[0] || 'Activity'}
+                      {activity.action?.split(' ')[0] || t('home.activity')}
                     </Badge>
                   </div>
                 ))}
@@ -274,7 +276,7 @@ const Home = () => {
             ) : (
               <div className="text-center text-gray-500 py-8">
                 <IconActivity className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                <p>No recent activity</p>
+                <p>{t('home.noRecentActivity')}</p>
               </div>
             )}
           </CardContent>
@@ -285,39 +287,39 @@ const Home = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <IconSettings className="h-5 w-5" />
-              Quick Actions
+              {t('home.quickActions')}
             </CardTitle>
-            <CardDescription>Common administrative tasks</CardDescription>
+            <CardDescription>{t('home.commonAdminTasks')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <QuickActionCard
-                title="Add New Course"
-                description="Create a new learning course"
+                title={t('home.addNewCourse')}
+                description={t('home.createNewCourseDesc')}
                 icon={IconPlus}
                 linkTo="/admin/add-course"
                 color="blue"
               />
 
               <QuickActionCard
-                title="Manage Sections"
-                description="View and organize sections"
+                title={t('home.manageSections')}
+                description={t('home.manageSectionsDesc')}
                 icon={IconCalendar}
                 linkTo="/admin/departments"
                 color="purple"
               />
 
               <QuickActionCard
-                title="View Reports"
-                description="Analytics and insights"
+                title={t('home.viewReports')}
+                description={t('home.viewReportsDesc')}
                 icon={IconChartBar}
                 linkTo="/admin/analytics"
                 color="green"
               />
 
               <QuickActionCard
-                title="Operator Management"
-                description="Manage operator accounts"
+                title={t('home.operatorManagement')}
+                description={t('home.operatorManagementDesc')}
                 icon={IconUsers}
                 linkTo="/admin/employees"
                 color="orange"
@@ -332,27 +334,27 @@ const Home = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <IconClipboardCheck className="h-5 w-5" />
-            System Overview
+            {t('home.systemOverview')}
           </CardTitle>
-          <CardDescription>Key performance indicators</CardDescription>
+          <CardDescription>{t('home.kpi')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-lg font-bold text-green-600">{activeStudents}</div>
-              <div className="text-sm text-gray-500">Active Operators</div>
+              <div className="text-sm text-gray-500">{t('home.activeOperators')}</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-bold text-blue-600">{activeDepartments}</div>
-              <div className="text-sm text-gray-500">Running Departments</div>
+              <div className="text-sm text-gray-500">{t('home.runningDepartments')}</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-bold text-purple-600">{publishedCourses}</div>
-              <div className="text-sm text-gray-500">Published Courses</div>
+              <div className="text-sm text-gray-500">{t('home.publishedCourses')}</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-bold text-orange-600">{recentActivities.length}</div>
-              <div className="text-sm text-gray-500">Recent Activities</div>
+              <div className="text-sm text-gray-500">{t('home.recentActivities')}</div>
             </div>
           </div>
         </CardContent>

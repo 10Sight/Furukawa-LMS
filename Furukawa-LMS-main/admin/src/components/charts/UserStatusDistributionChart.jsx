@@ -8,6 +8,7 @@ import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import highcharts3d from 'highcharts/highcharts-3d';
 import 'highcharts/modules/no-data-to-display';
+import useTranslate from "@/hooks/useTranslate";
 
 // Initialize 3D module
 if (typeof highcharts3d === 'function') {
@@ -17,12 +18,20 @@ if (typeof highcharts3d === 'function') {
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#94a3b8', '#8b5cf6']; // Green (Present), Amber (Leave), Red (Left)
 
 const UserStatusDistributionChart = ({ dateRange }) => {
+    const { t } = useTranslate();
     const { data: statsData, isLoading, error } = useGetAdminHomeUserStatusStatsQuery({ ...dateRange, isTemporary: 1 });
     const [viewType, setViewType] = useState('pie'); // 'pie' or 'bar'
 
     const allData = statsData?.data || { dojo: [] };
     const chartData = allData.dojo || [];
     const totalUsers = chartData.reduce((acc, curr) => acc + curr.value, 0);
+
+    const translateStatus = (status) => {
+        if (!status) return '';
+        const key = `charts.${status.toLowerCase()}`;
+        const trans = t(key);
+        return trans === key ? status : trans;
+    };
 
     if (isLoading) {
         return (
@@ -42,7 +51,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
         return (
             <Card className="col-span-1 border-red-200">
                 <CardContent className="p-6 text-center text-red-500">
-                    Failed to load User Status statistics.
+                    {t("charts.failedToLoadUserStatus")}
                 </CardContent>
             </Card>
         );
@@ -53,7 +62,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
             style: { fontSize: '14px', fontWeight: '600', color: '#94a3b8' },
             position: { align: 'center', verticalAlign: 'middle' },
         },
-        lang: { noData: 'No status data found for Dojo Users.' },
+        lang: { noData: t("charts.noStatusData") },
     };
 
     const getPieOptions = () => ({
@@ -83,8 +92,8 @@ const UserStatusDistributionChart = ({ dateRange }) => {
             }
         },
         series: [{
-            name: 'Status Share',
-            data: chartData.map(item => ({ name: item.name, y: item.value }))
+            name: t("charts.statusShare"),
+            data: chartData.map(item => ({ name: translateStatus(item.name), y: item.value }))
         }],
         credits: { enabled: false },
         ...noDataConfig,
@@ -93,10 +102,10 @@ const UserStatusDistributionChart = ({ dateRange }) => {
     const getBarOptions = () => ({
         chart: { type: 'column', backgroundColor: 'transparent', height: 450 },
         title: { text: '' },
-        xAxis: { categories: chartData.map(item => item.name) },
-        yAxis: { title: { text: 'Users' } },
+        xAxis: { categories: chartData.map(item => translateStatus(item.name)) },
+        yAxis: { title: { text: t("nav.trainees") } },
         series: [{
-            name: 'Users',
+            name: t("charts.total"),
             data: chartData.map(item => item.value),
             colorByPoint: true,
             colors: COLORS
@@ -111,10 +120,10 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                 <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2 text-lg">
                         <IconUsers className="h-5 w-5 text-indigo-600" />
-                        DOJO Candidate Attendance Status 
+                        {t("charts.attendanceStatus")}
                     </CardTitle>
                     <CardDescription>
-                        Attendance and exit status — Dojo Users
+                        {t("charts.attendanceStatusDesc")}
                     </CardDescription>
                 </div>
                 <Button
@@ -122,7 +131,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => setViewType(viewType === 'pie' ? 'bar' : 'pie')}
-                    title={viewType === 'pie' ? 'Switch to Bar Chart' : 'Switch to Pie Chart'}
+                    title={viewType === 'pie' ? t("charts.switchToBar") : t("charts.switchToPie")}
                 >
                     {viewType === 'pie' ? <IconChartBar className="h-4 w-4" /> : <IconChartPie className="h-4 w-4" />}
                 </Button>
@@ -139,12 +148,12 @@ const UserStatusDistributionChart = ({ dateRange }) => {
                 <div className="mt-6 grid grid-cols-3 gap-2">
                     {chartData.map((item) => (
                         <div key={item.name} className="flex flex-col items-center p-2 rounded-lg bg-gray-50/50 border border-gray-100">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{item.name}</span>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{translateStatus(item.name)}</span>
                             <span className="text-lg font-black text-gray-800">{item.value}</span>
                         </div>
                     ))}
                     <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-50 col-span-3 mt-2 px-4">
-                        <span className="text-xs font-bold text-indigo-700">Total Dojo Users</span>
+                        <span className="text-xs font-bold text-indigo-700">{t("charts.totalDojoUsers")}</span>
                         <span className="text-sm font-black text-indigo-900">{totalUsers}</span>
                     </div>
                 </div>

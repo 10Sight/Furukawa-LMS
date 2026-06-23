@@ -168,11 +168,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
             });
         });
 
-        // 3. Pad to minimum 25 rows with blank entries
-        const totalRowsNeeded = 25;
-        while (finalRows.length < totalRowsNeeded) {
+        // 3. Always append 10 blank rows at the bottom for manual entry
+        const BLANK_PADDING = 10;
+        const baseCount = finalRows.length;
+        for (let i = 0; i < BLANK_PADDING; i++) {
             finalRows.push({
-                rowId: `temp-${finalRows.length}-${Math.random()}`,
+                rowId: `temp-${baseCount + i}-${Math.random()}`,
                 userId: "", userName: "", cardNo: "", shift: "", modelLine: "", station: "",
                 q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
                 q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",

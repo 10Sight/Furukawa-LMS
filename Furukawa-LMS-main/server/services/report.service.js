@@ -1374,7 +1374,8 @@ async function _buildManagementBuffer() {
                     row.getCell(2).value = sec.section_name;
                     styleCell(row.getCell(2), {
                         hAlign: "left",
-                        sz: 11
+                        sz: 11,
+                        wrap: true
                     });
 
                     row.getCell(3).value = secReq;
@@ -1394,6 +1395,70 @@ async function _buildManagementBuffer() {
 
                     for (let c = 4; c <= 13; c++) {
                         styleCell(row.getCell(c), { sz: 11 });
+                    }
+
+                    ri++;
+
+                    // IMPORTANT FIX:
+                    // Earlier, sections with no active line rows (single-row sections like
+                    // ASSEMBLY SUB LEADER, PRODUCTION OFFICE, SPD, D&D, FG, Logistics, etc.)
+                    // were written as one detail row only and the code moved to the next section.
+                    // Because the Total row existed only inside the secLines.length > 0 block,
+                    // these single-line sections did not get their own Total row.
+                    // Now every section gets a Total row, even if it has only one displayed row.
+                    const tr = ws.getRow(ri);
+                    tr.height = 21;
+
+                    safeMerge(ws, `A${ri}:B${ri}`);
+
+                    tr.getCell(1).value = "Total";
+                    styleCell(tr.getCell(1), {
+                        bold: true,
+                        bg: C.TOTAL_BG,
+                        hAlign: "center",
+                        sz: 11
+                    });
+
+                    styleCell(tr.getCell(2), {
+                        bg: C.TOTAL_BG,
+                        sz: 11
+                    });
+
+                    tr.getCell(3).value = secReq;
+                    styleCell(tr.getCell(3), {
+                        bold: true,
+                        bg: C.TOTAL_BG,
+                        sz: 11
+                    });
+                    setYellow(tr.getCell(3));
+
+                    [
+                        [4, secHand],
+                        [5, secGen],
+                        [6, secA],
+                        [7, secB],
+                        [8, secC],
+                        [9, secAct]
+                    ].forEach(([c, v]) => {
+                        tr.getCell(c).value = v;
+                        styleCell(tr.getCell(c), {
+                            bold: true,
+                            bg: C.TOTAL_BG,
+                            sz: 11
+                        });
+                    });
+
+                    tr.getCell(10).value = parseFloat(secOT.toFixed(2));
+                    tr.getCell(11).value = parseFloat(secHrs.toFixed(2));
+                    tr.getCell(12).value = getPct(secAct, secReq);
+                    tr.getCell(13).value = getPct(secAct, secHand);
+
+                    for (let c = 10; c <= 13; c++) {
+                        styleCell(tr.getCell(c), {
+                            bold: true,
+                            bg: C.TOTAL_BG,
+                            sz: 11
+                        });
                     }
 
                     ri++;
@@ -1444,7 +1509,8 @@ async function _buildManagementBuffer() {
                         row.getCell(2).value = ln.line_name;
                         styleCell(row.getCell(2), {
                             hAlign: "left",
-                            sz: 11
+                            sz: 11,
+                            wrap: true
                         });
 
                         row.getCell(3).value = lReq;

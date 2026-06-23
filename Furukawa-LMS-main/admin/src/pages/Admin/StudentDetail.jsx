@@ -249,6 +249,7 @@ const StudentDetail = () => {
       SUSPENDED: { variant: "destructive", label: "Suspended", color: "text-red-700" },
       PENDING: { variant: "warning", label: "Pending", color: "text-amber-700" },
       BANNED: { variant: "destructive", label: "Banned", color: "text-red-700" },
+      LEFT: { variant: "destructive", label: "Left", color: "text-red-700 bg-red-50 border-red-200" },
     };
 
     const config = statusConfig[status] || { variant: "secondary", label: status, color: "text-gray-700" };
@@ -316,14 +317,24 @@ const StudentDetail = () => {
     return map[shift] || "bg-gray-100 text-gray-800 border-gray-200";
   };
 
+  const parsedShiftSchedule = useMemo(() => {
+    if (!student?.shiftSchedule) return {};
+    let schedule = student.shiftSchedule;
+    if (typeof schedule === 'string') {
+      try {
+        schedule = JSON.parse(schedule);
+      } catch (e) {
+        return {};
+      }
+    }
+    return (schedule && typeof schedule === 'object' && !Array.isArray(schedule)) ? schedule : {};
+  }, [student?.shiftSchedule]);
+
   const scheduledShiftToday = useMemo(() => {
-    const schedule = typeof student?.shiftSchedule === 'string'
-      ? (() => { try { return JSON.parse(student.shiftSchedule); } catch { return {}; } })()
-      : (student?.shiftSchedule || {});
     const now = new Date();
     const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    return schedule[key] || null;
-  }, [student?.shiftSchedule]);
+    return parsedShiftSchedule[key] || null;
+  }, [parsedShiftSchedule]);
 
   if (isLoading) {
     return (
@@ -584,10 +595,10 @@ const StudentDetail = () => {
                 </div>
               </div>
             )}
-            {student.reasonOfLeaving && (
+            {(student.leavingDate || student.status === "LEFT") && (
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason of Leaving</label>
-                <p className="text-sm text-red-600 font-medium">{student.reasonOfLeaving}</p>
+                <p className="text-sm text-red-600 font-medium">{student.reasonOfLeaving || "—"}</p>
               </div>
             )}
           </CardContent>
@@ -731,10 +742,10 @@ const StudentDetail = () => {
                       {student.joiningDate ? safeLocaleDate(student.joiningDate) : (student.createdAt ? safeLocaleDate(student.createdAt) : "—")}
                     </p>
                   </div>
-                  {student.leavingDate && (
+                  {(student.leavingDate || student.status === "LEFT") && (
                     <div className="group">
                       <p className="text-[10px] text-muted-foreground mb-0.5">Leaving Date</p>
-                      <p className="text-sm font-medium text-red-600">{safeLocaleDate(student.leavingDate)}</p>
+                      <p className="text-sm font-medium text-red-600">{student.leavingDate ? safeLocaleDate(student.leavingDate) : "—"}</p>
                     </div>
                   )}
                   {student.contractor && (
@@ -749,10 +760,10 @@ const StudentDetail = () => {
                       <p className="text-sm font-medium text-indigo-600">{safeLocaleDate(student.expectedHandover)}</p>
                     </div>
                   )}
-                  {student.reasonOfLeaving && (
+                  {(student.leavingDate || student.status === "LEFT") && (
                     <div className="group">
                       <p className="text-[10px] text-muted-foreground mb-0.5">Reason of Leaving</p>
-                      <p className="text-sm font-medium text-red-600">{student.reasonOfLeaving}</p>
+                      <p className="text-sm font-medium text-red-600">{student.reasonOfLeaving || "—"}</p>
                     </div>
                   )}
                 </div>
@@ -839,12 +850,15 @@ const StudentDetail = () => {
                   <span className="text-sm text-muted-foreground">Not Assigned</span>
                 )}
               </div>
-              {student.shiftSchedule && Object.keys(student.shiftSchedule).length > 0 && (
+              {parsedShiftSchedule && Object.keys(parsedShiftSchedule).length > 0 && (
                 <div>
                   <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-2">Schedule Summary</p>
                   <div className="flex flex-wrap gap-2">
                     {["A", "B", "C", "G"].map(s => {
-                      const count = Object.values(student.shiftSchedule || {}).filter(v => v === s).length;
+                      const now = new Date();
+                      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+                      const count = Object.entries(parsedShiftSchedule || {})
+                        .filter(([dateKey, val]) => dateKey >= todayKey && val === s).length;
                       if (!count) return null;
                       return (
                         <span key={s} className={`text-xs px-2.5 py-1 rounded-full border font-medium ${shiftBadgeClass(s)}`}>
@@ -857,7 +871,7 @@ const StudentDetail = () => {
               )}
             </div>
             <div>
-              {student.shiftSchedule && Object.keys(student.shiftSchedule).length > 0 ? (
+              {parsedShiftSchedule && Object.keys(parsedShiftSchedule).length > 0 ? (
                 (() => {
                   const now = new Date();
                   const year = now.getFullYear();
@@ -885,7 +899,7 @@ const StudentDetail = () => {
                         {calDays.map((d, i) => {
                           if (!d) return <div key={`pad-${i}`} />;
                           const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-                          const shift = student.shiftSchedule?.[dateKey];
+                          const shift = parsedShiftSchedule?.[dateKey];
                           return (
                             <div key={d} className={`rounded py-0.5 border ${shift ? SHIFT_COLORS[shift] || "bg-gray-50 text-gray-700 border-gray-200" : "border-transparent text-gray-600"}`}>
                               <div className="leading-none">{d}</div>

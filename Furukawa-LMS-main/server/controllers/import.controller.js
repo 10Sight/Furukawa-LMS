@@ -213,9 +213,7 @@ export const importEmployees = async (req, res) => {
         // Fetch all hierarchy mappings for lookup (Pre-fetch for matching as explained to user)
         const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
         const [allSections] = await executeQuery("SELECT id, name, departmentId, category FROM sections WHERE isActive = 1");
-        const [allLines] = await executeQuery("SELECT id, name, sectionId FROM [lines] WHERE isActive = 1");
-        const [allSubSections] = await executeQuery("SELECT id, name, lineId FROM sub_sections WHERE isActive = 1");
-        const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
+        const [allContractors] = await executeQuery("SELECT id, name FROM contractors WHERE status = 'active'");
 
         const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
 
@@ -224,31 +222,13 @@ export const importEmployees = async (req, res) => {
             const name = s.name.toLowerCase().trim();
             const deptId = s.departmentId;
             const category = (s.category || "").toLowerCase().trim();
-            // Store standard name
             sectionMap.set(`${deptId}|${name}`, s.id);
-            // Store name with category suffix if applicable (e.g. "Assembly - Direct")
             if (category && category !== "not applicable") {
                 sectionMap.set(`${deptId}|${name} - ${category}`, s.id);
             }
         });
 
-        // New Hierarchical Station Map: sectionId|stationName -> { stationId, subSectionId, lineId }
-        const sectionStationMap = new Map();
-        allStations.forEach(st => {
-            const subSection = allSubSections.find(ss => ss.id === st.subSectionId);
-            if (subSection) {
-                const line = allLines.find(l => l.id === subSection.lineId);
-                if (line) {
-                    const sectionId = line.sectionId;
-                    const key = `${sectionId}|${st.name.toLowerCase().trim()}`;
-                    sectionStationMap.set(key, {
-                        stationId: st.id,
-                        subSectionId: st.subSectionId,
-                        lineId: line.id
-                    });
-                }
-            }
-        });
+        const contractorMap = new Map(allContractors.map(c => [c.name.toLowerCase().trim(), c.id]));
 
         const results = {
             success: [],
@@ -307,14 +287,12 @@ export const importEmployees = async (req, res) => {
                     ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`)
                     : null;
 
-                // Derive Line, Sub-Section, and Station from Station No. + Section
-                const hierarchyMatch = (sectionId && normalizedRow.stationNo)
-                    ? sectionStationMap.get(`${sectionId}|${normalizedRow.stationNo.toLowerCase().trim()}`)
+                const stationId = null;
+                const subSectionId = null;
+                const lineId = null;
+                const contractorId = normalizedRow.contractor
+                    ? (contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null)
                     : null;
-
-                const stationId = hierarchyMatch?.stationId || null;
-                const subSectionId = hierarchyMatch?.subSectionId || null;
-                const lineId = hierarchyMatch?.lineId || null;
 
                 // Validate required fields (phoneNumber is now optional)
                 if (!normalizedRow.empId || !normalizedRow.idCard || !normalizedRow.fullName) {
@@ -371,6 +349,7 @@ export const importEmployees = async (req, res) => {
                     lineId,
                     subSectionId,
                     stationId,
+                    contractorId,
                     userName: normalizedRow.empId.toLowerCase(),
                     password: normalizedRow.empId,
                     role: "STUDENT",
@@ -380,7 +359,8 @@ export const importEmployees = async (req, res) => {
                     isTrainer: false,
                     email: normalizedRow.email || null,
                     status: normalizedRow.status || "PRESENT",
-                    departments: departmentId ? [departmentId] : []
+                    departments: departmentId ? [departmentId] : [],
+                    sections: sectionId ? [sectionId] : []
                 };
 
                 // Check if user already exists
@@ -414,7 +394,7 @@ export const importEmployees = async (req, res) => {
                         { key: 'joiningDate', label: 'Joining Date' },
                         { key: 'leavingDate', label: 'Date of Leaving' },
                         { key: 'reasonOfLeaving', label: 'Reason of Leaving' },
-                        { key: 'contractor', label: 'Contractor' },
+                        { key: 'contractorId', label: 'Contractor' },
                         { key: 'education', label: 'Education' },
                         { key: 'district', label: 'District' },
                         { key: 'state', label: 'State' },
@@ -453,24 +433,22 @@ export const importEmployees = async (req, res) => {
                             } else if (field.key === 'sectionId') {
                                 updatedData.section = normalizedRow.section;
                                 changes[field.label] = { from: existingUser.sectionName || "N/A", to: normalizedRow.section || "N/A" };
-                            } else if (field.key === 'lineId') {
-                                updatedData.line = normalizedRow.line;
-                                changes[field.label] = { from: existingUser.lineName || "N/A", to: normalizedRow.line || "N/A" };
-                            } else if (field.key === 'subSectionId') {
-                                updatedData.sub_section = normalizedRow.sub_section; // Check if col name is sub_section or subSection
-                                changes[field.label] = { from: existingUser.subSectionName || "N/A", to: normalizedRow.sub_section || "N/A" };
-                            } else if (field.key === 'stationId') {
-                                updatedData.stationNo = normalizedRow.stationNo;
-                                changes[field.label] = { from: existingUser.stationName || "N/A", to: normalizedRow.stationNo || "N/A" };
+                            } else if (field.key === 'contractorId') {
+                                updatedData.contractorId = userData.contractorId;
+                                updatedData.contractor = normalizedRow.contractor || null;
+                                changes[field.label] = { from: existingUser.contractor || "N/A", to: normalizedRow.contractor || "N/A" };
                             } else {
                                 changes[field.label] = { from: oldVal || "N/A", to: newVal || "N/A" };
                             }
                         }
                     }
 
-                    // ALWAYS ensure departments array is in sync with departmentId
+                    // ALWAYS ensure departments and sections arrays are in sync with their IDs
                     if (userData.departmentId) {
                         updatedData.departments = JSON.stringify([userData.departmentId]);
+                    }
+                    if (userData.sectionId) {
+                        updatedData.sections = JSON.stringify([userData.sectionId]);
                     }
 
                     if (Object.keys(updatedData).length > 0) {
@@ -478,21 +456,6 @@ export const importEmployees = async (req, res) => {
                         const values = [...Object.values(updatedData), existingUser.id];
 
                         await executeQuery(`UPDATE users SET ${updateFields}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
-
-                        // Sync stationId to machine_assignments if it was updated or already exists
-                        const targetStationId = userData.stationId || existingUser.stationId;
-                        if (targetStationId) {
-                            const [hasAssign] = await executeQuery(
-                                "SELECT id FROM machine_assignments WHERE user_id = ? AND machine_id = ?",
-                                [existingUser.id, targetStationId]
-                            );
-                            if (hasAssign.length === 0) {
-                                await executeQuery(
-                                    "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
-                                    [existingUser.id, targetStationId, req.user?.id || null]
-                                );
-                            }
-                        }
 
                         const status = Object.keys(changes).length > 0 ? "UPDATED" : "SUCCESS";
                         results.success.push({
@@ -530,14 +493,6 @@ export const importEmployees = async (req, res) => {
 
                 // Insert user
                 const newUser = await User.create(userData);
-
-                // Sync station assignment to machine_assignments
-                if (userData.stationId) {
-                    await executeQuery(
-                        "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
-                        [newUser.id, userData.stationId, req.user?.id || null]
-                    );
-                }
 
                 // Sync department students list for new user
                 if (departmentId) {

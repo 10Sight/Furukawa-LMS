@@ -48,7 +48,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
                 OR ${shiftColumnCompact} = 'SHIFT' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
                 OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + 'SHIFT'
-                OR ${shiftColumnCompact} LIKE '%' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + '%'
                 OR (
                     UPPER(LTRIM(RTRIM(?))) = 'G'
                     AND ${shiftColumnCompact} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
@@ -57,7 +56,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         `;
 
         params.push(
-            selectedShiftValue,
             selectedShiftValue,
             selectedShiftValue,
             selectedShiftValue,
@@ -87,7 +85,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
                 OR ${shiftColumnCompact} = 'SHIFT' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
                 OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + 'SHIFT'
-                OR ${shiftColumnCompact} LIKE '%' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + '%'
                 OR (
                     UPPER(LTRIM(RTRIM(?))) = 'G'
                     AND ${shiftColumnCompact} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
@@ -96,7 +93,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         `;
 
         params.push(
-            selectedShiftValue,
             selectedShiftValue,
             selectedShiftValue,
             selectedShiftValue,
@@ -158,10 +154,40 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         return ` AND UPPER(LTRIM(RTRIM(${columnSql}))) IN (${safeValues.split(",").map(v => `UPPER(${v})`).join(",")})`;
     };
 
+    const numericDepartmentIds = departmentIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    const numericSectionIds = sectionIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    const numericLineIds = lineIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    // IMPORTANT FIX:
+    // Attendance/present graphs must use the same hierarchy source as Current Headcount.
+    // Current Headcount users.departmentId/users.sectionId se count hota hai.
+    // Pehle attendance uhs.department/section/lines snapshot se filter ho raha tha,
+    // jiski wajah se department + shift select karne par attendance extra employees count kar sakta tha.
     let hierCondition = "";
-    hierCondition += buildNameInCondition("uhs.[department]", departmentNames);
-    hierCondition += buildNameInCondition("uhs.[section]", sectionNames);
-    hierCondition += buildNameInCondition("uhs.[lines]", lineNames);
+
+    if (numericDepartmentIds.length) {
+        hierCondition += ` AND u.departmentId IN (${numericDepartmentIds.join(",")})`;
+    } else {
+        hierCondition += buildNameInCondition("u.[department]", departmentNames);
+    }
+
+    if (numericSectionIds.length) {
+        hierCondition += ` AND u.sectionId IN (${numericSectionIds.join(",")})`;
+    } else {
+        hierCondition += buildNameInCondition("u.[section]", sectionNames);
+    }
+
+    // Line filter users table me existing text column u.[line] se hi rakha hai,
+    // taaki existing database structure disturb na ho.
+    hierCondition += buildNameInCondition("u.[line]", lineNames);
 
     const formatDateLocal = (dateObj) => {
         const y = dateObj.getFullYear();
@@ -397,92 +423,148 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     let reqResults = [];
 
-    const buildInByNames = (columnName, names) => {
-        if (!names || names.length === 0) return "";
-        const safeValues = names.map(name => `UPPER('${safeName(name)}')`).join(",");
-        return ` AND UPPER(LTRIM(RTRIM(${columnName}))) IN (${safeValues})`;
+    const numericYearsInRange = yearsInRange
+        .map(y => parseInt(y, 10))
+        .filter(y => !Number.isNaN(y));
+
+    const makePlaceholders = (count) => Array.from({ length: count }, () => "?").join(",");
+
+    const addTextInFilter = (conditions, params, columnSql, values = []) => {
+        const cleanValues = (values || [])
+            .map(v => String(v || "").trim())
+            .filter(Boolean);
+
+        if (!cleanValues.length) return;
+
+        conditions.push(`UPPER(LTRIM(RTRIM(CAST(${columnSql} AS NVARCHAR(510))))) IN (${cleanValues.map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))").join(",")})`);
+        params.push(...cleanValues);
     };
 
-    const buildReqFilterCamel = () => {
-        let extra = "";
-        extra += buildInByNames("departmentName", departmentNames);
-        extra += buildInByNames("sectionName", sectionNames);
-        extra += buildInByNames("lineDescription", lineNames);
-        return extra;
-    };
-
-    const buildReqFilterSnake = () => {
-        let extra = "";
-        extra += buildInByNames("department_name", departmentNames);
-        extra += buildInByNames("section_name", sectionNames);
-        extra += buildInByNames("description_line", lineNames);
-        return extra;
-    };
-
-    try {
-        const filter = buildReqFilterCamel();
-
-        const sql1 = `
-            SELECT 
-                [year] AS yearVal,
-                monthName AS month,
-                CAST(SUM(ISNULL(prodPlanFN01, 0)) AS BIGINT) AS required_fn01,
-                CAST(SUM(ISNULL(prodPlanFN02, 0)) AS BIGINT) AS required_fn02
-            FROM requirements
-            WHERE [year] IN (${yearsInRange.join(",")}) ${filter}
-            AND (
-                (
-                    ISNULL(is_active, 0) = 1
-                    AND LOWER(LTRIM(RTRIM(ISNULL(approvalStatus, 'approved')))) IN (
-                        'approved',
-                        'system_approved',
-                        'system approved',
-                        'system-approved',
-                        'systemapproved'
-                    )
-                )
-                OR LOWER(LTRIM(RTRIM(ISNULL(approvalStatus, '')))) IN (
+    const approvalCondition = `
+        AND (
+            (
+                ISNULL(r.is_active, 0) = 1
+                AND LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, 'approved')))) IN (
+                    'approved',
                     'system_approved',
                     'system approved',
                     'system-approved',
                     'systemapproved'
                 )
             )
-            GROUP BY [year], monthName
-        `;
+            OR LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, '')))) IN (
+                'system_approved',
+                'system approved',
+                'system-approved',
+                'systemapproved'
+            )
+        )
+    `;
 
-        const [rows] = await executeQuery(sql1, []);
-        reqResults = rows;
-    } catch (e1) {
-        try {
-            const filter = buildReqFilterSnake();
+    try {
+        if (!numericYearsInRange.length) {
+            reqResults = [];
+        } else if (numericLineIds.length || lineNames.length) {
+            // Line filter selected: requirement must come from line_requirements table.
+            // Day 1-15 = fn01, Day 16-end = fn02.
+            const params = [];
+            const conditions = [
+                `lr.requirementYear IN (${makePlaceholders(numericYearsInRange.length)})`,
+                `(lr.type IS NULL OR UPPER(LTRIM(RTRIM(lr.type))) = 'MONTHLY')`,
+            ];
+            params.push(...numericYearsInRange);
 
-            const sql2 = `
-                SELECT 
-                    year_val AS yearVal,
-                    month_name AS month,
-                    CAST(SUM(ISNULL(prod_plan_fn01, 0)) AS BIGINT) AS required_fn01,
-                    CAST(SUM(ISNULL(prod_plan_fn02, 0)) AS BIGINT) AS required_fn02
-                FROM requirements
-                WHERE year_val IN (${yearsInRange.join(",")}) ${filter}
-                GROUP BY year_val, month_name
+            if (numericLineIds.length) {
+                conditions.push(`lr.lineId IN (${makePlaceholders(numericLineIds.length)})`);
+                params.push(...numericLineIds);
+            } else if (lineNames.length) {
+                const lineNamePlaceholders = lineNames.map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))").join(",");
+                conditions.push(`(
+                    UPPER(LTRIM(RTRIM(CAST(l.name AS NVARCHAR(510))))) IN (${lineNamePlaceholders})
+                    OR UPPER(LTRIM(RTRIM(CAST(l.description AS NVARCHAR(510))))) IN (${lineNamePlaceholders})
+                )`);
+                params.push(...lineNames, ...lineNames);
+            }
+
+            const lineReqSql = `
+                SELECT
+                    lr.requirementYear AS yearVal,
+                    lr.requirementMonth AS monthNumber,
+                    CAST(SUM(ISNULL(lr.fn01, 0)) AS BIGINT) AS required_fn01,
+                    CAST(SUM(ISNULL(lr.fn02, 0)) AS BIGINT) AS required_fn02
+                FROM line_requirements lr
+                LEFT JOIN [lines] l ON l.id = lr.lineId
+                WHERE ${conditions.join(" AND ")}
+                GROUP BY lr.requirementYear, lr.requirementMonth
             `;
 
-            const [rows] = await executeQuery(sql2, []);
+            const [rows] = await executeQuery(lineReqSql, params);
             reqResults = rows;
-        } catch (e2) {
-            console.warn("[DASHBOARD] requirements query failed:", e2.message);
+        } else {
+            // Department / section / all filters: requirement must come from requirements table.
+            // requirements table does not have departmentId, so department filter is applied by joining
+            // requirements.sectionCode / sectionName with sections and then departments.
+            const params = [];
+            const conditions = [
+                `r.[year] IN (${makePlaceholders(numericYearsInRange.length)})`,
+            ];
+            params.push(...numericYearsInRange);
+
+            if (numericDepartmentIds.length) {
+                conditions.push(`d.id IN (${makePlaceholders(numericDepartmentIds.length)})`);
+                params.push(...numericDepartmentIds);
+            } else if (departmentNames.length) {
+                addTextInFilter(conditions, params, "d.name", departmentNames);
+            }
+
+            if (numericSectionIds.length) {
+                conditions.push(`s.id IN (${makePlaceholders(numericSectionIds.length)})`);
+                params.push(...numericSectionIds);
+            } else if (sectionNames.length) {
+                const sectionNamePlaceholders = sectionNames.map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))").join(",");
+                conditions.push(`(
+                    UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) IN (${sectionNamePlaceholders})
+                    OR UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510))))) IN (${sectionNamePlaceholders})
+                )`);
+                params.push(...sectionNames, ...sectionNames);
+            }
+
+            const reqSql = `
+                SELECT
+                    r.[year] AS yearVal,
+                    r.monthNumber AS monthNumber,
+                    MAX(r.monthName) AS month,
+                    CAST(SUM(ISNULL(r.prodPlanFN01, 0)) AS BIGINT) AS required_fn01,
+                    CAST(SUM(ISNULL(r.prodPlanFN02, 0)) AS BIGINT) AS required_fn02
+                FROM requirements r
+                LEFT JOIN sections s
+                    ON (
+                        UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                        OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                    )
+                    AND ISNULL(s.isActive, 1) = 1
+                LEFT JOIN departments d ON d.id = s.departmentId
+                WHERE ${conditions.join(" AND ")}
+                ${approvalCondition}
+                GROUP BY r.[year], r.monthNumber
+            `;
+
+            const [rows] = await executeQuery(reqSql, params);
+            reqResults = rows;
         }
+    } catch (e) {
+        console.warn("[DASHBOARD] requirement query failed:", e.message);
+        reqResults = [];
     }
 
     const getRequirementForDate = (dateObj) => {
         const yearVal = dateObj.getFullYear();
-        const monthName = dateObj.toLocaleString("en-US", { month: "long" });
+        const monthNumber = dateObj.getMonth() + 1;
 
         const currentReqItem = reqResults.find(
             (r) =>
                 Number(r.yearVal) === Number(yearVal) &&
-                String(r.month || "").trim().toLowerCase() === monthName.toLowerCase()
+                Number(r.monthNumber) === Number(monthNumber)
         );
 
         if (!currentReqItem) return 0;
@@ -497,10 +579,36 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     let snapshotTotal = 0;
 
-    let userHierCondition = "";
-    userHierCondition += buildNameInCondition("u.[department]", departmentNames);
-    userHierCondition += buildNameInCondition("u.[section]", sectionNames);
-    userHierCondition += buildNameInCondition("u.[line]", lineNames);
+    // Current Headcount users table se calculate hota hai.
+    // IMPORTANT FIX:
+    // Department filter me pehle u.[department] text column use ho raha tha.
+    // PE ke users table me departmentId = 49 hai, lekin u.[department] text value ENGINEERING/other ho sakti hai.
+    // Isliye PE select karne par current headcount 1 aa raha tha.
+    // Ab selected department/section IDs ke liye users.departmentId/users.sectionId use honge.
+    const userHierConditions = [];
+    const userHierParams = [];
+
+    if (numericDepartmentIds.length) {
+        userHierConditions.push(`u.departmentId IN (${makePlaceholders(numericDepartmentIds.length)})`);
+        userHierParams.push(...numericDepartmentIds);
+    } else {
+        addTextInFilter(userHierConditions, userHierParams, "u.[department]", departmentNames);
+    }
+
+    if (numericSectionIds.length) {
+        userHierConditions.push(`u.sectionId IN (${makePlaceholders(numericSectionIds.length)})`);
+        userHierParams.push(...numericSectionIds);
+    } else {
+        addTextInFilter(userHierConditions, userHierParams, "u.[section]", sectionNames);
+    }
+
+    // Line filter users table me existing text column u.[line] se hi rakha hai,
+    // taaki existing database structure disturb na ho.
+    addTextInFilter(userHierConditions, userHierParams, "u.[line]", lineNames);
+
+    const userHierCondition = userHierConditions.length
+        ? ` AND ${userHierConditions.join(" AND ")}`
+        : "";
 
     try {
         let snapshotSql = `
@@ -513,7 +621,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
             ${userHierCondition}
         `;
-        const snapshotParams = [];
+        const snapshotParams = userHierParams;
         // Current/Total Headcount users table se aata hai, isliye shift filter apply nahi hoga.
         // Shift filter sirf attendance/present related data par apply hoga.
 
@@ -1261,6 +1369,175 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             .sort((a, b) => Number(b.attendanceValue || 0) - Number(a.attendanceValue || 0));
     };
 
+
+    // EDUCATION GRAPH RAW COUNT FIX:
+    // Education graph me Users Total ko ab users table ke raw records se calculate kiya gaya hai.
+    // Pehle common getGroupedComparisonChart() education ke liye bhi active employee logic use kar raha tha:
+    // isDeleted = 0, isTemporary = 0, valid empId, designation_shutters exclude, COUNT(DISTINCT empId).
+    // Isliye SQL query `SELECT COUNT(*) FROM users WHERE education = '12th'` me 1545 aata tha,
+    // lekin dashboard education graph me 1384 aa raha tha.
+    // Ab education graph ka masterValue raw users rows ke basis par aayega, same as table count.
+    const getEducationComparisonChart = async ({ columnSql, labelKey = "name", includeState = true, includeDistrict = true }) => {
+        const mapByName = {};
+
+        const addToMap = (name, key, value) => {
+            const cleanName = normalizeChartName(name);
+            if (!mapByName[cleanName]) {
+                mapByName[cleanName] = {
+                    [labelKey]: cleanName,
+                    name: cleanName,
+                    value: 0,
+                    attendanceValue: 0,
+                    masterValue: 0,
+                    rawValue: 0,
+                    percentage: 0,
+                };
+            }
+            mapByName[cleanName][key] = Number(value || 0);
+        };
+
+        const addRawUserHierarchyFilters = (baseSql, params, alias = "u") => {
+            let sqlText = baseSql;
+
+            if (numericDepartmentIds.length) {
+                sqlText += ` AND ${alias}.departmentId IN (${makePlaceholders(numericDepartmentIds.length)})`;
+                params.push(...numericDepartmentIds);
+            } else {
+                if (departmentNames.length) {
+                    const placeholders = departmentNames.map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))").join(",");
+                    sqlText += ` AND (
+                        UPPER(LTRIM(RTRIM(CAST(${alias}.[department] AS NVARCHAR(510))))) IN (${placeholders})
+                        OR UPPER(LTRIM(RTRIM(CAST(uhs.[department] AS NVARCHAR(510))))) IN (${placeholders})
+                    )`;
+                    params.push(...departmentNames, ...departmentNames);
+                }
+            }
+
+            if (numericSectionIds.length) {
+                sqlText += ` AND ${alias}.sectionId IN (${makePlaceholders(numericSectionIds.length)})`;
+                params.push(...numericSectionIds);
+            } else if (sectionNames.length) {
+                const placeholders = sectionNames.map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))").join(",");
+                sqlText += ` AND (
+                    UPPER(LTRIM(RTRIM(CAST(${alias}.[section] AS NVARCHAR(510))))) IN (${placeholders})
+                    OR UPPER(LTRIM(RTRIM(CAST(uhs.[section] AS NVARCHAR(510))))) IN (${placeholders})
+                )`;
+                params.push(...sectionNames, ...sectionNames);
+            }
+
+            if (numericLineIds.length) {
+                sqlText += ` AND ${alias}.lineId IN (${makePlaceholders(numericLineIds.length)})`;
+                params.push(...numericLineIds);
+            } else if (lineNames.length) {
+                const placeholders = lineNames.map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))").join(",");
+                sqlText += ` AND (
+                    UPPER(LTRIM(RTRIM(CAST(${alias}.[line] AS NVARCHAR(510))))) IN (${placeholders})
+                    OR UPPER(LTRIM(RTRIM(CAST(uhs.[lines] AS NVARCHAR(510))))) IN (${placeholders})
+                )`;
+                params.push(...lineNames, ...lineNames);
+            }
+
+            return sqlText;
+        };
+
+        try {
+            let attendanceSql = `
+                SELECT
+                    ${columnSql} AS rawName,
+                    COUNT(DISTINCT al.payCode) AS total
+                ${attendanceMasterBaseFrom}
+            `;
+
+            const attendanceParams = [];
+            attendanceSql = addUserMasterFilters(attendanceSql, attendanceParams, "u");
+            attendanceSql = addStateDistrictFilters(attendanceSql, attendanceParams, { includeState, includeDistrict });
+            attendanceSql = addShiftFilter(attendanceSql, attendanceParams, "al");
+            attendanceSql += `
+                GROUP BY ${columnSql}
+                ORDER BY total DESC
+            `;
+
+            const [attendanceRows] = await executeQuery(attendanceSql, attendanceParams);
+            attendanceRows.forEach(row => addToMap(row.rawName, "attendanceValue", row.total));
+        } catch (e) {
+            console.warn("[DASHBOARD] Education attendance chart failed:", e.message);
+        }
+
+        try {
+            let masterSql = `
+                SELECT
+                    ${columnSql} AS rawName,
+                    COUNT(DISTINCT u.id) AS total
+                FROM users u
+                LEFT JOIN user_hierarchy_snapshots uhs
+                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                WHERE 1=1
+            `;
+
+            const masterParams = [];
+            masterSql = addRawUserHierarchyFilters(masterSql, masterParams, "u");
+            masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
+            masterSql += `
+                GROUP BY ${columnSql}
+                ORDER BY total DESC
+            `;
+
+            const [masterRows] = await executeQuery(masterSql, masterParams);
+            masterRows.forEach(row => addToMap(row.rawName, "masterValue", row.total));
+        } catch (e) {
+            console.warn("[DASHBOARD] Education raw master chart failed:", e.message);
+        }
+
+        let rawEducationDenominator = 0;
+        try {
+            let denominatorSql = `
+                SELECT COUNT(DISTINCT u.id) AS total
+                FROM users u
+                LEFT JOIN user_hierarchy_snapshots uhs
+                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                WHERE 1=1
+            `;
+            const denominatorParams = [];
+            denominatorSql = addRawUserHierarchyFilters(denominatorSql, denominatorParams, "u");
+            denominatorSql = addStateDistrictFilters(denominatorSql, denominatorParams, { includeState, includeDistrict });
+
+            const [rows] = await executeQuery(denominatorSql, denominatorParams);
+            rawEducationDenominator = Number(rows?.[0]?.total || 0);
+        } catch (e) {
+            console.warn("[DASHBOARD] Education raw denominator failed:", e.message);
+        }
+
+        return Object.values(mapByName)
+            .map(item => {
+                const attendanceCount = Number(item.attendanceValue || 0);
+                const masterCount = Number(item.masterValue || 0);
+
+                return {
+                    ...item,
+                    value: attendanceCount,
+                    rawValue: attendanceCount,
+                    percentage:
+                        rawEducationDenominator > 0
+                            ? Number(((attendanceCount / rawEducationDenominator) * 100).toFixed(1))
+                            : 0,
+                    attendancePercentage:
+                        rawEducationDenominator > 0
+                            ? Number(((attendanceCount / rawEducationDenominator) * 100).toFixed(1))
+                            : 0,
+                    masterPercentage:
+                        rawEducationDenominator > 0
+                            ? Number(((masterCount / rawEducationDenominator) * 100).toFixed(1))
+                            : 0,
+                    totalEmployees: rawEducationDenominator,
+                    denominatorTotal: rawEducationDenominator,
+                };
+            })
+            .filter(item => Number(item.attendanceValue || 0) > 0 || Number(item.masterValue || 0) > 0)
+            .sort((a, b) => Number(b.masterValue || 0) - Number(a.masterValue || 0));
+    };
+
     try {
         const skillColumnSql = `
             CASE
@@ -1308,6 +1585,22 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             )
         `;
 
+        const educationColumnSql = `
+            CASE
+                WHEN NULLIF(LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510)))), '') IS NULL
+                    THEN 'Not Provided'
+                WHEN REPLACE(REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510))))), '.', ''), '-', ''), ' ', ''), '_', '') IN ('12TH','12','XII','XIISTD','12STD','12STANDARD','INTERMEDIATE')
+                    THEN '12th'
+                WHEN REPLACE(REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510))))), '.', ''), '-', ''), ' ', ''), '_', '') IN ('10TH','10','X','XSTD','10STD','10STANDARD','HIGHSCHOOL')
+                    THEN '10th'
+                WHEN REPLACE(REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510))))), '.', ''), '-', ''), ' ', ''), '_', '') IN ('ITI','I.T.I')
+                    THEN 'ITI'
+                WHEN REPLACE(REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510))))), '.', ''), '-', ''), ' ', ''), '_', '') IN ('DIPLOMA','DIP')
+                    THEN 'Diploma'
+                ELSE LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510))))
+            END
+        `;
+
         const [
             skillLevels,
             genderData,
@@ -1330,7 +1623,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             }).catch(err => { console.warn("[DASHBOARD] leaderExpert query failed:", err.message); return []; }),
             getStateOptions().catch(err => { console.warn("[DASHBOARD] stateOptions query failed:", err.message); return []; }),
             getDistrictOptions().catch(err => { console.warn("[DASHBOARD] districtOptions query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.education AS NVARCHAR(510)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] educationData query failed:", err.message); return []; }),
+            getEducationComparisonChart({ columnSql: educationColumnSql }).catch(err => { console.warn("[DASHBOARD] educationData query failed:", err.message); return []; }),
         ]);
 
         pieCharts = {
@@ -1628,10 +1921,40 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         return ` AND UPPER(LTRIM(RTRIM(${columnSql}))) IN (${safeValues})`;
     };
 
+    const numericDepartmentIds = departmentIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    const numericSectionIds = sectionIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    const numericLineIds = lineIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    // IMPORTANT FIX:
+    // Attendance/present graphs must use the same hierarchy source as Current Headcount.
+    // Current Headcount users.departmentId/users.sectionId se count hota hai.
+    // Pehle attendance uhs.department/section/lines snapshot se filter ho raha tha,
+    // jiski wajah se department + shift select karne par attendance extra employees count kar sakta tha.
     let hierCondition = "";
-    hierCondition += buildNameInCondition("uhs.[department]", departmentNames);
-    hierCondition += buildNameInCondition("uhs.[section]", sectionNames);
-    hierCondition += buildNameInCondition("uhs.[lines]", lineNames);
+
+    if (numericDepartmentIds.length) {
+        hierCondition += ` AND u.departmentId IN (${numericDepartmentIds.join(",")})`;
+    } else {
+        hierCondition += buildNameInCondition("u.[department]", departmentNames);
+    }
+
+    if (numericSectionIds.length) {
+        hierCondition += ` AND u.sectionId IN (${numericSectionIds.join(",")})`;
+    } else {
+        hierCondition += buildNameInCondition("u.[section]", sectionNames);
+    }
+
+    // Line filter users table me existing text column u.[line] se hi rakha hai,
+    // taaki existing database structure disturb na ho.
+    hierCondition += buildNameInCondition("u.[line]", lineNames);
 
     const formatDateLocal = (dateObj) => {
         const y = dateObj.getFullYear();
@@ -1763,10 +2086,40 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         return ` AND UPPER(LTRIM(RTRIM(${columnSql}))) IN (${safeValues})`;
     };
 
+    const numericDepartmentIds = departmentIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    const numericSectionIds = sectionIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    const numericLineIds = lineIds
+        .map(id => parseInt(id, 10))
+        .filter(id => !Number.isNaN(id));
+
+    // IMPORTANT FIX:
+    // Attendance/present graphs must use the same hierarchy source as Current Headcount.
+    // Current Headcount users.departmentId/users.sectionId se count hota hai.
+    // Pehle attendance uhs.department/section/lines snapshot se filter ho raha tha,
+    // jiski wajah se department + shift select karne par attendance extra employees count kar sakta tha.
     let hierCondition = "";
-    hierCondition += buildNameInCondition("uhs.[department]", departmentNames);
-    hierCondition += buildNameInCondition("uhs.[section]", sectionNames);
-    hierCondition += buildNameInCondition("uhs.[lines]", lineNames);
+
+    if (numericDepartmentIds.length) {
+        hierCondition += ` AND u.departmentId IN (${numericDepartmentIds.join(",")})`;
+    } else {
+        hierCondition += buildNameInCondition("u.[department]", departmentNames);
+    }
+
+    if (numericSectionIds.length) {
+        hierCondition += ` AND u.sectionId IN (${numericSectionIds.join(",")})`;
+    } else {
+        hierCondition += buildNameInCondition("u.[section]", sectionNames);
+    }
+
+    // Line filter users table me existing text column u.[line] se hi rakha hai,
+    // taaki existing database structure disturb na ho.
+    hierCondition += buildNameInCondition("u.[line]", lineNames);
 
     const formatDateLocal = (dateObj) => {
         const y = dateObj.getFullYear();

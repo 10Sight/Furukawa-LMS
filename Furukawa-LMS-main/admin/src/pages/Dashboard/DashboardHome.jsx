@@ -3044,7 +3044,7 @@ const DashboardHome = () => {
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1 rounded-full font-semibold hidden md:inline-block">
-                        Requirement value shown on every date
+                        Requirement bar is orange and value is visible on every date
                     </span>
                 </div>
             </div>
@@ -3061,7 +3061,7 @@ const DashboardHome = () => {
                                 )}
                             </CardTitle>
                             <p className="text-sm text-slate-500 mt-1">
-                                Requirement line is orange and value is visible on every date
+                                Requirement bar is orange and value is visible on every date
                             </p>
                           
                         </div>
@@ -3093,7 +3093,7 @@ const DashboardHome = () => {
                                 data={manpowerData}
                                 margin={{ top: 66, right: 48, left: 4, bottom: 8 }}
                                 barCategoryGap="20%"
-                                barGap={1}
+                                barGap={8}
                             >
                                 <defs>
                                     <linearGradient id="headcountGrad" x1="0" y1="0" x2="0" y2="1">
@@ -3126,17 +3126,17 @@ const DashboardHome = () => {
                                     width={36}
                                 />
 
+                                <Bar
+                                    dataKey="required"
+                                    name="Required"
+                                    fill="#ea580c"
+                                    radius={[4, 4, 0, 0]}
+                                    maxBarSize={18}
+                                    label={renderBarValueLabel("#ea580c", "", 13)}
+                                />
+
                                 {chartTypes.manpower === "bar" ? (
                                     <>
-                                        <Bar
-                                            dataKey="current"
-                                            name="Current Headcount"
-                                            fill="url(#headcountGrad)"
-                                            radius={[4, 4, 0, 0]}
-                                            maxBarSize={20}
-                                            label={renderBarValueLabel("#7c5a00", "", 13)}
-                                        />
-
                                         <Bar
                                             dataKey="present"
                                             name="Actual Present"
@@ -3144,6 +3144,15 @@ const DashboardHome = () => {
                                             radius={[4, 4, 0, 0]}
                                             maxBarSize={20}
                                             label={renderBarValueLabel("#2563eb", "", 13)}
+                                        />
+
+                                        <Bar
+                                            dataKey="current"
+                                            name="Current Headcount"
+                                            fill="url(#headcountGrad)"
+                                            radius={[4, 4, 0, 0]}
+                                            maxBarSize={20}
+                                            label={renderBarValueLabel("#7c5a00", "", 13)}
                                         />
                                     </>
                                 ) : (
@@ -3212,45 +3221,15 @@ const DashboardHome = () => {
                                     </>
                                 )}
 
-                                <Line
-                                    type="monotone"
-                                    dataKey="required"
-                                    name="Required"
-                                    stroke="#ea580c"
-                                    strokeWidth={2.8}
-                                    dot={{ r: 3, fill: "#ea580c", strokeWidth: 0 }}
-                                    activeDot={false}
-                                    label={(props) => {
-                                        const { x, y, value } = props;
-                                        if (value === null || value === undefined || value === "") return null;
-
-                                        return (
-                                            <text
-                                                x={x}
-                                                y={y + 20}
-                                                fill="#ea580c"
-                                                fontSize={13}
-                                                fontWeight={900}
-                                                stroke="#ea580c"
-                                                strokeWidth={0.55}
-                                                paintOrder="stroke"
-                                                style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
-                                                textAnchor="middle"
-                                            >
-                                                {value}
-                                            </text>
-                                        );
-                                    }}
-                                />
                             </ComposedChart>
                         </ResponsiveContainer>
                     </ScrollableTopChart>
 
                     <SimpleLegend
                         items={[
-                            { color: '#e7ae12', label: 'Current Headcount' },
+                            { color: '#ea580c', label: 'Required' },
                             { color: '#2563eb', label: 'Actual Present' },
-                            { color: '#ea580c', label: 'Required', type: 'line', dashed: false },
+                            { color: '#e7ae12', label: 'Current Headcount' },
                         ]}
                     />
                 </CardContent>

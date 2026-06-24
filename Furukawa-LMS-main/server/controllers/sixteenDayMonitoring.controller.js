@@ -35,13 +35,13 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
     }
 
     let query = `
-        SELECT 
+        SELECT
             u.id, u.fullName, u.empId, u.avatar,
-            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber, m.startDate, m.gridData, m.adminRemarksHistory,
+            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.verifiedByEduCell, m.updatedAt, m.attemptNumber, m.startDate, m.gridData, m.adminRemarksHistory,
             stats.totalAttempts, stats.rejectedCount
         FROM users u
         LEFT JOIN (
-            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber, startDate, gridData, adminRemarksHistory,
+            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, updatedAt, attemptNumber, startDate, gridData, adminRemarksHistory,
                    ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
             FROM sixteen_day_monitorings
         ) m ON u.id = m.studentId AND m.rn = 1
@@ -109,10 +109,15 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const sid = await resolveStudentId(studentId);
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
-    // Authorization check: User can access if they are the owner OR have management permissions
+    // Authorization check: User can access if they are the owner OR have management/verification permissions
     const isOwner = String(req.user.id) === String(sid);
-    const hasManagePermission = req.user.isAdmin || req.user.isTrainer || 
-                                 (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('sixteen_day:manage'));
+    const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
+                                 (req.user.role === 'CUSTOM' && (
+                                     req.user.customRole?.permissions?.includes('sixteen_day:manage') ||
+                                     req.user.customRole?.permissions?.includes('sixteen_day:verify') ||
+                                     req.user.customRole?.permissions?.includes('sixteen_day:approve') ||
+                                     req.user.customRole?.permissions?.includes('sixteen_day:verify_education')
+                                 ));
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to view this monitoring record", 403);
@@ -185,19 +190,24 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const sid = await resolveStudentId(studentId);
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
-    // Authorization check: Only Trainers, Admins, or Custom Roles with manage permission can save
+    // Authorization check: Only Trainers, Admins, or Custom Roles with manage/verify/approve/edu-cell permissions can save
     const isOwner = String(req.user.id) === String(sid);
-    const hasManagePermission = req.user.isAdmin || req.user.isTrainer || 
-                                (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('sixteen_day:manage'));
+    const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
+                                (req.user.role === 'CUSTOM' && (
+                                    req.user.customRole?.permissions?.includes('sixteen_day:manage') ||
+                                    req.user.customRole?.permissions?.includes('sixteen_day:verify') ||
+                                    req.user.customRole?.permissions?.includes('sixteen_day:approve') ||
+                                    req.user.customRole?.permissions?.includes('sixteen_day:verify_education')
+                                ));
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to save this monitoring record", 403);
     }
 
-    const { 
+    const {
         employeeName, employeeCode, processName, dept,
         handoverDate, trgResult, workingWith, lineLeaderName,
-        gridData, checkedBy, verifiedBy, approvedBy, status,
+        gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, status,
         isNewAttempt, recordId, startDate, adminRemark
     } = req.body;
 
@@ -234,6 +244,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet.checkedBy = checkedBy;
         sheet.verifiedBy = verifiedBy;
         sheet.approvedBy = approvedBy;
+        sheet.verifiedByEduCell = verifiedByEduCell;
         sheet.status = status || sheet.status;
         sheet.startDate = startDate;
         sheet.updatedBy = req.user?.fullName || req.user?.name;
@@ -259,6 +270,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             checkedBy,
             verifiedBy,
             approvedBy,
+            verifiedByEduCell,
             createdBy: req.user?.fullName || req.user?.name,
             status: status || "Draft",
             startDate,
@@ -385,7 +397,8 @@ export const sendSixteenDayMonitoringEmail = asyncHandler(async (req, res) => {
             handoverDate: sheet.handoverDate,
             checkedBy: sheet.checkedBy,
             verifiedBy: sheet.verifiedBy,
-            approvedBy: sheet.approvedBy
+            approvedBy: sheet.approvedBy,
+            verifiedByEduCell: sheet.verifiedByEduCell,
         },
         gridData: sheet.gridData,
         config: sheetConfig || [], 
@@ -499,6 +512,7 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
             checkedBy: sheet.checkedBy,
             verifiedBy: sheet.verifiedBy,
             approvedBy: sheet.approvedBy,
+            verifiedByEduCell: sheet.verifiedByEduCell,
         },
         gridData: sheet.gridData || {},
         sheetConfig: monitoringConfig?.config || [],

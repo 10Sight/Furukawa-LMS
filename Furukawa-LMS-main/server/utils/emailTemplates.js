@@ -431,11 +431,15 @@ export const generateHandoverNotificationEmail = ({ instructorName, departmentNa
                     <div class="info-cell label">Approved By:</div>
                     <div class="info-cell">${headerInfo.approvedBy || '<em>Pending Approval</em>'}</div>
                 </div>
+                <div class="info-row">
+                    <div class="info-cell label">Verified By (Edu Cell):</div>
+                    <div class="info-cell">${headerInfo.verifiedByEduCell || '<em>Pending Verification</em>'}</div>
+                </div>
             </div>
         </div>
 
         <div class="actions">
-            <a href="${portalUrl}" 
+            <a href="${portalUrl}"
                style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
                Review & Approve Monitoring
             </a>
@@ -564,6 +568,10 @@ export const generateThreeDayMonitoringEmail = ({
                 <div class="info-row">
                     <div class="info-cell label">Approved By:</div>
                     <div class="info-cell">${headerInfo.approvedBy || '<em>Pending</em>'}</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-cell label">Verified By (Edu Cell):</div>
+                    <div class="info-cell">${headerInfo.verifiedByEduCell || '<em>Pending</em>'}</div>
                 </div>
             </div>
         </div>
@@ -827,6 +835,10 @@ export const generateCombinedMonitoringEmail = ({
             <div class="info-cell">${headerInfo?.verifiedBy || 'Pending'}</div>
             <div class="info-cell label">Approved By:</div>
             <div class="info-cell">${headerInfo?.approvedBy || 'Pending'}</div>
+        </div>
+        <div class="info-row">
+            <div class="info-cell label">Verified By (Edu Cell):</div>
+            <div class="info-cell">${headerInfo?.verifiedByEduCell || 'Pending'}</div>
         </div>
     </div>
 

@@ -219,6 +219,7 @@ const Students = () => {
     designation: "",
   });
   const [activeTab, setActiveTab] = useState("all");
+  const [assignmentType, setAssignmentType] = useState("department");
 
 
   const handleStudentClick = (student) => {
@@ -303,6 +304,8 @@ const Students = () => {
       date: filters.date,
       includeLeft: "true",
       designation: filters.designation,
+      assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
+      assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
     },
     {
       // Prevent unnecessary refetches
@@ -779,6 +782,8 @@ const Students = () => {
               sectionId: filters.sectionId,
               lineId: filters.lineId,
               subSectionId: filters.subSectionId,
+              assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
+              assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
               stationId: filters.stationId,
               dateFrom: filters.dateFrom,
               dateTo: filters.dateTo,
@@ -819,6 +824,8 @@ const Students = () => {
               status: filters.status,
               unit: filters.unit,
               departmentId: filters.departmentId,
+              assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
+              assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
             },
             shiftSchedulePatch: bulkShiftScheduleDraft,
           }
@@ -974,6 +981,8 @@ const Students = () => {
           date: filters.date,
           includeLeft: "true",
           designation: filters.designation,
+          assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
+          assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
         }).unwrap();
 
         const batch = result?.data?.users || [];
@@ -1513,6 +1522,7 @@ const Students = () => {
               onClick={() => {
                 clearFilters();
                 setActiveTab("assigned");
+                setCurrentPage(1);
               }}
             >
               Assigned
@@ -1522,11 +1532,39 @@ const Students = () => {
               onClick={() => {
                 clearFilters();
                 setActiveTab("unassigned");
+                setCurrentPage(1);
               }}
             >
               Unassigned
             </TabsTrigger>
           </TabsList>
+
+          {(activeTab === "assigned" || activeTab === "unassigned") && (
+            <div className="flex flex-wrap gap-2 mt-3 w-full sm:w-auto">
+              {[
+                { key: "department", label: "Department" },
+                { key: "section", label: "Section" },
+                { key: "line", label: "Line" },
+                { key: "subsection", label: "Sub-Section" },
+                { key: "station", label: "Station" },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => { setAssignmentType(key); setCurrentPage(1); }}
+                  className={`px-3 py-1 rounded-full text-sm font-medium border transition-all ${
+                    assignmentType === key
+                      ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                      : "bg-white/70 backdrop-blur-sm text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300"
+                  }`}
+                >
+                  {label}
+                  {assignmentType === key && studentsData?.data?.totalUsers !== undefined && (
+                    <span className="ml-1.5 text-xs opacity-75">({studentsData.data.totalUsers})</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <Button

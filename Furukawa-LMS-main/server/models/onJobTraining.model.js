@@ -109,7 +109,20 @@ class OnJobTraining {
 
                 -- Alter other existing columns to NVARCHAR to support Unicode (Hindi, etc.)
                 IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'name' AND DATA_TYPE = 'varchar')
+                BEGIN
+                    DECLARE @ConstraintName nvarchar(200)
+                    SELECT @ConstraintName = Name 
+                    FROM sys.default_constraints 
+                    WHERE parent_object_id = object_id('on_job_trainings') 
+                      AND parent_column_id = Columnproperty(object_id('on_job_trainings'), 'name', 'ColumnId')
+
+                    IF @ConstraintName IS NOT NULL
+                        EXEC('ALTER TABLE on_job_trainings DROP CONSTRAINT ' + @ConstraintName)
+
                     ALTER TABLE on_job_trainings ALTER COLUMN name NVARCHAR(255) NULL;
+
+                    ALTER TABLE on_job_trainings ADD CONSTRAINT DF_on_job_trainings_name DEFAULT 'Level-1 Practical Evaluation of On the Job Training' FOR name;
+                END
 
                 IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'section' AND DATA_TYPE = 'varchar')
                     ALTER TABLE on_job_trainings ALTER COLUMN section NVARCHAR(255) NULL;

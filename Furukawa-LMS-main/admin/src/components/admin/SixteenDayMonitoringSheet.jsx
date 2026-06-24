@@ -127,6 +127,7 @@ const SixteenDayMonitoringSheet = ({
         checkedBy: "",
         verifiedBy: "",
         approvedBy: "",
+        verifiedByEduCell: "",
         status: "Draft",
         startDate: "",
     });
@@ -134,6 +135,7 @@ const SixteenDayMonitoringSheet = ({
     const authUser = useSelector(state => state.auth.user);
     const canVerify = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify');
     const canApprove = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:approve');
+    const canVerifyEduCell = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify_education');
 
     const [gridData, setGridData] = useState({});
     const [originalGridData, setOriginalGridData] = useState({});
@@ -169,6 +171,7 @@ const SixteenDayMonitoringSheet = ({
         !authUser?.isTrainer &&
         !canVerify &&
         !canApprove &&
+        !canVerifyEduCell &&
         !authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
 
     const isCellLocked = (key, type = 'grid') => {
@@ -229,6 +232,7 @@ const SixteenDayMonitoringSheet = ({
                     checkedBy: "",
                     verifiedBy: "",
                     approvedBy: "",
+                    verifiedByEduCell: "",
                     status: "Draft",
                     attemptNumber: 1
                 });
@@ -268,6 +272,7 @@ const SixteenDayMonitoringSheet = ({
                         checkedBy: record.checkedBy || "",
                         verifiedBy: record.verifiedBy || "",
                         approvedBy: record.approvedBy || "",
+                        verifiedByEduCell: record.verifiedByEduCell || "",
                         status: record.status || "Draft",
                         attemptNumber: record.attemptNumber || 1,
                         startDate: record.startDate || "",
@@ -278,6 +283,7 @@ const SixteenDayMonitoringSheet = ({
                             checkedBy: "",
                             verifiedBy: "",
                             approvedBy: "",
+                            verifiedByEduCell: "",
                             status: "Draft",
                             attemptNumber: (record.attemptNumber || 1) + 1,
                             startDate: "",
@@ -309,6 +315,7 @@ const SixteenDayMonitoringSheet = ({
                         checkedBy: "",
                         verifiedBy: "",
                         approvedBy: "",
+                        verifiedByEduCell: "",
                         status: "Draft",
                         attemptNumber: 1,
                         startDate: "",
@@ -362,6 +369,7 @@ const SixteenDayMonitoringSheet = ({
                     checkedBy: "",
                     verifiedBy: "",
                     approvedBy: "",
+                    verifiedByEduCell: "",
                     attemptNumber: (historyAttempts[0]?.attemptNumber || 0) + 1
                 }));
                 setSelectedAttemptId("");
@@ -393,6 +401,7 @@ const SixteenDayMonitoringSheet = ({
                     checkedBy: record.checkedBy || "",
                     verifiedBy: record.verifiedBy || "",
                     approvedBy: record.approvedBy || "",
+                    verifiedByEduCell: record.verifiedByEduCell || "",
                     status: record.status || "Draft",
                     attemptNumber: record.attemptNumber || 1,
                     startDate: record.startDate || "",
@@ -1966,8 +1975,52 @@ const SixteenDayMonitoringSheet = ({
                                                 }}
                                                 placeholder="Write any observation or comments here..."
                                             />
-                                            <div className="w-1/4 h-full flex flex-col items-center justify-center text-center border-l border-black bg-gray-50/30 gap-1">
-                                                <span className="font-extrabold text-[12px] uppercase">Verified By:</span>
+                                            <div className="w-1/4 h-full flex flex-col items-center justify-between text-center border-l border-black bg-gray-50/30 p-2 gap-1">
+                                                <div className="flex items-center justify-between w-full px-2">
+                                                    <span className="font-extrabold text-[12px] uppercase">Verified By:</span>
+                                                    {canVerifyEduCell && !isLocked && !isCellLocked('verifiedByEduCell', 'header') && (
+                                                        <div className="flex gap-1 items-center">
+                                                            {!headerInfo.verifiedByEduCell ? (
+                                                                <>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleSignature('verifiedByEduCell', 'approve')}
+                                                                        className="h-6 px-1.5 text-[9px] text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200 uppercase font-bold"
+                                                                    >
+                                                                        Approve
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleSignature('verifiedByEduCell', 'reject')}
+                                                                        className="h-6 px-1.5 text-[9px] text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 uppercase font-bold"
+                                                                    >
+                                                                        Reject
+                                                                    </Button>
+                                                                </>
+                                                            ) : (
+                                                                (authUser?.isAdmin || headerInfo.verifiedByEduCell.includes(authUser?.fullName || authUser?.name)) && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleClearSignature('verifiedByEduCell')}
+                                                                        className="h-6 w-6 p-0 text-gray-400 hover:text-red-600"
+                                                                        title="Clear Signature"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </Button>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <input
+                                                    className={`w-full text-center border-b border-black outline-none bg-transparent font-bold text-[12px] h-7 uppercase ${headerInfo.verifiedByEduCell?.includes('Rejected') ? 'text-red-600' : 'text-blue-900'}`}
+                                                    placeholder="NAME"
+                                                    value={headerInfo.verifiedByEduCell || ""}
+                                                    readOnly
+                                                />
                                                 <span className="font-bold text-[12px] italic text-blue-900">(Education Cell)</span>
                                             </div>
                                         </div>

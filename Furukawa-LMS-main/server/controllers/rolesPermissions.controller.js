@@ -107,6 +107,7 @@ const SYSTEM_PERMISSIONS = {
   SIXTEEN_DAY_MANAGE: "sixteen_day:manage",
   SIXTEEN_DAY_VERIFY: "sixteen_day:verify",
   SIXTEEN_DAY_APPROVE: "sixteen_day:approve",
+  SIXTEEN_DAY_VERIFY_EDUCATION: "sixteen_day:verify_education",
 
   // 3-Day Monitoring Management
   THREE_DAY_EDIT_LAYOUT: "three_day:edit_layout",
@@ -453,6 +454,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_MANAGE, name: "Manage 16-Day Monitoring", description: "Manage 16-day monitoring records" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY_EDUCATION, name: "Verify 16-Day Monitoring (Education Cell)", description: "Verify 16-day monitoring records as Education Cell" },
         { id: SYSTEM_PERMISSIONS.DOJO_SIXTEENDAY_MONITORING, name: "Access All in 16-Day Monitoring", description: "Allows unrestricted access to all departments, sections, lines, and stations in 16-Day Monitoring" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT, name: "Edit 3-Day Monitoring Layout", description: "Modify the structure and categories of 3-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_MANAGE, name: "Manage 3-Day Monitoring", description: "Manage 3-day monitoring records" },

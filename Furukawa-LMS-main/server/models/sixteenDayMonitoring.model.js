@@ -25,6 +25,7 @@ class SixteenDayMonitoring {
         this.checkedBy = data.checkedBy || "";
         this.verifiedBy = data.verifiedBy || "";
         this.approvedBy = data.approvedBy || "";
+        this.verifiedByEduCell = data.verifiedByEduCell || "";
         this.status = data.status || "Draft";
         this.startDate = data.startDate || "";
         this.adminRemarksHistory = typeof data.adminRemarksHistory === 'string'
@@ -98,6 +99,11 @@ class SixteenDayMonitoring {
                 BEGIN
                     ALTER TABLE sixteen_day_monitorings ADD adminRemarksHistory NVARCHAR(MAX);
                 END
+                -- Add verifiedByEduCell column if missing
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'verifiedByEduCell')
+                BEGIN
+                    ALTER TABLE sixteen_day_monitorings ADD verifiedByEduCell VARCHAR(255);
+                END
             END
         `;
         await executeQuery(query);
@@ -125,15 +131,15 @@ class SixteenDayMonitoring {
         const {
             studentId, attemptNumber, employeeName, employeeCode, processName, dept,
             handoverDate, trgResult, workingWith, lineLeaderName,
-            gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate,
+            gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate,
             adminRemarksHistory
         } = data;
 
         const query = `
             INSERT INTO sixteen_day_monitorings
-            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, createdBy, status, startDate, adminRemarksHistory)
+            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate, adminRemarksHistory)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -151,6 +157,7 @@ class SixteenDayMonitoring {
             checkedBy || "",
             verifiedBy || "",
             approvedBy || "",
+            verifiedByEduCell || "",
             createdBy,
             status || "Draft",
             startDate || "",
@@ -166,7 +173,7 @@ class SixteenDayMonitoring {
             UPDATE sixteen_day_monitorings SET
             employeeName = ?, employeeCode = ?, processName = ?, dept = ?, 
             handoverDate = ?, trgResult = ?, workingWith = ?, lineLeaderName = ?, 
-            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, status = ?, attemptNumber = ?, startDate = ?, updatedBy = ?, adminRemarksHistory = ?, updatedAt = GETDATE()
+            gridData = ?, checkedBy = ?, verifiedBy = ?, approvedBy = ?, verifiedByEduCell = ?, status = ?, attemptNumber = ?, startDate = ?, updatedBy = ?, adminRemarksHistory = ?, updatedAt = GETDATE()
             WHERE id = ?
         `;
 
@@ -183,6 +190,7 @@ class SixteenDayMonitoring {
             this.checkedBy,
             this.verifiedBy,
             this.approvedBy,
+            this.verifiedByEduCell || "",
             this.status || "Draft",
             this.attemptNumber,
             this.startDate || "",

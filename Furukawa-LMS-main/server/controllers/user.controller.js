@@ -198,6 +198,28 @@ const normalizeParam = (val) => {
   return val;
 };
 
+// Returns a SQL WHERE fragment (no extra params) for assignment-level filtering.
+// Relies on the aliases produced by getHierarchyJoinSQL being present in the query.
+const buildAssignmentClause = (assignmentStatus, assignmentType) => {
+  if (!assignmentStatus || !['assigned', 'unassigned'].includes(assignmentStatus)) return null;
+  const is = assignmentStatus === 'assigned';
+  switch ((assignmentType || 'department').toLowerCase()) {
+    case 'section':
+      return is ? 's_res.sectionId IS NOT NULL' : 's_res.sectionId IS NULL';
+    case 'line':
+      return is ? 'l_res.lineId IS NOT NULL' : 'l_res.lineId IS NULL';
+    case 'subsection':
+      return is ? 'ss_res.subSectionId IS NOT NULL' : 'ss_res.subSectionId IS NULL';
+    case 'station':
+      return is
+        ? '(u.stationId IS NOT NULL OR EXISTS (SELECT 1 FROM machine_assignments WHERE user_id = u.id))'
+        : '(u.stationId IS NULL AND NOT EXISTS (SELECT 1 FROM machine_assignments WHERE user_id = u.id))';
+    case 'department':
+    default:
+      return is ? 'd.id IS NOT NULL' : 'd.id IS NULL';
+  }
+};
+
 /**
  * Get All Users (Paginated & Filtered)
  */
@@ -1361,6 +1383,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     // Admin/superadmin targetLayout: no department restriction — same scope as ADMIN role
   }
 
+  const assignmentClause = buildAssignmentClause(req.query.assignmentStatus, req.query.assignmentType);
+  if (assignmentClause) whereClauses.push(assignmentClause);
+
   // Build counts query: same scope (search, hierarchy, role) but without status/shift/attendance filters
   const countsWhereClauses = whereClauses.filter(c =>
     c !== "u.status = ?" &&
@@ -1733,7 +1758,53 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
   const { ids, isAllSelected, filters } = req.body;
 
   if (isAllSelected) {
-    // Handle filtered bulk delete (all matching records)
+    const assignmentStatus = filters?.assignmentStatus;
+    const needsHierarchy = assignmentStatus && ['assigned', 'unassigned'].includes(assignmentStatus);
+
+    if (needsHierarchy) {
+      // Use the hierarchy join to resolve IDs matching the assignment-level filter
+      let hierWhere = ["u.isEmployee = 1", "(u.isTrainer = 0 OR u.isTrainer IS NULL)", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+      let hierParams = [];
+
+      if (filters?.search) {
+        const t = `%${filters.search}%`;
+        hierWhere.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+        hierParams.push(t, t, t);
+      }
+      if (filters?.status && filters.status !== "ALL") {
+        hierWhere.push("u.status = ?");
+        hierParams.push(filters.status);
+      }
+      if (filters?.unit && filters.unit !== "ALL") {
+        hierWhere.push("u.unit = ?");
+        hierParams.push(filters.unit);
+      }
+      if (filters?.departmentId && filters.departmentId !== "ALL") {
+        hierWhere.push("(u.departmentId = ? OR u.department = ?)");
+        hierParams.push(filters.departmentId, filters.departmentId);
+      }
+
+      const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
+      if (ac) hierWhere.push(ac);
+
+      const [matchedRows] = await executeQuery(
+        `SELECT u.id FROM users u ${getHierarchyJoinSQL} WHERE ${hierWhere.join(' AND ')}`,
+        hierParams
+      );
+      const matchedIds = matchedRows.map(r => r.id);
+
+      if (!matchedIds.length) {
+        await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+        return res.json(new ApiResponse(200, null, "No matching users found to delete"));
+      }
+
+      const phs = matchedIds.map(() => "?").join(",");
+      await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${phs})`, matchedIds);
+      await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+      return res.json(new ApiResponse(200, null, "All matching users deleted"));
+    }
+
+    // Handle filtered bulk delete (all matching records) — flat path when no assignment filter
     let whereClauses = ["isEmployee = 1", "(isTrainer = 0 OR isTrainer IS NULL)", "(isDeleted = 0 OR isDeleted IS NULL)"];
     let params = [];
 
@@ -1925,34 +1996,69 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
   let userIds = [];
 
   if (isAllSelected) {
-    let whereClauses = [
-      "isEmployee = 1",
-      "(isTrainer = 0 OR isTrainer IS NULL)",
-      "(isDeleted = 0 OR isDeleted IS NULL)",
-    ];
-    let params = [];
+    const assignmentStatus = filters?.assignmentStatus;
+    const needsHierarchy = assignmentStatus && ['assigned', 'unassigned'].includes(assignmentStatus);
 
-    if (filters?.search) {
-      const t = `%${filters.search}%`;
-      whereClauses.push("(fullName LIKE ? OR userName LIKE ? OR empId LIKE ?)");
-      params.push(t, t, t);
-    }
-    if (filters?.status && filters.status !== "ALL") {
-      whereClauses.push("status = ?");
-      params.push(filters.status);
-    }
-    if (filters?.unit && filters.unit !== "ALL") {
-      whereClauses.push("unit = ?");
-      params.push(filters.unit);
-    }
-    if (filters?.departmentId && filters.departmentId !== "ALL") {
-      whereClauses.push("(departmentId = ? OR department = ?)");
-      params.push(filters.departmentId, filters.departmentId);
-    }
+    if (needsHierarchy) {
+      let hierWhere = ["u.isEmployee = 1", "(u.isTrainer = 0 OR u.isTrainer IS NULL)", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+      let hierParams = [];
 
-    const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-    const [rows] = await executeQuery(`SELECT id FROM users ${whereSQL}`, params);
-    userIds = rows.map(r => r.id);
+      if (filters?.search) {
+        const t = `%${filters.search}%`;
+        hierWhere.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+        hierParams.push(t, t, t);
+      }
+      if (filters?.status && filters.status !== "ALL") {
+        hierWhere.push("u.status = ?");
+        hierParams.push(filters.status);
+      }
+      if (filters?.unit && filters.unit !== "ALL") {
+        hierWhere.push("u.unit = ?");
+        hierParams.push(filters.unit);
+      }
+      if (filters?.departmentId && filters.departmentId !== "ALL") {
+        hierWhere.push("(u.departmentId = ? OR u.department = ?)");
+        hierParams.push(filters.departmentId, filters.departmentId);
+      }
+
+      const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
+      if (ac) hierWhere.push(ac);
+
+      const [matchedRows] = await executeQuery(
+        `SELECT u.id FROM users u ${getHierarchyJoinSQL} WHERE ${hierWhere.join(' AND ')}`,
+        hierParams
+      );
+      userIds = matchedRows.map(r => r.id);
+    } else {
+      let whereClauses = [
+        "isEmployee = 1",
+        "(isTrainer = 0 OR isTrainer IS NULL)",
+        "(isDeleted = 0 OR isDeleted IS NULL)",
+      ];
+      let params = [];
+
+      if (filters?.search) {
+        const t = `%${filters.search}%`;
+        whereClauses.push("(fullName LIKE ? OR userName LIKE ? OR empId LIKE ?)");
+        params.push(t, t, t);
+      }
+      if (filters?.status && filters.status !== "ALL") {
+        whereClauses.push("status = ?");
+        params.push(filters.status);
+      }
+      if (filters?.unit && filters.unit !== "ALL") {
+        whereClauses.push("unit = ?");
+        params.push(filters.unit);
+      }
+      if (filters?.departmentId && filters.departmentId !== "ALL") {
+        whereClauses.push("(departmentId = ? OR department = ?)");
+        params.push(filters.departmentId, filters.departmentId);
+      }
+
+      const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+      const [rows] = await executeQuery(`SELECT id FROM users ${whereSQL}`, params);
+      userIds = rows.map(r => r.id);
+    }
   } else {
     if (!ids?.length) throw new ApiError("No IDs provided", 400);
     userIds = ids;

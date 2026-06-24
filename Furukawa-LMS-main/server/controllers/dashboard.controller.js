@@ -557,6 +557,109 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         reqResults = [];
     }
 
+    // ============================================================
+    // SHIFT-WISE REQUIREMENT FIX (Manpower graph required bar only)
+    // ============================================================
+    // Existing requirement logic is kept as-is only when Shift = ALL:
+    // - Department/Section: requirements table FN01/FN02
+    // - Line: line_requirements table FN01/FN02
+    // When dashboard Shift filter is selected, Requirement bar must come only
+    // from user_hierarchy_snapshots.schedule_shift for the selected date.
+    const shiftRequirementByDate = {};
+
+    try {
+        if (selectedShiftValue && loopDates.length) {
+            const scheduleHierConditions = [];
+            const scheduleHierParams = [];
+
+            if (departmentNames.length) {
+                addTextInFilter(scheduleHierConditions, scheduleHierParams, "uhs.[department]", departmentNames);
+            }
+
+            if (sectionNames.length) {
+                addTextInFilter(scheduleHierConditions, scheduleHierParams, "uhs.[section]", sectionNames);
+            }
+
+            if (lineNames.length) {
+                addTextInFilter(scheduleHierConditions, scheduleHierParams, "uhs.[lines]", lineNames);
+            }
+
+            const scheduleHierCondition = scheduleHierConditions.length
+                ? ` AND ${scheduleHierConditions.join(" AND ")}`
+                : "";
+
+            const dateUnionSql = loopDates.map(() => "SELECT CAST(? AS DATE) AS fullDate").join(" UNION ALL ");
+            const dateParams = loopDates.map((d) => formatDateLocal(d));
+
+            const scheduledShiftSql = `UPPER(LTRIM(RTRIM(CAST(JSON_VALUE(CAST(uhs.schedule_shift AS NVARCHAR(MAX)), '$."' + CONVERT(VARCHAR(10), d.fullDate, 23) + '"') AS NVARCHAR(100)))))`;
+            const scheduledShiftCompactSql = `REPLACE(REPLACE(REPLACE(${scheduledShiftSql}, ' ', ''), '-', ''), '_', '')`;
+
+            const selectedShiftMatchSql = `
+                (
+                    ${scheduledShiftSql} = UPPER(LTRIM(RTRIM(?)))
+                    OR ${scheduledShiftSql} = UPPER('SHIFT ' + LTRIM(RTRIM(?)))
+                    OR ${scheduledShiftSql} = UPPER(LTRIM(RTRIM(?)) + ' SHIFT')
+                    OR ${scheduledShiftCompactSql} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
+                    OR ${scheduledShiftCompactSql} = 'SHIFT' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
+                    OR ${scheduledShiftCompactSql} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + 'SHIFT'
+                    OR (
+                        UPPER(LTRIM(RTRIM(?))) = 'G'
+                        AND ${scheduledShiftCompactSql} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
+                    )
+                )
+            `;
+
+            const shiftReqSql = `
+                WITH selectedDates AS (
+                    ${dateUnionSql}
+                )
+                SELECT
+                    CONVERT(VARCHAR(10), d.fullDate, 23) AS fullDate,
+                    COUNT(DISTINCT CASE
+                        WHEN ${scheduledShiftSql} IS NOT NULL AND ${scheduledShiftSql} <> ''
+                        THEN LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100))))
+                    END) AS totalScheduledEmployees,
+                    COUNT(DISTINCT CASE
+                        WHEN ${selectedShiftMatchSql}
+                        THEN LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100))))
+                    END) AS selectedShiftEmployees
+                FROM selectedDates d
+                INNER JOIN user_hierarchy_snapshots uhs ON 1 = 1
+                WHERE ISNULL(ISJSON(CAST(uhs.schedule_shift AS NVARCHAR(MAX))), 0) = 1
+                  AND uhs.employeeid IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))) != ''
+                  ${scheduleHierCondition}
+                GROUP BY d.fullDate
+            `;
+
+            const shiftParams = [
+                ...dateParams,
+                selectedShiftValue,
+                selectedShiftValue,
+                selectedShiftValue,
+                selectedShiftValue,
+                selectedShiftValue,
+                selectedShiftValue,
+                selectedShiftValue,
+                ...scheduleHierParams,
+            ];
+
+            const [shiftRows] = await executeQuery(shiftReqSql, shiftParams);
+
+            (shiftRows || []).forEach((row) => {
+                const totalScheduledEmployees = Number(row.totalScheduledEmployees || 0);
+                const selectedShiftEmployees = Number(row.selectedShiftEmployees || 0);
+
+                shiftRequirementByDate[String(row.fullDate)] = {
+                    totalScheduledEmployees,
+                    selectedShiftEmployees,
+                };
+            });
+        }
+    } catch (e) {
+        console.warn("[DASHBOARD] Shift-wise requirement calculation failed:", e.message);
+    }
+
     const getRequirementForDate = (dateObj) => {
         const yearVal = dateObj.getFullYear();
         const monthNumber = dateObj.getMonth() + 1;
@@ -570,11 +673,23 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         if (!currentReqItem) return 0;
 
         const day = dateObj.getDate();
-        if (day <= 15) {
-            return Number(currentReqItem.required_fn01) || 0;
-        } else {
-            return Number(currentReqItem.required_fn02) || 0;
+        const baseRequirement = day <= 15
+            ? Number(currentReqItem.required_fn01) || 0
+            : Number(currentReqItem.required_fn02) || 0;
+
+        // If no shift is selected, keep old requirement logic exactly same.
+        if (!selectedShiftValue) return baseRequirement;
+
+        // If shift is selected, requirement must come only from user_hierarchy_snapshots.schedule_shift.
+        // Do not use requirements / line_requirements table for selected shift.
+        const dateStr = formatDateLocal(dateObj);
+        const shiftRequirementItem = shiftRequirementByDate[dateStr];
+
+        if (!shiftRequirementItem) {
+            return 0;
         }
+
+        return Number(shiftRequirementItem.selectedShiftEmployees || 0);
     };
 
     let snapshotTotal = 0;
@@ -618,7 +733,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             AND ISNULL(u.isTemporary, 0) = 0
             AND u.empId IS NOT NULL
             AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-            AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
             ${userHierCondition}
         `;
         const snapshotParams = userHierParams;
@@ -639,24 +753,25 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             SELECT
                 CONVERT(VARCHAR, al.[date], 23) AS fullDate,
                 DAY(al.[date]) AS dayNum,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' AND u.id IS NOT NULL THEN al.payCode END) AS mappedPresentCount,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' AND u.id IS NULL THEN al.payCode END) AS unmappedPresentCount,
+                -- Manpower present count rule:
+                -- Match user's verification SQL exactly for Present count:
+                -- attendance_logs + users + user_hierarchy_snapshots + status Present.
+                -- No employee exclusion here, including isTemporary, so 22-06-2026 count matches DB query.
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN al.payCode END) AS mappedPresentCount,
+                CAST(0 AS INT) AS unmappedPresentCount,
                 COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN al.payCode END) AS totalPresentCount,
                 COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absentCount,
                 COUNT(DISTINCT al.payCode) AS totalCount
             FROM attendance_logs al
-            LEFT JOIN users u
+            INNER JOIN users u
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                AND ISNULL(u.isTemporary, 0) = 0
-            LEFT JOIN user_hierarchy_snapshots uhs
+            INNER JOIN user_hierarchy_snapshots uhs
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
-              AND ISNULL(u.isTemporary, 0) = 0
-              AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
               ${hierCondition}
         `;
         const attParams = [];
@@ -759,8 +874,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 AND ISNULL(u.isTemporary, 0) = 0
                 AND u.leavingDate IS NOT NULL
                 AND LTRIM(RTRIM(u.leavingDate)) != ''
-                AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
-            ) parsed
+                ) parsed
             WHERE parsed.leaving_date IS NOT NULL
             AND parsed.leaving_date >= '${sqlStartDate}'
             AND parsed.leaving_date <= '${sqlEndDate}'
@@ -826,18 +940,16 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absent_count,
                 COUNT(DISTINCT al.payCode) AS total_count
             FROM attendance_logs al
-            LEFT JOIN users u
+            INNER JOIN users u
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                AND ISNULL(u.isTemporary, 0) = 0
-            LEFT JOIN user_hierarchy_snapshots uhs
+            INNER JOIN user_hierarchy_snapshots uhs
                 ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
                  = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
               AND ISNULL(u.isTemporary, 0) = 0
-              AND (u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))
               ${hierCondition}
         `;
         const absParams = [];
@@ -988,15 +1100,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             alias,
         });
 
-        // Dashboard user/master headcount must count only temporary employees.
-        // isTemporary = 1 employees are excluded from all Users Total / total headcount graph denominators.
+        // Dashboard user/master headcount excludes only temporary employees.
+        // No designation_shutters or other employee-exclusion filter is applied.
         sqlText += `
             AND ISNULL(${alias}.isTemporary, 0) = 0
-        `;
-
-        // Exclude users whose designation is shuttered.
-        sqlText += `
-            AND (${alias}.designation IS NULL OR ${alias}.designation = '' OR ${alias}.designation NOT IN (SELECT designation FROM designation_shutters))
         `;
 
         return sqlText;
@@ -1276,6 +1383,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         includeState = true,
         includeDistrict = true,
         extraWhere = "",
+        alignBlankMasterWithAttendance = false,
     }) => {
         const mapByName = {};
 
@@ -1361,10 +1469,16 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         return Object.values(mapByName)
             .map(item => {
                 const attendanceCount = Number(item.attendanceValue || 0);
-                const masterCount = Number(item.masterValue || 0);
+                const rawMasterCount = Number(item.masterValue || 0);
+                const bucketName = String(item.name || item[labelKey] || "").trim().toUpperCase();
+                const isBlankBucket = ["", "BLANK", "NOT PROVIDED", "UNKNOWN", "NULL", "UNDEFINED", "N/A", "NA", "-"].includes(bucketName);
+                const masterCount = alignBlankMasterWithAttendance && isBlankBucket ? attendanceCount : rawMasterCount;
 
                 return {
                     ...item,
+                    masterValue: masterCount,
+                    totalValue: masterCount,
+                    masterCount,
                     value: attendanceCount,
                     rawValue: attendanceCount,
 
@@ -1396,7 +1510,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // EDUCATION GRAPH RAW COUNT FIX:
     // Education graph me Users Total ko ab users table ke raw records se calculate kiya gaya hai.
     // Pehle common getGroupedComparisonChart() education ke liye bhi active employee logic use kar raha tha:
-    // isDeleted = 0, isTemporary = 0, valid empId, designation_shutters exclude, COUNT(DISTINCT empId).
+    // isDeleted = 0, isTemporary = 0, valid empId, COUNT(DISTINCT empId).
     // Isliye SQL query `SELECT COUNT(*) FROM users WHERE education = '12th'` me 1545 aata tha,
     // lekin dashboard education graph me 1384 aa raha tha.
     // Ab education graph ka masterValue raw users rows ke basis par aayega, same as table count.
@@ -1656,9 +1770,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         ] = await Promise.all([
             getGroupedComparisonChart({ columnSql: skillColumnSql, extraWhere: skillLevelWhere }).catch(err => { console.warn("[DASHBOARD] skillLevels query failed:", err.message); return []; }),
             getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] genderData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.state"), includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.district"), includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.designation") }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.state"), includeState: true, includeDistrict: true, alignBlankMasterWithAttendance: true }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.district"), includeState: true, includeDistrict: true, alignBlankMasterWithAttendance: true }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.designation"), alignBlankMasterWithAttendance: true }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
             getGroupedComparisonChart({
                 columnSql: getCleanTextColumnSql("u.designation"),
                 extraWhere: leaderExpertWhere,

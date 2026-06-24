@@ -661,6 +661,20 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     }
 
     const getRequirementForDate = (dateObj) => {
+        // If shift is selected, requirement must come ONLY from user_hierarchy_snapshots.schedule_shift.
+        // Do not depend on requirements / line_requirements table in selected shift mode.
+        if (selectedShiftValue) {
+            const dateStr = formatDateLocal(dateObj);
+            const shiftRequirementItem = shiftRequirementByDate[dateStr];
+
+            if (!shiftRequirementItem) {
+                return 0;
+            }
+
+            return Number(shiftRequirementItem.selectedShiftEmployees || 0);
+        }
+
+        // If no shift is selected, keep old requirement logic exactly same.
         const yearVal = dateObj.getFullYear();
         const monthNumber = dateObj.getMonth() + 1;
 
@@ -673,23 +687,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         if (!currentReqItem) return 0;
 
         const day = dateObj.getDate();
-        const baseRequirement = day <= 15
+        return day <= 15
             ? Number(currentReqItem.required_fn01) || 0
             : Number(currentReqItem.required_fn02) || 0;
-
-        // If no shift is selected, keep old requirement logic exactly same.
-        if (!selectedShiftValue) return baseRequirement;
-
-        // If shift is selected, requirement must come only from user_hierarchy_snapshots.schedule_shift.
-        // Do not use requirements / line_requirements table for selected shift.
-        const dateStr = formatDateLocal(dateObj);
-        const shiftRequirementItem = shiftRequirementByDate[dateStr];
-
-        if (!shiftRequirementItem) {
-            return 0;
-        }
-
-        return Number(shiftRequirementItem.selectedShiftEmployees || 0);
     };
 
     let snapshotTotal = 0;

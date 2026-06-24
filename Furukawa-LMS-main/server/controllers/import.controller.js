@@ -1,5 +1,6 @@
 import XLSX from "xlsx";
 import { executeQuery } from "../db/mssqlHelper.js";
+import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import bcrypt from "bcryptjs";
@@ -565,6 +566,12 @@ export const importEmployees = async (req, res) => {
             [results.success.length, results.failed.length, results.updatedCount, logId]
         );
 
+        try {
+            await UserHierarchySnapshot.syncFromUsers();
+        } catch (syncErr) {
+            console.error("Snapshot sync failed after importEmployees:", syncErr.message);
+        }
+
         res.json(
             new ApiResponse(
                 200,
@@ -650,6 +657,12 @@ export const importInstructors = async (req, res) => {
             } catch (error) {
                 results.failed.push({ row: rowNumber, error: error.message });
             }
+        }
+
+        try {
+            await UserHierarchySnapshot.syncFromUsers();
+        } catch (syncErr) {
+            console.error("Snapshot sync failed after importInstructors:", syncErr.message);
         }
 
         res.json(new ApiResponse(200, results, `Import: ${results.success.length} ok, ${results.failed.length} failed`));
@@ -939,6 +952,12 @@ export const importDojoUsers = async (req, res) => {
             "UPDATE import_logs SET successCount = ?, failCount = ? WHERE id = ?",
             [results.success.length, results.failed.length, logId]
         );
+
+        try {
+            await UserHierarchySnapshot.syncFromUsers();
+        } catch (syncErr) {
+            console.error("Snapshot sync failed after importDojoUsers:", syncErr.message);
+        }
 
         res.json(new ApiResponse(200, results, `Import: ${results.success.length} ok, ${results.failed.length} failed`));
     } catch (error) {

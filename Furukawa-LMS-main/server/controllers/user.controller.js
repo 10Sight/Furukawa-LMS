@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
 import DesignationShutter from "../models/designationShutter.model.js";
 import validator from "validator";
 import { ApiError } from "../utils/ApiError.js";
@@ -680,6 +681,12 @@ export const createUser = asyncHandler(async (req, res) => {
     FROM users u ${getHierarchyJoinSQL} WHERE u.id = ?
   `, [newUserId]);
 
+  try {
+    await UserHierarchySnapshot.syncFromUsers();
+  } catch (syncErr) {
+    console.error("Snapshot sync failed after createUser:", syncErr.message);
+  }
+
   res.status(201).json(new ApiResponse(201, formatUser(newUser[0]), "User created successfully"));
 });
 
@@ -993,6 +1000,12 @@ export const updateUser = asyncHandler(async (req, res) => {
     };
   }
 
+  try {
+    await UserHierarchySnapshot.syncFromUsers();
+  } catch (syncErr) {
+    console.error("Snapshot sync failed after updateUser:", syncErr.message);
+  }
+
   res.json(new ApiResponse(200, finalUser, "User updated successfully"));
 });
 
@@ -1030,6 +1043,12 @@ export const deleteUser = asyncHandler(async (req, res) => {
   } else {
     await executeQuery("UPDATE users SET isDeleted = 1 WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_SOFT", { userId });
+  }
+
+  try {
+    await UserHierarchySnapshot.syncFromUsers();
+  } catch (syncErr) {
+    console.error("Snapshot sync failed after deleteUser:", syncErr.message);
   }
 
   res.json(new ApiResponse(200, null, "User deleted successfully"));
@@ -1376,8 +1395,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
 
       if (allowedDepts.length > 0) {
-        const ids = allowedDepts.map(d => `'${d}'`).join(',');
-        whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}))`);
+        const placeholders = allowedDepts.map(() => '?').join(',');
+        whereClauses.push(`(u.departmentId IN (${placeholders}) OR u.department IN (${placeholders}))`);
+        params.push(...allowedDepts, ...allowedDepts);
       }
     }
     // Admin/superadmin targetLayout: no department restriction — same scope as ADMIN role
@@ -2109,6 +2129,12 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
     isAllSelected: !!isAllSelected,
     datesModified: Object.keys(shiftSchedulePatch).length,
   });
+
+  try {
+    await UserHierarchySnapshot.syncFromUsers();
+  } catch (syncErr) {
+    console.error("Snapshot sync failed after bulkUpdateShiftSchedule:", syncErr.message);
+  }
 
   res.json(new ApiResponse(200, { updated: updates.length }, `Shift schedule updated for ${updates.length} user${updates.length !== 1 ? "s" : ""}`));
 });

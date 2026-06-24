@@ -243,6 +243,20 @@ const Students = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  // Pre-populate filters for restricted users once departments load
+  useEffect(() => {
+    if (!isRestrictedUser || !availableDepartments.length) return;
+    setFilters(prev => {
+      if (prev.departmentId !== "") return prev;
+      const deptId = availableDepartments.length === 1
+        ? String(availableDepartments[0]._id || availableDepartments[0].id)
+        : (currentUser?.departmentId ? String(currentUser.departmentId) : "");
+      const sectId = currentUser?.sectionId ? String(currentUser.sectionId) : "";
+      if (!deptId && !sectId) return prev;
+      return { ...prev, departmentId: deptId, sectionId: sectId };
+    });
+  }, [isRestrictedUser, availableDepartments, currentUser]);
+
   // Fetch Custom Roles
   useEffect(() => {
     const fetchCustomRoles = async () => {
@@ -367,24 +381,32 @@ const Students = () => {
   const totalPages = studentsData?.data?.totalPages || 1;
   const departments = departmentsData?.data?.departments || [];
 
+  const isRestrictedUser = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN' || currentUser.isAdmin) return false;
+    if (currentUser.role === 'INSTRUCTOR') return true;
+    if (currentUser.role === 'CUSTOM') {
+      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
+      return !['admin', 'superadmin'].includes(layout);
+    }
+    return false;
+  }, [currentUser]);
+
   const availableDepartments = useMemo(() => {
     if (currentUser?.role === 'CUSTOM') {
+      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
+      if (['admin', 'superadmin'].includes(layout)) return departments;
+
       let allowedDepts = [];
       if (currentUser.departmentId) allowedDepts.push(String(currentUser.departmentId));
-      if (Array.isArray(currentUser.departments)) {
-        currentUser.departments.forEach(d => allowedDepts.push(String(d)));
-      } else if (typeof currentUser.departments === 'string') {
-        try {
-          const parsed = JSON.parse(currentUser.departments);
-          if (Array.isArray(parsed)) parsed.forEach(d => allowedDepts.push(String(d)));
-        } catch (e) {}
-      }
-      
+      const deptsList = Array.isArray(currentUser.departments) ? currentUser.departments : [];
+      deptsList.forEach(d => allowedDepts.push(String(d)));
       allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
-      
+
       if (allowedDepts.length > 0) {
-        return departments.filter(d => allowedDepts.includes(String(d._id) || String(d.id)));
+        return departments.filter(d => allowedDepts.includes(String(d._id || d.id)));
       }
+      return [];
     }
     return departments;
   }, [departments, currentUser]);
@@ -1317,12 +1339,20 @@ const Students = () => {
   };
 
   const clearFilters = () => {
+    const defaultDeptId = isRestrictedUser
+      ? (availableDepartments.length === 1
+          ? String(availableDepartments[0]._id || availableDepartments[0].id)
+          : (currentUser?.departmentId ? String(currentUser.departmentId) : ""))
+      : "";
+    const defaultSectId = isRestrictedUser && currentUser?.sectionId
+      ? String(currentUser.sectionId)
+      : "";
     setFilters({
       status: "",
       dateFrom: "",
       dateTo: "",
-      departmentId: "",
-      sectionId: "",
+      departmentId: defaultDeptId,
+      sectionId: defaultSectId,
       lineId: "",
       subSectionId: "",
       stationId: "",
@@ -1619,7 +1649,14 @@ const Students = () => {
             )}
 
             <Button
-              onClick={() => setIsAddDialogOpen(true)}
+              onClick={() => {
+                resetForm();
+                if (isRestrictedUser && availableDepartments.length === 1) {
+                  const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
+                  setFormData(prev => ({ ...prev, departments: [deptId] }));
+                }
+                setIsAddDialogOpen(true);
+              }}
               className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
             >
               <IconPlus className="h-4 w-4 mr-2" />
@@ -1663,17 +1700,18 @@ const Students = () => {
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Department</label>
               <Select
                 value={filters.departmentId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
+                onValueChange={(val) => setFilters({
+                  ...filters,
                   departmentId: val === "all" ? "" : val,
                   sectionId: "", lineId: "", subSectionId: "", stationId: ""
                 })}
+                disabled={isRestrictedUser && availableDepartments.length === 1}
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="All Departments" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
+                  {!isRestrictedUser && <SelectItem value="all">All Departments</SelectItem>}
                   {availableDepartments.map(d => (
                     <SelectItem key={d._id || d.id} value={String(d._id || d.id)}>{d.name}</SelectItem>
                   ))}
@@ -1685,18 +1723,18 @@ const Students = () => {
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Section</label>
               <Select
                 value={filters.sectionId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
+                onValueChange={(val) => setFilters({
+                  ...filters,
                   sectionId: val === "all" ? "" : val,
                   lineId: "", subSectionId: "", stationId: ""
                 })}
-                disabled={!filters.departmentId}
+                disabled={!filters.departmentId || (isRestrictedUser && !!currentUser?.sectionId)}
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="All Sections" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Sections</SelectItem>
+                  {!(isRestrictedUser && currentUser?.sectionId) && <SelectItem value="all">All Sections</SelectItem>}
                   {filterSections.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>

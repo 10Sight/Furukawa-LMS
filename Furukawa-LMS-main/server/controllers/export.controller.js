@@ -187,26 +187,36 @@ export const exportStudents = asyncHandler(async (req, res) => {
     params.push(status);
   }
 
-  // Instructor Role Logic
-  if (req.user.role === 'INSTRUCTOR') {
-    // Fetch allowed departments for this instructor
-    const [instRows] = await pool.query("SELECT departments FROM users WHERE id = ?", [req.user.id]);
-    let allowed = [];
-    if (instRows.length > 0 && instRows[0].departments) {
-      try {
-        allowed = typeof instRows[0].departments === 'string' ? JSON.parse(instRows[0].departments) : instRows[0].departments;
-      } catch (e) { }
-    }
+  const isGlobalAdmin = req.user.role === 'SUPERADMIN' || req.user.role === 'ADMIN' || req.user?.isAdmin;
+  const isAdminLayout = isGlobalAdmin ||
+    (req.user.role === 'CUSTOM' && ['admin', 'superadmin'].includes(String(req.user.customRole?.targetLayout || '').toLowerCase()));
 
-    if (allowed.length === 0) {
-      // Return empty if no departments
-      // Instead of returning early, we can force False condition usually, 
-      // but earlier implementation returned empty Excel.
-      // Let's force filter to impossible
-      sql += " AND 1=0";
-    } else {
-      sql += ` AND u.department IN (${allowed.map(() => '?').join(',')})`;
-      allowed.forEach(id => params.push(id));
+  if (!isAdminLayout) {
+    if (req.user.role === 'INSTRUCTOR') {
+      const { executeQuery } = await import("../db/mssqlHelper.js");
+      const [iDepts] = await executeQuery("SELECT id FROM departments WHERE instructor = ?", [req.user.id]);
+      if (!iDepts.length) {
+        sql += " AND 1=0";
+      } else {
+        const ids = iDepts.map(d => d.id);
+        sql += ` AND (u.departmentId IN (${ids.map(() => '?').join(',')}) OR u.department IN (${ids.map(() => '?').join(',')}))`;
+        params.push(...ids, ...ids);
+      }
+    } else if (req.user.role === 'CUSTOM') {
+      const allowedDepts = [...new Set([
+        ...(Array.isArray(req.user.departments) ? req.user.departments : []),
+        ...(req.user.departmentId ? [req.user.departmentId] : []),
+      ].map(String).filter(Boolean))];
+
+      if (!allowedDepts.length) {
+        sql += " AND 1=0";
+      } else {
+        sql += ` AND (u.departmentId IN (${allowedDepts.map(() => '?').join(',')}) OR u.department IN (${allowedDepts.map(() => '?').join(',')}))`;
+        params.push(...allowedDepts, ...allowedDepts);
+      }
+    } else if (departmentId) {
+      sql += " AND u.department = ?";
+      params.push(departmentId);
     }
   } else if (departmentId) {
     sql += " AND u.department = ?";

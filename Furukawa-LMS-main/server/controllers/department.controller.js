@@ -329,29 +329,39 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
 
     const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
     if (!isAdmin) {
-        const assignedIds = [];
-        if (Array.isArray(req.user?.departments)) assignedIds.push(...req.user.departments);
-        if (req.user?.departmentId) assignedIds.push(req.user.departmentId);
-        const uniqueIds = [...new Set(assignedIds.map(String).filter(Boolean))];
+        if (req.user?.role === 'INSTRUCTOR') {
+            const [iDepts] = await executeQuery("SELECT id FROM departments WHERE instructor = ?", [req.user.id]);
+            if (!iDepts.length) {
+                return res.json(new ApiResponse(200, { departments: [], totalDepartments: 0, totalPages: 0, currentPage: page, limit }, "Departments fetched successfully"));
+            }
+            const instructorDeptIds = iDepts.map(d => d.id);
+            whereSql += ` AND id IN (${instructorDeptIds.map(() => '?').join(',')})`;
+            params.push(...instructorDeptIds);
+        } else {
+            const assignedIds = [];
+            if (Array.isArray(req.user?.departments)) assignedIds.push(...req.user.departments);
+            if (req.user?.departmentId) assignedIds.push(req.user.departmentId);
+            const uniqueIds = [...new Set(assignedIds.map(String).filter(Boolean))];
 
-        const nameConditions = [];
-        if (req.user?.deptName) nameConditions.push(req.user.deptName);
-        if (req.user?.department && isNaN(req.user.department)) nameConditions.push(req.user.department);
+            const nameConditions = [];
+            if (req.user?.deptName) nameConditions.push(req.user.deptName);
+            if (req.user?.department && isNaN(req.user.department)) nameConditions.push(req.user.department);
 
-        if (uniqueIds.length === 0 && nameConditions.length === 0) {
-            return res.json(new ApiResponse(200, { departments: [], totalDepartments: 0, totalPages: 0, currentPage: page, limit }, "Departments fetched successfully"));
-        }
+            if (uniqueIds.length === 0 && nameConditions.length === 0) {
+                return res.json(new ApiResponse(200, { departments: [], totalDepartments: 0, totalPages: 0, currentPage: page, limit }, "Departments fetched successfully"));
+            }
 
-        const orParts = [];
-        if (uniqueIds.length > 0) {
-            orParts.push(`id IN (${uniqueIds.map(() => '?').join(',')})`);
-            params.push(...uniqueIds);
+            const orParts = [];
+            if (uniqueIds.length > 0) {
+                orParts.push(`id IN (${uniqueIds.map(() => '?').join(',')})`);
+                params.push(...uniqueIds);
+            }
+            if (nameConditions.length > 0) {
+                orParts.push(...nameConditions.map(() => 'name = ?'));
+                params.push(...nameConditions);
+            }
+            whereSql += ` AND (${orParts.join(' OR ')})`;
         }
-        if (nameConditions.length > 0) {
-            orParts.push(...nameConditions.map(() => 'name = ?'));
-            params.push(...nameConditions);
-        }
-        whereSql += ` AND (${orParts.join(' OR ')})`;
     }
 
     const [countRows] = await executeQuery(`SELECT COUNT(*) as total FROM departments ${whereSql}`, params);

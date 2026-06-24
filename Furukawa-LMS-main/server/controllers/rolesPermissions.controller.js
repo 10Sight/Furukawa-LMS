@@ -108,6 +108,7 @@ const SYSTEM_PERMISSIONS = {
   SIXTEEN_DAY_VERIFY: "sixteen_day:verify",
   SIXTEEN_DAY_APPROVE: "sixteen_day:approve",
   SIXTEEN_DAY_VERIFY_EDUCATION: "sixteen_day:verify_education",
+  SIXTEEN_DAY_EDIT_SUBMITTED: "sixteen_day:edit_submitted",
 
   // 3-Day Monitoring Management
   THREE_DAY_EDIT_LAYOUT: "three_day:edit_layout",
@@ -118,6 +119,7 @@ const SYSTEM_PERMISSIONS = {
   // Mentee Feedback Management
   MENTEE_FEEDBACK_MANAGE: "mentee_feedback:manage",
   MENTEE_FEEDBACK_VIEW: "mentee_feedback:view",
+  MENTEE_FEEDBACK_EDIT_SUBMITTED: "mentee_feedback:edit_submitted",
 
   // Multi Skilling Management
   MULTI_SKILLING_MANAGE: "multi_skilling:manage",
@@ -455,6 +457,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY_EDUCATION, name: "Verify 16-Day Monitoring (Education Cell)", description: "Verify 16-day monitoring records as Education Cell" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_SUBMITTED, name: "Edit Submitted 16-Day Monitoring", description: "Edit and save 16-day monitoring sheets that have already been submitted" },
         { id: SYSTEM_PERMISSIONS.DOJO_SIXTEENDAY_MONITORING, name: "Access All in 16-Day Monitoring", description: "Allows unrestricted access to all departments, sections, lines, and stations in 16-Day Monitoring" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT, name: "Edit 3-Day Monitoring Layout", description: "Modify the structure and categories of 3-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_MANAGE, name: "Manage 3-Day Monitoring", description: "Manage 3-day monitoring records" },
@@ -462,6 +465,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.THREE_DAY_APPROVE, name: "Approve 3-Day Monitoring", description: "Approve 3-day monitoring records (Dept. Head sign-off)" },
         { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_MANAGE, name: "Manage Mentee Feedback", description: "Fill out and manage mentee feedback monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_VIEW, name: "View Mentee Feedback", description: "View mentee feedback monitoring sheets" },
+        { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_EDIT_SUBMITTED, name: "Edit Submitted Mentee Feedback", description: "Edit and save mentee feedback sheets that have already been submitted" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE, name: "Manage Multi Skilling", description: "Fill out and manage multi skilling training plans" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT, name: "Edit Multi Skilling Layout", description: "Modify the table configuration and structure of multi skilling sheets" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" },

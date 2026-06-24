@@ -190,14 +190,15 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const sid = await resolveStudentId(studentId);
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
-    // Authorization check: Only Trainers, Admins, or Custom Roles with manage/verify/approve/edu-cell permissions can save
+    // Authorization check: Only Trainers, Admins, or Custom Roles with manage/verify/approve/edu-cell/edit_submitted permissions can save
     const isOwner = String(req.user.id) === String(sid);
     const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
                                 (req.user.role === 'CUSTOM' && (
                                     req.user.customRole?.permissions?.includes('sixteen_day:manage') ||
                                     req.user.customRole?.permissions?.includes('sixteen_day:verify') ||
                                     req.user.customRole?.permissions?.includes('sixteen_day:approve') ||
-                                    req.user.customRole?.permissions?.includes('sixteen_day:verify_education')
+                                    req.user.customRole?.permissions?.includes('sixteen_day:verify_education') ||
+                                    req.user.customRole?.permissions?.includes('sixteen_day:edit_submitted')
                                 ));
 
     if (!isOwner && !hasManagePermission) {

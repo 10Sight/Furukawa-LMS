@@ -47,17 +47,18 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
     );
 
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const canEditSubmitted = isAdmin || authUser?.customRole?.permissions?.includes('mentee_feedback:edit_submitted');
 
     const isTopCellLocked = (qId, dayIndex) => {
         if (readOnly) return true;
-        if (isAdmin) return false;
+        if (canEditSubmitted) return false;
         const val = originalTopTableData[qId]?.[dayIndex];
         return val !== undefined && val !== null && val.toString().trim() !== "";
     };
 
     const isDailyLogFieldLocked = (dayIndex, field) => {
         if (readOnly) return true;
-        if (isAdmin) return false;
+        if (canEditSubmitted) return false;
         const val = originalDailyLogs[dayIndex]?.[field];
         return val !== undefined && val !== null && val.toString().trim() !== "";
     };

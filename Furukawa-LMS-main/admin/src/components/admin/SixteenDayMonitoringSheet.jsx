@@ -136,6 +136,7 @@ const SixteenDayMonitoringSheet = ({
     const canVerify = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify');
     const canApprove = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:approve');
     const canVerifyEduCell = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify_education');
+    const canEditSubmitted = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:edit_submitted');
 
     const [gridData, setGridData] = useState({});
     const [originalGridData, setOriginalGridData] = useState({});
@@ -172,12 +173,13 @@ const SixteenDayMonitoringSheet = ({
         !canVerify &&
         !canApprove &&
         !canVerifyEduCell &&
+        !canEditSubmitted &&
         !authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
 
     const isCellLocked = (key, type = 'grid') => {
         if (readOnly) return true;
         if (isLocked) return true;
-        if (isAdmin) return false;
+        if (isAdmin || canEditSubmitted) return false;
         if (!isSheetSaved) return false;
 
         if (type === 'grid') {
@@ -522,8 +524,8 @@ const SixteenDayMonitoringSheet = ({
 
         const targetStatus = finalStatus || headerInfo.status || "Draft";
 
-        // Intercept: admin editing a saved sheet must provide a remark if they modified already saved values
-        if (isAdmin && isSheetSaved && didAdminChangeSavedValues() && !adminRemark) {
+        // Intercept: admin or canEditSubmitted user editing a saved sheet must provide a remark if they modified already saved values
+        if ((isAdmin || canEditSubmitted) && isSheetSaved && didAdminChangeSavedValues() && !adminRemark) {
             setPendingSaveParams({ finalStatus, isSubmit });
             setAdminRemarkText('');
             setIsAdminRemarkDialogOpen(true);

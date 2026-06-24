@@ -57,11 +57,14 @@ export const saveMenteeFeedback = asyncHandler(async (req, res) => {
     const sid = await resolveStudentId(studentId);
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
-    // Authorization check: Only Trainers, Admins, or Custom Roles with manage permission can save
+    // Authorization check: Only Trainers, Admins, or Custom Roles with manage/edit_submitted permission can save
     // Mentee (student) should also be able to save their own feedback if they are the owner
     const isOwner = String(req.user.id) === String(sid);
-    const hasManagePermission = req.user.isAdmin || req.user.isTrainer || 
-                                (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('mentee_feedback:manage'));
+    const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
+                                (req.user.role === 'CUSTOM' && (
+                                    req.user.customRole?.permissions?.includes('mentee_feedback:manage') ||
+                                    req.user.customRole?.permissions?.includes('mentee_feedback:edit_submitted')
+                                ));
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to save this feedback record", 403);

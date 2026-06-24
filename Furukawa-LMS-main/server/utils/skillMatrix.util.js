@@ -36,7 +36,7 @@ export const calculateUserEfficiency = (evalData) => {
         const d = parsed[key];
         if (d?.standard === 'OK') {
             const val = parseFloat(d.okVal);
-            if (!isNaN(val)) return Math.min(val, 100);
+            if (!isNaN(val)) return val;
         }
     }
 

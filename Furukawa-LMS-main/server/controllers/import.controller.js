@@ -72,15 +72,50 @@ const normalizeDate = (val) => {
     const str = val.toString().trim();
     if (!str) return null;
 
+    // 1. Try DD-MMM-YY or DD-MMM-YYYY (e.g. 01-Jun-26 or 01-Jun-2026)
     const dmmmyy = parseDDMMMYY(str);
     if (dmmmyy) return dmmmyy;
 
+    // 2. Try DD/MM/YYYY or DD-MM-YYYY (e.g. 24/06/2026 or 24-06-2026)
+    const dmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+    if (dmyMatch) {
+        const day = dmyMatch[1].padStart(2, '0');
+        const month = dmyMatch[2].padStart(2, '0');
+        let year = parseInt(dmyMatch[3]);
+        if (year < 100) {
+            year = year < 50 ? 2000 + year : 1900 + year;
+        }
+        
+        const mVal = parseInt(month);
+        const dVal = parseInt(day);
+        if (mVal >= 1 && mVal <= 12 && dVal >= 1 && dVal <= 31) {
+            return `${year}-${month}-${day}`;
+        }
+    }
+
+    // 3. Try YYYY-MM-DD or YYYY/MM/DD (e.g. 2013-03-01) - parsed timezone-safely
+    const ymdMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (ymdMatch) {
+        const year = ymdMatch[1];
+        const month = ymdMatch[2].padStart(2, '0');
+        const day = ymdMatch[3].padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    // Fallback
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
+        if (str.includes('T') || str.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const year = d.getUTCFullYear();
+            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        } else {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
     }
 
     return null;

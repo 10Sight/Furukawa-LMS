@@ -1914,12 +1914,12 @@ const AllUsersManagement = () => {
                       </td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         <div className="flex items-center gap-1.5">
-                          <span className={`font-semibold shrink-0 ${Math.min(user.currentEffeciency || 0, 100) >= 85 ? "text-emerald-600" : Math.min(user.currentEffeciency || 0, 100) >= 70 ? "text-blue-600" : "text-amber-600"}`}>
-                            {Math.min(user.currentEffeciency || 0, 100)}%
+                          <span className={`font-semibold shrink-0 ${(user.currentEffeciency || 0) >= 85 ? "text-emerald-600" : (user.currentEffeciency || 0) >= 70 ? "text-blue-600" : "text-amber-600"}`}>
+                            {user.currentEffeciency || 0}%
                           </span>
                           <div className="w-12 bg-gray-100 rounded-full h-1.5 overflow-hidden hidden sm:block shrink-0">
-                            <div 
-                              className={`h-1.5 rounded-full ${Math.min(user.currentEffeciency || 0, 100) >= 85 ? "bg-emerald-500" : Math.min(user.currentEffeciency || 0, 100) >= 70 ? "bg-blue-500" : "bg-amber-500"}`}
+                            <div
+                              className={`h-1.5 rounded-full ${(user.currentEffeciency || 0) >= 85 ? "bg-emerald-500" : (user.currentEffeciency || 0) >= 70 ? "bg-blue-500" : "bg-amber-500"}`}
                               style={{ width: `${Math.min(user.currentEffeciency || 0, 100)}%` }}
                             />
                           </div>
@@ -2135,8 +2135,8 @@ const AllUsersManagement = () => {
                         </div>
                         <div>
                           <p className="text-gray-400 mb-0.5">Efficiency</p>
-                          <p className={`font-semibold ${Math.min(user.currentEffeciency || 0, 100) >= 85 ? "text-emerald-600" : Math.min(user.currentEffeciency || 0, 100) >= 70 ? "text-blue-600" : "text-amber-600"}`}>
-                            {Math.min(user.currentEffeciency || 0, 100)}%
+                          <p className={`font-semibold ${(user.currentEffeciency || 0) >= 85 ? "text-emerald-600" : (user.currentEffeciency || 0) >= 70 ? "text-blue-600" : "text-amber-600"}`}>
+                            {user.currentEffeciency || 0}%
                           </p>
                         </div>
                         <div>

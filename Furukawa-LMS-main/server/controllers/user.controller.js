@@ -426,9 +426,9 @@ export const getAllUsers = asyncHandler(async (req, res) => {
       SUM(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as presentCount,
       SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as absentCount,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
-      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) ELSE NULL END) as presentEfficiency,
-      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
-      AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN (CASE WHEN u.currentEffeciency > 100 THEN 100 ELSE u.currentEffeciency END) ELSE NULL END) as systemEfficiency
+      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
+      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
+      AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
     FROM users u 
     ${getHierarchyJoinSQL} 
     ${attendanceJoinSQL}

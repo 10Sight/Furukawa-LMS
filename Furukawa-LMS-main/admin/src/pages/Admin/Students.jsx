@@ -2336,27 +2336,31 @@ const Students = () => {
                   Your Excel file must contain the following columns:
                 </p>
                 <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm text-blue-700 font-mono">
-                  <span>- fullName *</span>
-                  <span>- userName *</span>
-                  <span>- email *</span>
-                  <span>- phoneNumber *</span>
-                  <span>- empId</span>
-                  <span>- unit (UNIT_1)</span>
-                  <span>- joiningDate</span>
-                  <span>- currentLevel</span>
-                  <span>- supervisor</span>
-                  <span>- incharge</span>
-                  <span>- idCard</span>
-                  <span>- fatherHusbandName</span>
-                  <span>- gender</span>
-                  <span>- dob (YYYY-MM-DD)</span>
-                  <span>- designation</span>
-                  <span>- mentor</span>
-                  <span>- education</span>
-                  <span>- district</span>
-                  <span>- state</span>
-                  <span>- pin</span>
-                  <span>- busRoute</span>
+                  <span>- Name *</span>
+                  <span>- Employee Code *</span>
+                  <span>- Card No. *</span>
+                  <span>- Mobile No</span>
+                  <span>- E-Mail ID</span>
+                  <span>- Unit (UNIT_1)</span>
+                  <span>- D.O.J. (Joining Date)</span>
+                  <span>- Level (L1)</span>
+                  <span>- Supervisor</span>
+                  <span>- Incharge</span>
+                  <span>- Father / Husband Name</span>
+                  <span>- Gender (M/F)</span>
+                  <span>- D.O.B. (Date of Birth)</span>
+                  <span>- Designation</span>
+                  <span>- Mentor</span>
+                  <span>- Education</span>
+                  <span>- Distt</span>
+                  <span>- State</span>
+                  <span>- PIN</span>
+                  <span>- Bus Route</span>
+                  <span>- Department</span>
+                  <span>- Section</span>
+                  <span>- Line</span>
+                  <span>- Sub Section</span>
+                  <span>- Station No.</span>
                 </div>
                 <p className="text-xs text-blue-600 italic">
                   * Required fields

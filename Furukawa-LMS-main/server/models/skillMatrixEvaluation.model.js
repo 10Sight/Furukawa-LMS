@@ -78,7 +78,21 @@ class SkillMatrixEvaluation {
             `);
             await executeQuery(`
                 IF COL_LENGTH('skill_matrix_evaluations', 'efficiency') IS NULL
-                    ALTER TABLE skill_matrix_evaluations ADD efficiency DECIMAL(5,2);
+                    ALTER TABLE skill_matrix_evaluations ADD efficiency FLOAT;
+            `);
+            // Widen existing efficiency column to FLOAT so values >100 can be stored
+            await executeQuery(`
+                IF COL_LENGTH('skill_matrix_evaluations', 'efficiency') IS NOT NULL
+                AND EXISTS (
+                    SELECT 1 FROM sys.columns c
+                    JOIN sys.types t ON c.user_type_id = t.user_type_id
+                    WHERE c.object_id = OBJECT_ID('skill_matrix_evaluations')
+                    AND c.name = 'efficiency'
+                    AND t.name IN ('decimal', 'numeric')
+                )
+                BEGIN
+                    ALTER TABLE skill_matrix_evaluations ALTER COLUMN efficiency FLOAT;
+                END
             `);
 
             // Run automated migration for legacy single-sheet records

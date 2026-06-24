@@ -55,7 +55,7 @@ const GRAD = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const calculateUserEfficiency = (op) => {
     if (!op) return 0;
-    if (op.currentEffeciency != null) return Math.min(parseFloat(op.currentEffeciency) || 0, 100);
+    if (op.currentEffeciency != null) return parseFloat(op.currentEffeciency) || 0;
     const evalData = op.evalData;
     if (!evalData) return 0;
     let parsed = evalData;
@@ -63,7 +63,7 @@ const calculateUserEfficiency = (op) => {
     // L4: '3-5', L3: '2-0', L2: '1-2', L1: '0-2'
     for (const key of ['3-5', '2-0', '1-2', '0-2']) {
         const d = parsed[key];
-        if (d?.standard === 'OK') return Math.min(parseFloat(d.okVal) || 0, 100);
+        if (d?.standard === 'OK') return parseFloat(d.okVal) || 0;
     }
     return 0;
 };
@@ -175,16 +175,16 @@ const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, all
     return Object.values(map).map(g => {
         const allAvg = getAvg(g.allArr);
         const total = g.allArr.length;
-        let presAvg = total ? Math.min(Math.round((getSum(g.presArr) / total) * 100) / 100, 100) : 0;
-        let absAvg  = total ? Math.min(Math.round((getSum(g.absArr)  / total) * 100) / 100, 100) : 0;
+        let presAvg = total ? Math.round((getSum(g.presArr) / total) * 100) / 100 : 0;
+        let absAvg  = total ? Math.round((getSum(g.absArr)  / total) * 100) / 100 : 0;
         const tAll = total;
         const item = { id: g.id, name: g.name, displayName: g.name, allEfficiency: allAvg, presEfficiency: presAvg, absEfficiency: absAvg, allTotal: allAvg, presTotal: presAvg, absTotal: absAvg };
         if (isMulti) {
             effectiveShifts.forEach(s => {
                 const sd = g.shiftData[s] || { allArr: [], presArr: [], absArr: [] };
                 const sA = getAvg(sd.allArr);
-                const sP  = total > 0 ? Math.min(Math.round((getSum(sd.presArr) / total) * 100) / 100, 100) : 0;
-                const sAb = total > 0 ? Math.min(Math.round((getSum(sd.absArr)  / total) * 100) / 100, 100) : 0;
+                const sP  = total > 0 ? Math.round((getSum(sd.presArr) / total) * 100) / 100 : 0;
+                const sAb = total > 0 ? Math.round((getSum(sd.absArr)  / total) * 100) / 100 : 0;
                 item[`all_${s}`]      = tAll > 0 ? (sd.allArr.length / tAll) * sA : 0;
                 item[`pres_${s}`]     = sP;
                 item[`abs_${s}`]      = sAb;
@@ -822,8 +822,8 @@ const EfficiencyChart = () => {
         const tMin = getFilteredMinTarget(f5);
         const totalCount = opsAll5.length;
         const tAll = totalCount ? getAvg(allEffs) : 0;
-        const tPres = totalCount ? Math.min(Math.round((getSum(presEffs) / totalCount) * 100) / 100, 100) : 0;
-        const tAbs  = totalCount ? Math.min(Math.round((getSum(absEffs)  / totalCount) * 100) / 100, 100) : 0;
+        const tPres = totalCount ? Math.round((getSum(presEffs) / totalCount) * 100) / 100 : 0;
+        const tAbs  = totalCount ? Math.round((getSum(absEffs)  / totalCount) * 100) / 100 : 0;
 
         if (tMin != null) {
             items.push({
@@ -940,7 +940,7 @@ const EfficiencyChart = () => {
                                             <BarChart data={d5Mapped} margin={commonMargin} barCategoryGap="35%">
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                                 <XAxis dataKey="displayName" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                                <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                                                <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                                 <Bar dataKey="efficiency" radius={[10, 10, 0, 0]} maxBarSize={52}>
                                                     {d5Mapped.map((entry, i) => (
                                                         <Cell key={i} fill={getAttBarColor(entry.name)} opacity={entry.isTarget ? 0.65 : 1} />
@@ -1037,7 +1037,7 @@ const EfficiencyChart = () => {
                                     <BarChart data={d1} margin={commonMargin} barCategoryGap="25%" barGap={10}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                         <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
@@ -1079,7 +1079,7 @@ const EfficiencyChart = () => {
                                     <BarChart data={d2} margin={commonMargin} barCategoryGap="25%" barGap={10}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                         <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
@@ -1121,7 +1121,7 @@ const EfficiencyChart = () => {
                                     <BarChart data={d3} margin={commonMargin} barCategoryGap="25%" barGap={10}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                         <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
@@ -1163,7 +1163,7 @@ const EfficiencyChart = () => {
                                     <BarChart data={d4} margin={commonMargin} barCategoryGap="25%" barGap={10}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                         <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                         <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
                                         </Bar>
@@ -1208,7 +1208,7 @@ const EfficiencyChart = () => {
                                             tickLine={false}
                                             axisLine={false}
                                         />
-                                        <YAxis domain={[0, 100]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                         <Bar dataKey="efficiency" radius={[10, 10, 0, 0]} maxBarSize={52}>
                                             {d6.map((entry, index) => (
                                                 <Cell key={`op-${index}`}

@@ -186,7 +186,6 @@ const DojoHandoverComparisonChart = () => {
         const actualPoints = [];
         const categories = [];
         const groupSeparators = [];
-        let currentIdx = 0;
 
         fullPeriods.forEach(period => {
             const periodLabel = formatPeriodLabel(period, groupBy, language);
@@ -212,7 +211,6 @@ const DojoHandoverComparisonChart = () => {
                     isExpected: false,
                     isEmpty: true,
                 });
-                currentIdx++;
                 return;
             }
 
@@ -251,21 +249,26 @@ const DojoHandoverComparisonChart = () => {
                     isExpected: false,
                     isEmpty: false,
                 });
-
-                currentIdx++;
             });
+        });
 
-            // Dash separator after each period group, except the last one
-            if (period !== fullPeriods[fullPeriods.length - 1]) {
+        // Post-process: dashed vertical separators between date groups
+        let i = 0;
+        while (i < expectedPoints.length) {
+            const label = expectedPoints[i].periodLabel;
+            let j = i;
+            while (j < expectedPoints.length && expectedPoints[j].periodLabel === label) j++;
+            if (j < expectedPoints.length) {
                 groupSeparators.push({
-                    value: currentIdx - 0.5,
+                    value: j - 0.5,
                     width: 1,
                     dashStyle: 'Dash',
                     color: '#cbd5e1',
                     zIndex: 3,
                 });
             }
-        });
+            i = j;
+        }
 
         return { expectedPoints, actualPoints, categories, groupSeparators };
     }, [deptBreakdown, fullPeriods, groupBy, departments, language]);

@@ -133,7 +133,9 @@ const DepartmentQuizChart = ({ dateRange }) => {
             gridLineWidth: 0,
             labels: {
                 style:    { fontSize: '12px', fontWeight: '600', color: '#334155' },
-                rotation: chartData.length > 6 ? -30 : 0,
+                rotation: chartData.length > 6 ? -45 : 0,
+                align:    chartData.length > 6 ? 'right' : 'center',
+                autoRotation: false,
             },
         },
         yAxis: {

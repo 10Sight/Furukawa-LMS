@@ -1100,9 +1100,24 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const normalizeChartName = (value) => {
         const text = String(value || "").trim();
         if (!text) return "Not Provided";
-        if (["NULL", "UNDEFINED", "UNKNOWN"].includes(text.toUpperCase())) return "Not Provided";
+        if (["NULL", "UNDEFINED", "UNKNOWN", "NOT PROVIDED", "N/A", "NA", "-"].includes(text.toUpperCase())) return "Not Provided";
         return text;
     };
+
+    // IMPORTANT BLANK FIX:
+    // State/District/Role graph me blank values DB me multiple formats me aa sakti hain:
+    // NULL, empty string, 'NULL', 'UNKNOWN', 'Not Provided', etc.
+    // Agar SQL GROUP BY raw value par hota hai to ye alag rows ban jaati hain aur frontend me Blank category
+    // wrong/misleading total dikha sakti hai. Is helper se grouping SQL level par hi single 'Not Provided' bucket me hoti hai.
+    const getCleanTextColumnSql = (columnSql) => `
+        CASE
+            WHEN NULLIF(LTRIM(RTRIM(CAST(${columnSql} AS NVARCHAR(510)))), '') IS NULL
+                THEN 'Not Provided'
+            WHEN UPPER(LTRIM(RTRIM(CAST(${columnSql} AS NVARCHAR(510))))) IN ('NULL', 'UNDEFINED', 'UNKNOWN', 'NOT PROVIDED', 'N/A', 'NA', '-')
+                THEN 'Not Provided'
+            ELSE LTRIM(RTRIM(CAST(${columnSql} AS NVARCHAR(510))))
+        END
+    `;
 
     const getGroupedAttendanceChart = async ({ columnSql, labelKey = "name", valueKey = "value", includeState = true, includeDistrict = true }) => {
         try {
@@ -1277,7 +1292,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     percentage: 0,
                 };
             }
-            mapByName[cleanName][key] = Number(value || 0);
+            // Same cleanName may come from multiple raw DB values (NULL, empty, UNKNOWN, Not Provided).
+            // Add values instead of overwriting so Blank/Not Provided totals stay correct.
+            mapByName[cleanName][key] += Number(value || 0);
         };
 
         try {
@@ -1399,7 +1416,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     percentage: 0,
                 };
             }
-            mapByName[cleanName][key] = Number(value || 0);
+            // Same cleanName may come from multiple raw DB values (NULL, empty, UNKNOWN, Not Provided).
+            // Add values instead of overwriting so Blank/Not Provided totals stay correct.
+            mapByName[cleanName][key] += Number(value || 0);
         };
 
         const addRawUserHierarchyFilters = (baseSql, params, alias = "u") => {
@@ -1637,11 +1656,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         ] = await Promise.all([
             getGroupedComparisonChart({ columnSql: skillColumnSql, extraWhere: skillLevelWhere }).catch(err => { console.warn("[DASHBOARD] skillLevels query failed:", err.message); return []; }),
             getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] genderData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))), ''), 'Not Provided')", includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))), ''), 'Not Provided')", includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.state"), includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.district"), includeState: true, includeDistrict: true }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.designation") }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
             getGroupedComparisonChart({
-                columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510)))), ''), 'Not Provided')",
+                columnSql: getCleanTextColumnSql("u.designation"),
                 extraWhere: leaderExpertWhere,
             }).catch(err => { console.warn("[DASHBOARD] leaderExpert query failed:", err.message); return []; }),
             getStateOptions().catch(err => { console.warn("[DASHBOARD] stateOptions query failed:", err.message); return []; }),

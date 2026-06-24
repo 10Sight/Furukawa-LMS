@@ -1595,9 +1595,13 @@ const HighchartsPieCard = ({
             percentage: Number(item.percentage || 0),
             totalEmployees: Number(item.totalEmployees || 0),
             attendanceValue: Number(item.attendanceValue ?? item.rawValue ?? item.value ?? 0),
-            masterValue: Number(item.masterValue ?? item.totalValue ?? item.totalEmployees ?? 0),
+            // IMPORTANT BLANK FIX:
+            // totalEmployees/denominatorTotal is only the percentage denominator.
+            // It must never become the yellow Users Total bar for Blank/State/District/Role rows.
+            // Backend sends real category total in masterValue/totalValue.
+            masterValue: Number(item.masterValue ?? item.totalValue ?? item.masterCount ?? 0),
             attendanceCount: Number(item.attendanceCount ?? item.rawValue ?? item.attendanceValue ?? item.value ?? 0),
-            masterCount: Number(item.masterCount ?? item.totalValue ?? item.totalEmployees ?? item.masterValue ?? 0),
+            masterCount: Number(item.masterCount ?? item.masterValue ?? item.totalValue ?? 0),
             attendancePercentage: Number(item.attendancePercentage ?? item.percentage ?? 0),
             masterPercentage: Number(item.masterPercentage ?? 0),
         }))

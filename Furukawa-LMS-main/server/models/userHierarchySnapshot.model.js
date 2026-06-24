@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class UserHierarchySnapshot {
     constructor(data) {
@@ -17,6 +18,7 @@ class UserHierarchySnapshot {
         this.department_unicode = data.department_unicode;
         this.section_unicode = data.section_unicode;
         this.line_unicode = data.line_unicode;
+        this.schedule_shift = data.schedule_shift;
         this.createdAt = data.createdAt;
     }
 
@@ -39,6 +41,7 @@ class UserHierarchySnapshot {
                     department_unicode NVARCHAR(255),
                     section_unicode NVARCHAR(255),
                     line_unicode NVARCHAR(255),
+                    schedule_shift NVARCHAR(MAX),
                     createdAt DATETIME DEFAULT GETDATE()
                 );
                 CREATE INDEX idx_snapshot_employeeid ON user_hierarchy_snapshots(employeeid);
@@ -47,7 +50,9 @@ class UserHierarchySnapshot {
         try {
             await executeQuery(query);
             logger.info("Checked/Created user_hierarchy_snapshots table in MSSQL");
-            
+
+            await migrationHelper.ensureColumnExists('user_hierarchy_snapshots', 'schedule_shift', 'NVARCHAR(MAX)');
+
             // Automatic population on startup
             await this.syncFromUsers();
             logger.info("Automatically populated user_hierarchy_snapshots table");
@@ -79,7 +84,7 @@ class UserHierarchySnapshot {
                     employeename, employeeid, shift, status, role,
                     department, section, lines, [sub-section], station,
                     department_unicode, section_unicode, line_unicode,
-                    createdAt
+                    schedule_shift, createdAt
                 )
                 SELECT 
                     u.fullName as employeename,
@@ -95,6 +100,7 @@ class UserHierarchySnapshot {
                     d.uniCode as department_unicode,
                     s_res.sectionUnicode as section_unicode,
                     l_res.lineUnicode as line_unicode,
+                    u.shiftSchedule as schedule_shift,
                     GETDATE()
                 FROM users u
                 LEFT JOIN custom_roles cr ON u.customRoleId = cr.id

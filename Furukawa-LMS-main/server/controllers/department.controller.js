@@ -314,7 +314,7 @@ export const removeStudentFromDepartment = asyncHandler(async (req, res) => {
 
 export const getAllDepartments = asyncHandler(async (req, res) => {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 1000);
     const offset = (page - 1) * limit;
     const search = req.query.search || "";
     let whereSql = "WHERE 1=1";
@@ -326,6 +326,34 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
     if (!req.query.includeDeleted || (req.user.role !== "SUPERADMIN" && !req.user.isAdmin && !req.user.isEmployee)) {
         whereSql += " AND (isDeleted IS NULL OR isDeleted = 0)";
     }
+
+    const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+    if (!isAdmin) {
+        const assignedIds = [];
+        if (Array.isArray(req.user?.departments)) assignedIds.push(...req.user.departments);
+        if (req.user?.departmentId) assignedIds.push(req.user.departmentId);
+        const uniqueIds = [...new Set(assignedIds.map(String).filter(Boolean))];
+
+        const nameConditions = [];
+        if (req.user?.deptName) nameConditions.push(req.user.deptName);
+        if (req.user?.department && isNaN(req.user.department)) nameConditions.push(req.user.department);
+
+        if (uniqueIds.length === 0 && nameConditions.length === 0) {
+            return res.json(new ApiResponse(200, { departments: [], totalDepartments: 0, totalPages: 0, currentPage: page, limit }, "Departments fetched successfully"));
+        }
+
+        const orParts = [];
+        if (uniqueIds.length > 0) {
+            orParts.push(`id IN (${uniqueIds.map(() => '?').join(',')})`);
+            params.push(...uniqueIds);
+        }
+        if (nameConditions.length > 0) {
+            orParts.push(...nameConditions.map(() => 'name = ?'));
+            params.push(...nameConditions);
+        }
+        whereSql += ` AND (${orParts.join(' OR ')})`;
+    }
+
     const [countRows] = await executeQuery(`SELECT COUNT(*) as total FROM departments ${whereSql}`, params);
     const total = countRows[0].total;
     const [rows] = await executeQuery(`SELECT * FROM departments ${whereSql} ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`, [...params, offset, limit]);

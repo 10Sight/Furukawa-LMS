@@ -91,7 +91,11 @@ const getHierarchyJoinSQL = `
     SELECT TOP 1 name as stationName FROM machines 
     WHERE id = COALESCE(u.stationId, (CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END))
   ) st
-   OUTER APPLY (
+  OUTER APPLY (
+    SELECT TOP 1 name as contractorName FROM contractors 
+    WHERE id = u.contractorId
+  ) c_res
+  OUTER APPLY (
     SELECT 
         (SELECT 
              data.machineId, data.stationName, 
@@ -162,6 +166,7 @@ export const formatUser = (u) => {
   const formatted = {
     ...u,
     _id: u.id,
+    contractor: u.contractorName || u.contractor || "",
     avatar: parseJSON(u.avatar),
     assignments,
     sections: parseJSON(u.sections, []),
@@ -516,7 +521,8 @@ export const getUserById = asyncHandler(async (req, res) => {
     SELECT u.*, 
            d.id as actualDeptId, d.deptName, d.deptInstructor,
            s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
-           cr.name as customRoleName, cr.color as customRoleColor, cr.allowedPages as customRoleAllowedPages
+           cr.name as customRoleName, cr.color as customRoleColor, cr.allowedPages as customRoleAllowedPages,
+           c_res.contractorName
     FROM users u
     ${getHierarchyJoinSQL}
     LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
@@ -1465,7 +1471,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   `, [...attendanceParams, ...params]);
   const [students] = await executeQuery(`
     SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
-           al.logShift, al.logStatus, al.logDate
+           al.logShift, al.logStatus, al.logDate, c_res.contractorName
     FROM users u ${getHierarchyJoinSQL}
     ${attendanceJoinSQL}
     ${whereSQL}

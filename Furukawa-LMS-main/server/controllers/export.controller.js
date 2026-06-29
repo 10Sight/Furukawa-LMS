@@ -171,9 +171,11 @@ export const exportStudents = asyncHandler(async (req, res) => {
   const { format = 'excel', search = '', status = '', departmentId = '' } = req.query;
 
   let sql = `
-    SELECT u.fullName, u.userName, u.email, u.phoneNumber, u.status, u.createdAt, d.name as departmentName
+    SELECT u.fullName, u.userName, u.email, u.phoneNumber, u.status, u.createdAt, d.name as departmentName,
+           COALESCE(c.name, u.contractor) as contractorName
     FROM users u
     LEFT JOIN departments d ON (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name)
+    LEFT JOIN contractors c ON u.contractorId = c.id
     WHERE u.role = 'STUDENT' AND (u.isTrainer = 0 OR u.isTrainer IS NULL) AND (u.isDeleted IS NULL OR u.isDeleted = 0)
   `;
   const params = [];
@@ -234,6 +236,7 @@ export const exportStudents = asyncHandler(async (req, res) => {
     { header: 'Phone', key: 'phoneNumber', width: 16 },
     { header: 'Status', key: 'status', width: 12 },
     { header: 'Department', key: 'departmentName', width: 22 },
+    { header: 'Contractor', key: 'contractorName', width: 22 },
     { header: 'Created At', key: 'createdAt', width: 22 },
   ];
 
@@ -244,6 +247,7 @@ export const exportStudents = asyncHandler(async (req, res) => {
     phoneNumber: s.phoneNumber,
     status: s.status,
     departmentName: s.departmentName || '',
+    contractorName: s.contractorName || '',
     createdAt: s.createdAt ? new Date(s.createdAt).toISOString() : '',
   }));
 

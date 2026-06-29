@@ -1151,11 +1151,54 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     );
 });
 
+const hasContentChanged = (oldSheet, newEntries, newMetadata) => {
+    if (!oldSheet) return false;
+    const oldEntries = oldSheet.entries || [];
+    if (oldEntries.length !== (newEntries || []).length) return true;
+
+    for (let i = 0; i < oldEntries.length; i++) {
+        const orig = oldEntries[i];
+        const entry = newEntries[i];
+        if (!entry) return true;
+        if (
+            String(entry.studentId || '') !== String(orig.studentId || '') ||
+            String(entry.employeeName || '') !== String(orig.employeeName || '') ||
+            String(entry.empCode || '') !== String(orig.empCode || '') ||
+            String(entry.marks || '') !== String(orig.marks || '') ||
+            String(entry.department || '') !== String(orig.department || '') ||
+            String(entry.process || '') !== String(orig.process || '') ||
+            String(entry.mentor || '') !== String(orig.mentor || '') ||
+            String(entry.interview1 || '') !== String(orig.interview1 || '') ||
+            String(entry.interview2 || '') !== String(orig.interview2 || '') ||
+            String(entry.departmentId || '') !== String(orig.departmentId || '') ||
+            String(entry.sectionId || '') !== String(orig.sectionId || '') ||
+            String(entry.lineId || '') !== String(orig.lineId || '') ||
+            String(entry.subSectionId || '') !== String(orig.subSectionId || '') ||
+            String(entry.stationId || '') !== String(orig.stationId || '')
+        ) {
+            return true;
+        }
+    }
+
+    const oldMeta = oldSheet.metadata || {};
+    const meta = newMetadata || {};
+    if (
+        String(meta.docNo || '') !== String(oldMeta.docNo || '') ||
+        String(meta.revNo || '') !== String(oldMeta.revNo || '') ||
+        String(meta.revDate || '') !== String(oldMeta.revDate || '') ||
+        String(meta.issueDate || '') !== String(oldMeta.issueDate || '')
+    ) {
+        return true;
+    }
+
+    return false;
+};
+
 export const saveHandoverSheet = asyncHandler(async (req, res) => {
     const departmentId = await resolveDepartmentId(req.params.id);
     if (!departmentId) throw new ApiError("Invalid Department ID", 400);
 
-    const { date, entries, signatures, metadata, sectionId, isSubmitted } = req.body;
+    const { date, entries, signatures, metadata, sectionId, isSubmitted, remark } = req.body;
 
     let sheet = await HandoverSheet.findSpecific(departmentId, sectionId || null, date);
 
@@ -1163,6 +1206,28 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
     const userPermissions = req.user?.customRole?.permissions || [];
     const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
     const canApprove = isAdmin || userPermissions.includes('handover_sheet:approve');
+
+    if (sheet) {
+        const contentChanged = hasContentChanged(sheet, entries, metadata);
+        if (contentChanged) {
+            const canEditSaved = isAdmin || userPermissions.includes('handover_sheet:edit_saved');
+            if (!canEditSaved) {
+                throw new ApiError("You do not have permission to edit a saved handover sheet", 403);
+            }
+            if (!remark || !remark.trim()) {
+                throw new ApiError("Remark is required when editing a saved handover sheet", 400);
+            }
+            
+            // Append remark to history
+            const remarksHistory = Array.isArray(sheet.remarksHistory) ? sheet.remarksHistory : [];
+            remarksHistory.push({
+                userName: req.user?.fullName || req.user?.name || "System",
+                remark: remark.trim(),
+                createdAt: new Date().toISOString()
+            });
+            sheet.remarksHistory = remarksHistory;
+        }
+    }
 
     if (!canApprove) {
         // Prevent setting or changing HOD signature

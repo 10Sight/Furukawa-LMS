@@ -84,21 +84,7 @@ const DojoCandidateDetail = () => {
     }
   }, [activeTab, studentId]);
 
-  const handlePromote = async () => {
-    try {
-      await updateUser({
-        id: studentId,
-        isTemporary: false,
-        role: "STUDENT",
-        joiningDate: new Date().toISOString().split('T')[0]
-      }).unwrap();
-      toast.success("Candidate promoted to permanent employee successfully!");
-      refetch();
-    } catch (error) {
-      toast.error(error.data?.message || "Failed to promote candidate");
-    }
-  };
-
+  // Handle Delete User
   const handleDelete = async () => {
     try {
       await deleteUser(studentId).unwrap();
@@ -160,17 +146,6 @@ const DojoCandidateDetail = () => {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-
-          <Button
-            onClick={handlePromote}
-            variant="default"
-            size="sm"
-            className="gap-2 bg-green-600 hover:bg-green-700 shadow-sm"
-            disabled={!candidate.isTemporary}
-          >
-            <IconUserPlus className="w-4 h-4" />
-            {candidate.isTemporary ? "Promote to Employee" : "Already Promoted"}
-          </Button>
 
           <Button onClick={() => refetch()} variant="outline" size="sm">
             <IconRefresh className="h-4 w-4" />

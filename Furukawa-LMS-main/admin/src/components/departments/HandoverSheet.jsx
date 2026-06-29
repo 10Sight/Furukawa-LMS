@@ -125,6 +125,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const canManage = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:manage');
     const canApprove = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:approve');
     const canEditLayout = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_layout');
+    const canEditSaved = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_saved');
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [localDate, setLocalDate] = useState(new Date().toISOString().split('T')[0]);
@@ -145,6 +147,19 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [submittedAt, setSubmittedAt] = useState(null);
     const [isNewSheet, setIsNewSheet] = useState(false);
+
+    const [originalEntries, setOriginalEntries] = useState([]);
+    const [originalMetadata, setOriginalMetadata] = useState({
+        docNo: "FRM-HR-003",
+        revNo: "05",
+        revDate: "30.01.2024",
+        issueDate: "01.06.09"
+    });
+    const [isRemarkDialogOpen, setIsRemarkDialogOpen] = useState(false);
+    const [editRemark, setEditRemark] = useState("");
+    const [pendingSubmitValue, setPendingSubmitValue] = useState(false);
+
+    const isEditable = isNewSheet || canEditSaved;
 
     // Layout Config State
     const [tableConfig, setTableConfig] = useState(null);
@@ -262,8 +277,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                         });
                     }
                     setEntries(fetchedEntries);
+                    setOriginalEntries(JSON.parse(JSON.stringify(fetchedEntries)));
                     setSignatures(data.signatures || { educationCell: "", hod: "" });
-                    if (data.metadata) setMetadata(data.metadata);
+                    if (data.metadata) {
+                        setMetadata(data.metadata);
+                        setOriginalMetadata(JSON.parse(JSON.stringify(data.metadata)));
+                    }
                     setIsSubmitted(!!data.isSubmitted);
                     setSubmittedAt(data.submittedAt);
                 } else {
@@ -347,6 +366,13 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                     }
 
                     setEntries(initialEntries);
+                    setOriginalEntries([]);
+                    setOriginalMetadata({
+                        docNo: "FRM-HR-003",
+                        revNo: "05",
+                        revDate: "30.01.2024",
+                        issueDate: "01.06.09"
+                    });
                 }
             } catch (error) {
                 console.error("Error fetching handover sheet:", error);
@@ -478,7 +504,67 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
         }
     };
 
-    const handleSave = async (isSubmit = false) => {
+    const hasContentChanged = () => {
+        if (isNewSheet) return false;
+        if (entries.length !== originalEntries.length) return true;
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            const orig = originalEntries[i];
+            if (!orig) return true;
+            if (
+                entry.studentId !== orig.studentId ||
+                entry.employeeName !== orig.employeeName ||
+                entry.empCode !== orig.empCode ||
+                entry.marks !== orig.marks ||
+                entry.department !== orig.department ||
+                entry.process !== orig.process ||
+                entry.mentor !== orig.mentor ||
+                entry.interview1 !== orig.interview1 ||
+                entry.interview2 !== orig.interview2 ||
+                entry.departmentId !== orig.departmentId ||
+                entry.sectionId !== orig.sectionId ||
+                entry.lineId !== orig.lineId ||
+                entry.subSectionId !== orig.subSectionId ||
+                entry.stationId !== orig.stationId
+            ) {
+                return true;
+            }
+        }
+        if (
+            metadata.docNo !== originalMetadata?.docNo ||
+            metadata.revNo !== originalMetadata?.revNo ||
+            metadata.revDate !== originalMetadata?.revDate ||
+            metadata.issueDate !== originalMetadata?.issueDate
+        ) {
+            return true;
+        }
+        return false;
+    };
+
+    const handleSaveClick = (isSubmit = false) => {
+        if (!isNewSheet && hasContentChanged()) {
+            if (!canEditSaved) {
+                toast.error("You do not have permission to edit a saved handover sheet.");
+                return;
+            }
+            setPendingSubmitValue(isSubmit);
+            setIsRemarkDialogOpen(true);
+        } else {
+            executeSave(isSubmit);
+        }
+    };
+
+    const handleConfirmSaveWithRemark = () => {
+        if (!editRemark.trim()) {
+            toast.error("Please enter a remark.");
+            return;
+        }
+        setIsRemarkDialogOpen(false);
+        executeSave(pendingSubmitValue, editRemark);
+        setEditRemark("");
+    };
+
+    const executeSave = async (isSubmit = false, remark = "") => {
         setSaving(true);
         const userName = authUser?.fullName || authUser?.name || "System";
 
@@ -497,13 +583,18 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                 entries,
                 signatures: updatedSignatures,
                 metadata,
-                isSubmitted: isSubmit
+                isSubmitted: isSubmit,
+                remark: remark
             });
 
             if (isSubmit) {
                 setIsSubmitted(true);
                 setSubmittedAt(new Date().toISOString());
             }
+
+            setOriginalEntries(JSON.parse(JSON.stringify(entries)));
+            setOriginalMetadata(JSON.parse(JSON.stringify(metadata)));
+            setIsNewSheet(false);
 
             toast.success(isSubmit ? "Handover sheet submitted and emailed successfully" : "Handover sheet progress saved successfully");
         } catch (error) {
@@ -678,7 +769,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.docNo}
                                         onChange={(e) => handleMetadataChange('docNo', e.target.value)}
-                                        disabled={!canManage}
+                                        disabled={!canManage || !isEditable}
                                     />
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
@@ -687,7 +778,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.revNo}
                                         onChange={(e) => handleMetadataChange('revNo', e.target.value)}
-                                        disabled={!canManage}
+                                        disabled={!canManage || !isEditable}
                                     />
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
@@ -696,7 +787,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.revDate}
                                         onChange={(e) => handleMetadataChange('revDate', e.target.value)}
-                                        disabled={!canManage}
+                                        disabled={!canManage || !isEditable}
                                     />
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
@@ -705,7 +796,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
                                         value={metadata.issueDate}
                                         onChange={(e) => handleMetadataChange('issueDate', e.target.value)}
-                                        disabled={!canManage}
+                                        disabled={!canManage || !isEditable}
                                     />
                                 </div>
                             </div>
@@ -769,7 +860,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         <>
                                             <Button
                                                 className="bg-green-600 hover:bg-green-700 text-white border-green-700"
-                                                onClick={() => handleSave(false)}
+                                                onClick={() => handleSaveClick(false)}
                                                 disabled={saving}
                                             >
                                                 <IconDeviceFloppy className="h-4 w-4 mr-2" />
@@ -777,7 +868,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                             </Button>
                                             <Button
                                                 className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all"
-                                                onClick={() => handleSave(true)}
+                                                onClick={() => handleSaveClick(true)}
                                                 disabled={saving}
                                             >
                                                 <Save className="h-4 w-4 mr-2" />
@@ -824,7 +915,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                     <td key={colIdx} className="border p-1">
                                                         {col.field === 'sn' ? (
                                                             <div className="text-center">{index + 1}</div>
-                                                        ) : col.field === 'employeeName' && !col.readOnly && canManage ? (
+                                                        ) : col.field === 'employeeName' && !col.readOnly && canManage && isEditable ? (
                                                             <UserAutocomplete
                                                                 mode="all"
                                                                 excludeAdmins={true}
@@ -839,7 +930,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 className="w-full"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                             />
-                                                        ) : col.field === 'mentor' && !col.readOnly && canManage ? (
+                                                        ) : col.field === 'mentor' && !col.readOnly && canManage && isEditable ? (
                                                             <UserAutocomplete
                                                                 mode="all"
                                                                 excludeAdmins={true}
@@ -855,7 +946,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                             <div className="text-center text-xs font-medium text-blue-600 px-1">
                                                                 {departmentName}
                                                             </div>
-                                                        ) : col.field === 'process' && canManage ? (
+                                                        ) : col.field === 'process' && canManage && isEditable ? (
                                                             <ProcessSelect
                                                                 key={`process-select-${index}`}
                                                                 departmentId={departmentId}
@@ -863,12 +954,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 value={entry.process || ""}
                                                                 onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                             />
-                                                        ) : (col.field === 'interview1' || col.field === 'interview2') && canManage ? (
+                                                        ) : (col.field === 'interview1' || col.field === 'interview2') && canManage && isEditable ? (
                                                             <InterviewSelect
                                                                 value={entry[col.field] || ""}
                                                                 onChange={(val) => handleEntryChange(index, col.field, val)}
                                                             />
-                                                        ) : (col.readOnly || !canManage) ? (
+                                                        ) : (col.readOnly || !canManage || !isEditable) ? (
                                                             <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
                                                                 {(col.field === 'interview1' || col.field === 'interview2')
                                                                     ? (INTERVIEW_OPTIONS.find(o => o.value === entry[col.field])?.label || entry[col.field])
@@ -890,7 +981,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         {index + 1}
                                                     </td>
                                                     <td className="border p-1">
-                                                        {canManage ? (
+                                                        {canManage && isEditable ? (
                                                             <UserAutocomplete
                                                                 mode="all"
                                                                 excludeAdmins={true}
@@ -912,7 +1003,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        {canManage ? (
+                                                        {canManage && isEditable ? (
                                                             <AutoResizeInput
                                                                 value={entry.empCode || ""}
                                                                 onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
@@ -924,7 +1015,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        {canManage ? (
+                                                        {canManage && isEditable ? (
                                                             <AutoResizeInput
                                                                 value={entry.marks || ""}
                                                                 onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
@@ -941,7 +1032,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         </div>
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        {canManage ? (
+                                                        {canManage && isEditable ? (
                                                             <ProcessSelect
                                                                 key={`process-select-def-${index}`}
                                                                 departmentId={departmentId}
@@ -954,7 +1045,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         )}
                                                     </td>
                                                     <td className="border p-1">
-                                                        {canManage ? (
+                                                        {canManage && isEditable ? (
                                                             <UserAutocomplete
                                                                 mode="all"
                                                                 excludeAdmins={true}
@@ -971,7 +1062,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        {canManage ? (
+                                                        {canManage && isEditable ? (
                                                             <InterviewSelect
                                                                 value={entry.interview1}
                                                                 onChange={(val) => handleEntryChange(index, 'interview1', val)}
@@ -983,7 +1074,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                         )}
                                                     </td>
                                                     <td className="border p-1 text-center">
-                                                        {canManage ? (
+                                                        {canManage && isEditable ? (
                                                             <InterviewSelect
                                                                 value={entry.interview2}
                                                                 onChange={(val) => handleEntryChange(index, 'interview2', val)}
@@ -1045,7 +1136,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
                                 </tbody>
                             </table>
-                            {canManage && (
+                            {canManage && isEditable && (
                                 <div className="mt-2 flex justify-start no-print">
                                     <Button
                                         variant="outline"
@@ -1098,14 +1189,14 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                 <>
                                     <Button
                                         variant="outline"
-                                        onClick={() => handleSave(false)}
+                                        onClick={() => handleSaveClick(false)}
                                         disabled={saving}
                                         className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
                                     >
                                         <IconDeviceFloppy className="h-4 w-4" />
                                         Save Progress
                                     </Button>
-                                    <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                                    <Button onClick={() => handleSaveClick(true)} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
                                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                         Submit & Email Sheet
                                     </Button>
@@ -1249,6 +1340,31 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                 </div>
                             ))
                         )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+            {/* Edit Remark Dialog */}
+            <Dialog open={isRemarkDialogOpen} onOpenChange={setIsRemarkDialogOpen}>
+                <DialogContent className="max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle>Reason for editing saved handover sheet</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="edit-remark">Remark (Required)</Label>
+                            <Input
+                                id="edit-remark"
+                                placeholder="Enter a brief reason/remark for the edits made..."
+                                value={editRemark}
+                                onChange={(e) => setEditRemark(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2 border-t pt-4">
+                        <Button variant="ghost" onClick={() => { setIsRemarkDialogOpen(false); setEditRemark(""); }}>Cancel</Button>
+                        <Button onClick={handleConfirmSaveWithRemark} disabled={!editRemark.trim()} className="bg-blue-600 hover:bg-blue-700 text-white">
+                            Confirm Save
+                        </Button>
                     </div>
                 </DialogContent>
             </Dialog>

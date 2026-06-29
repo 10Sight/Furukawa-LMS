@@ -142,6 +142,7 @@ const SYSTEM_PERMISSIONS = {
   HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
   HANDOVER_SHEET_APPROVE: "handover_sheet:approve",
   HANDOVER_SHEET_DELETE: "handover_sheet:delete",
+  HANDOVER_SHEET_EDIT_SAVED: "handover_sheet:edit_saved",
   DOJO_HANDOVER_SHEET: "dojo:handover_sheet",
   DOJO_SIXTEENDAY_MONITORING: "dojo:sixteenday_monitoring",
 
@@ -526,6 +527,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
         { id: SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, name: "Access All in Handover Sheet", description: "Allows unrestricted access to all departments, sections, sub-sections, and stations in Handover Sheets" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE, name: "Delete Handover Sheet", description: "Permanently delete handover sheet records" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SAVED, name: "Edit Saved Handover Sheet", description: "Edit handover sheets that have already been saved or submitted" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet (Full Access)", description: "Super-permission: full create, read, update, and delete access to 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_CREATE, name: "Create 10-Cycle Sheet", description: "Create new 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_READ, name: "View 10-Cycle Sheet", description: "View and read existing 10-cycle sheets" },

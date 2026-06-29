@@ -11,7 +11,7 @@ import { useGetSubSectionsByLineQuery } from '@/Redux/AllApi/SubSectionApi';
 import { useGetMachinesBySubSectionQuery, useGetMachinesByLineQuery, useGetMachinesBySectionQuery, useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
 import { useGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
-import { useGetSkillMatrixListQuery, useGetSkillMatrixQuery, useSaveSkillMatrixMutation } from '@/Redux/AllApi/SkillMatrixApi';
+import { useGetSkillMatrixListQuery, useGetSkillMatrixQuery, useSaveSkillMatrixMutation, useDeleteEvaluationSheetMutation, useDeleteSkillMatrixMutation } from '@/Redux/AllApi/SkillMatrixApi';
 import { toast } from "sonner";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { History, Edit2, Save, Loader2 } from "lucide-react";
+import { History, Edit2, Save, Loader2, Trash2 } from "lucide-react";
 import axiosInstance from "@/Helper/axiosInstance";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
@@ -98,7 +98,11 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
     const [evaluationSheets, setEvaluationSheets] = useState([]);
     const [selectedSheetId, setSelectedSheetId] = useState(null);
+    const [isEvalReadOnly, setIsEvalReadOnly] = useState(false);
     const [isSheetsLoading, setIsSheetsLoading] = useState(false);
+    const [deleteConfirmSheetId, setDeleteConfirmSheetId] = useState(null);
+    const [isMatrixReadOnly, setIsMatrixReadOnly] = useState(false);
+    const [deleteConfirmMatrixId, setDeleteConfirmMatrixId] = useState(null);
 
     const fetchEvaluationSheets = async (studentId) => {
         if (!studentId) return;
@@ -696,6 +700,25 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const { user } = useSelector(state => state.auth);
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 
+    const hasEvalPermission = (perm) => {
+        if (!user) return false;
+        if (user.role === 'SUPERADMIN' || user.role === 'ADMIN') return true;
+        const customPerms = user.customRole?.permissions || [];
+        const roleDefaults = {
+            INSTRUCTOR: ['evaluation:manage','evaluation:create','evaluation:read','evaluation:update','evaluation:delete'],
+        };
+        const defaultPerms = roleDefaults[user.role] || [];
+        return [...defaultPerms, ...customPerms].includes(perm) || [...defaultPerms, ...customPerms].includes('evaluation:manage');
+    };
+
+    const canEditEval = hasEvalPermission('evaluation:update');
+    const canDeleteEval = hasEvalPermission('evaluation:delete');
+    const canEditMatrix = hasEvalPermission('evaluation:update');
+    const canDeleteMatrix = hasEvalPermission('evaluation:delete');
+
+    const [deleteEvaluationSheet] = useDeleteEvaluationSheetMutation();
+    const [deleteSkillMatrix, { isLoading: isDeletingMatrix }] = useDeleteSkillMatrixMutation();
+
     const assignableDepartments = React.useMemo(() => {
         const allDepts = departmentsData?.data?.departments || [];
         const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
@@ -1050,6 +1073,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         setSelectedSubSection(createSubSection);
         setSelectedStation(createStation);
         setSelectedMonth(createMonth);
+        setIsMatrixReadOnly(false);
         setIsMatrixOpen(true);
         setCreateOpen(false);
     };
@@ -1257,14 +1281,15 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                 <th className="p-3 border-b text-center">Safety</th>
                                                 <th className="p-3 border-b text-center">Process</th>
                                                 <th className="p-3 border-b text-left">Last Updated</th>
+                                                <th className="p-3 border-b text-center">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {isMatrixListLoading ? (
-                                                <tr><td className="p-4 text-center text-muted-foreground" colSpan={12}>Loading...</td></tr>
+                                                <tr><td className="p-4 text-center text-muted-foreground" colSpan={13}>Loading...</td></tr>
                                             ) : matrixList.length === 0 ? (
                                                 <tr>
-                                                    <td className="p-4 text-center text-muted-foreground" colSpan={12}>
+                                                    <td className="p-4 text-center text-muted-foreground" colSpan={13}>
                                                         No skill matrix forms found for selected filters.
                                                     </td>
                                                 </tr>
@@ -1280,6 +1305,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             setSelectedSubSection(String(row.subSection || ""));
                                                             setSelectedStation(String(row.station || ""));
                                                             setSelectedMonth(String(row.month || ""));
+                                                            setIsMatrixReadOnly(true);
                                                             setIsMatrixOpen(true);
                                                         }}
                                                     >
@@ -1314,6 +1340,41 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                         </td>
                                                         <td className="p-2 border-b">
                                                             {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-"}
+                                                        </td>
+                                                        <td className="p-2 border-b" onClick={e => e.stopPropagation()}>
+                                                            <div className="flex gap-1 justify-center flex-wrap">
+                                                                {canEditMatrix && (
+                                                                    <Button
+                                                                        size="xs"
+                                                                        variant="outline"
+                                                                        className="h-7 text-xs font-semibold px-2 gap-1 border-blue-400 text-blue-600 hover:bg-blue-50"
+                                                                        title="Edit"
+                                                                        onClick={() => {
+                                                                            setSelectedDepartment(String(row.department || ""));
+                                                                            setSelectedSection(String(row.section || ""));
+                                                                            setSelectedLine(String(row.line || ""));
+                                                                            setSelectedSubSection(String(row.subSection || ""));
+                                                                            setSelectedStation(String(row.station || ""));
+                                                                            setSelectedMonth(String(row.month || ""));
+                                                                            setIsMatrixReadOnly(false);
+                                                                            setIsMatrixOpen(true);
+                                                                        }}
+                                                                    >
+                                                                        <Edit2 className="h-3 w-3" /> Edit
+                                                                    </Button>
+                                                                )}
+                                                                {canDeleteMatrix && (
+                                                                    <Button
+                                                                        size="xs"
+                                                                        variant="outline"
+                                                                        className="h-7 text-xs font-semibold px-2 gap-1 border-red-400 text-red-600 hover:bg-red-50"
+                                                                        title="Delete"
+                                                                        onClick={() => setDeleteConfirmMatrixId(row.id)}
+                                                                    >
+                                                                        <Trash2 className="h-3 w-3" /> Delete
+                                                                    </Button>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))
@@ -1421,7 +1482,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     </span>
                                 </div>
                                 <div className="ml-auto flex gap-2">
-                                    <Button variant="outline" onClick={() => setIsMatrixOpen(false)}>Back</Button>
+                                    <Button variant="outline" onClick={() => { setIsMatrixOpen(false); setIsMatrixReadOnly(false); }}>Back</Button>
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -1431,26 +1492,42 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         <History className="h-4 w-4" />
                                         History
                                     </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                            setConfigJson(JSON.stringify(config, null, 2));
-                                            setIsEditingLayout(true);
-                                        }}
-                                        className="gap-2"
-                                    >
-                                        <Edit2 className="h-4 w-4" />
-                                        Edit Layout
-                                    </Button>
-                                    <Button onClick={() => handleSave(false)} disabled={isSaving} className="bg-blue-600">
-                                        <IconDeviceFloppy className="w-4 h-4 mr-2" />
-                                        Save Matrix
-                                    </Button>
-                                    <Button onClick={() => handleSave(true)} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
-                                        <IconMail className="w-4 h-4 mr-2" />
-                                        Save & Send Email
-                                    </Button>
+                                    {isMatrixReadOnly ? (
+                                        canEditMatrix && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setIsMatrixReadOnly(false)}
+                                                className="gap-2 border-blue-500 text-blue-600 hover:bg-blue-50"
+                                            >
+                                                <Edit2 className="h-4 w-4" />
+                                                Edit Matrix
+                                            </Button>
+                                        )
+                                    ) : (
+                                        <>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                    setConfigJson(JSON.stringify(config, null, 2));
+                                                    setIsEditingLayout(true);
+                                                }}
+                                                className="gap-2"
+                                            >
+                                                <Edit2 className="h-4 w-4" />
+                                                Edit Layout
+                                            </Button>
+                                            <Button onClick={() => handleSave(false)} disabled={isSaving} className="bg-blue-600">
+                                                <IconDeviceFloppy className="w-4 h-4 mr-2" />
+                                                Save Matrix
+                                            </Button>
+                                            <Button onClick={() => handleSave(true)} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
+                                                <IconMail className="w-4 h-4 mr-2" />
+                                                Save & Send Email
+                                            </Button>
+                                        </>
+                                    )}
                                     <Button onClick={handleDownloadHighResImage} className="bg-purple-600 hover:bg-purple-700 text-white" disabled={!selectedDepartment || !selectedMonth || isMachinesLoading || isGeneratingImage}>
                                         {isGeneratingImage ? <IconLoader className="w-4 h-4 mr-2 animate-spin" /> : <IconPhoto className="w-4 h-4 mr-2" />}
                                         Download Image
@@ -1520,7 +1597,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         <div className="flex border-r border-black">
                                             <div className="font-bold p-1 px-2 bg-gray-50 flex items-center justify-center border-r border-black">Shift</div>
                                             <div className="flex items-center justify-center">
-                                                <Input className="text-center font-bold text-xs h-6 border-none px-2 w-12" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} />
+                                                <Input className="text-center font-bold text-xs h-6 border-none px-2 w-12" value={config.shift || ""} onChange={e => handleConfigChange('shift', e.target.value)} readOnly={isMatrixReadOnly} />
                                             </div>
                                         </div>
                                         {/* Signatures */}
@@ -1531,15 +1608,19 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     {config.signatures?.qa ? (
                                                         <div className="flex items-center gap-1 group">
                                                             <span className="font-bold leading-tight break-all">{config.signatures.qa}</span>
-                                                            <button onClick={() => handleConfigChange('signatures.qa', '')} className="no-print hidden group-hover:block text-red-500">
-                                                                <IconX size={12} />
-                                                            </button>
+                                                            {!isMatrixReadOnly && (
+                                                                <button onClick={() => handleConfigChange('signatures.qa', '')} className="no-print hidden group-hover:block text-red-500">
+                                                                    <IconX size={12} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ) : (
-                                                        <div className="flex gap-1">
-                                                            <button onClick={() => handleSignature('qa', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
-                                                            <button onClick={() => handleSignature('qa', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
-                                                        </div>
+                                                        !isMatrixReadOnly && (
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => handleSignature('qa', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
+                                                                <button onClick={() => handleSignature('qa', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
+                                                            </div>
+                                                        )
                                                     )}
                                                 </div>
                                             </div>
@@ -1549,15 +1630,19 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     {config.signatures?.safety ? (
                                                         <div className="flex items-center gap-1 group">
                                                             <span className="font-bold leading-tight break-all">{config.signatures.safety}</span>
-                                                            <button onClick={() => handleConfigChange('signatures.safety', '')} className="no-print hidden group-hover:block text-red-500">
-                                                                <IconX size={12} />
-                                                            </button>
+                                                            {!isMatrixReadOnly && (
+                                                                <button onClick={() => handleConfigChange('signatures.safety', '')} className="no-print hidden group-hover:block text-red-500">
+                                                                    <IconX size={12} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ) : (
-                                                        <div className="flex gap-1">
-                                                            <button onClick={() => handleSignature('safety', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
-                                                            <button onClick={() => handleSignature('safety', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
-                                                        </div>
+                                                        !isMatrixReadOnly && (
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => handleSignature('safety', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
+                                                                <button onClick={() => handleSignature('safety', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
+                                                            </div>
+                                                        )
                                                     )}
                                                 </div>
                                             </div>
@@ -1567,15 +1652,19 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     {config.signatures?.process ? (
                                                         <div className="flex items-center gap-1 group">
                                                             <span className="font-bold leading-tight break-all">{config.signatures.process}</span>
-                                                            <button onClick={() => handleConfigChange('signatures.process', '')} className="no-print hidden group-hover:block text-red-500">
-                                                                <IconX size={12} />
-                                                            </button>
+                                                            {!isMatrixReadOnly && (
+                                                                <button onClick={() => handleConfigChange('signatures.process', '')} className="no-print hidden group-hover:block text-red-500">
+                                                                    <IconX size={12} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ) : (
-                                                        <div className="flex gap-1">
-                                                            <button onClick={() => handleSignature('process', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
-                                                            <button onClick={() => handleSignature('process', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
-                                                        </div>
+                                                        !isMatrixReadOnly && (
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => handleSignature('process', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
+                                                                <button onClick={() => handleSignature('process', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
+                                                            </div>
+                                                        )
                                                     )}
                                                 </div>
                                             </div>
@@ -1586,6 +1675,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                         value={config.plannedHeader || ""}
                                                         onChange={e => handleConfigChange('plannedHeader', e.target.value)}
                                                         placeholder=""
+                                                        readOnly={isMatrixReadOnly}
                                                     />
                                                 </div>
                                                 <div className="text-[11px] p-1 h-4 flex items-center justify-center min-w-[100px] font-bold">
@@ -1607,6 +1697,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                         style={{ width: `${Math.max(48, (p?.length || 0) * 8 + 10)}px` }}
                                                         value={p || ""}
                                                         onChange={e => handleArrayConfigChange('products', i, null, e.target.value)}
+                                                        readOnly={isMatrixReadOnly}
                                                     />
                                                 </div>
                                             </div>
@@ -1623,6 +1714,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             style={{ width: `${Math.max(48, (rev.product?.length || 0) * 7 + 10)}px` }}
                                                             value={rev.product || ""}
                                                             onChange={e => handleArrayConfigChange('revisions', i, 'product', e.target.value)}
+                                                            readOnly={isMatrixReadOnly}
                                                         />
                                                     </div>
                                                 </div>
@@ -1634,6 +1726,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             style={{ width: `${Math.max(48, (rev.revision?.length || 0) * 7 + 10)}px` }}
                                                             value={rev.revision || ""}
                                                             onChange={e => handleArrayConfigChange('revisions', i, 'revision', e.target.value)}
+                                                            readOnly={isMatrixReadOnly}
                                                         />
                                                     </div>
                                                 </div>
@@ -1645,6 +1738,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             style={{ width: `${Math.max(48, (rev.date?.length || 0) * 7 + 10)}px` }}
                                                             value={rev.date || ""}
                                                             onChange={e => handleArrayConfigChange('revisions', i, 'date', e.target.value)}
+                                                            readOnly={isMatrixReadOnly}
                                                         />
                                                     </div>
                                                 </div>
@@ -1675,7 +1769,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                             <tr>
                                                 <th colSpan={5} className="border border-black p-1 text-right">Process responsible person</th>
                                                 <th colSpan={groupedSubSections.length} className="border border-black p-1 text-left">
-                                                    <Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.responsible || ""} onChange={e => handleConfigChange('processPersons.responsible', e.target.value)} />
+                                                    <Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.responsible || ""} onChange={e => handleConfigChange('processPersons.responsible', e.target.value)} readOnly={isMatrixReadOnly} />
                                                 </th>
                                                 <th colSpan={4} className="border border-black"></th>
                                             </tr>
@@ -1683,10 +1777,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                             <tr>
                                                 <th colSpan={5} className="border border-black p-1 text-right">Vice process responsible person</th>
                                                 <th colSpan={groupedSubSections.length} className="border border-black p-1 text-center flex justify-center gap-10">
-                                                    <span><Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.vice || ""} onChange={e => handleConfigChange('processPersons.vice', e.target.value)} /></span>
+                                                    <span><Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.vice || ""} onChange={e => handleConfigChange('processPersons.vice', e.target.value)} readOnly={isMatrixReadOnly} /></span>
                                                 </th>
                                                 <th colSpan={4} className="border border-black text-center">
-                                                    <span><Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.vice2 || ""} onChange={e => handleConfigChange('processPersons.vice2', e.target.value)} /></span>
+                                                    <span><Input className="inline w-32 h-4 p-0 border-b border-dotted" value={config.processPersons?.vice2 || ""} onChange={e => handleConfigChange('processPersons.vice2', e.target.value)} readOnly={isMatrixReadOnly} /></span>
                                                 </th>
                                             </tr>
 
@@ -1814,15 +1908,16 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                     style={{ minWidth: `${Math.max(60, (entry.cardNo?.length || 0) * 7 + 10)}px`, width: '100%' }}
                                                                     value={entry.cardNo}
                                                                     onChange={e => handleEntryChange(originalIndex, 'cardNo', e.target.value)}
+                                                                    readOnly={isMatrixReadOnly}
                                                                 />
                                                             </td>
                                                             <td className="border border-black p-0">
                                                                 <div className="flex flex-col h-full">
                                                                     <div className="border-b border-black flex-1 flex items-center justify-center min-h-[16px]">
-                                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent text-[10px]" value={entry.experience} onChange={e => handleEntryChange(originalIndex, 'experience', e.target.value)} />
+                                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent text-[10px]" value={entry.experience} onChange={e => handleEntryChange(originalIndex, 'experience', e.target.value)} readOnly={isMatrixReadOnly} />
                                                                     </div>
                                                                     <div className="flex-1 flex items-center justify-center min-h-[16px]">
-                                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent text-[10px]" value={entry.certDate} onChange={e => handleEntryChange(originalIndex, 'certDate', e.target.value)} />
+                                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent text-[10px]" value={entry.certDate} onChange={e => handleEntryChange(originalIndex, 'certDate', e.target.value)} readOnly={isMatrixReadOnly} />
                                                                     </div>
                                                                 </div>
                                                             </td>
@@ -1830,7 +1925,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                 <div className="flex flex-col h-full">
                                                                     <div className="border-b border-black flex-1 bg-white min-h-[16px]"></div>
                                                                     <div className="flex-1 flex items-center justify-center text-[10px] min-h-[16px]">
-                                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold text-[10px]" value={entry.position} onChange={e => handleEntryChange(originalIndex, 'position', e.target.value)} />
+                                                                        <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold text-[10px]" value={entry.position} onChange={e => handleEntryChange(originalIndex, 'position', e.target.value)} readOnly={isMatrixReadOnly} />
                                                                     </div>
                                                                 </div>
                                                             </td>
@@ -1870,7 +1965,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                             <SkillIcon
                                                                                 levelStr={displayLevel}
                                                                                 size={24}
-                                                                                editable={true}
+                                                                                editable={!isMatrixReadOnly}
                                                                                 onClick={(level) => handleSubSectionSkillChange(originalIndex, i, level)}
                                                                             />
                                                                         </div>
@@ -1879,16 +1974,17 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             })}
 
                                                             <td className="border border-black p-0">
-                                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.plan} onChange={e => handleEntryChange(originalIndex, 'plan', e.target.value)} />
+                                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent" value={entry.plan} onChange={e => handleEntryChange(originalIndex, 'plan', e.target.value)} readOnly={isMatrixReadOnly} />
                                                             </td>
                                                             <td className="border border-black font-bold bg-gray-50 p-0">
-                                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.actual} onChange={e => handleEntryChange(originalIndex, 'actual', e.target.value)} />
+                                                                <Input className="h-full w-full p-0 text-center border-none bg-transparent font-bold" value={entry.actual} onChange={e => handleEntryChange(originalIndex, 'actual', e.target.value)} readOnly={isMatrixReadOnly} />
                                                             </td>
                                                             <td className="border border-black p-0">
                                                                 <select
                                                                     className="h-full w-full p-0 text-center border-none bg-transparent font-bold appearance-none cursor-pointer text-[10px]"
                                                                     value={entry.status || "OK"}
                                                                     onChange={e => handleEntryChange(originalIndex, 'status', e.target.value)}
+                                                                    disabled={isMatrixReadOnly}
                                                                 >
                                                                     <option value="OK">OK</option>
                                                                     <option value="NG">NG</option>
@@ -1908,7 +2004,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                 <th className="border border-black text-center p-1">Plan</th>
                                                 {groupedSubSections.map((_, i) => (
                                                     <td key={i} className="border border-black font-bold p-0">
-                                                        <Input className="h-full w-full p-0 text-center text-[11px] bg-transparent border-none font-bold" value={config.footerRows?.numPersonPlan?.[i] || ""} onChange={e => handleFooterRowChange("numPersonPlan", i, e.target.value)} />
+                                                        <Input className="h-full w-full p-0 text-center text-[11px] bg-transparent border-none font-bold" value={config.footerRows?.numPersonPlan?.[i] || ""} onChange={e => handleFooterRowChange("numPersonPlan", i, e.target.value)} readOnly={isMatrixReadOnly} />
                                                     </td>
                                                 ))}
                                                 <td className="border border-black font-bold text-center bg-gray-100">Total Plan</td>
@@ -1946,6 +2042,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             className="h-full w-full p-0 text-center border-none bg-transparent font-bold appearance-none cursor-pointer text-[10px]"
                                                             value={config.footerRows?.statusRow?.[i] || "OK"}
                                                             onChange={e => handleFooterRowChange("statusRow", i, e.target.value)}
+                                                            disabled={isMatrixReadOnly}
                                                         >
                                                             <option value="OK">OK</option>
                                                             <option value="NG">NG</option>
@@ -1976,7 +2073,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     <td className="border border-black p-1 text-right font-bold bg-gray-50 uppercase text-[9px]">Plan (No. of skilled manpower)</td>
                                                     {Array(12).fill(0).map((_, i) => (
                                                         <td key={i} className="border border-black p-0">
-                                                            <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.planMonths?.[i] || ""} onChange={e => handleFooterRowChange("planMonths", i, e.target.value)} />
+                                                            <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.planMonths?.[i] || ""} onChange={e => handleFooterRowChange("planMonths", i, e.target.value)} readOnly={isMatrixReadOnly} />
                                                         </td>
                                                     ))}
                                                 </tr>
@@ -1984,7 +2081,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     <td className="border border-black p-1 text-right font-bold bg-gray-50 uppercase text-[9px]">Actual</td>
                                                     {Array(12).fill(0).map((_, i) => (
                                                         <td key={i} className="border border-black p-0">
-                                                            <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.actualMonths?.[i] || ""} onChange={e => handleFooterRowChange("actualMonths", i, e.target.value)} />
+                                                            <Input className="h-full w-full p-0 text-center text-[10px] bg-transparent border-none font-bold" value={config.footerRows?.actualMonths?.[i] || ""} onChange={e => handleFooterRowChange("actualMonths", i, e.target.value)} readOnly={isMatrixReadOnly} />
                                                         </td>
                                                     ))}
                                                 </tr>
@@ -2175,8 +2272,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     departmentId={evalDepartment || selectedDepartment}
                                     subSectionId={evalSubSection || selectedSubSection}
                                     initialSheetId={selectedSheetId}
+                                    readOnly={isEvalReadOnly}
                                     onBackToList={() => {
                                         setSelectedSheetId(null);
+                                        setIsEvalReadOnly(false);
                                         fetchEvaluationSheets(selectedOperatorForEval);
                                     }}
                                 />
@@ -2225,15 +2324,15 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     <th className="p-3 border-b text-left">Efficiency</th>
                                                     <th className="p-3 border-b text-left">Status</th>
                                                     <th className="p-3 border-b text-left">Created Date</th>
-                                                    <th className="p-3 border-b text-center">Action</th>
+                                                    <th className="p-3 border-b text-center">Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {evaluationSheets.map((sheet, idx) => (
                                                     <tr
                                                         key={sheet.id || idx}
-                                                        className="hover:bg-muted/30 cursor-pointer border-b text-xs transition-colors duration-150"
-                                                        onClick={() => setSelectedSheetId(sheet.id)}
+                                                        className="hover:bg-muted/30 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                        onClick={() => { setIsEvalReadOnly(true); setSelectedSheetId(sheet.id); }}
                                                     >
                                                         <td className="p-3 font-bold">Sheet {sheet.sheetIndex}</td>
                                                         <td className="p-3">{sheet.period}</td>
@@ -2241,30 +2340,37 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                         <td className="p-3 font-semibold">{sheet.efficiency ? `${sheet.efficiency}%` : '0%'}</td>
                                                         <td className="p-3">
                                                             {sheet.isActive ? (
-                                                                <span className="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                                                    Active
-                                                                </span>
+                                                                <span className="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded-full">Active</span>
                                                             ) : (
-                                                                <span className="bg-gray-100 text-gray-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                                                    Previous
-                                                                </span>
+                                                                <span className="bg-gray-100 text-gray-800 text-[10px] font-bold px-2 py-0.5 rounded-full">Previous</span>
                                                             )}
                                                         </td>
-                                                        <td className="p-3">
-                                                            {new Date(sheet.createdAt).toLocaleDateString('en-GB')}
-                                                        </td>
-                                                        <td className="p-3 text-center">
-                                                            <Button
-                                                                size="xs"
-                                                                variant="outline"
-                                                                className="h-7 text-xs font-semibold px-3"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setSelectedSheetId(sheet.id);
-                                                                }}
-                                                            >
-                                                                View
-                                                            </Button>
+                                                        <td className="p-3">{new Date(sheet.createdAt).toLocaleDateString('en-GB')}</td>
+                                                        <td className="p-3" onClick={e => e.stopPropagation()}>
+                                                            <div className="flex gap-1 justify-center flex-wrap">
+                                                                {canEditEval && (
+                                                                    <Button
+                                                                        size="xs"
+                                                                        variant="outline"
+                                                                        className="h-7 text-xs font-semibold px-2 gap-1 border-blue-400 text-blue-600 hover:bg-blue-50"
+                                                                        title="Edit"
+                                                                        onClick={() => { setIsEvalReadOnly(false); setSelectedSheetId(sheet.id); }}
+                                                                    >
+                                                                        <Edit2 className="h-3 w-3" /> Edit
+                                                                    </Button>
+                                                                )}
+                                                                {canDeleteEval && (
+                                                                    <Button
+                                                                        size="xs"
+                                                                        variant="outline"
+                                                                        className="h-7 text-xs font-semibold px-2 gap-1 border-red-400 text-red-600 hover:bg-red-50"
+                                                                        title="Delete"
+                                                                        onClick={() => setDeleteConfirmSheetId(sheet.id)}
+                                                                    >
+                                                                        <Trash2 className="h-3 w-3" /> Delete
+                                                                    </Button>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -2461,6 +2567,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                 <ConditionalTabsContent isEmbedded={isEmbeddedView} value="sixteenDayMonitoring" className="space-y-6">
                     <SixteenDayMonitoring />
                 </ConditionalTabsContent>
+
             </ConditionalTabs>
 
             {/* Create Skill Matrix Form Dialog */}
@@ -2585,6 +2692,67 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                         <Button onClick={handleSaveDashboardConfig} disabled={isDashboardSaving || !configRemark.trim()} className="bg-blue-600 hover:bg-blue-700">
                             {isDashboardSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                             Save Configuration
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Skill Matrix Sheet Confirm Dialog */}
+            <Dialog open={!!deleteConfirmMatrixId} onOpenChange={(open) => { if (!open) setDeleteConfirmMatrixId(null); }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Skill Matrix Sheet</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-gray-600">
+                        Are you sure you want to permanently delete this Skill Matrix sheet? This will remove all historical records stored in this sheet from the database and cannot be undone.
+                    </p>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteConfirmMatrixId(null)}>Cancel</Button>
+                        <Button
+                            variant="destructive"
+                            disabled={isDeletingMatrix}
+                            onClick={async () => {
+                                try {
+                                    await deleteSkillMatrix(deleteConfirmMatrixId).unwrap();
+                                    toast.success("Skill Matrix sheet deleted successfully");
+                                    setDeleteConfirmMatrixId(null);
+                                } catch (err) {
+                                    toast.error(err?.data?.message || "Failed to delete Skill Matrix sheet");
+                                }
+                            }}
+                        >
+                            {isDeletingMatrix ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Evaluation Sheet Confirm Dialog */}
+            <Dialog open={!!deleteConfirmSheetId} onOpenChange={(open) => { if (!open) setDeleteConfirmSheetId(null); }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Evaluation Sheet</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-gray-600">
+                        Are you sure you want to permanently delete this evaluation sheet? If it was the active sheet, the previous sheet (if any) will become active and the operator's level and efficiency will be updated accordingly.
+                    </p>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteConfirmSheetId(null)}>Cancel</Button>
+                        <Button
+                            variant="destructive"
+                            onClick={async () => {
+                                try {
+                                    await deleteEvaluationSheet(deleteConfirmSheetId).unwrap();
+                                    toast.success("Evaluation sheet deleted successfully");
+                                    setDeleteConfirmSheetId(null);
+                                    if (selectedOperatorForEval) fetchEvaluationSheets(selectedOperatorForEval);
+                                } catch (err) {
+                                    toast.error(err?.data?.message || "Failed to delete evaluation sheet");
+                                }
+                            }}
+                        >
+                            Delete
                         </Button>
                     </DialogFooter>
                 </DialogContent>

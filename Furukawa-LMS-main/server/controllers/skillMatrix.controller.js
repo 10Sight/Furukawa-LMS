@@ -930,6 +930,90 @@ const saveSkillMatrixEvaluation = asyncHandler(async (req, res) => {
 });
 
 /**
+ * List all evaluation sheets across all operators (admin monitoring view)
+ */
+const listAllEvaluationSheets = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId, lineId, subSectionId, search } = req.query;
+    const rows = await SkillMatrixEvaluation.listAll({ departmentId, sectionId, lineId, subSectionId, search });
+    res.status(200).json(new ApiResponse(200, rows, "Evaluation sheets fetched successfully"));
+});
+
+/**
+ * Delete an evaluation sheet by ID.
+ * If it was the active sheet, promotes the next most recent sheet to active
+ * and syncs the operator's currentLevel and currentEfficiency accordingly.
+ */
+const deleteEvaluationSheet = asyncHandler(async (req, res) => {
+    const { sheetId } = req.params;
+
+    const result = await SkillMatrixEvaluation.delete(sheetId);
+    if (!result) {
+        throw new ApiError(404, "Evaluation sheet not found");
+    }
+
+    const { studentId, wasActive, nextActiveSheet } = result;
+
+    if (wasActive) {
+        if (nextActiveSheet) {
+            // Sync operator stats from the newly promoted active sheet
+            const efficiency = nextActiveSheet.efficiency ?? 0;
+            const earnedLevel = nextActiveSheet.earnedLevel || null;
+
+            const [uRows] = await executeQuery(
+                "SELECT subSectionId, targetSubSectionId, skillEffeciency FROM users WHERE id = ?",
+                [studentId]
+            );
+            if (uRows.length > 0) {
+                const userData = uRows[0];
+                let skillEffMap = userData.skillEffeciency || {};
+                if (typeof skillEffMap === 'string') {
+                    try { skillEffMap = JSON.parse(skillEffMap); } catch (e) { skillEffMap = {}; }
+                }
+
+                const subSecId = String(userData.subSectionId || userData.targetSubSectionId || "");
+                if (subSecId) skillEffMap[subSecId] = efficiency;
+
+                await executeQuery(
+                    "UPDATE users SET currentEffeciency = ?, skillEffeciency = ?, updatedAt = GETDATE() WHERE id = ?",
+                    [efficiency, JSON.stringify(skillEffMap), studentId]
+                );
+
+                if (earnedLevel) {
+                    await executeQuery(
+                        "UPDATE users SET currentLevel = ?, updatedAt = GETDATE() WHERE id = ?",
+                        [earnedLevel, studentId]
+                    );
+                }
+            }
+        } else {
+            // No remaining sheets — reset efficiency only, never downgrade level
+            await executeQuery(
+                "UPDATE users SET currentEffeciency = 0, updatedAt = GETDATE() WHERE id = ?",
+                [studentId]
+            );
+        }
+    }
+
+    res.status(200).json(new ApiResponse(200, { studentId, wasActive, nextActiveSheet }, "Evaluation sheet deleted successfully"));
+});
+
+/**
+ * Delete a Skill Matrix sheet by ID
+ */
+const deleteSkillMatrix = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const [existing] = await executeQuery("SELECT id FROM skill_matrices WHERE id = ?", [id]);
+    if (existing.length === 0) {
+        throw new ApiError(404, "Skill Matrix sheet not found");
+    }
+
+    await executeQuery("DELETE FROM skill_matrices WHERE id = ?", [id]);
+
+    res.status(200).json(new ApiResponse(200, { id }, "Skill Matrix sheet deleted successfully"));
+});
+
+/**
  * Get Skill Matrix Dashboard Configuration
  */
 const getSkillMatrixDashboardConfig = asyncHandler(async (req, res) => {
@@ -964,6 +1048,7 @@ export {
     saveSkillMatrix,
     getSkillMatrix,
     listSkillMatrices,
+    deleteSkillMatrix,
     getSkillMatrixConfig,
     saveSkillMatrixConfig,
     getSkillMatrixCertHistory,
@@ -973,6 +1058,8 @@ export {
     getEvaluationSheet,
     createEvaluationSheet,
     saveEvaluationSheet,
+    listAllEvaluationSheets,
+    deleteEvaluationSheet,
     getSkillMatrixEfficiencyStats,
     getSkillMatrixEfficiencySummary,
     getSkillMatrixDashboardConfig,

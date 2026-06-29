@@ -94,6 +94,19 @@ export const getSkillUpgradationPlanHistory = asyncHandler(async (req, res) => {
     );
 });
 
+// Delete skill upgradation plan by id
+export const deleteSkillUpgradationPlan = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!id) throw new ApiError("Plan ID is required", 400);
+
+    const deleted = await SkillUpgradationPlan.delete(id);
+    if (!deleted) throw new ApiError("Skill upgradation plan not found", 404);
+
+    return res.status(200).json(
+        new ApiResponse(200, { id }, "Skill upgradation plan deleted successfully")
+    );
+});
+
 // List all skill upgradation plans
 export const listSkillUpgradationPlans = asyncHandler(async (req, res) => {
     const { departmentId, sectionId } = req.query;

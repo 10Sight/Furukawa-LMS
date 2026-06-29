@@ -30,6 +30,8 @@ export const superAdminApi = createApi({
           stationId: params.stationId || "",
           unit: params.unit || "",
           shift: params.shift || "",
+          attendanceShift: params.attendanceShift || "",
+          scheduleShift: params.scheduleShift || "",
           date: params.date || "",
           includeLeft: params.includeLeft || "",
           designation: params.designation || "",

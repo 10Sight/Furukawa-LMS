@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, Pencil, Lock } from "lucide-react";
 import { exportToExcel } from "@/utils/exportHelper";
 
 // Check Contents defined in the image
@@ -40,10 +40,22 @@ const CHECK_CONTENTS = [
     { id: "verificationByShift", title: "Verification By (Shift Incharge)", desc: "" }
 ];
 
-const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "" }) => {
+const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "", readOnly = false }) => {
     const authUser = useSelector((state) => state.auth?.user);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+
+    const hasObservancePermission = (permission) => {
+        if (!authUser) return false;
+        const role = authUser.role;
+        if (role === 'ADMIN' || role === 'SUPERADMIN' || role === 'INSTRUCTOR') return true;
+        const defaultPerms = [];
+        const customPerms = authUser.customRole?.permissions || [];
+        return [...defaultPerms, ...customPerms].includes(permission);
+    };
+
+    const canEdit = !readOnly && hasObservancePermission('operator_observance:update');
+    const [isEditMode, setIsEditMode] = useState(canEdit);
 
     // Header Data
     const [headerData, setHeaderData] = useState({
@@ -208,10 +220,11 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
         const cellData = tableData[rowId]?.[colId] || {};
 
         const getSelectClass = (status) => {
-            const base = "h-7 w-20 text-[10px] px-1 py-0.5 rounded border font-semibold focus:outline-none focus:ring-1 cursor-pointer transition-colors text-center ";
-            if (status === "OK") return base + "bg-green-50 border-green-200 text-green-700 focus:ring-green-500";
-            if (status === "NG") return base + "bg-red-50 border-red-200 text-red-700 focus:ring-red-500";
-            return base + "bg-white border-gray-200 text-gray-400 focus:ring-blue-500";
+            const base = "h-7 w-20 text-[10px] px-1 py-0.5 rounded border font-semibold focus:outline-none focus:ring-1 transition-colors text-center ";
+            const cursorClass = isEditMode ? "cursor-pointer " : "cursor-default opacity-70 ";
+            if (status === "OK") return base + cursorClass + "bg-green-50 border-green-200 text-green-700 focus:ring-green-500";
+            if (status === "NG") return base + cursorClass + "bg-red-50 border-red-200 text-red-700 focus:ring-red-500";
+            return base + cursorClass + "bg-white border-gray-200 text-gray-400 focus:ring-blue-500";
         };
 
         return (
@@ -221,7 +234,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     <div className="flex items-center justify-center py-1 border-b border-dashed border-gray-100">
                         <select
                             value={cellData.status || ""}
-                            onChange={(e) => handleTableChange(rowId, colId, 'status', e.target.value)}
+                            onChange={(e) => isEditMode && handleTableChange(rowId, colId, 'status', e.target.value)}
+                            disabled={!isEditMode}
                             className={getSelectClass(cellData.status)}
                         >
                             <option value="" className="text-gray-400 font-normal bg-white">Select...</option>
@@ -231,10 +245,11 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     </div>
                 </div>
                 <Textarea
-                    className="flex-1 min-h-[50px] text-xs resize-none p-1 border-gray-200"
-                    placeholder="Result..."
+                    className="flex-1 min-h-[50px] text-xs resize-none p-1 border-gray-200 disabled:opacity-70 disabled:cursor-default disabled:resize-none"
+                    placeholder={isEditMode ? "Result..." : ""}
                     value={cellData.val || ""}
                     onChange={(e) => handleTableChange(rowId, colId, 'val', e.target.value)}
+                    disabled={!isEditMode}
                 />
             </div>
         );
@@ -245,6 +260,44 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
     return (
         <Card className="w-full overflow-auto">
             <CardContent className="p-4 min-w-[1000px]">
+                {/* View / Edit Mode Toggle Bar */}
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg border border-gray-200 shadow-sm">
+                        <button
+                            onClick={() => setIsEditMode(false)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                                !isEditMode
+                                    ? 'bg-white text-gray-800 shadow-sm border border-gray-200'
+                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            }`}
+                        >
+                            <Eye className="h-3.5 w-3.5" />
+                            View
+                        </button>
+                        <button
+                            onClick={() => canEdit && setIsEditMode(true)}
+                            disabled={!canEdit}
+                            title={!canEdit ? "You don't have permission to edit this sheet" : undefined}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                                isEditMode
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : canEdit
+                                    ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                    : 'text-gray-300 cursor-not-allowed'
+                            }`}
+                        >
+                            {canEdit ? <Pencil className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                            Edit
+                        </button>
+                    </div>
+                    {!isEditMode && (
+                        <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
+                            <Lock className="h-3 w-3 flex-shrink-0" />
+                            <span>{canEdit ? "Viewing only — switch to Edit to make changes." : "You have read-only access to this sheet."}</span>
+                        </div>
+                    )}
+                </div>
+
                 {/* Header Section */}
                 <div className="border-2 border-black mb-4">
                     <div className="grid grid-cols-[3fr_1fr] border-b-2 border-black">
@@ -267,20 +320,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                     {headerData.preparedBy ? "Prepared" : ""}
                                 </div>
                                 <div className="border-r border-black p-1 flex items-center justify-center h-full">
-                                    {!headerData.checkedBy ? (
+                                    {isEditMode && !headerData.checkedBy ? (
                                         <div className="flex gap-1 justify-center items-center h-full w-full">
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                onClick={() => handleSignatureClick('checkedBy', 'approve')} 
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleSignatureClick('checkedBy', 'approve')}
                                                 className="h-6 text-[9px] bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 px-1.5 py-0 border-green-200"
                                             >
                                                 Approve
                                             </Button>
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                onClick={() => handleSignatureClick('checkedBy', 'reject')} 
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleSignatureClick('checkedBy', 'reject')}
                                                 className="h-6 text-[9px] bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800 px-1.5 py-0 border-red-200"
                                             >
                                                 Reject
@@ -288,34 +341,38 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                         </div>
                                     ) : (
                                         <div className="flex items-center justify-center gap-1 h-full w-full font-bold">
-                                            <span className={headerData.checkedBy.startsWith("Approved") ? "text-green-600 text-[10px]" : "text-red-600 text-[10px]"}>
-                                                {headerData.checkedBy.startsWith("Approved") ? "APPROVED" : "REJECTED"}
-                                            </span>
-                                            <button
-                                                onClick={() => handleClearSignatureClick('checkedBy')}
-                                                className="text-gray-400 hover:text-red-600 ml-1 text-sm font-normal"
-                                                title="Clear Signature"
-                                            >
-                                                &times;
-                                            </button>
+                                            {headerData.checkedBy && (
+                                                <span className={headerData.checkedBy.startsWith("Approved") ? "text-green-600 text-[10px]" : "text-red-600 text-[10px]"}>
+                                                    {headerData.checkedBy.startsWith("Approved") ? "APPROVED" : "REJECTED"}
+                                                </span>
+                                            )}
+                                            {isEditMode && headerData.checkedBy && (
+                                                <button
+                                                    onClick={() => handleClearSignatureClick('checkedBy')}
+                                                    className="text-gray-400 hover:text-red-600 ml-1 text-sm font-normal"
+                                                    title="Clear Signature"
+                                                >
+                                                    &times;
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
                                 <div className="p-1 flex items-center justify-center h-full">
-                                    {!headerData.verifiedBy ? (
+                                    {isEditMode && !headerData.verifiedBy ? (
                                         <div className="flex gap-1 justify-center items-center h-full w-full">
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                onClick={() => handleSignatureClick('verifiedBy', 'approve')} 
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleSignatureClick('verifiedBy', 'approve')}
                                                 className="h-6 text-[9px] bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 px-1.5 py-0 border-green-200"
                                             >
                                                 Approve
                                             </Button>
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                onClick={() => handleSignatureClick('verifiedBy', 'reject')} 
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleSignatureClick('verifiedBy', 'reject')}
                                                 className="h-6 text-[9px] bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800 px-1.5 py-0 border-red-200"
                                             >
                                                 Reject
@@ -323,16 +380,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                         </div>
                                     ) : (
                                         <div className="flex items-center justify-center gap-1 h-full w-full font-bold">
-                                            <span className={headerData.verifiedBy.startsWith("Approved") ? "text-green-600 text-[10px]" : "text-red-600 text-[10px]"}>
-                                                {headerData.verifiedBy.startsWith("Approved") ? "APPROVED" : "REJECTED"}
-                                            </span>
-                                            <button
-                                                onClick={() => handleClearSignatureClick('verifiedBy')}
-                                                className="text-gray-400 hover:text-red-600 ml-1 text-sm font-normal"
-                                                title="Clear Signature"
-                                            >
-                                                &times;
-                                            </button>
+                                            {headerData.verifiedBy && (
+                                                <span className={headerData.verifiedBy.startsWith("Approved") ? "text-green-600 text-[10px]" : "text-red-600 text-[10px]"}>
+                                                    {headerData.verifiedBy.startsWith("Approved") ? "APPROVED" : "REJECTED"}
+                                                </span>
+                                            )}
+                                            {isEditMode && headerData.verifiedBy && (
+                                                <button
+                                                    onClick={() => handleClearSignatureClick('verifiedBy')}
+                                                    className="text-gray-400 hover:text-red-600 ml-1 text-sm font-normal"
+                                                    title="Clear Signature"
+                                                >
+                                                    &times;
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -356,34 +417,38 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         <div className="p-2 flex flex-col gap-1">
                             <span className="font-semibold">Line Name-</span>
                             <Input
-                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0"
+                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.lineName}
                                 onChange={e => handleHeaderChange('lineName', e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-2 flex flex-col gap-1">
                             <span className="font-semibold">Process Name-</span>
                             <Input
-                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0"
+                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.processName}
                                 onChange={e => handleHeaderChange('processName', e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-2 flex flex-col gap-1">
                             <span className="font-semibold">Date of Level-1 Complete-</span>
                             <Input
                                 type="date"
-                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0"
+                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.level1Date}
                                 onChange={e => handleHeaderChange('level1Date', e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-2 flex flex-col gap-1">
                             <span className="font-semibold">Operator Name & Code-</span>
                             <Input
-                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0"
+                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.operatorNameCode}
                                 onChange={e => handleHeaderChange('operatorNameCode', e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                     </div>
@@ -409,18 +474,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             <span>1st Time</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs1 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs1', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
                             <span>Reinspect (If Fail)</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs1Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs1Re', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
 
@@ -428,18 +495,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             <span>1st Time</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs2 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs2', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
                             <span>Reinspect (If Fail)</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs2Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs2Re', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
 
@@ -447,18 +516,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             <span>1st Time</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs3 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs3', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
                             <span>Reinspect (If Fail)</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs3Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs3Re', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
 
@@ -466,18 +537,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             <span>1st Time</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs4 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs4', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
                             <span>Reinspect (If Fail)</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs4Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs4Re', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
 
@@ -485,18 +558,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             <span>1st Time</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs5 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs5', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
                             <span>Reinspect (If Fail)</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs5Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs5Re', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
 
@@ -504,18 +579,20 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             <span>1st Time</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs6 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs6', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
                             <span>Reinspect (If Fail)</span>
                             <Input
                                 type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full"
+                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs6Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs6Re', null, e.target.value)}
+                                disabled={!isEditMode}
                             />
                         </div>
                     </div>
@@ -555,9 +632,10 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             {/* Remarks */}
                             <div className="p-1 border-black border-t">
                                 <Textarea
-                                    className="w-full h-full min-h-[80px] text-xs resize-none border-none p-1 focus-visible:ring-0"
+                                    className="w-full h-full min-h-[80px] text-xs resize-none border-none p-1 focus-visible:ring-0 disabled:opacity-70 disabled:cursor-default disabled:resize-none"
                                     value={tableData[row.id]?.remarks || ""}
                                     onChange={(e) => handleTableChange(row.id, 'remarks', null, e.target.value)}
+                                    disabled={!isEditMode}
                                 />
                             </div>
                         </div>
@@ -612,14 +690,18 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     >
                         Export to Excel
                     </Button>
-                    <Button onClick={() => handleSave("Draft")} disabled={saving} className="bg-slate-600 hover:bg-slate-700 text-white">
-                        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Save Draft
-                    </Button>
-                    <Button onClick={() => handleSave("Submitted")} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
-                        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Submit & Send Email
-                    </Button>
+                    {isEditMode && (
+                        <>
+                            <Button onClick={() => handleSave("Draft")} disabled={saving} className="bg-slate-600 hover:bg-slate-700 text-white">
+                                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Save Draft
+                            </Button>
+                            <Button onClick={() => handleSave("Submitted")} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+                                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Submit & Send Email
+                            </Button>
+                        </>
+                    )}
                 </div>
             </CardContent>
         </Card>

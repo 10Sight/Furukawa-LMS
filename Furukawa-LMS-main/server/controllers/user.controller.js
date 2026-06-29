@@ -2,6 +2,8 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
 import DesignationShutter from "../models/designationShutter.model.js";
 import validator from "validator";
+import { hasPermission } from "../middlewares/roleAuth.middleware.js";
+import { SYSTEM_PERMISSIONS } from "./rolesPermissions.controller.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -347,33 +349,41 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     whereClauses.push("(u.isAdmin = 0 OR u.isAdmin IS NULL) AND u.role NOT IN ('ADMIN', 'SUPERADMIN')");
   }
 
-  const { dateFrom, dateTo, status, shift, date } = req.query;
+  const { dateFrom, dateTo, status, shift, attendanceShift, scheduleShift, date } = req.query;
 
   const upperStatus = (status || "").toUpperCase();
 
   let attendanceJoinSQL = "";
   let attendanceParams = [];
 
-  if (dateFrom || dateTo || (date && date !== "all")) {
+  if (dateFrom || dateTo || (date && date !== "all") || attendanceShift) {
     let start = dateFrom || date || dateTo;
     let end = dateTo || date || dateFrom;
 
     // Optimization: If filtering for 'PRESENT', push the filter into the subquery
     const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
 
+    let subqueryWhere;
+    if (start && end) {
+      subqueryWhere = `WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}`;
+      attendanceParams = [start, end];
+    } else {
+      subqueryWhere = `WHERE 1=1 ${subqueryStatusFilter}`;
+      attendanceParams = [];
+    }
+
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT userId, 
-               MAX(status) as logStatus, 
+        SELECT userId,
+               MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
                COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
-        FROM attendance_logs 
-        WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
+        FROM attendance_logs
+        ${subqueryWhere}
         GROUP BY userId
       ) al ON u.id = al.userId
     `;
-    attendanceParams = [start, end];
   } else {
     // Ensure al alias exists even if no date filter is applied to avoid SQL errors in WHERE clause
     attendanceJoinSQL = `
@@ -409,6 +419,17 @@ export const getAllUsers = asyncHandler(async (req, res) => {
       whereClauses.push("u.shift = ?");
     }
     params.push(shift);
+  }
+
+  if (attendanceShift) {
+    whereClauses.push("al.logShift = ?");
+    params.push(attendanceShift);
+  }
+
+  if (scheduleShift) {
+    const filterDate = normalizeParam(date) || normalizeParam(dateFrom) || new Date().toISOString().split('T')[0];
+    whereClauses.push(`COALESCE(JSON_VALUE(u.shiftSchedule, CONCAT('$."', CAST(? AS VARCHAR(10)), '"')), u.shift) = ?`);
+    params.push(filterDate, scheduleShift);
   }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
@@ -703,32 +724,32 @@ export const updateUser = asyncHandler(async (req, res) => {
   // Parse departments, stations, sections, lines, subSections if they exist in request body
   if (data.departments !== undefined) {
     const depts = parseArray(data.departments);
-    if (depts.length > 0 && data.departmentId === undefined) {
-      data.departmentId = parseInt(depts[0]);
+    if (data.departmentId === undefined) {
+      data.departmentId = depts.length > 0 ? parseInt(depts[0]) : null;
     }
   }
   if (data.stations !== undefined) {
     const stns = parseArray(data.stations);
-    if (stns.length > 0 && data.stationId === undefined) {
-      data.stationId = parseInt(stns[0]);
+    if (data.stationId === undefined) {
+      data.stationId = stns.length > 0 ? parseInt(stns[0]) : null;
     }
   }
   if (data.sections !== undefined) {
     const scts = parseArray(data.sections);
-    if (scts.length > 0 && data.sectionId === undefined) {
-      data.sectionId = parseInt(scts[0]);
+    if (data.sectionId === undefined) {
+      data.sectionId = scts.length > 0 ? parseInt(scts[0]) : null;
     }
   }
   if (data.lines !== undefined) {
     const lns = parseArray(data.lines);
-    if (lns.length > 0 && data.lineId === undefined) {
-      data.lineId = parseInt(lns[0]);
+    if (data.lineId === undefined) {
+      data.lineId = lns.length > 0 ? parseInt(lns[0]) : null;
     }
   }
   if (data.subSections !== undefined) {
     const sss = parseArray(data.subSections);
-    if (sss.length > 0 && data.subSectionId === undefined) {
-      data.subSectionId = parseInt(sss[0]);
+    if (data.subSectionId === undefined) {
+      data.subSectionId = sss.length > 0 ? parseInt(sss[0]) : null;
     }
   }
 
@@ -748,6 +769,13 @@ export const updateUser = asyncHandler(async (req, res) => {
   ];
 
   const oldUser = rows[0];
+
+  // Enforce permission to change status
+  if (data.status !== undefined && data.status !== oldUser.status) {
+    if (!hasPermission(req.user, SYSTEM_PERMISSIONS.USER_CHANGE_STATUS)) {
+      throw new ApiError("You do not have permission to change user status", 403);
+    }
+  }
 
   // If station is being updated, sync currentLevel with the skill level for that station's sub-section
   if (data.stationId && data.stationId !== oldUser.stationId) {
@@ -1348,7 +1376,6 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   }
 
   let statusParamAdded = false;
-  let shiftParamAdded = false;
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
@@ -1365,10 +1392,14 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   }
 
   if (shift) {
-    if (dateFrom || date) whereClauses.push("al.logShift = ?");
-    else whereClauses.push("u.shift = ?");
-    params.push(shift);
-    shiftParamAdded = true;
+    const filterDate = normalizeParam(date) || normalizeParam(dateFrom);
+    if (filterDate) {
+      whereClauses.push(`COALESCE(JSON_VALUE(u.shiftSchedule, CONCAT('$."', CAST(? AS VARCHAR(10)), '"')), u.shift) = ?`);
+      params.push(filterDate, shift);
+    } else {
+      whereClauses.push("u.shift = ?");
+      params.push(shift);
+    }
   }
 
   if (req.user.role === "INSTRUCTOR") {
@@ -1381,26 +1412,34 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     const customTargetLayout = String(req.user.customRole?.targetLayout || '').toLowerCase();
     const isAdminLayout = ['admin', 'superadmin'].includes(customTargetLayout);
 
-    if (!isAdminLayout) {
-      let allowedDepts = [];
-      if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+    // Resolve the set of departments this custom user is allowed to see
+    let allowedDepts = [];
+    if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+    try {
+      const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
+      if (Array.isArray(parsedDepts)) parsedDepts.forEach(d => allowedDepts.push(String(d)));
+    } catch (e) { }
+    allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
 
-      try {
-        const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
-        if (Array.isArray(parsedDepts)) {
-          parsedDepts.forEach(d => allowedDepts.push(String(d)));
-        }
-      } catch (e) { }
-
-      allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
-
-      if (allowedDepts.length > 0) {
-        const placeholders = allowedDepts.map(() => '?').join(',');
-        whereClauses.push(`(u.departmentId IN (${placeholders}) OR u.department IN (${placeholders}))`);
-        params.push(...allowedDepts, ...allowedDepts);
-      }
+    if (isAdminLayout && allowedDepts.length === 0) {
+      // Admin-layout with no assigned departments: full access, no restriction
+    } else if (allowedDepts.length > 0) {
+      // Restricted to assigned departments (applies to both layouts when depts are assigned)
+      const placeholders = allowedDepts.map(() => '?').join(',');
+      whereClauses.push(`(
+        u.departmentId IN (${placeholders})
+        OR u.department IN (${placeholders})
+        OR EXISTS (
+          SELECT 1 FROM OPENJSON(ISNULL(u.departments, '[]'))
+          WITH (deptId INT '$')
+          WHERE deptId IN (${placeholders})
+        )
+      )`);
+      params.push(...allowedDepts, ...allowedDepts, ...allowedDepts);
+    } else {
+      // Non-admin layout with no assigned departments: block all access
+      whereClauses.push("1=0");
     }
-    // Admin/superadmin targetLayout: no department restriction — same scope as ADMIN role
   }
 
   const assignmentClause = buildAssignmentClause(req.query.assignmentStatus, req.query.assignmentType);
@@ -1412,11 +1451,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     c !== "(u.status IS NULL OR u.status != 'LEFT')" &&
     !c.includes("al.")
   );
-  const countsParams = shiftParamAdded && statusParamAdded
-    ? params.slice(0, -2)
-    : shiftParamAdded || statusParamAdded
-      ? params.slice(0, -1)
-      : [...params];
+  const countsParams = statusParamAdded
+    ? params.slice(0, -1)
+    : [...params];
   const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;

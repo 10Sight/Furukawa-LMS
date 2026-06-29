@@ -35,7 +35,7 @@ router.get("/record/:id", verifyJWT, get5MRecordById);
 router.post("/record/:id/approve", verifyJWT, approve5MRecord);
 router.post("/record/:id/decline", verifyJWT, decline5MRecord);
 router.get("/approvals/status", verifyJWT, getApprovalStatus);
-router.delete("/record/:id", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN"), delete5MRecord);
+router.delete("/record/:id", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:delete"), delete5MRecord);
 
 // Legacy/Compatibility: The previous fetchConfig was "GET /:departmentId". 
 // To avoid breaking the existing frontend immediately, I'll keep the root GET for config, 

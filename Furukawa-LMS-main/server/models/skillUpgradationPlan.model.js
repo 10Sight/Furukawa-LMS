@@ -178,6 +178,15 @@ class SkillUpgradationPlan {
         if (rows.length === 0) return null;
         return this.findByHierarchy(departmentId, sectionId, year);
     }
+
+    // Delete a skill upgradation plan by id
+    static async delete(id) {
+        const [rows] = await executeQuery(
+            "DELETE FROM skill_upgradation_plans OUTPUT DELETED.id WHERE id = ?",
+            [id]
+        );
+        return rows.length > 0;
+    }
 }
 
 // Initialize the skill_upgradation_plans table

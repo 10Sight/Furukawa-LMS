@@ -1444,6 +1444,18 @@ export const getHandoverSheetsMonitoring = asyncHandler(async (req, res) => {
     );
 });
 
+export const deleteHandoverSheet = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!id || isNaN(Number(id))) throw new ApiError("Invalid handover sheet ID", 400);
+
+    const [rows] = await executeQuery("SELECT id FROM handover_sheets WHERE id = ?", [id]);
+    if (!rows || rows.length === 0) throw new ApiError("Handover sheet not found", 404);
+
+    await executeQuery("DELETE FROM handover_sheets WHERE id = ?", [id]);
+
+    return res.status(200).json(new ApiResponse(200, null, "Handover sheet deleted successfully"));
+});
+
 export const getStudentHandoverHistory = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
     if (!studentId) throw new ApiError("Student ID is required", 400);

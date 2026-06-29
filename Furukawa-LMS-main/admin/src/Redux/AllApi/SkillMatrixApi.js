@@ -64,13 +64,44 @@ export const skillMatrixApi = createApi({
             }),
             providesTags: ["SkillMatrix"],
         }),
+        getEvaluationList: builder.query({
+            query: ({ departmentId, sectionId, lineId, subSectionId, search } = {}) => ({
+                url: "/api/skill-matrix/evaluations/list",
+                method: "GET",
+                params: {
+                    ...(departmentId ? { departmentId } : {}),
+                    ...(sectionId ? { sectionId } : {}),
+                    ...(lineId ? { lineId } : {}),
+                    ...(subSectionId ? { subSectionId } : {}),
+                    ...(search ? { search } : {}),
+                },
+            }),
+            providesTags: ["SkillMatrix"],
+        }),
+        deleteEvaluationSheet: builder.mutation({
+            query: (sheetId) => ({
+                url: `/api/skill-matrix/evaluation/sheet/${sheetId}`,
+                method: "DELETE",
+            }),
+            invalidatesTags: ["SkillMatrix"],
+        }),
+        deleteSkillMatrix: builder.mutation({
+            query: (id) => ({
+                url: `/api/skill-matrix/sheet/${id}`,
+                method: "DELETE",
+            }),
+            invalidatesTags: ["SkillMatrix"],
+        }),
     }),
 });
 
-export const { 
-    useSaveSkillMatrixMutation, 
-    useGetSkillMatrixQuery, 
-    useGetSkillMatrixListQuery, 
+export const {
+    useSaveSkillMatrixMutation,
+    useGetSkillMatrixQuery,
+    useGetSkillMatrixListQuery,
     useGetSkillMatrixEfficiencyQuery,
-    useGetSkillMatrixEfficiencySummaryQuery
+    useGetSkillMatrixEfficiencySummaryQuery,
+    useGetEvaluationListQuery,
+    useDeleteEvaluationSheetMutation,
+    useDeleteSkillMatrixMutation,
 } = skillMatrixApi;

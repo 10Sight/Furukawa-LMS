@@ -3,6 +3,7 @@ import {
     saveSkillMatrix,
     getSkillMatrix,
     listSkillMatrices,
+    deleteSkillMatrix,
     getSkillMatrixConfig,
     saveSkillMatrixConfig,
     getSkillMatrixCertHistory,
@@ -12,6 +13,8 @@ import {
     getEvaluationSheet,
     createEvaluationSheet,
     saveEvaluationSheet,
+    listAllEvaluationSheets,
+    deleteEvaluationSheet,
     getSkillMatrixDashboardConfig,
     saveSkillMatrixDashboardConfig,
     getSkillMatrixDashboardHistory,
@@ -19,6 +22,8 @@ import {
     getSkillMatrixEfficiencySummary
 } from "../controllers/skillMatrix.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
+import { authorizeAnyPermission } from "../middlewares/roleAuth.middleware.js";
+import { SYSTEM_PERMISSIONS } from "../controllers/rolesPermissions.controller.js";
 
 const router = Router();
 
@@ -27,9 +32,23 @@ router.use(verifyJWT);
 
 router.route("/evaluations/efficiency").get(getSkillMatrixEfficiencyStats);
 router.route("/evaluations/summary").get(getSkillMatrixEfficiencySummary);
+router.route("/evaluations/list").get(
+    authorizeAnyPermission([
+        SYSTEM_PERMISSIONS.EVALUATION_MANAGE,
+        SYSTEM_PERMISSIONS.EVALUATION_READ,
+    ]),
+    listAllEvaluationSheets
+);
 router.route("/save").post(saveSkillMatrix);
 router.route("/list").get(listSkillMatrices);
 router.route("/fetch").get(getSkillMatrix);
+router.route("/sheet/:id").delete(
+    authorizeAnyPermission([
+        SYSTEM_PERMISSIONS.EVALUATION_MANAGE,
+        SYSTEM_PERMISSIONS.EVALUATION_DELETE,
+    ]),
+    deleteSkillMatrix
+);
 
 // Skill Matrix Certificate Config Routes
 router.route("/config/:departmentId").get(getSkillMatrixConfig);
@@ -43,7 +62,15 @@ router.route("/evaluation/save/:studentId").post(saveSkillMatrixEvaluation);
 // Multi-Sheet Skill Matrix Evaluation Routes
 router.route("/evaluation/:studentId/sheets").get(getEvaluationSheets);
 router.route("/evaluation/:studentId/sheet/create").post(createEvaluationSheet);
-router.route("/evaluation/sheet/:sheetId").get(getEvaluationSheet);
+router.route("/evaluation/sheet/:sheetId")
+    .get(getEvaluationSheet)
+    .delete(
+        authorizeAnyPermission([
+            SYSTEM_PERMISSIONS.EVALUATION_MANAGE,
+            SYSTEM_PERMISSIONS.EVALUATION_DELETE,
+        ]),
+        deleteEvaluationSheet
+    );
 router.route("/evaluation/sheet/:sheetId/save").put(saveEvaluationSheet);
 
 // Skill Matrix Dashboard Config Routes

@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useGetAllDepartmentsQuery, useGetHandoverSheetsMonitoringQuery } from '@/Redux/AllApi/DepartmentApi';
+import { useGetAllDepartmentsQuery, useGetHandoverSheetsMonitoringQuery, useDeleteHandoverSheetMutation } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import {
@@ -23,7 +23,10 @@ import {
     IconChartBar,
     IconEye,
     IconUsers,
+    IconPencil,
+    IconTrash,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
 import HandoverSheet from '@/components/departments/HandoverSheet';
 
@@ -41,6 +44,7 @@ const HandoverSheetPage = () => {
     const hasHandoverBypass = authUser?.customRole?.permissions?.includes('dojo:handover_sheet');
     const canAccessAll = isAdmin || hasHandoverBypass;
     const hasReadPermission = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:read') || hasHandoverBypass;
+    const canDelete = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:delete');
 
     const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState('sheet');
@@ -95,6 +99,8 @@ const HandoverSheetPage = () => {
     });
 
     const { data: machinesData } = useGetMachinesByDepartmentQuery(dept, { skip: !dept });
+
+    const [deleteHandoverSheet] = useDeleteHandoverSheetMutation();
 
     const { data: monitoringData, isFetching: monitorFetching } = useGetHandoverSheetsMonitoringQuery({
         departmentId: monitorDept,
@@ -155,12 +161,23 @@ const HandoverSheetPage = () => {
         return s?.name || "";
     }, [sections, section]);
 
-    // ── "View" action: jump to sheet tab with pre-filled selection ───────────
+    // ── "View/Edit" action: jump to sheet tab with pre-filled selection ─────
     const handleViewSheet = (row) => {
         setDept(String(row.departmentId));
         setSection(row.sectionId ? String(row.sectionId) : "");
         setDate(row.date ? row.date.split('T')[0] : new Date().toISOString().split('T')[0]);
         setActiveTab('sheet');
+    };
+
+    const handleDeleteSheet = async (row) => {
+        const label = `${row.departmentName || 'this department'} on ${formatDate(row.date)}`;
+        if (!window.confirm(`Are you sure you want to delete the handover sheet for ${label}? This action cannot be undone.`)) return;
+        try {
+            await deleteHandoverSheet(row.id).unwrap();
+            toast.success("Handover sheet deleted successfully");
+        } catch {
+            toast.error("Failed to delete handover sheet");
+        }
     };
 
     const formatDate = (dateStr) => {
@@ -408,7 +425,11 @@ const HandoverSheetPage = () => {
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {monitoringRows.map((row) => (
-                                                <tr key={row.id} className="hover:bg-slate-50/60 transition-colors">
+                                                <tr
+                                                    key={row.id}
+                                                    onClick={() => handleViewSheet(row)}
+                                                    className="hover:bg-slate-50/60 transition-colors cursor-pointer"
+                                                >
                                                     <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">
                                                         {formatDate(row.date)}
                                                     </td>
@@ -442,16 +463,29 @@ const HandoverSheetPage = () => {
                                                             </Badge>
                                                         )}
                                                     </td>
-                                                    <td className="px-4 py-3 text-center">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => handleViewSheet(row)}
-                                                            className="h-7 px-3 text-xs gap-1.5 border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700"
-                                                        >
-                                                            <IconEye className="w-3.5 h-3.5" />
-                                                            View
-                                                        </Button>
+                                                    <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="flex items-center justify-center gap-1.5">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => handleViewSheet(row)}
+                                                                className="h-7 px-3 text-xs gap-1.5 border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700"
+                                                            >
+                                                                <IconPencil className="w-3.5 h-3.5" />
+                                                                Edit
+                                                            </Button>
+                                                            {canDelete && (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    onClick={() => handleDeleteSheet(row)}
+                                                                    className="h-7 px-3 text-xs gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700"
+                                                                >
+                                                                    <IconTrash className="w-3.5 h-3.5" />
+                                                                    Delete
+                                                                </Button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}

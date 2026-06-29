@@ -15,6 +15,7 @@ const SYSTEM_PERMISSIONS = {
   USER_ACTIVATE: "user:activate",
   USER_IMPORT_EXCEL: "user:import_excel",
   USER_IMPORT_LOGS: "user:import_logs",
+  USER_CHANGE_STATUS: "user:change_status",
 
   // Course Management
   COURSE_CREATE: "course:create",
@@ -101,6 +102,7 @@ const SYSTEM_PERMISSIONS = {
   DAILY_5M_READ: "daily5m:read",
   DAILY_5M_UPDATE: "daily5m:update",
   DAILY_5M_EDIT_SUBMITTED: "daily5m:edit_submitted",
+  DAILY_5M_DELETE: "daily5m:delete",
 
   // 16-Day Monitoring Management
   SIXTEEN_DAY_EDIT_LAYOUT: "sixteen_day:edit_layout",
@@ -130,11 +132,16 @@ const SYSTEM_PERMISSIONS = {
   SKILL_UPGRADATION_MANAGE: "skill_upgradation:manage",
   SKILL_UPGRADATION_EDIT_LAYOUT: "skill_upgradation:edit_layout",
   SKILL_UPGRADATION_VIEW_HISTORY: "skill_upgradation:view_history",
+  SKILL_UPGRADATION_CREATE: "skill_upgradation:create",
+  SKILL_UPGRADATION_READ: "skill_upgradation:read",
+  SKILL_UPGRADATION_UPDATE: "skill_upgradation:update",
+  SKILL_UPGRADATION_DELETE: "skill_upgradation:delete",
 
   HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
   HANDOVER_SHEET_READ: "handover_sheet:read",
   HANDOVER_SHEET_MANAGE: "handover_sheet:manage",
   HANDOVER_SHEET_APPROVE: "handover_sheet:approve",
+  HANDOVER_SHEET_DELETE: "handover_sheet:delete",
   DOJO_HANDOVER_SHEET: "dojo:handover_sheet",
   DOJO_SIXTEENDAY_MONITORING: "dojo:sixteenday_monitoring",
 
@@ -142,6 +149,10 @@ const SYSTEM_PERMISSIONS = {
   TEN_CYCLE_MANAGE: "ten_cycle:manage",
   TEN_CYCLE_VERIFY: "ten_cycle:verify",
   TEN_CYCLE_APPROVE: "ten_cycle:approve",
+  TEN_CYCLE_CREATE: "ten_cycle:create",
+  TEN_CYCLE_READ: "ten_cycle:read",
+  TEN_CYCLE_UPDATE: "ten_cycle:update",
+  TEN_CYCLE_DELETE: "ten_cycle:delete",
 
   // DOJO Hiring Management
   DOJO_HIRING_CREATE: "dojo_hiring:create",
@@ -215,6 +226,20 @@ const SYSTEM_PERMISSIONS = {
   CONTRACTOR_READ: "contractor:read",
   CONTRACTOR_UPDATE: "contractor:update",
   CONTRACTOR_DELETE: "contractor:delete",
+
+  // Skill Evaluation Check Sheet Management
+  EVALUATION_MANAGE: "evaluation:manage",
+  EVALUATION_CREATE: "evaluation:create",
+  EVALUATION_READ: "evaluation:read",
+  EVALUATION_UPDATE: "evaluation:update",
+  EVALUATION_DELETE: "evaluation:delete",
+
+  // Operator Observance Management
+  OPERATOR_OBSERVANCE_MANAGE: "operator_observance:manage",
+  OPERATOR_OBSERVANCE_CREATE: "operator_observance:create",
+  OPERATOR_OBSERVANCE_READ: "operator_observance:read",
+  OPERATOR_OBSERVANCE_UPDATE: "operator_observance:update",
+  OPERATOR_OBSERVANCE_DELETE: "operator_observance:delete",
 };
 
 // Define default role permissions
@@ -232,7 +257,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.CERTIFICATE_READ,
       SYSTEM_PERMISSIONS.DAILY_5M_READ,
       SYSTEM_PERMISSIONS.LEARNING_READ,
-      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ
+      SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
+      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ
     ],
     isSystemRole: true,
     color: "#3B82F6"
@@ -294,6 +320,10 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE,
       SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT,
       SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_CREATE,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_READ,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_UPDATE,
+      SYSTEM_PERMISSIONS.SKILL_UPGRADATION_DELETE,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE,
       SYSTEM_PERMISSIONS.LEARNING_READ,
@@ -318,7 +348,19 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE,
       SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE,
       SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE,
-      SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD
+      SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD,
+      // Evaluation Check Sheet Management
+      SYSTEM_PERMISSIONS.EVALUATION_MANAGE,
+      SYSTEM_PERMISSIONS.EVALUATION_CREATE,
+      SYSTEM_PERMISSIONS.EVALUATION_READ,
+      SYSTEM_PERMISSIONS.EVALUATION_UPDATE,
+      SYSTEM_PERMISSIONS.EVALUATION_DELETE,
+      // Operator Observance Management
+      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_MANAGE,
+      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_CREATE,
+      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ,
+      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_UPDATE,
+      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_DELETE,
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -367,7 +409,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.USER_SUSPEND, name: "Suspend Users", description: "Suspend user accounts" },
         { id: SYSTEM_PERMISSIONS.USER_ACTIVATE, name: "Activate Users", description: "Activate suspended accounts" },
         { id: SYSTEM_PERMISSIONS.USER_IMPORT_EXCEL, name: "Import Excel Data", description: "Import users from Excel files" },
-        { id: SYSTEM_PERMISSIONS.USER_IMPORT_LOGS, name: "View Import Logs", description: "View history and details of user imports" }
+        { id: SYSTEM_PERMISSIONS.USER_IMPORT_LOGS, name: "View Import Logs", description: "View history and details of user imports" },
+        { id: SYSTEM_PERMISSIONS.USER_CHANGE_STATUS, name: "Change User Status", description: "Change status of user accounts (Present, On Leave, Left)" }
       ],
       "Course Management": [
         { id: SYSTEM_PERMISSIONS.COURSE_CREATE, name: "Create Courses", description: "Create new courses" },
@@ -452,6 +495,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_5M_READ, name: "View Daily 5M", description: "View daily 5M recording data" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_UPDATE, name: "Update Daily 5M", description: "Edit daily 5M recording data" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT, name: "Edit 16-Day Monitoring Layout", description: "Modify the structure and categories of 16-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_MANAGE, name: "Manage 16-Day Monitoring", description: "Manage 16-day monitoring records" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
@@ -469,7 +513,11 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE, name: "Manage Multi Skilling", description: "Fill out and manage multi skilling training plans" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT, name: "Edit Multi Skilling Layout", description: "Modify the table configuration and structure of multi skilling sheets" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" },
-        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE, name: "Manage Skill Upgradation", description: "Fill out and manage skill upgradation training plans" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE, name: "Manage Skill Upgradation (Full Access)", description: "Super-permission: full create, read, update, and delete access to skill upgradation plans" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_CREATE, name: "Create Skill Upgradation Plan", description: "Create new skill upgradation plans for a department/section/year" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_READ, name: "View Skill Upgradation Plans", description: "View and read existing skill upgradation plans" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_UPDATE, name: "Edit Skill Upgradation Plan", description: "Edit and save changes to existing skill upgradation plans" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_DELETE, name: "Delete Skill Upgradation Plan", description: "Permanently delete skill upgradation plan records" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT, name: "Edit Skill Upgradation Layout", description: "Modify the table configuration and structure of skill upgradation sheets" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, name: "View Handover Sheet", description: "View handover sheet records" },
@@ -477,7 +525,12 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_APPROVE, name: "Approve Handover Sheet", description: "Approve or Reject handover sheet entries" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
         { id: SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, name: "Access All in Handover Sheet", description: "Allows unrestricted access to all departments, sections, sub-sections, and stations in Handover Sheets" },
-        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet", description: "Fill out, save, and submit 10-cycle sheets" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE, name: "Delete Handover Sheet", description: "Permanently delete handover sheet records" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet (Full Access)", description: "Super-permission: full create, read, update, and delete access to 10-cycle sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_CREATE, name: "Create 10-Cycle Sheet", description: "Create new 10-cycle sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_READ, name: "View 10-Cycle Sheet", description: "View and read existing 10-cycle sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_UPDATE, name: "Edit 10-Cycle Sheet", description: "Edit and save changes to existing 10-cycle sheets" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_DELETE, name: "Delete 10-Cycle Sheet", description: "Permanently delete 10-cycle sheet records" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },
@@ -553,6 +606,20 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.CONTRACTOR_CREATE, name: "Create Contractors", description: "Create new contractor records" },
         { id: SYSTEM_PERMISSIONS.CONTRACTOR_UPDATE, name: "Update Contractors", description: "Edit existing contractor records" },
         { id: SYSTEM_PERMISSIONS.CONTRACTOR_DELETE, name: "Delete Contractors", description: "Delete contractor records" }
+      ],
+      "Evaluation Check Sheet Management": [
+        { id: SYSTEM_PERMISSIONS.EVALUATION_MANAGE, name: "Manage Evaluation (Full Access)", description: "Super-permission: full create, read, update, and delete access to skill evaluation check sheets" },
+        { id: SYSTEM_PERMISSIONS.EVALUATION_CREATE, name: "Create Evaluation Sheet", description: "Create new skill evaluation check sheets for operators" },
+        { id: SYSTEM_PERMISSIONS.EVALUATION_READ, name: "View Evaluation Sheets", description: "View and read skill evaluation check sheets, including the monitoring tab" },
+        { id: SYSTEM_PERMISSIONS.EVALUATION_UPDATE, name: "Edit Evaluation Sheet", description: "Edit and save changes to existing skill evaluation check sheets" },
+        { id: SYSTEM_PERMISSIONS.EVALUATION_DELETE, name: "Delete Evaluation Sheet", description: "Permanently delete skill evaluation check sheet records" }
+      ],
+      "Operator Observance Management": [
+        { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_MANAGE, name: "Manage Operator Observance (Full Access)", description: "Super-permission: full create, read, update, and delete access to operator observance sheets" },
+        { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_CREATE, name: "Create Operator Observance Sheet", description: "Create new operator observance sheets" },
+        { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ, name: "View Operator Observance Sheets", description: "View and read operator observance sheets" },
+        { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_UPDATE, name: "Edit Operator Observance Sheet", description: "Edit and save changes to existing operator observance sheets" },
+        { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_DELETE, name: "Delete Operator Observance Sheet", description: "Permanently delete operator observance sheet records" }
       ]
     };
 

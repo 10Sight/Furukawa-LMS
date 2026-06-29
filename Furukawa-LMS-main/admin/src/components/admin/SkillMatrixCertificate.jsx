@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Edit2, History, Loader2, Save } from "lucide-react";
+import { Download, Edit2, History, Info, Loader2, Save } from "lucide-react";
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
 import { exportToExcel } from "@/utils/exportHelper";
 import axiosInstance from '@/Helper/axiosInstance';
@@ -76,11 +76,110 @@ const DEFAULT_SKILL_CONFIG = {
         dateOfIssue: '04-02-2018'
     },
     levels: {
-        0: { title: "OK in education training of operation contents but speed is no more than 74%", items: [{ id: 1, text: "Learnt the basic knowledge of process or not", method: "Confirm the education record" }, { id: 2, text: "The understanding test result is satisfying the standard or not", method: "Look in the understand test result of education record" }, { id: 3, text: "Speed is no more than 74%", method: "Measure the operation time" }, { id: 4, text: "Whether the operation is as operation-steps.", method: "Observe his operation by each product." }, { id: 5, text: "Whether he knows the inspection method, name of part, equipment, system", method: "Check the method of inspection at begin of operation" }, { id: 6, text: "Whether he knows the evaluation standard in operation (OK or NG product)", method: "Make question and hear his answer" }] },
-        1: { title: "OK in education training of operation contents but speed is just 75-99%", items: [{ id: 1, text: "Whether he confirms the quality correctly?", method: "Observe the operation" }, { id: 2, text: "Whether his operation in charge is at least 75%?", method: "Measure the operation time" }, { id: 3, text: "Whether he can report the abnormality (Andon) correctly?", method: "Judge by operation observance and question" }, { id: 4, text: "Whether he changes the steps of operation or operation method by himself?", method: "Observe the operation" }] },
-        2: { title: "Able to operation by himself (Speed & operation as the standard is OK)", items: [{ id: 1, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }, { id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?", method: "Make question and fill the answer" }, { id: 3, text: "Whether he understand the operation standard and obey as it. Can he give the an idea of improvement?", method: "Observe the operation in over 2 cycles and make question to him about the improvement (Standard operation table)" }] },
-        // 3: { title: "Able to teach other operators", items: [{ id: 1, text: "Whether the result in understanding test was over the standard", method: "Look in the understanding test result of education record" }, { id: 2, text: "Whether he understands the method of teaching", method: "Make questions about the teaching method and confirmation when teaching" }, { id: 3, text: "Whether he is good at confirmation about the understanding after teaching or in teaching", method: "Confirm the teaching method" }, { id: 4, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?", method: "Confirm the teaching method" }, { id: 5, text: "Whether he understand the operation standard and obey as it.", method: "Confirm the teaching method and operation content (basing on the standard-operation-table)" }] },
-        3: { title: "Able to teach other operators", items: [{ id: 1, text: "Whether the result in understanding test was over the standard", method: "Look in the understanding test result of education record" }, { id: 2, text: "Whether he understands the method of teaching", method: "Make questions about the teaching method and confirmation when teaching" }, { id: 3, text: "Whether he is good at confirmation about the understanding after teaching or in teaching", method: "Confirm the teaching method" }, { id: 4, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?", method: "Confirm the teaching method" }, { id: 5, text: "Whether he understand the operation standard and obey as it.", method: "Confirm the teaching method and operation content (basing on the standard-operation-table)" }, { id: 6, text: "Whether he can operate in the standard time?", method: "Measure the operation time" }] }
+        // Level 1
+        0: {
+            title: "OK in education training of operation contents but speed is no more than 74%",
+            items: [
+                {
+                    id: 1, text: "Learnt the basic knowledge of process or not",
+                    method: "Confirm the education record"
+                },
+                {
+                    id: 2, text: "The understanding test result is satisfying the standard or not",
+                    method: "Look in the understandard test result of education record"
+                },
+                {
+                    id: 3, text: "Whether his operation in charge is no more than 74%",
+                    method: "Measure the operation time"
+                },
+                {
+                    id: 4, text: "The operation method is correct with the standard or not",
+                    method: "Observe his operation by each product (type)"
+                },
+                {
+                    id: 5, text: "Whether the operation is as operation-steps",
+                    method: "Observe his operation by each product"
+                },
+                {
+                    id: 6, text: "Whether he knows the inspection method, name of part, equipment, system",
+                    method: "Check the method of inspection at begin of operation"
+                },
+                {
+                    id: 7, text: "Whether he knows the evaluation standard in opoeration (OK or NG product)",
+                    method: "Make question and hear his answer"
+                }
+            ]
+        },
+        // Level 2
+        1: {
+            title: "OK in education training of operation contents but speed is just 75-99%", items: [
+                {
+                    id: 1, text: "Whether he confirms the quality correctly?",
+                    method: "Observe the operation"
+                },
+                {
+                    id: 2, text: "Whether his operation in charge is at least 75%?",
+                    method: "Measure the operation time"
+                },
+                {
+                    id: 3, text: "Whether he can report the abnormality (Andon) correctly?",
+                    method: "Judge by operation observance and question"
+                },
+                {
+                    id: 4, text: "Whether he changes the steps of operation or operation method by himself?",
+                    method: "Observe the operation"
+                }]
+        },
+        // Level 3
+        2: {
+            title: "Able to operation by himself (Speed & operation as the standard is OK)", items: [
+                {
+                    id: 1, text: "Whether he can operate in the standard time?",
+                    method: "Measure the operation time"
+                },
+                {
+                    id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?",
+                    method: "Make question and fill the answer"
+                },
+                {
+                    id: 3, text: "Whether he understand the operation standard and obey as it. Can he give the an idea of improvement?",
+                    method: "Observe the operation in over 2 cycles and make question to him about the improvement (Standard operation table)"
+                },
+                {
+                    id: 4, text: "Measure the ok% produce during shift production",
+                    method: "Check complete shift result and ok % 100"
+                }
+            ]
+        },
+        // Level 4
+        3: {
+            title: "Able to teach other operators",
+            items: [
+                {
+                    id: 1, text: "Whether the result in understanding test was over the standard",
+                    method: "Look in the understanding test result of education record"
+                },
+                {
+                    id: 2, text: "Whether he understands the method of teaching",
+                    method: "Make questions about the teaching method and confirmation when teaching"
+                },
+                {
+                    id: 3, text: "Whether he is good at confirmation about the understanding after teaching or in teaching",
+                    method: "Confirm the teaching method"
+                },
+                {
+                    id: 4, text: "Can he change the teaching method belonging the level of operator (Understanding ability)?",
+                    method: "Confirm the teaching method"
+                },
+                {
+                    id: 5, text: "Whether he understand the operation standard and obey as it.",
+                    method: "Confirm the teaching method and operation content (basing on the standard-operation-table)"
+                },
+                {
+                    id: 6, text: "Whether he can operate in the standard time?",
+                    method: "Measure the operation time"
+                }]
+        }
 
     }
 };
@@ -107,7 +206,8 @@ const SkillMatrixCertificate = ({
     departmentId = 'GLOBAL',
     subSectionId,
     initialSheetId,
-    onBackToList
+    onBackToList,
+    readOnly = false
 }) => {
     // State
     const [loading, setLoading] = useState(true);
@@ -144,9 +244,28 @@ const SkillMatrixCertificate = ({
     const [sheets, setSheets] = useState([]);
     const [selectedSheetId, setSelectedSheetId] = useState(initialSheetId || null);
     const [isActiveSheet, setIsActiveSheet] = useState(true);
+    const isEditable = isActiveSheet && !readOnly;
     const [currentPeriod, setCurrentPeriod] = useState("");
     const [currentSheetIndex, setCurrentSheetIndex] = useState(1);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [activeStandardTooltip, setActiveStandardTooltip] = useState(null);
+
+    useEffect(() => {
+        if (activeStandardTooltip === null) return;
+        const close = () => setActiveStandardTooltip(null);
+        document.addEventListener('click', close);
+        return () => document.removeEventListener('click', close);
+    }, [activeStandardTooltip]);
+
+    const getStandardComment = (sIdx) => {
+        const comments = [
+            "Hearing the answers of operator by using standard operation documents, production operation standard, Measure the standard time and judge the result.",
+            "Hearing the answers of operator by using standard operation documents, production operation standard. Measure the standard time, operation content and judge the result.",
+            "Hearing the answers of operator by using standard operation documents, production operation standard. Meassure the standard time, operation content and judge the result.",
+            "Trained in Education for expert of wire harness production process and able to give operator a training"
+        ];
+        return comments[sIdx] ?? '';
+    };
 
     const authUser = useSelector(state => state.auth.user);
 
@@ -482,13 +601,33 @@ const SkillMatrixCertificate = ({
     };
 
     const handleEvalChange = (levelIdx, itemIdx, field, value) => {
-        setEvalData(prev => ({
-            ...prev,
-            [`${levelIdx}-${itemIdx}`]: {
-                ...(prev[`${levelIdx}-${itemIdx}`] || {}),
-                [field]: value
+        setEvalData(prev => {
+            const itemKey = `${levelIdx}-${itemIdx}`;
+            const existing = prev[itemKey] || {};
+            const updated = { ...existing, [field]: value };
+
+            const isSpeedCell = (
+                (levelIdx === 0 && itemIdx === 2) ||
+                (levelIdx === 1 && itemIdx === 1) ||
+                (levelIdx === 2 && itemIdx === 0) ||
+                (levelIdx === 3 && itemIdx === 5)
+            );
+
+            if (isSpeedCell) {
+                const act = parseFloat(field === 'actualSec' ? value : updated.actualSec);
+                const tgt = parseFloat(field === 'targetSec' ? value : updated.targetSec);
+                if (!isNaN(act) && !isNaN(tgt) && act > 0) {
+                    const calculatedEff = Math.round((tgt / act) * 100);
+                    updated.okVal = String(calculatedEff);
+                    updated.ngVal = String(calculatedEff);
+                } else {
+                    updated.okVal = '';
+                    updated.ngVal = '';
+                }
             }
-        }));
+
+            return { ...prev, [itemKey]: updated };
+        });
     };
 
     if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
@@ -535,7 +674,7 @@ const SkillMatrixCertificate = ({
                     </Button>
                     <Button
                         onClick={() => handleSave(false)}
-                        disabled={saving || !isActiveSheet}
+                        disabled={saving || !isEditable}
                         className="bg-slate-700 hover:bg-slate-800 text-white gap-2 transition-all duration-200"
                     >
                         {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -543,7 +682,7 @@ const SkillMatrixCertificate = ({
                     </Button>
                     <Button
                         onClick={() => handleSave(true)}
-                        disabled={saving || !isActiveSheet}
+                        disabled={saving || !isEditable}
                         className="bg-green-600 hover:bg-green-700 text-white gap-2 transition-all duration-200"
                     >
                         {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -561,8 +700,8 @@ const SkillMatrixCertificate = ({
                                 key={s.id}
                                 onClick={() => setSelectedSheetId(s.id)}
                                 className={`px-3 py-1.5 rounded-full font-bold transition-all flex items-center gap-1.5 ${String(selectedSheetId) === String(s.id)
-                                        ? "bg-slate-800 text-white shadow-sm"
-                                        : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                                    ? "bg-slate-800 text-white shadow-sm"
+                                    : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
                                     }`}
                             >
                                 <span>Sheet {s.sheetIndex} ({s.period})</span>
@@ -594,10 +733,12 @@ const SkillMatrixCertificate = ({
                     </div>
                 </div>
 
-                {/* Banner if viewing inactive/previous sheet */}
-                {!isActiveSheet && (
+                {/* Banner if viewing read-only or inactive sheet */}
+                {!isEditable && (
                     <div className="p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg font-bold text-xs mb-4 text-center no-print">
-                        Viewing previous sheet — Sheet {currentSheetIndex} ({currentPeriod}). This sheet is read-only.
+                        {!isActiveSheet
+                            ? `Viewing previous sheet — Sheet ${currentSheetIndex} (${currentPeriod}). This sheet is read-only.`
+                            : "View only — editing is disabled for this sheet."}
                     </div>
                 )}
 
@@ -614,7 +755,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full text-center outline-none bg-transparent"
                                         value={headerData.dateOfEvaluation}
                                         onChange={e => setHeaderData({ ...headerData, dateOfEvaluation: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div >
@@ -629,7 +770,7 @@ const SkillMatrixCertificate = ({
                                         onBlur={() => setTimeout(() => setShowTraineeSuggestions(false), 200)}
                                         onFocus={() => { if (traineeSuggestions.length > 0) setShowTraineeSuggestions(true); }}
                                         placeholder="Type to search..."
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                     {isSearchingTrainee && (
                                         <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
@@ -660,7 +801,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full text-center outline-none bg-transparent"
                                         value={headerData.employeeNo}
                                         onChange={e => setHeaderData({ ...headerData, employeeNo: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div>
@@ -672,7 +813,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full text-center outline-none bg-transparent"
                                         value={headerData.processInCharge}
                                         onChange={e => setHeaderData({ ...headerData, processInCharge: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div>
@@ -684,7 +825,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full text-center outline-none text-xs bg-transparent"
                                         value={headerData.resultPerson}
                                         onChange={e => setHeaderData({ ...headerData, resultPerson: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div>
@@ -712,7 +853,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full outline-none bg-transparent"
                                         value={docData.docNo}
                                         onChange={e => setDocData({ ...docData, docNo: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div >
@@ -723,7 +864,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full outline-none text-xs bg-transparent"
                                         value={docData.revNo || ''}
                                         onChange={e => setDocData({ ...docData, revNo: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div>
@@ -734,7 +875,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full outline-none text-xs bg-transparent"
                                         value={docData.revDate || ''}
                                         onChange={e => setDocData({ ...docData, revDate: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div>
@@ -745,7 +886,7 @@ const SkillMatrixCertificate = ({
                                         className="w-full outline-none bg-transparent"
                                         value={docData.dateOfIssue}
                                         onChange={e => setDocData({ ...docData, dateOfIssue: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div>
@@ -756,7 +897,7 @@ const SkillMatrixCertificate = ({
                             </div>
                             <div className="flex h-12 text-center text-xs text-blue-600 font-bold">
                                 <div className="w-1/3 p-1 border-r border-black flex items-center justify-center">
-                                    {!isActiveSheet ? (
+                                    {!isEditable ? (
                                         <span className="text-[10px] text-gray-500 font-semibold break-all leading-tight">
                                             {docData.approved || "—"}
                                         </span>
@@ -796,7 +937,7 @@ const SkillMatrixCertificate = ({
                                     )}
                                 </div>
                                 <div className="w-1/3 p-1 border-r border-black flex items-center justify-center">
-                                    {!isActiveSheet ? (
+                                    {!isEditable ? (
                                         <span className="text-[10px] text-gray-500 font-semibold break-all leading-tight">
                                             {docData.confirmed || "—"}
                                         </span>
@@ -841,7 +982,7 @@ const SkillMatrixCertificate = ({
                                         rows={2}
                                         value={docData.planned || ''}
                                         onChange={e => setDocData({ ...docData, planned: e.target.value })}
-                                        disabled={!isActiveSheet}
+                                        disabled={!isEditable}
                                     />
                                 </div>
                             </div>
@@ -856,16 +997,6 @@ const SkillMatrixCertificate = ({
                     {/* Main Table Sections */}
                     <div className="border-2 border-black text-xs overflow-x-auto">
                         <div className="min-w-[800px]">
-                            {/* Table Header */}
-                            <div className="flex font-bold text-center border-b border-black bg-gray-50">
-                                <div className="w-[50px] p-2 border-r border-black flex items-center justify-center">No</div>
-                                <div className="flex-1 p-2 border-r border-black flex items-center justify-center">Evaluation items</div>
-                                <div className="w-[250px] p-2 border-r border-black flex items-center justify-center">Confirmation method<br />(Evaluation method)</div>
-                                <div className="w-[80px] p-2 border-r border-black flex items-center justify-center">Standard</div>
-                                <div className="w-[120px] p-2 border-r border-black flex items-center justify-center">Evaluation</div>
-                                <div className="w-[150px] p-2 flex items-center justify-center text-center">Content that must be re-educated</div>
-                            </div>
-
                             {displayLevels.map((section, sIdx) => {
                                 const levelContent = skillConfig.levels?.[sIdx] || { title: section.description || section.name, items: [] };
                                 const items = levelContent.items || [];
@@ -878,6 +1009,32 @@ const SkillMatrixCertificate = ({
                                             <span className="font-bold text-sm">{sIdx + 1} : {levelContent.title}</span>
                                         </div>
 
+                                        {/* Table Header for this level */}
+                                        <div className="flex font-bold text-center border-b border-black bg-gray-50">
+                                            <div className="w-[50px] p-2 border-r border-black flex items-center justify-center">No</div>
+                                            <div className="flex-1 p-2 border-r border-black flex items-center justify-center">Evaluation items</div>
+                                            <div className="w-[250px] p-2 border-r border-black flex items-center justify-center">Confirmation method<br />(Evaluation method)</div>
+                                            <div
+                                                className="w-[110px] p-2 border-r border-black flex items-center justify-center gap-1 relative cursor-pointer select-none hover:bg-gray-100"
+                                                onClick={e => { e.stopPropagation(); setActiveStandardTooltip(prev => prev === sIdx ? null : sIdx); }}
+                                                onMouseEnter={() => setActiveStandardTooltip(sIdx)}
+                                                onMouseLeave={() => setActiveStandardTooltip(prev => prev === sIdx ? null : prev)}
+                                            >
+                                                Standard
+                                                <Info size={12} className="text-gray-500 flex-shrink-0" />
+                                                {activeStandardTooltip === sIdx && (
+                                                    <div
+                                                        className="absolute top-full left-0 z-50 mt-1 w-64 rounded-md bg-slate-800 text-white text-[11px] leading-snug p-2.5 shadow-lg"
+                                                        onClick={e => e.stopPropagation()}
+                                                    >
+                                                        {getStandardComment(sIdx)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="w-[120px] p-2 border-r border-black flex items-center justify-center">Evaluation</div>
+                                            <div className="w-[150px] p-2 flex items-center justify-center text-center">Content that must be re-educated</div>
+                                        </div>
+
                                         {/* Items */}
                                         {items.length > 0 ? items.map((item, iIdx) => {
                                             const itemKey = `${sIdx}-${iIdx}`;
@@ -887,39 +1044,75 @@ const SkillMatrixCertificate = ({
                                                     <div className="w-[50px] p-2 border-r border-black text-center flex items-center justify-center">{item.id || iIdx + 1}</div>
                                                     <div className="flex-1 p-2 border-r border-black whitespace-pre-wrap">{item.text}</div>
                                                     <div className="w-[250px] p-2 border-r border-black whitespace-pre-wrap">{item.method}</div>
-                                                    <div className="w-[80px] p-2 border-r border-black flex items-center justify-center bg-white">
-                                                        <textarea
-                                                            className="w-full h-full min-h-[60px] resize-none outline-none bg-transparent text-xs p-1 text-center border border-transparent hover:border-gray-200 focus:border-gray-300 rounded transition-all duration-150"
-                                                            rows={3}
-                                                            placeholder="..."
-                                                            value={currentData.standardText || ''}
-                                                            onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
-                                                            disabled={!isActiveSheet}
-                                                        />
+                                                    <div className="w-[110px] p-2 border-r border-black flex items-center justify-center bg-white">
+                                                        {((sIdx === 0 && item.id === 3) ||
+                                                          (sIdx === 1 && item.id === 2) ||
+                                                          (sIdx === 2 && item.id === 1) ||
+                                                          (sIdx === 3 && item.id === 6)) ? (
+                                                            <div className="flex flex-col gap-1 w-full text-xs">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-semibold text-gray-600 text-[10px]">Actual (Sec):</span>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="w-full border border-gray-300 rounded px-1 py-0.5 outline-none bg-transparent text-center hover:border-gray-400 focus:border-gray-500 transition-all duration-150"
+                                                                        placeholder="..."
+                                                                        value={currentData.actualSec || ''}
+                                                                        onChange={e => handleEvalChange(sIdx, iIdx, 'actualSec', e.target.value)}
+                                                                        disabled={!isEditable}
+                                                                    />
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-semibold text-gray-600 text-[10px]">Target (Sec):</span>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="w-full border border-gray-300 rounded px-1 py-0.5 outline-none bg-transparent text-center hover:border-gray-400 focus:border-gray-500 transition-all duration-150"
+                                                                        placeholder="..."
+                                                                        value={currentData.targetSec || ''}
+                                                                        onChange={e => handleEvalChange(sIdx, iIdx, 'targetSec', e.target.value)}
+                                                                        disabled={!isEditable}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <textarea
+                                                                className="w-full h-full min-h-[60px] resize-none outline-none bg-transparent text-xs p-1 text-center border border-transparent hover:border-gray-200 focus:border-gray-300 rounded transition-all duration-150"
+                                                                rows={3}
+                                                                placeholder="..."
+                                                                value={currentData.standardText || ''}
+                                                                onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
+                                                                disabled={!isEditable}
+                                                            />
+                                                        )}
                                                     </div>
                                                     <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-2 bg-white">
                                                         <select
                                                             className="w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400"
                                                             value={currentData.standard || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
-                                                            disabled={!isActiveSheet}
+                                                            disabled={!isEditable}
                                                         >
                                                             <option value="">Select</option>
                                                             <option value="OK">OK</option>
                                                             <option value="NG">NG</option>
                                                         </select>
-                                                        {currentData.standard === 'OK' && (
-                                                            <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                <span className="font-bold text-gray-500">OK</span>
-                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.okVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'okVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
-                                                            </div>
-                                                        )}
-                                                        {currentData.standard === 'NG' && (
-                                                            <div className="flex items-center justify-center gap-1.5 w-full text-xs">
-                                                                <span className="font-bold text-gray-500">NG</span>
-                                                                <span className="text-blue-600 font-medium">( <input type="text" className="w-10 border-b border-gray-400 outline-none text-center bg-transparent" value={currentData.ngVal || ''} onChange={e => handleEvalChange(sIdx, iIdx, 'ngVal', e.target.value)} disabled={!isActiveSheet} /> )</span>
-                                                            </div>
-                                                        )}
+                                                        {(() => {
+                                                            const isSpeedCell = (
+                                                                (sIdx === 0 && item.id === 3) ||
+                                                                (sIdx === 1 && item.id === 2) ||
+                                                                (sIdx === 2 && item.id === 1) ||
+                                                                (sIdx === 3 && item.id === 6)
+                                                            );
+                                                            if (!isSpeedCell || !currentData.standard) return null;
+                                                            const act = parseFloat(currentData.actualSec);
+                                                            const tgt = parseFloat(currentData.targetSec);
+                                                            if (isNaN(act) || isNaN(tgt) || act <= 0) return null;
+                                                            const eff = Math.round((tgt / act) * 100);
+                                                            return (
+                                                                <div className="text-[11px] font-bold text-blue-600 mt-1">
+                                                                    Eff: {eff}%
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
                                                     <div className="w-[150px] p-2 bg-white">
                                                         <textarea
@@ -927,7 +1120,7 @@ const SkillMatrixCertificate = ({
                                                             rows={3}
                                                             value={currentData.reEducation || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'reEducation', e.target.value)}
-                                                            disabled={!isActiveSheet}
+                                                            disabled={!isEditable}
                                                         ></textarea>
                                                     </div>
                                                 </div>
@@ -949,7 +1142,7 @@ const SkillMatrixCertificate = ({
                             value={opinion}
                             onChange={e => setOpinion(e.target.value)}
                             placeholder="Enter final opinion and comments..."
-                            disabled={!isActiveSheet}
+                            disabled={!isEditable}
                         ></textarea>
                     </div>
                 </div >

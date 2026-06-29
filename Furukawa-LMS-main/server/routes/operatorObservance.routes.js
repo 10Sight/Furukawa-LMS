@@ -6,7 +6,7 @@ import { getObservanceByStudent, createOrUpdateObservance } from "../controllers
 const router = Router();
 
 router.route("/:studentId")
-    .get(verifyJWT, authorizeRoles("ADMIN", "INSTRUCTOR", "SUPERADMIN"), getObservanceByStudent)
-    .post(verifyJWT, authorizeRoles("ADMIN", "INSTRUCTOR", "SUPERADMIN"), createOrUpdateObservance);
+    .get(verifyJWT, authorizeRoles("ADMIN", "INSTRUCTOR", "SUPERADMIN", "operator_observance:read", "operator_observance:manage"), getObservanceByStudent)
+    .post(verifyJWT, authorizeRoles("ADMIN", "INSTRUCTOR", "SUPERADMIN", "operator_observance:update", "operator_observance:manage"), createOrUpdateObservance);
 
 export default router;

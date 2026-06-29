@@ -91,7 +91,8 @@ const AllUsersManagement = () => {
     subSectionId: "",
     stationId: "",
     unit: "",
-    shift: "",
+    attendanceShift: "",
+    scheduleShift: "",
     date: format(new Date(), "yyyy-MM-dd"), // Default to today
     designation: "",
   });
@@ -143,7 +144,8 @@ const AllUsersManagement = () => {
     subSectionId: filters.subSectionId,
     stationId: filters.stationId,
     unit: filters.unit,
-    shift: filters.shift,
+    attendanceShift: filters.attendanceShift,
+    scheduleShift: filters.scheduleShift,
     date: filters.date,
     designation: filters.designation,
   });
@@ -1541,10 +1543,30 @@ const AllUsersManagement = () => {
             </div>
 
             <div className="flex flex-col">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Shift</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Attendance Shift</label>
               <Select
-                value={filters.shift || "all"}
-                onValueChange={(val) => setFilters({ ...filters, shift: val === "all" ? "" : val })}
+                value={filters.attendanceShift || "all"}
+                onValueChange={(val) => setFilters({ ...filters, attendanceShift: val === "all" ? "" : val })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="All Shifts" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Shifts</SelectItem>
+                  <SelectItem value="A">A-Shift</SelectItem>
+                  <SelectItem value="B">B-Shift</SelectItem>
+                  <SelectItem value="G">G-Shift</SelectItem>
+                  <SelectItem value="C">C-Shift</SelectItem>
+                  <SelectItem value="D">D-Shift</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Schedule Shift</label>
+              <Select
+                value={filters.scheduleShift || "all"}
+                onValueChange={(val) => setFilters({ ...filters, scheduleShift: val === "all" ? "" : val })}
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="All Shifts" />
@@ -1680,7 +1702,7 @@ const AllUsersManagement = () => {
                 onClick={() => setFilters({
                   role: "", status: "", dateFrom: "", dateTo: "",
                   departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
-                  unit: "", shift: "", date: format(new Date(), "yyyy-MM-dd"),
+                  unit: "", attendanceShift: "", scheduleShift: "", date: format(new Date(), "yyyy-MM-dd"),
                   designation: ""
                 })}
               >

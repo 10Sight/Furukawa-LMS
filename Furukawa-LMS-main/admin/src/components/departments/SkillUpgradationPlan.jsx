@@ -74,16 +74,17 @@ const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChan
     );
 };
 
-const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, year }) => {
+const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, year, isReadOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
     const { canManage } = useMemo(() => {
+        if (isReadOnly) return { canManage: false };
         const permissions = authUser?.customRole?.permissions || [];
         return {
-            canManage: permissions.includes('skill_upgradation:manage') || isAdmin,
+            canManage: permissions.includes('skill_upgradation:manage') || permissions.includes('skill_upgradation:update') || isAdmin,
         };
-    }, [authUser, isAdmin]);
+    }, [authUser, isAdmin, isReadOnly]);
 
     const [searchText, setSearchText] = useState("");
     const [rows, setRows] = useState([]);
@@ -329,10 +330,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                         Plan for Skill Upgradation
                     </h2>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={handleAddRow} className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
-                            <IconPlus className="h-4 w-4 mr-2" />
-                            Add Row
-                        </Button>
+                        {canManage && (
+                            <Button variant="outline" onClick={handleAddRow} className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
+                                <IconPlus className="h-4 w-4 mr-2" />
+                                Add Row
+                            </Button>
+                        )}
                         <Button variant="outline" onClick={handlePrint}>
                             <IconPrinter className="h-4 w-4 mr-2" />
                             Print

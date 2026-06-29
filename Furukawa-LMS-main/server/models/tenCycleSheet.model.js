@@ -98,10 +98,14 @@ class TenCycleSheet {
         return new TenCycleSheet(rows[0]);
     }
 
-    static async findByFilters({ departmentId, sectionId, lineId, subSectionId }) {
-        let query = "SELECT * FROM ten_cycle_sheets WHERE departmentId = ?";
-        const params = [departmentId];
+    static async findByFilters({ departmentId, sectionId, lineId, subSectionId } = {}) {
+        let query = "SELECT * FROM ten_cycle_sheets WHERE 1=1";
+        const params = [];
 
+        if (departmentId) {
+            query += " AND departmentId = ?";
+            params.push(departmentId);
+        }
         if (sectionId) {
             query += " AND sectionId = ?";
             params.push(sectionId);
@@ -226,6 +230,11 @@ class TenCycleSheet {
         );
 
         return this.findById(id);
+    }
+
+    static async delete(id) {
+        await executeQuery("DELETE FROM ten_cycle_sheets WHERE id = ?", [id]);
+        return true;
     }
 }
 

@@ -182,6 +182,89 @@ class SkillMatrixEvaluation {
         return new SkillMatrixEvaluation(rows[0]);
     }
 
+    static async delete(id) {
+        const [sheetRows] = await executeQuery(
+            "SELECT studentId, isActive FROM skill_matrix_evaluations WHERE id = ?",
+            [id]
+        );
+        if (sheetRows.length === 0) return null;
+
+        const { studentId, isActive } = sheetRows[0];
+        await executeQuery("DELETE FROM skill_matrix_evaluations WHERE id = ?", [id]);
+
+        let nextActiveSheet = null;
+        if (isActive) {
+            // Promote the next most recent sheet to active
+            const [remaining] = await executeQuery(
+                "SELECT TOP 1 id FROM skill_matrix_evaluations WHERE studentId = ? ORDER BY sheetIndex DESC, createdAt DESC",
+                [studentId]
+            );
+            if (remaining.length > 0) {
+                const nextId = remaining[0].id;
+                await executeQuery(
+                    "UPDATE skill_matrix_evaluations SET isActive = 1 WHERE id = ?",
+                    [nextId]
+                );
+                const [nextRows] = await executeQuery(
+                    "SELECT * FROM skill_matrix_evaluations WHERE id = ?",
+                    [nextId]
+                );
+                nextActiveSheet = nextRows.length > 0 ? new SkillMatrixEvaluation(nextRows[0]) : null;
+            }
+        }
+
+        return { studentId, wasActive: !!isActive, nextActiveSheet };
+    }
+
+    static async listAll({ departmentId, sectionId, lineId, subSectionId, search } = {}) {
+        let sql = `
+            SELECT
+                sme.id, sme.studentId, sme.departmentId, sme.sheetIndex, sme.period,
+                sme.isActive, sme.earnedLevel, sme.efficiency, sme.createdAt, sme.updatedAt,
+                u.fullName, u.empId, u.cardNo,
+                d.name AS departmentName,
+                sec.name AS sectionName,
+                l.name AS lineName,
+                ss.name AS subSectionName
+            FROM skill_matrix_evaluations sme
+            LEFT JOIN users u ON sme.studentId = u.id
+            LEFT JOIN departments d ON (sme.departmentId = CAST(d.id AS VARCHAR(255)) OR sme.departmentId = d.name)
+            LEFT JOIN sections sec ON (u.sectionId = sec.id)
+            LEFT JOIN [lines] l ON (u.lineId = l.id)
+            LEFT JOIN sub_sections ss ON (u.subSectionId = ss.id)
+            WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+              AND u.role IN ('STUDENT', 'CUSTOM')
+        `;
+        const params = [];
+
+        if (departmentId) {
+            sql += " AND (sme.departmentId = ? OR d.id = TRY_CAST(? AS INT))";
+            params.push(departmentId, departmentId);
+        }
+        if (sectionId) {
+            sql += " AND u.sectionId = ?";
+            params.push(sectionId);
+        }
+        if (lineId) {
+            sql += " AND u.lineId = ?";
+            params.push(lineId);
+        }
+        if (subSectionId) {
+            sql += " AND u.subSectionId = ?";
+            params.push(subSectionId);
+        }
+        if (search) {
+            sql += " AND (u.fullName LIKE ? OR u.empId LIKE ? OR u.cardNo LIKE ?)";
+            const like = `%${search}%`;
+            params.push(like, like, like);
+        }
+
+        sql += " ORDER BY sme.studentId ASC, sme.sheetIndex DESC";
+
+        const [rows] = await executeQuery(sql, params);
+        return rows;
+    }
+
     static async upsert(data) {
         const { 
             id, 

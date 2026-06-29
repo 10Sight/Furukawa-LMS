@@ -1001,6 +1001,7 @@ const Daily5MRecording = () => {
     const location = useLocation();
     const [searchParams] = useSearchParams();
     const urlRecordId = searchParams.get('recordId');
+    const viewMode = searchParams.get('mode') === 'view';
     const { data: departmentsData, isLoading: isLoadingDepts } = useGetAllDepartmentsQuery();
     const { data: sectionsData, isLoading: isLoadingSections } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
     const { data: linesData, isLoading: isLoadingLines } = useGetLinesBySectionQuery(selectedSection, { skip: !selectedSection });
@@ -2768,10 +2769,12 @@ const Daily5MRecording = () => {
                         </DialogContent>
                     </Dialog>
 
-                    <Button onClick={() => handleSaveRecord(null, { showPreview: true })} disabled={!selectedDepartment || loadingConfig || !hasEditPermission}>
-                        <IconClipboardList className="w-5 h-5 mr-2" />
-                        Save & Preview
-                    </Button>
+                    {!viewMode && (
+                        <Button onClick={() => handleSaveRecord(null, { showPreview: true })} disabled={!selectedDepartment || loadingConfig || !hasEditPermission}>
+                            <IconClipboardList className="w-5 h-5 mr-2" />
+                            Save & Preview
+                        </Button>
+                    )}
                     <Button onClick={() => setIsPrintDialogOpen(true)} variant="outline" disabled={!tableConfig}>
                         <IconPrinter className="w-5 h-5 mr-2" />
                         Print Sheet
@@ -3226,8 +3229,12 @@ const Daily5MRecording = () => {
                                 <IconPrinter className="mr-2" /> Print Sheet
                             </Button>
                             <Button variant="ghost" size="sm" onClick={() => {
-                                navigate(location.pathname);
-                                setShowFormList(true);
+                                if (location.state?.fromDashboard) {
+                                    navigate('/cms/daily-5m-dashboard');
+                                } else {
+                                    navigate(location.pathname);
+                                    setShowFormList(true);
+                                }
                             }}>
                                 <IconArrowLeft className="mr-2" /> Back to List
                             </Button>
@@ -3236,7 +3243,7 @@ const Daily5MRecording = () => {
                     <CardContent className="p-0 sm:p-4 overflow-x-auto print:overflow-visible">
                         {/* Table Container for PDF Capture */}
                         <div ref={tableRef} data-pdf-content="true" className="w-full">
-                            {renderRecordingTable(false)}
+                            {renderRecordingTable(viewMode)}
                         </div>
                     </CardContent>
                 </Card>

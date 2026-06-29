@@ -136,6 +136,24 @@ const safeDateToISO = (dateValue) => {
 const Students = () => {
   const currentUser = useSelector((state) => state.auth.user);
 
+  const isRestrictedUser = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN' || currentUser.isAdmin) return false;
+    if (currentUser.role === 'INSTRUCTOR') return true;
+    if (currentUser.role === 'CUSTOM') {
+      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
+      const isAdminLayout = ['admin', 'superadmin'].includes(layout);
+      if (!isAdminLayout) return true;
+      // Admin-layout custom users are restricted if they have explicitly assigned departments
+      const allowedDepts = [...new Set([
+        currentUser.departmentId ? String(currentUser.departmentId) : null,
+        ...(Array.isArray(currentUser.departments) ? currentUser.departments.map(String) : [])
+      ])].filter(Boolean);
+      return allowedDepts.length > 0;
+    }
+    return false;
+  }, [currentUser]);
+
   const hasPermission = (permission) => {
     if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
     return currentUser?.customRole?.permissions?.includes(permission);
@@ -243,19 +261,7 @@ const Students = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Pre-populate filters for restricted users once departments load
-  useEffect(() => {
-    if (!isRestrictedUser || !availableDepartments.length) return;
-    setFilters(prev => {
-      if (prev.departmentId !== "") return prev;
-      const deptId = availableDepartments.length === 1
-        ? String(availableDepartments[0]._id || availableDepartments[0].id)
-        : (currentUser?.departmentId ? String(currentUser.departmentId) : "");
-      const sectId = currentUser?.sectionId ? String(currentUser.sectionId) : "";
-      if (!deptId && !sectId) return prev;
-      return { ...prev, departmentId: deptId, sectionId: sectId };
-    });
-  }, [isRestrictedUser, availableDepartments, currentUser]);
+
 
   // Fetch Custom Roles
   useEffect(() => {
@@ -326,6 +332,9 @@ const Students = () => {
       refetchOnMountOrArgChange: true,
       refetchOnFocus: false,
       refetchOnReconnect: false,
+      // For restricted users, wait until the department filter is initialised
+      // to avoid a flash of all-user data before the useEffect runs
+      skip: isRestrictedUser && !filters.departmentId,
     }
   );
   const {
@@ -381,22 +390,8 @@ const Students = () => {
   const totalPages = studentsData?.data?.totalPages || 1;
   const departments = departmentsData?.data?.departments || [];
 
-  const isRestrictedUser = useMemo(() => {
-    if (!currentUser) return false;
-    if (currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN' || currentUser.isAdmin) return false;
-    if (currentUser.role === 'INSTRUCTOR') return true;
-    if (currentUser.role === 'CUSTOM') {
-      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
-      return !['admin', 'superadmin'].includes(layout);
-    }
-    return false;
-  }, [currentUser]);
-
   const availableDepartments = useMemo(() => {
     if (currentUser?.role === 'CUSTOM') {
-      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
-      if (['admin', 'superadmin'].includes(layout)) return departments;
-
       let allowedDepts = [];
       if (currentUser.departmentId) allowedDepts.push(String(currentUser.departmentId));
       const deptsList = Array.isArray(currentUser.departments) ? currentUser.departments : [];
@@ -406,10 +401,24 @@ const Students = () => {
       if (allowedDepts.length > 0) {
         return departments.filter(d => allowedDepts.includes(String(d._id || d.id)));
       }
-      return [];
+      // No assigned departments: admin-layout sees all, non-admin layout sees none
+      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
+      return ['admin', 'superadmin'].includes(layout) ? departments : [];
     }
     return departments;
   }, [departments, currentUser]);
+
+  // Pre-populate filters for restricted users once departments load
+  useEffect(() => {
+    if (!isRestrictedUser || !availableDepartments.length) return;
+    setFilters(prev => {
+      if (prev.departmentId !== "") return prev;
+      const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
+      const sectId = currentUser?.sectionId ? String(currentUser.sectionId) : "";
+      if (!deptId && !sectId) return prev;
+      return { ...prev, departmentId: deptId, sectionId: sectId };
+    });
+  }, [isRestrictedUser, availableDepartments, currentUser]);
 
   // Filter options for reusable components
   const statusOptions = [
@@ -1339,10 +1348,8 @@ const Students = () => {
   };
 
   const clearFilters = () => {
-    const defaultDeptId = isRestrictedUser
-      ? (availableDepartments.length === 1
-          ? String(availableDepartments[0]._id || availableDepartments[0].id)
-          : (currentUser?.departmentId ? String(currentUser.departmentId) : ""))
+    const defaultDeptId = isRestrictedUser && availableDepartments.length > 0
+      ? String(availableDepartments[0]._id || availableDepartments[0].id)
       : "";
     const defaultSectId = isRestrictedUser && currentUser?.sectionId
       ? String(currentUser.sectionId)
@@ -2153,7 +2160,7 @@ const Students = () => {
                             student.status
                           )
                         }
-                        disabled={!hasPermission("user:update")}
+                        disabled={!hasPermission("user:change_status")}
                       >
                         <SelectTrigger className="w-[140px]">
                           {getStatusBadge(student.status)}
@@ -2837,6 +2844,7 @@ const Students = () => {
               <Select
                 value={formData.status}
                 onValueChange={(value) => setFormData({ ...formData, status: value })}
+                disabled={!hasPermission("user:change_status")}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Status" />
@@ -3317,6 +3325,7 @@ const Students = () => {
               <Select
                 value={formData.status}
                 onValueChange={(value) => setFormData({ ...formData, status: value })}
+                disabled={!hasPermission("user:change_status")}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Status" />

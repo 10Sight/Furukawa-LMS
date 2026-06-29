@@ -12,38 +12,44 @@ import { Label } from "@/components/ui/label";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { useGetAllStudentsQuery as useGetAllStudentsQueryInstructor } from '@/Redux/AllApi/InstructorApi';
-import { 
-    IconStars, 
+import {
+    IconStars,
     IconHierarchy2,
     IconPlus,
     IconArrowLeft,
     IconCalendarTime,
-    IconCalendar
+    IconCalendar,
+    IconEdit,
+    IconTrash
 } from "@tabler/icons-react";
 import SkillUpgradationPlan from '@/components/departments/SkillUpgradationPlan';
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
 
 const SkillUpgradationWrapper = () => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
-    
-    const { canManage, canEditLayout } = useMemo(() => {
+
+    const { canCreate, canRead, canUpdate, canDelete } = useMemo(() => {
         const permissions = authUser?.customRole?.permissions || [];
+        const hasManage = permissions.includes('skill_upgradation:manage') || isAdmin;
         return {
-            canManage: permissions.includes('skill_upgradation:manage') || isAdmin,
-            canEditLayout: permissions.includes('skill_upgradation:edit_layout') || isAdmin
+            canCreate: hasManage || permissions.includes('skill_upgradation:create'),
+            canRead:   hasManage || permissions.includes('skill_upgradation:read'),
+            canUpdate: hasManage || permissions.includes('skill_upgradation:update'),
+            canDelete: hasManage || permissions.includes('skill_upgradation:delete'),
         };
     }, [authUser, isAdmin]);
-    
+
     // Selections
     const [dept, setDept] = useState("");
     const [section, setSection] = useState("");
-    
+
     // Plans list and selection states
     const [selectedPlan, setSelectedPlan] = useState(null);
+    const [isReadOnly, setIsReadOnly] = useState(false);
     const [plansList, setPlansList] = useState([]);
     const [loadingPlans, setLoadingPlans] = useState(false);
 
@@ -52,6 +58,10 @@ const SkillUpgradationWrapper = () => {
     const [createDept, setCreateDept] = useState("");
     const [createSection, setCreateSection] = useState("");
     const [createYear, setCreateYear] = useState(new Date().getFullYear().toString());
+
+    // Delete confirmation dialog
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Years list helper (last 2 years, current, and next 4 years)
     const yearsList = useMemo(() => {
@@ -63,16 +73,16 @@ const SkillUpgradationWrapper = () => {
     const { data: deptsData } = useGetAllDepartmentsQuery();
     const { data: sectionsData } = useGetSectionsByDepartmentQuery(dept, { skip: !dept });
     const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDept, { skip: !createDept });
-    
+
     // Fetch students/operators for the selected section
     const { data: studentsData, isFetching: isFetchingStudents } = useGetAllStudentsQueryInstructor({
         departmentId: dept,
         sectionId: section,
         limit: 1000,
         includeTemporary: "true"
-    }, { 
+    }, {
         skip: !dept || !section,
-        refetchOnMountOrArgChange: true 
+        refetchOnMountOrArgChange: true
     });
 
     const departments = deptsData?.data?.departments || [];
@@ -128,6 +138,7 @@ const SkillUpgradationWrapper = () => {
     useEffect(() => {
         fetchPlansList();
         setSelectedPlan(null);
+        setIsReadOnly(false);
     }, [dept, section]);
 
     useEffect(() => {
@@ -155,14 +166,31 @@ const SkillUpgradationWrapper = () => {
                 toast.success(`Skill Upgradation Plan created successfully for Year ${createYear}`);
                 fetchPlansList();
                 if (response.data.data) {
+                    setIsReadOnly(false);
                     setSelectedPlan(response.data.data);
                 } else {
+                    setIsReadOnly(false);
                     setSelectedPlan({ year: createYear });
                 }
             }
         } catch (error) {
             console.error("Error creating plan:", error);
             toast.error(error?.response?.data?.message || "Failed to create plan.");
+        }
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!deleteTarget?.id) return;
+        try {
+            setIsDeleting(true);
+            await axiosInstance.delete(`/api/skill-upgradation-plan/${deleteTarget.id}`);
+            toast.success("Skill upgradation plan deleted successfully");
+            setDeleteTarget(null);
+            fetchPlansList();
+        } catch (error) {
+            toast.error(error?.response?.data?.message || "Failed to delete plan.");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -197,18 +225,20 @@ const SkillUpgradationWrapper = () => {
                             <IconHierarchy2 className="w-4 h-4 text-blue-600" />
                             Hierarchy Selection
                         </span>
-                        <Button 
-                            onClick={() => {
-                                setCreateDept("");
-                                setCreateSection("");
-                                setCreateYear(new Date().getFullYear().toString());
-                                setIsCreateOpen(true);
-                            }}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
-                        >
-                            <IconPlus className="w-4 h-4" />
-                            Create Plan
-                        </Button>
+                        {canCreate && (
+                            <Button
+                                onClick={() => {
+                                    setCreateDept("");
+                                    setCreateSection("");
+                                    setCreateYear(new Date().getFullYear().toString());
+                                    setIsCreateOpen(true);
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
+                            >
+                                <IconPlus className="w-4 h-4" />
+                                Create Plan
+                            </Button>
+                        )}
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6">
@@ -259,13 +289,22 @@ const SkillUpgradationWrapper = () => {
                         <div className="space-y-4">
                             <div className="flex items-center justify-between no-print">
                                 <Button
-                                    onClick={() => setSelectedPlan(null)}
+                                    onClick={() => { setSelectedPlan(null); setIsReadOnly(false); }}
                                     variant="outline"
                                     className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm text-xs h-9"
                                 >
                                     <IconArrowLeft className="w-4 h-4 mr-1.5" />
                                     Back to Plans
                                 </Button>
+                                {isReadOnly && canUpdate && (
+                                    <Button
+                                        onClick={() => setIsReadOnly(false)}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-lg flex items-center gap-1.5"
+                                    >
+                                        <IconEdit className="w-4 h-4" />
+                                        Switch to Edit
+                                    </Button>
+                                )}
                             </div>
                             <SkillUpgradationPlan
                                  students={students}
@@ -273,6 +312,7 @@ const SkillUpgradationWrapper = () => {
                                  departmentId={dept}
                                  sectionId={section}
                                  year={selectedPlan.year}
+                                 isReadOnly={isReadOnly}
                             />
                         </div>
                     ) : (
@@ -310,21 +350,52 @@ const SkillUpgradationWrapper = () => {
                                                     <th className="p-3">Section</th>
                                                     <th className="p-3">Year</th>
                                                     <th className="p-3">Created By</th>
-                                                    <th className="p-3 pr-4">Last Updated By</th>
+                                                    <th className="p-3">Last Updated By</th>
+                                                    {(canUpdate || canDelete) && (
+                                                        <th className="p-3 pr-4 text-center">Actions</th>
+                                                    )}
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100 text-slate-700">
                                                 {plansList.map((plan) => (
-                                                    <tr 
-                                                        key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`} 
-                                                        onClick={() => setSelectedPlan(plan)}
+                                                    <tr
+                                                        key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`}
+                                                        onClick={() => { setIsReadOnly(true); setSelectedPlan(plan); }}
                                                         className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                                                     >
                                                         <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
                                                         <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
                                                         <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
                                                         <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
-                                                        <td className="p-3 pr-4 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
+                                                        <td className="p-3 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
+                                                        {(canUpdate || canDelete) && (
+                                                            <td className="p-3 pr-4" onClick={(e) => e.stopPropagation()}>
+                                                                <div className="flex items-center justify-center gap-1.5">
+                                                                    {canUpdate && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => { setIsReadOnly(false); setSelectedPlan(plan); }}
+                                                                            className="h-8 px-2.5 text-slate-600 hover:text-green-700 hover:bg-green-50"
+                                                                            title="Edit"
+                                                                        >
+                                                                            <IconEdit className="w-4 h-4" />
+                                                                        </Button>
+                                                                    )}
+                                                                    {canDelete && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => setDeleteTarget(plan)}
+                                                                            className="h-8 px-2.5 text-slate-600 hover:text-red-700 hover:bg-red-50"
+                                                                            title="Delete"
+                                                                        >
+                                                                            <IconTrash className="w-4 h-4" />
+                                                                        </Button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        )}
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -409,7 +480,7 @@ const SkillUpgradationWrapper = () => {
                     </div>
                     <div className="flex justify-end gap-3 pt-3 border-t">
                         <Button variant="ghost" onClick={() => setIsCreateOpen(false)} className="h-10 text-sm">Cancel</Button>
-                        <Button 
+                        <Button
                             onClick={handleCreatePlanSubmit}
                             disabled={!createDept || !createSection}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 px-5 rounded-lg text-sm"
@@ -417,6 +488,36 @@ const SkillUpgradationWrapper = () => {
                             Create
                         </Button>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+                <DialogContent className="max-w-[400px] bg-white rounded-xl shadow-lg border border-slate-200">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <IconTrash className="w-5 h-5 text-red-500" />
+                            Delete Plan
+                        </DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-slate-600 py-2">
+                        Are you sure you want to permanently delete the{" "}
+                        <span className="font-bold text-slate-800">{deleteTarget?.year}</span> skill upgradation plan
+                        for <span className="font-bold text-slate-800">{deleteTarget?.sectionName || "this section"}</span>?
+                        This action cannot be undone.
+                    </p>
+                    <DialogFooter className="flex gap-3 pt-3 border-t">
+                        <Button variant="ghost" onClick={() => setDeleteTarget(null)} className="h-10 text-sm" disabled={isDeleting}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleDeleteConfirm}
+                            disabled={isDeleting}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold h-10 px-5 rounded-lg text-sm"
+                        >
+                            {isDeleting ? "Deleting..." : "Delete"}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

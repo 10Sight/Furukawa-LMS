@@ -183,6 +183,14 @@ export const departmentApi = createApi({
             }),
             providesTags: ['Department'],
         }),
+
+        deleteHandoverSheet: builder.mutation({
+            query: (id) => ({
+                url: `/api/departments/handover-sheet/${id}`,
+                method: "DELETE",
+            }),
+            invalidatesTags: ['Department'],
+        }),
     }),
 });
 
@@ -207,4 +215,5 @@ export const {
     useGetMyDepartmentsQuery,
     useLazyExportDepartmentsQuery,
     useGetHandoverSheetsMonitoringQuery,
+    useDeleteHandoverSheetMutation,
 } = departmentApi;

@@ -911,6 +911,34 @@ const SixteenDayMonitoringSheet = ({
     const daysDetailed = ['d1', 'd2', 'd3'];
     const daysSummary = Array.from({ length: 13 }, (_, i) => `day_${i + 4}`);
 
+    const getDisabledDatesForDay = (dayIdx) => {
+        let prevMaxDate = null;
+        for (let i = 1; i < dayIdx; i++) {
+            const val = gridData[`attendance_date_${i}`];
+            if (val && val.includes('-')) {
+                try {
+                    const d = parse(val, "dd-MMM-yy", new Date());
+                    if (!prevMaxDate || d > prevMaxDate) prevMaxDate = d;
+                } catch (e) {}
+            }
+        }
+        let nextMinDate = null;
+        for (let i = dayIdx + 1; i <= 16; i++) {
+            const val = gridData[`attendance_date_${i}`];
+            if (val && val.includes('-')) {
+                try {
+                    const d = parse(val, "dd-MMM-yy", new Date());
+                    if (!nextMinDate || d < nextMinDate) nextMinDate = d;
+                } catch (e) {}
+            }
+        }
+        return (date) => {
+            if (prevMaxDate && date <= prevMaxDate) return true;
+            if (nextMinDate && date >= nextMinDate) return true;
+            return false;
+        };
+    };
+
     const isDay16ColFilled = isDay16Filled();
 
     return (
@@ -1246,6 +1274,7 @@ const SixteenDayMonitoringSheet = ({
                                                                 mode="single"
                                                                 selected={selectedDate}
                                                                 onSelect={(date) => date && handleGridChange('attendance', `date_${dayIdx}`, format(date, "dd-MMM-yy"))}
+                                                                disabled={getDisabledDatesForDay(dayIdx)}
                                                                 initialFocus
                                                             />
                                                         </PopoverContent>
@@ -1288,6 +1317,7 @@ const SixteenDayMonitoringSheet = ({
                                                                 mode="single"
                                                                 selected={selectedDate}
                                                                 onSelect={(date) => date && handleGridChange('attendance', `date_${dayIdx}`, format(date, "dd-MMM-yy"))}
+                                                                disabled={getDisabledDatesForDay(dayIdx)}
                                                                 initialFocus
                                                             />
                                                         </PopoverContent>
@@ -1628,6 +1658,7 @@ const SixteenDayMonitoringSheet = ({
                                                                             handleGridChange('attendance', `date_${i + 1}`, format(date, "dd-MMM-yy"));
                                                                         }
                                                                     }}
+                                                                    disabled={getDisabledDatesForDay(i + 1)}
                                                                     initialFocus
                                                                 />
                                                             </PopoverContent>

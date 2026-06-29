@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import axiosInstance from '@/Helper/axiosInstance';
 import { format } from "date-fns";
-import { Loader2, Eye, Trash2, Plus, History, Search, Calendar as CalendarIcon, Filter, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
+import { Loader2, Edit, Trash2, Plus, History, Search, Calendar as CalendarIcon, Filter, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -126,6 +126,9 @@ const Daily5MDashboard = () => {
 
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
+    const canView5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:read');
+    const canEdit5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:update');
+    const canDelete5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:delete');
 
     // Filter departments based on user assignment
     const assignableDepartments = React.useMemo(() => {
@@ -453,17 +456,16 @@ const Daily5MDashboard = () => {
         }
     };
 
-    const handleView = (record) => {
-        // Navigate to the recording page with the record state
-        // We can pass state or use a URL param. URL param is better for sharing.
-        // Assuming route is /cms/daily-5m-recording
-        navigate("/cms/daily-5m-recording", {
-            state: {
-                recordId: record.id,
-                recordData: record,
-                // Pass date explicitly to pre-populate the Date Picker in the target component
-                date: record.date ? new Date(record.date).toISOString().split('T')[0] : null
-            }
+    const handleRowClick = (record) => {
+        navigate(`/cms/daily-5m-recording?recordId=${record.id}&mode=view`, {
+            state: { fromDashboard: true }
+        });
+    };
+
+    const handleEdit = (e, record) => {
+        e.stopPropagation();
+        navigate(`/cms/daily-5m-recording?recordId=${record.id}`, {
+            state: { fromDashboard: true }
         });
     };
 
@@ -959,7 +961,11 @@ const Daily5MDashboard = () => {
                             </TableHeader>
                             <TableBody>
                                 {records.map((record) => (
-                                    <TableRow key={record.id} className="group hover:bg-slate-50/50 transition-colors">
+                                    <TableRow
+                                        key={record.id}
+                                        className={cn("group hover:bg-slate-50/50 transition-colors", canView5M && "cursor-pointer")}
+                                        onClick={() => canView5M && handleRowClick(record)}
+                                    >
                                         <TableCell className="font-mono text-xs text-blue-600 font-bold">#{record.id}</TableCell>
                                         <TableCell className="whitespace-nowrap">{format(parseLocalDate(record.date), "PPP")}</TableCell>
                                         <TableCell>
@@ -993,7 +999,7 @@ const Daily5MDashboard = () => {
                                                     </p>
                                                     <Popover>
                                                         <PopoverTrigger asChild>
-                                                            <button className="flex-shrink-0 p-1 rounded hover:bg-slate-100 text-blue-500 hover:text-blue-700 transition-colors" title="View remark history">
+                                                            <button className="flex-shrink-0 p-1 rounded hover:bg-slate-100 text-blue-500 hover:text-blue-700 transition-colors" title="View remark history" onClick={(e) => e.stopPropagation()}>
                                                                 <History className="w-3.5 h-3.5" />
                                                             </button>
                                                         </PopoverTrigger>
@@ -1030,12 +1036,16 @@ const Daily5MDashboard = () => {
                                             {format(new Date(record.updatedAt || record.createdAt), "PP p")}
                                         </TableCell>
                                         <TableCell className="text-right space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Button variant="ghost" size="sm" onClick={() => handleView(record)}>
-                                                <Eye className="w-4 h-4 text-blue-600" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" onClick={() => handleDelete(record.id)}>
-                                                <Trash2 className="w-4 h-4 text-red-600" />
-                                            </Button>
+                                            {canEdit5M && (
+                                                <Button variant="ghost" size="sm" onClick={(e) => handleEdit(e, record)}>
+                                                    <Edit className="w-4 h-4 text-blue-600" />
+                                                </Button>
+                                            )}
+                                            {canDelete5M && (
+                                                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(record.id); }}>
+                                                    <Trash2 className="w-4 h-4 text-red-600" />
+                                                </Button>
+                                            )}
                                         </TableCell>
                                     </TableRow>
                                 ))}

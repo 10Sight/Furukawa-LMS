@@ -11,20 +11,21 @@ import ENV from "../configs/env.config.js";
 export const listTenCycleSheets = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId } = req.query;
 
-    if (!departmentId) {
-        return res.status(200).json(new ApiResponse(200, [], "No department selected"));
-    }
-
     const sheets = await TenCycleSheet.findByFilters({ departmentId, sectionId, lineId, subSectionId });
-    
-    // Fetch names for contextual info
-    const [deps] = await executeQuery("SELECT id, name FROM departments WHERE id = ?", [departmentId]);
-    const deptName = deps[0]?.name || "";
+
+    // Batch-fetch department names for all unique departmentIds in the result
+    const deptIds = [...new Set(sheets.map(s => s.departmentId).filter(Boolean))];
+    let deptMap = {};
+    if (deptIds.length > 0) {
+        const placeholders = deptIds.map(() => "?").join(", ");
+        const [deps] = await executeQuery(`SELECT id, name FROM departments WHERE id IN (${placeholders})`, deptIds);
+        deps.forEach(d => { deptMap[d.id] = d.name; });
+    }
 
     const result = sheets.map((s) => ({
         id: s.id,
         departmentId: s.departmentId,
-        departmentName: deptName,
+        departmentName: deptMap[s.departmentId] || "",
         sectionId: s.sectionId,
         lineId: s.lineId,
         subSectionId: s.subSectionId,
@@ -196,4 +197,13 @@ export const approveTenCycleSheet = asyncHandler(async (req, res) => {
     });
 
     return res.status(200).json(new ApiResponse(200, updated, `10-Cycle sheet ${action.toLowerCase()}ed successfully`));
+});
+
+export const deleteTenCycleSheet = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const existing = await TenCycleSheet.findById(id);
+    if (!existing) throw new ApiError("10 cycle sheet not found", 404);
+
+    await TenCycleSheet.delete(id);
+    return res.status(200).json(new ApiResponse(200, {}, "10 cycle sheet deleted successfully"));
 });

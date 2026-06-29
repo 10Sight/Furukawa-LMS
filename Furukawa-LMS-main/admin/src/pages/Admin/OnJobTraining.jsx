@@ -31,7 +31,6 @@ import {
     IconCheck,
     IconX,
     IconLoader,
-    IconEye,
     IconEdit,
     IconTrash
 } from "@tabler/icons-react";
@@ -359,7 +358,7 @@ const OnJobTraining = () => {
                                     </TableHeader>
                                     <TableBody>
                                         {ojtList.map((ojt, i) => (
-                                            <TableRow key={ojt.id || ojt._id || i} className="hover:bg-slate-50/50 transition-colors">
+                                            <TableRow key={ojt.id || ojt._id || i} className="hover:bg-slate-100/70 transition-colors cursor-pointer" onClick={() => { setSelectedOjt(ojt); setIsReadOnly(true); }}>
                                                 <TableCell className="font-semibold text-sm pl-6 text-slate-400">
                                                     #{String(ojt.id || ojt._id).slice(-4).toUpperCase()}
                                                 </TableCell>
@@ -392,22 +391,12 @@ const OnJobTraining = () => {
                                                 </TableCell>
                                                 <TableCell className="text-right pr-6">
                                                     <div className="flex justify-end gap-2">
-                                                        <Button 
-                                                            variant="outline" 
-                                                            size="sm" 
-                                                            onClick={() => {
-                                                                setSelectedOjt(ojt);
-                                                                setIsReadOnly(true);
-                                                            }}
-                                                            className="border-slate-200 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg shadow-sm flex items-center gap-1.5 h-8 px-2.5"
-                                                        >
-                                                            <IconEye className="h-3.5 w-3.5" /> View
-                                                        </Button>
                                                         {hasPermission("on_job_training:update") && (
-                                                            <Button 
-                                                                variant="outline" 
-                                                                size="sm" 
-                                                                onClick={() => {
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
                                                                     setSelectedOjt(ojt);
                                                                     setIsReadOnly(false);
                                                                 }}
@@ -417,11 +406,14 @@ const OnJobTraining = () => {
                                                             </Button>
                                                         )}
                                                         {hasPermission("on_job_training:delete") && (
-                                                            <Button 
-                                                                variant="outline" 
-                                                                size="sm" 
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
                                                                 disabled={isDeleting}
-                                                                onClick={() => handleDelete(ojt.id || ojt._id)}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDelete(ojt.id || ojt._id);
+                                                                }}
                                                                 className="border-slate-200 text-rose-600 hover:text-rose-750 hover:bg-rose-50 rounded-lg shadow-sm flex items-center gap-1.5 h-8 px-2.5"
                                                             >
                                                                 <IconTrash className="h-3.5 w-3.5" /> Delete

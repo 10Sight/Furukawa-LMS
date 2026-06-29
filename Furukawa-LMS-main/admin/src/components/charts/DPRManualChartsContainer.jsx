@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { toast } from 'react-hot-toast';
@@ -8,6 +8,8 @@ import {
     BarChart2 as IconChart,
     X as IconX,
     CalendarRange as IconRange,
+    Check,
+    ChevronDown,
 } from 'lucide-react';
 import {
     useGetDPRManualStatsQuery,
@@ -63,6 +65,16 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
     const [selectedDate, setSelectedDate] = useState(dashboardDate || today);
     const [activeChart, setActiveChart] = useState(null);
 
+    // Series visibility per chart
+    const [selectedBars, setSelectedBars] = useState({
+        srcEff: ['Actual Qty', 'Actual Defect', 'Target %'],
+        srcDef: ['Defect PPM', 'Target PPM'],
+        qaDef: ['Defect PPM', 'Target PPM'],
+        qaEff: ['Actual Qty', 'Actual Defect', 'Target %'],
+    });
+    const [activeDropdown, setActiveDropdown] = useState(null);
+    const dropdownRefs = useRef({});
+
     // Calendar view month/year (can differ from selectedDate's month)
     const [viewMonth, setViewMonth] = useState(() => new Date(dashboardDate || today).getMonth());
     const [viewYear, setViewYear] = useState(() => new Date(dashboardDate || today).getFullYear());
@@ -82,6 +94,17 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
             setViewYear(d.getFullYear());
         }
     }, [dashboardDate]);
+
+    // Close active dropdown when clicking outside
+    useEffect(() => {
+        if (!activeDropdown) return;
+        const handleClick = (e) => {
+            const ref = dropdownRefs.current[activeDropdown];
+            if (ref && !ref.contains(e.target)) setActiveDropdown(null);
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [activeDropdown]);
 
     // Fetch trend + selected-date record — uses custom range when applied, else 7-day default
     const queryParams = appliedFilter
@@ -176,6 +199,18 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
         setActiveChart(prev => (prev === key ? null : key));
     };
 
+    const toggleBar = (chartKey, name) => {
+        setSelectedBars(prev => {
+            const current = prev[chartKey];
+            return {
+                ...prev,
+                [chartKey]: current.includes(name)
+                    ? current.filter(n => n !== name)
+                    : [...current, name],
+            };
+        });
+    };
+
     const handleApplyRange = () => {
         if (!rangeStart || !rangeEnd) {
             toast.error('Please select both start and end dates.');
@@ -250,7 +285,7 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
         series: [
             { name: 'Planned Qty', type: 'column', data: trend.map(t => t.srcEffPlan), color: '#94a3b8', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Actual Qty', type: 'column', data: trend.map(t => t.srcEffActual), color: '#3b82f6', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
-            { name: 'Actual Eff %', type: 'spline', yAxis: 1, data: trend.map(t => t.srcEffPlan > 0 ? Math.round((t.srcEffActual / t.srcEffPlan) * 1000) / 10 : 0), color: '#10b981', tooltip: { valueSuffix: '%' } },
+            { name: 'Actual Defect', type: 'spline', yAxis: 1, data: trend.map(t => t.srcEffPlan > 0 ? Math.round((t.srcEffActual / t.srcEffPlan) * 1000) / 10 : 0), color: '#10b981', tooltip: { valueSuffix: '%' } },
             { name: 'Target %', type: 'spline', yAxis: 1, data: trend.map(t => t.srcEffTarget), color: '#ef4444', dashStyle: 'ShortDash', tooltip: { valueSuffix: '%' } },
         ],
     };
@@ -294,12 +329,27 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
         series: [
             { name: 'Planned Qty', type: 'column', data: trend.map(t => t.qaEffPlan), color: '#94a3b8', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Actual Qty', type: 'column', data: trend.map(t => t.qaEffActual), color: '#ec4899', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
-            { name: 'Actual Eff %', type: 'spline', yAxis: 1, data: trend.map(t => t.qaEffPlan > 0 ? Math.round((t.qaEffActual / t.qaEffPlan) * 1000) / 10 : 0), color: '#8b5cf6', tooltip: { valueSuffix: '%' } },
+            { name: 'Actual Defect', type: 'spline', yAxis: 1, data: trend.map(t => t.qaEffPlan > 0 ? Math.round((t.qaEffActual / t.qaEffPlan) * 1000) / 10 : 0), color: '#8b5cf6', tooltip: { valueSuffix: '%' } },
             { name: 'Target %', type: 'spline', yAxis: 1, data: trend.map(t => t.qaEffTarget), color: '#ef4444', dashStyle: 'ShortDash', tooltip: { valueSuffix: '%' } },
         ],
     };
 
-    const chartOptions = { srcEff: srcEffOptions, srcDef: srcDefOptions, qaDef: qaDefOptions, qaEff: qaEffOptions };
+    const ALL_SERIES = {
+        srcEff: ['Planned Qty', 'Actual Qty', 'Actual Defect', 'Target %'],
+        srcDef: ['Defect Auto', 'Defect Manual', 'Defect Joint', 'Defect PPM', 'Target PPM'],
+        qaDef: ['Defect Auto', 'Defect Manual', 'Defect Joint', 'Defect PPM', 'Target PPM'],
+        qaEff: ['Planned Qty', 'Actual Qty', 'Actual Defect', 'Target %'],
+    };
+
+    const filterSeries = (series, key) =>
+        series.filter(s => selectedBars[key].includes(s.name));
+
+    const chartOptions = {
+        srcEff: { ...srcEffOptions, series: filterSeries(srcEffOptions.series, 'srcEff') },
+        srcDef: { ...srcDefOptions, series: filterSeries(srcDefOptions.series, 'srcDef') },
+        qaDef: { ...qaDefOptions, series: filterSeries(qaDefOptions.series, 'qaDef') },
+        qaEff: { ...qaEffOptions, series: filterSeries(qaEffOptions.series, 'qaEff') },
+    };
 
     // ── Per-chart form fields ──────────────────────────────────────────────
     const renderForm = (chartKey) => {
@@ -569,6 +619,42 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
                                         <span className="text-[10px] text-blue-500">Refreshing…</span>
                                     </div>
                                 )}
+
+                                {/* Series show/hide dropdown */}
+                                <div
+                                    className="relative"
+                                    ref={el => dropdownRefs.current[cfg.key] = el}
+                                >
+                                    <button
+                                        onClick={() => setActiveDropdown(prev => prev === cfg.key ? null : cfg.key)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
+                                    >
+                                        <IconChart className="w-3.5 h-3.5" />
+                                        Show/Hide Bars
+                                        <ChevronDown className={`w-3 h-3 transition-transform ${activeDropdown === cfg.key ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {activeDropdown === cfg.key && (
+                                        <div className="absolute right-0 top-full mt-1.5 z-50 min-w-[170px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg py-1.5">
+                                            {ALL_SERIES[cfg.key].map(name => {
+                                                const checked = selectedBars[cfg.key].includes(name);
+                                                return (
+                                                    <button
+                                                        key={name}
+                                                        onClick={() => toggleBar(cfg.key, name)}
+                                                        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                                    >
+                                                        <span className={`flex items-center justify-center w-4 h-4 rounded border flex-shrink-0 transition-colors ${checked ? 'bg-blue-500 border-blue-500' : 'border-slate-300 dark:border-slate-600'}`}>
+                                                            {checked && <Check className="w-3 h-3 text-white" />}
+                                                        </span>
+                                                        {name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
                                 <button
                                     onClick={() => toggleChart(cfg.key)}
                                     className={[

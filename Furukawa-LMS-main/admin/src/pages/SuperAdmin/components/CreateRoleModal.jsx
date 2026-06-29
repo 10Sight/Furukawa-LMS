@@ -1,267 +1,169 @@
 import React, { useState, useMemo } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  TextField,
-  Typography,
-  Box,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  FormControlLabel,
-  Checkbox,
-  Chip,
-  Alert,
-  CircularProgress,
-  Paper,
-  Divider,
-  IconButton,
-  FormGroup,
-  FormControl,
-  FormLabel,
-  Grid,
-  Card,
-  CardContent,
-  Avatar
-} from '@mui/material';
-import {
-  ChevronDown,
-  X,
-  Shield,
-  Plus,
-  Palette,
-  Check,
-  Info,
-  AlertCircle,
-  Users,
-  Settings,
-  Lock,
-  Key
-} from 'lucide-react';
-import { useTheme } from '@mui/material/styles';
+  IconShield,
+  IconPlus,
+  IconX,
+  IconCheck,
+  IconChevronDown,
+  IconKey,
+  IconSettings,
+  IconInfoCircle,
+  IconLoader,
+  IconAlertCircle,
+} from '@tabler/icons-react';
 import { toast } from 'react-toastify';
 import { useCreateRoleMutation } from '@/Redux/AllApi/SuperAdminApi';
 
-const ColorPicker = ({ selectedColor, onColorChange }) => {
-  const colors = [
-    '#3B82F6', // Blue
-    '#10B981', // Green
-    '#F59E0B', // Yellow
-    '#EF4444', // Red
-    '#8B5CF6', // Purple
-    '#EC4899', // Pink
-    '#06B6D4', // Cyan
-    '#84CC16', // Lime
-    '#F97316', // Orange
-    '#6B7280'  // Gray
-  ];
+const ROLE_COLORS = [
+  '#3B82F6',
+  '#10B981',
+  '#F59E0B',
+  '#EF4444',
+  '#8B5CF6',
+  '#EC4899',
+  '#06B6D4',
+  '#84CC16',
+  '#F97316',
+  '#6B7280',
+];
 
-  return (
-    <Box sx={{ mt: 2 }}>
-      <FormLabel component="legend" sx={{ mb: 1, fontSize: '0.875rem', fontWeight: 600 }}>
-        Role Color
-      </FormLabel>
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {colors.map((color) => (
-          <IconButton
-            key={color}
-            onClick={() => onColorChange(color)}
-            sx={{
-              width: 32,
-              height: 32,
-              bgcolor: color,
-              border: selectedColor === color ? `3px solid ${color}` : '2px solid transparent',
-              boxShadow: selectedColor === color ? '0 0 0 2px white' : 'none',
-              '&:hover': {
-                transform: 'scale(1.1)'
-              }
-            }}
-          >
-            {selectedColor === color && <Check size={16} color="white" />}
-          </IconButton>
-        ))}
-      </Box>
-    </Box>
-  );
-};
+const TARGET_LAYOUTS = [
+  { value: 'custom', label: 'Custom Portal (Default)' },
+  { value: 'admin', label: 'Admin Portal' },
+  { value: 'trainer', label: 'Trainer Portal' },
+  { value: 'student', label: 'Student Portal' },
+  { value: 'cms', label: 'CMS Portal' },
+  { value: 'dashboard', label: 'MPS Portal' },
+];
 
-const PermissionCategory = ({ category, permissions, selectedPermissions, onPermissionToggle, roleColor }) => {
-  const theme = useTheme();
-  const categoryPermissions = permissions.map(p => p.id);
-  const selectedInCategory = selectedPermissions.filter(p => categoryPermissions.includes(p));
-  const allSelected = selectedInCategory.length === categoryPermissions.length;
-  const someSelected = selectedInCategory.length > 0 && selectedInCategory.length < categoryPermissions.length;
+const ColorPicker = ({ selectedColor, onColorChange }) => (
+  <div className="mt-4">
+    <label className="block text-sm font-semibold text-gray-700 mb-2">Role Color</label>
+    <div className="flex flex-wrap gap-2">
+      {ROLE_COLORS.map((color) => (
+        <button
+          key={color}
+          type="button"
+          onClick={() => onColorChange(color)}
+          className="w-8 h-8 rounded-full cursor-pointer transition-transform hover:scale-110 flex items-center justify-center"
+          style={{
+            backgroundColor: color,
+            boxShadow: selectedColor === color ? `0 0 0 3px white, 0 0 0 5px ${color}` : 'none',
+          }}
+        >
+          {selectedColor === color && <IconCheck size={14} color="white" />}
+        </button>
+      ))}
+    </div>
+  </div>
+);
 
-  const handleSelectAll = () => {
+const PermissionCategory = ({ category, permissions, selectedPermissions, onPermissionChange, roleColor }) => {
+  const [expanded, setExpanded] = useState(false);
+  const categoryIds = permissions.map(p => p.id);
+  const selectedInCategory = categoryIds.filter(id => selectedPermissions.includes(id));
+  const allSelected = selectedInCategory.length === categoryIds.length;
+  const someSelected = selectedInCategory.length > 0 && !allSelected;
+
+  const handleSelectAll = (e) => {
+    e.stopPropagation();
     if (allSelected) {
-      // Deselect all in category
-      const newSelected = selectedPermissions.filter(p => !categoryPermissions.includes(p));
-      onPermissionToggle(newSelected);
+      onPermissionChange(selectedPermissions.filter(p => !categoryIds.includes(p)));
     } else {
-      // Select all in category
-      const newSelected = [...new Set([...selectedPermissions, ...categoryPermissions])];
-      onPermissionToggle(newSelected);
+      onPermissionChange([...new Set([...selectedPermissions, ...categoryIds])]);
     }
   };
 
   return (
-    <Accordion>
-      <AccordionSummary
-        expandIcon={<ChevronDown />}
-        sx={{
-          '&.Mui-expanded': {
-            borderBottom: `1px solid ${theme.palette.divider}`
-          }
-        }}
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div
+        className="bg-gray-50 px-4 py-3 flex items-center justify-between cursor-pointer select-none"
+        onClick={() => setExpanded(prev => !prev)}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', pr: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, mr: 2 }}>
-              {category}
-            </Typography>
-            <Chip
-              size="small"
-              label={`${selectedInCategory.length}/${categoryPermissions.length}`}
-              color={allSelected ? 'primary' : someSelected ? 'warning' : 'default'}
-              variant={someSelected || allSelected ? 'filled' : 'outlined'}
-            />
-          </Box>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={allSelected}
-                indeterminate={someSelected}
-                onChange={handleSelectAll}
-                onClick={(e) => e.stopPropagation()}
-                sx={{
-                  color: roleColor,
-                  '&.Mui-checked': {
-                    color: roleColor,
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => { if (el) el.indeterminate = someSelected; }}
+            onChange={handleSelectAll}
+            onClick={e => e.stopPropagation()}
+            className="w-4 h-4 rounded cursor-pointer"
+            style={{ accentColor: roleColor }}
+          />
+          <span className="font-medium text-gray-800">{category}</span>
+          <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+            {selectedInCategory.length}/{categoryIds.length}
+          </span>
+        </div>
+        <IconChevronDown
+          size={16}
+          className={`text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+        />
+      </div>
+      {expanded && (
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-gray-100">
+          {permissions.map(permission => (
+            <label key={permission.id} className="flex items-start gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={selectedPermissions.includes(permission.id)}
+                onChange={() => {
+                  if (selectedPermissions.includes(permission.id)) {
+                    onPermissionChange(selectedPermissions.filter(p => p !== permission.id));
+                  } else {
+                    onPermissionChange([...selectedPermissions, permission.id]);
                   }
                 }}
+                className="mt-0.5 w-4 h-4 rounded cursor-pointer"
+                style={{ accentColor: roleColor }}
               />
-            }
-            label="Select All"
-            onClick={(e) => e.stopPropagation()}
-            sx={{ ml: 'auto', mr: 0 }}
-          />
-        </Box>
-      </AccordionSummary>
-      <AccordionDetails>
-        <FormGroup>
-          <Grid container spacing={1}>
-            {permissions.map((permission) => (
-              <Grid item xs={12} sm={6} key={permission.id}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={selectedPermissions.includes(permission.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          onPermissionToggle([...selectedPermissions, permission.id]);
-                        } else {
-                          onPermissionToggle(selectedPermissions.filter(p => p !== permission.id));
-                        }
-                      }}
-                      sx={{
-                        color: roleColor,
-                        '&.Mui-checked': {
-                          color: roleColor,
-                        }
-                      }}
-                    />
-                  }
-                  label={
-                    <Box>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {permission.name}
-                      </Typography>
-                      <Typography variant="caption" color="textSecondary">
-                        {permission.description}
-                      </Typography>
-                    </Box>
-                  }
-                />
-              </Grid>
-            ))}
-          </Grid>
-        </FormGroup>
-      </AccordionDetails>
-    </Accordion>
+              <div>
+                <p className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{permission.name}</p>
+                {permission.description && (
+                  <p className="text-xs text-gray-400">{permission.description}</p>
+                )}
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
 const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
-  const theme = useTheme();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     permissions: [],
     color: '#3B82F6',
-    targetLayout: 'custom'
+    targetLayout: 'custom',
   });
   const [errors, setErrors] = useState({});
-
   const [createRole, { isLoading }] = useCreateRoleMutation();
 
-  const selectedPermissionsCount = formData.permissions.length;
-  const totalPermissionsCount = useMemo(() => {
-    return Object.values(permissions).reduce((acc, categoryPerms) => acc + categoryPerms.length, 0);
-  }, [permissions]);
+  const totalPermissionsCount = useMemo(
+    () => Object.values(permissions).reduce((acc, cat) => acc + cat.length, 0),
+    [permissions]
+  );
 
-  const handleInputChange = (field) => (event) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: event.target.value
-    }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: null }));
-    }
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }));
   };
 
-  const handlePermissionToggle = (newPermissions) => {
-    setFormData(prev => ({
-      ...prev,
-      permissions: newPermissions
-    }));
-  };
-
-  const handleColorChange = (color) => {
-    setFormData(prev => ({
-      ...prev,
-      color
-    }));
-  };
-
-  const validateForm = () => {
+  const validate = () => {
     const newErrors = {};
-
-    if (!formData.name.trim()) {
-      newErrors.name = 'Role name is required';
-    } else if (formData.name.length < 2) {
-      newErrors.name = 'Role name must be at least 2 characters';
-    }
-
-    if (!formData.description.trim()) {
-      newErrors.description = 'Role description is required';
-    }
-
-    if (formData.permissions.length === 0) {
-      newErrors.permissions = 'At least one permission must be selected';
-    }
-
+    if (!formData.name.trim()) newErrors.name = 'Role name is required';
+    else if (formData.name.trim().length < 2) newErrors.name = 'At least 2 characters required';
+    if (!formData.description.trim()) newErrors.description = 'Description is required';
+    if (formData.permissions.length === 0) newErrors.permissions = 'Select at least one permission';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) {
-      return;
-    }
-
+    if (!validate()) return;
     try {
       await createRole(formData).unwrap();
       toast.success('Role created successfully!');
@@ -273,252 +175,223 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
   };
 
   const handleClose = () => {
-    setFormData({
-      name: '',
-      description: '',
-      permissions: [],
-      color: '#3B82F6',
-      targetLayout: 'custom'
-    });
+    setFormData({ name: '', description: '', permissions: [], color: '#3B82F6', targetLayout: 'custom' });
     setErrors({});
     onClose();
   };
 
+  if (!open) return null;
+
+  const selectedColor = formData.color;
+
   return (
-    <Dialog
-      open={open}
-      onClose={handleClose}
-      maxWidth="lg"
-      fullWidth
-      PaperProps={{
-        sx: { borderRadius: 3, maxHeight: '90vh' }
-      }}
-    >
-      <DialogTitle sx={{ pb: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Avatar
-              sx={{
-                bgcolor: formData.color + '15',
-                color: formData.color,
-                mr: 2,
-                border: `2px solid ${formData.color}20`
-              }}
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: selectedColor + '20', color: selectedColor }}
             >
-              <Plus size={20} />
-            </Avatar>
-            <Box>
-              <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                Create Custom Role
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                Define a new role with specific permissions
-              </Typography>
-            </Box>
-          </Box>
-          <IconButton onClick={handleClose}>
-            <X />
-          </IconButton>
-        </Box>
-      </DialogTitle>
+              <IconPlus size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Create Custom Role</h2>
+              <p className="text-sm text-gray-500">Define a new role with specific permissions</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+          >
+            <IconX size={20} />
+          </button>
+        </div>
 
-      <DialogContent sx={{ pb: 0 }}>
-        <Grid container spacing={3}>
-          {/* Basic Information */}
-          <Grid item xs={12} md={4}>
-            <Paper sx={{ p: 3, height: 'fit-content', borderRadius: 2 }}>
-              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                <Settings size={20} style={{ marginRight: 8 }} />
-                Basic Information
-              </Typography>
-              
-              <TextField
-                fullWidth
-                label="Role Name"
+        {/* Body */}
+        <div className="flex-1 overflow-hidden flex min-h-0">
+          {/* Left Column */}
+          <div className="w-80 shrink-0 border-r border-gray-100 overflow-y-auto p-6 space-y-5">
+            <div className="flex items-center gap-2">
+              <IconSettings size={18} className="text-gray-500" />
+              <h3 className="font-semibold text-gray-800">Basic Information</h3>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Role Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
                 value={formData.name}
-                onChange={handleInputChange('name')}
-                error={!!errors.name}
-                helperText={errors.name}
-                sx={{ mb: 2 }}
+                onChange={e => handleChange('name', e.target.value)}
                 placeholder="e.g., Content Manager"
+                className={`w-full px-3 py-2 text-sm border rounded-lg outline-none transition-colors
+                  ${errors.name ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                onFocus={e => { if (!errors.name) e.target.style.borderColor = selectedColor; }}
+                onBlur={e => { if (!errors.name) e.target.style.borderColor = '#D1D5DB'; }}
               />
+              {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+            </div>
 
-              <TextField
-                fullWidth
-                label="Description"
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Description <span className="text-red-500">*</span>
+              </label>
+              <textarea
                 value={formData.description}
-                onChange={handleInputChange('description')}
-                error={!!errors.description}
-                helperText={errors.description}
-                multiline
+                onChange={e => handleChange('description', e.target.value)}
                 rows={3}
-                sx={{ mb: 2 }}
-                placeholder="Describe the role and its responsibilities..."
+                placeholder="Describe this role's responsibilities..."
+                className={`w-full px-3 py-2 text-sm border rounded-lg outline-none resize-none transition-colors
+                  ${errors.description ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                onFocus={e => { if (!errors.description) e.target.style.borderColor = selectedColor; }}
+                onBlur={e => { if (!errors.description) e.target.style.borderColor = '#D1D5DB'; }}
               />
+              {errors.description && <p className="text-xs text-red-500 mt-1">{errors.description}</p>}
+            </div>
 
-              <ColorPicker
-                selectedColor={formData.color}
-                onColorChange={handleColorChange}
-              />
+            <ColorPicker selectedColor={selectedColor} onColorChange={c => handleChange('color', c)} />
 
-              <Box sx={{ mt: 3 }}>
-                <FormLabel sx={{ mb: 1, fontSize: '0.875rem', fontWeight: 600, display: 'block' }}>
-                  Target Layout
-                </FormLabel>
-                <select
-                  value={formData.targetLayout}
-                  onChange={handleInputChange('targetLayout')}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #E2E8F0',
-                    fontSize: '0.875rem',
-                    backgroundColor: '#F8FAFC',
-                    outline: 'none',
-                    transition: 'border-color 0.2s'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = formData.color}
-                  onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
-                >
-                  <option value="custom">Custom Portal (Default)</option>
-                  <option value="admin">Admin Portal</option>
-                  <option value="trainer">Trainer Portal</option>
-                  <option value="student">Student Portal</option>
-                  <option value="cms">CMS Portal</option>
-                  <option value="dashboard">MPS Portal</option>
-                </select>
-                <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-                  Determines the default dashboard and sidebar structure for this role.
-                </Typography>
-              </Box>
-
-              {/* Role Preview */}
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                  Preview
-                </Typography>
-                <Card sx={{ border: `2px solid ${formData.color}20` }}>
-                  <CardContent sx={{ p: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <Avatar
-                        sx={{
-                          bgcolor: formData.color + '15',
-                          color: formData.color,
-                          width: 32,
-                          height: 32,
-                          mr: 1.5
-                        }}
-                      >
-                        <Shield size={16} />
-                      </Avatar>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600, color: formData.color }}>
-                        {formData.name || 'Role Name'}
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                      {formData.description || 'Role description will appear here...'}
-                    </Typography>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                      <Typography variant="caption">
-                        {selectedPermissionsCount} permissions
-                      </Typography>
-                      <Chip label="Custom" size="small" variant="outlined" color="secondary" />
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Box>
-            </Paper>
-          </Grid>
-
-          {/* Permissions */}
-          <Grid item xs={12} md={8}>
-            <Paper sx={{ p: 3, borderRadius: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                  <Key size={20} style={{ marginRight: 8 }} />
-                  Permissions
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Chip
-                    label={`${selectedPermissionsCount} / ${totalPermissionsCount} selected`}
-                    color={selectedPermissionsCount > 0 ? 'primary' : 'default'}
-                    variant="outlined"
-                  />
-                  <Button
-                    size="small"
-                    onClick={() => handlePermissionToggle([])}
-                    disabled={selectedPermissionsCount === 0}
-                  >
-                    Clear All
-                  </Button>
-                </Box>
-              </Box>
-
-              {errors.permissions && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {errors.permissions}
-                </Alert>
-              )}
-
-              <Alert severity="info" sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'start' }}>
-                  <Info size={16} style={{ marginRight: 8, marginTop: 2 }} />
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                      Permission Guidelines
-                    </Typography>
-                    <Typography variant="body2">
-                      Select permissions carefully. Users with this role will be able to perform all selected actions.
-                      System roles cannot be modified and have predefined permissions.
-                    </Typography>
-                  </Box>
-                </Box>
-              </Alert>
-
-              <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
-                {Object.entries(permissions).map(([category, categoryPermissions]) => (
-                  <PermissionCategory
-                    key={category}
-                    category={category}
-                    permissions={categoryPermissions}
-                    selectedPermissions={formData.permissions}
-                    onPermissionToggle={handlePermissionToggle}
-                    roleColor={formData.color}
-                  />
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Layout</label>
+              <select
+                value={formData.targetLayout}
+                onChange={e => handleChange('targetLayout', e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none bg-white cursor-pointer"
+                onFocus={e => (e.target.style.borderColor = selectedColor)}
+                onBlur={e => (e.target.style.borderColor = '#D1D5DB')}
+              >
+                {TARGET_LAYOUTS.map(l => (
+                  <option key={l.value} value={l.value}>{l.label}</option>
                 ))}
-              </Box>
-            </Paper>
-          </Grid>
-        </Grid>
-      </DialogContent>
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Determines the default dashboard and sidebar for this role.
+              </p>
+            </div>
 
-      <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
-        <Button
-          onClick={handleClose}
-          disabled={isLoading}
-          sx={{ textTransform: 'none' }}
-        >
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={isLoading}
-          sx={{
-            bgcolor: formData.color,
-            '&:hover': {
-              bgcolor: formData.color + 'DD'
-            },
-            textTransform: 'none',
-            fontWeight: 600
-          }}
-          startIcon={isLoading ? <CircularProgress size={16} /> : <Plus size={16} />}
-        >
-          {isLoading ? 'Creating...' : 'Create Role'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+            {/* Live Preview */}
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Preview</p>
+              <div
+                className="rounded-xl border-2 p-4"
+                style={{ borderColor: selectedColor + '30', backgroundColor: selectedColor + '08' }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: selectedColor + '20', color: selectedColor }}
+                  >
+                    <IconShield size={16} />
+                  </div>
+                  <span
+                    className="font-semibold text-sm truncate"
+                    style={{ color: selectedColor }}
+                  >
+                    {formData.name || 'Role Name'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 line-clamp-2">
+                  {formData.description || 'Role description will appear here...'}
+                </p>
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-xs text-gray-400">
+                    {formData.permissions.length} permission{formData.permissions.length !== 1 ? 's' : ''}
+                  </span>
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: selectedColor + '20', color: selectedColor }}
+                  >
+                    Custom
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column — Permissions */}
+          <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 min-w-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <IconKey size={18} className="text-gray-500" />
+                <h3 className="font-semibold text-gray-800">Permissions</h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className="text-sm px-3 py-1 rounded-full font-medium"
+                  style={{
+                    backgroundColor: formData.permissions.length > 0 ? selectedColor + '15' : '#F3F4F6',
+                    color: formData.permissions.length > 0 ? selectedColor : '#6B7280',
+                  }}
+                >
+                  {formData.permissions.length} / {totalPermissionsCount} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleChange('permissions', [])}
+                  disabled={formData.permissions.length === 0}
+                  className="text-sm text-gray-500 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+
+            {errors.permissions && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+                <IconAlertCircle size={16} className="shrink-0" />
+                {errors.permissions}
+              </div>
+            )}
+
+            <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-blue-700">
+              <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
+              <span>
+                Users with this role can perform all selected actions. System roles have predefined permissions and cannot be modified.
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {Object.entries(permissions).map(([category, categoryPermissions]) => (
+                <PermissionCategory
+                  key={category}
+                  category={category}
+                  permissions={categoryPermissions}
+                  selectedPermissions={formData.permissions}
+                  onPermissionChange={newPerms => handleChange('permissions', newPerms)}
+                  roleColor={selectedColor}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50">
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={isLoading}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 cursor-pointer transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isLoading}
+            className="px-5 py-2 text-sm font-semibold text-white rounded-lg flex items-center gap-2 disabled:opacity-50 cursor-pointer transition-opacity"
+            style={{ backgroundColor: selectedColor }}
+          >
+            {isLoading ? <IconLoader size={16} className="animate-spin" /> : <IconPlus size={16} />}
+            {isLoading ? 'Creating...' : 'Create Role'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 

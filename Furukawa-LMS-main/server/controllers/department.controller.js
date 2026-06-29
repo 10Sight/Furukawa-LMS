@@ -327,7 +327,8 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
         whereSql += " AND (isDeleted IS NULL OR isDeleted = 0)";
     }
 
-    const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+    const hasHandoverBypass = req.user?.customRole?.permissions?.includes('dojo:handover_sheet');
+    const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN' || hasHandoverBypass;
     if (!isAdmin) {
         if (req.user?.role === 'INSTRUCTOR') {
             const [iDepts] = await executeQuery("SELECT id FROM departments WHERE instructor = ?", [req.user.id]);

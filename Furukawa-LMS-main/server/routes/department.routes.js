@@ -44,7 +44,7 @@ import {
 } from "../controllers/department.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { authorizeRole } from "../middlewares/roleAuth.middleware.js";
+import { authorizeRole, authorizeAnyPermission } from "../middlewares/roleAuth.middleware.js";
 import { SYSTEM_PERMISSIONS } from "../controllers/rolesPermissions.controller.js";
 import checkAccountStatus from "../middlewares/accountStatus.middleware.js";
 
@@ -68,7 +68,7 @@ router.get("/progress/all", verifyJWT, authorizeRoles("isAdmin", "isTrainer", "S
 
 // General routes
 // General routes
-router.get("/", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getAllDepartments);
+router.get("/", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.DEPARTMENT_READ, SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET]), getAllDepartments);
 router.get("/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentById);
 router.get("/:id/trainees", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentTrainees);
 router.get("/:id/progress", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentProgress);

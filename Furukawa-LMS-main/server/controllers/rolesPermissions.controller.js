@@ -675,100 +675,94 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
   }
 });
 
-// Create custom role (STUB - Schema update needed for dynamic roles stored in DB)
+// Create custom role
 export const createCustomRole = asyncHandler(async (req, res) => {
   try {
-    const { name, description, permissions = [], color = "#6B7280" } = req.body;
+    const {
+      name, description, permissions = [], color = "#6B7280",
+      targetLayout = 'custom', allowedPages = [], generateManagementPage = false
+    } = req.body;
 
     if (!name) throw new ApiError("Role name is required", 400);
+
+    const systemKey = name.toUpperCase().replace(/\s+/g, '_');
+    if (DEFAULT_ROLES[systemKey]) throw new ApiError("A system role with this name already exists", 400);
+
+    const existing = await CustomRole.findByName(name);
+    if (existing) throw new ApiError("A role with this name already exists", 409);
 
     const validPermissions = Object.values(SYSTEM_PERMISSIONS);
     const invalidPermissions = permissions.filter(p => !validPermissions.includes(p));
     if (invalidPermissions.length > 0) throw new ApiError(`Invalid permissions: ${invalidPermissions.join(", ")}`, 400);
 
-    const roleId = name.toUpperCase().replace(/\\s+/g, '_');
-    if (DEFAULT_ROLES[roleId]) throw new ApiError("Role already exists", 400);
+    const newRole = await CustomRole.create({ name, description, color, permissions, allowedPages, generateManagementPage, targetLayout });
 
-    // SQL Insert to 'roles' table if it existed. 
-    // Assuming this controller primarily relied on constants.
-    // We return the object as mock success logic per original file structure.
-
-    const newRole = {
-      id: roleId, name, description, permissions,
-      isSystemRole: false, color, createdBy: req.user.id, createdAt: new Date(), userCount: 0
-    };
-
-    // Audit
     const auditLogger = (await import("../utils/auditLogger.js")).default;
     await auditLogger({
       action: 'CREATE_ROLE', userId: req.user.id,
-      details: { roleName: name, permissions: permissions.length, roleId },
+      details: { roleName: name, permissions: permissions.length, roleId: newRole.id },
       ipAddress: req.ip, userAgent: req.get('User-Agent')
     });
 
-    res.json(new ApiResponse(201, newRole, "Role created successfully"));
+    res.status(201).json(new ApiResponse(201, newRole, "Role created successfully"));
 
   } catch (error) {
     throw new ApiError(error.message || "Failed to create role", error.statusCode || 500);
   }
 });
 
-// Update role permissions (STUB)
+// Update role permissions
 export const updateRolePermissions = asyncHandler(async (req, res) => {
   try {
     const { roleId } = req.params;
-    const { permissions = [], name, description, color } = req.body;
+    const { permissions, name, description, color, targetLayout, allowedPages, generateManagementPage } = req.body;
 
-    const existingRole = DEFAULT_ROLES[roleId];
-    if (!existingRole) throw new ApiError("Role not found", 404);
+    if (DEFAULT_ROLES[roleId]) throw new ApiError("System roles cannot be modified", 403);
 
-    if (existingRole.isSystemRole && req.user.role !== 'SUPERADMIN') {
-      throw new ApiError("Cannot modify system roles", 403);
+    const customRole = await CustomRole.findById(roleId);
+    if (!customRole) throw new ApiError("Role not found", 404);
+
+    if (permissions !== undefined) {
+      const validPermissions = Object.values(SYSTEM_PERMISSIONS);
+      const invalid = permissions.filter(p => !validPermissions.includes(p));
+      if (invalid.length > 0) throw new ApiError(`Invalid permissions: ${invalid.join(", ")}`, 400);
     }
 
-    const validPermissions = Object.values(SYSTEM_PERMISSIONS);
-    const invalidPermissions = permissions.filter(p => !validPermissions.includes(p));
-    if (invalidPermissions.length > 0) throw new ApiError(`Invalid: ${invalidPermissions.join(", ")}`, 400);
-
-    const updatedRole = {
-      id: roleId,
-      name: name || existingRole.name,
-      description: description || existingRole.description,
-      permissions,
-      isSystemRole: existingRole.isSystemRole,
-      color: color || existingRole.color,
-      updatedBy: req.user.id,
-      updatedAt: new Date()
-    };
+    const updated = await CustomRole.update(roleId, {
+      name, description, color, permissions, targetLayout, allowedPages, generateManagementPage
+    });
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
     await auditLogger({
       action: 'UPDATE_ROLE', userId: req.user.id,
-      details: { roleId, roleName: updatedRole.name, permissionsChanged: permissions.length },
+      details: { roleId, roleName: updated.name, permissionsChanged: permissions?.length ?? 0 },
       ipAddress: req.ip, userAgent: req.get('User-Agent')
     });
 
-    res.json(new ApiResponse(200, updatedRole, "Role updated successfully"));
+    res.json(new ApiResponse(200, updated, "Role updated successfully"));
   } catch (error) {
     throw new ApiError(error.message || "Failed to update role", error.statusCode || 500);
   }
 });
 
-// Delete custom role (STUB)
+// Delete custom role
 export const deleteCustomRole = asyncHandler(async (req, res) => {
   try {
     const { roleId } = req.params;
-    const existingRole = DEFAULT_ROLES[roleId];
-    if (!existingRole) throw new ApiError("Role not found", 404);
 
-    if (existingRole.isSystemRole) throw new ApiError("Cannot delete system roles", 403);
+    if (DEFAULT_ROLES[roleId]) throw new ApiError("System roles cannot be deleted", 403);
 
-    // Check count in SQL
-    const [rows] = await executeQuery("SELECT COUNT(*) as cnt FROM users WHERE role = ?", [roleId]);
-    if (rows[0].cnt > 0) throw new ApiError(`Cannot delete role: ${rows[0].cnt} users still have this role`, 400);
+    const customRole = await CustomRole.findById(roleId);
+    if (!customRole) throw new ApiError("Role not found", 404);
+
+    await CustomRole.delete(roleId); // internally enforces zero-user constraint
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
-    await auditLogger(req.user.id, 'DELETE_ROLE', { roleId, roleName: existingRole.name });
+    await auditLogger({
+      action: 'DELETE_ROLE', userId: req.user.id,
+      details: { roleId, roleName: customRole.name },
+      ipAddress: req.ip, userAgent: req.get('User-Agent')
+    });
 
     res.json(new ApiResponse(200, {}, "Role deleted successfully"));
   } catch (error) {
@@ -786,22 +780,44 @@ export const assignRoleToUser = asyncHandler(async (req, res) => {
     if (users.length === 0) throw new ApiError("User not found", 404);
     const user = users[0];
 
-    const role = DEFAULT_ROLES[roleId];
-    if (!role) throw new ApiError("Role not found", 404);
+    const oldRole = user.role;
+    let roleName;
 
-    if (roleId === 'SUPERADMIN' && req.user.role !== 'SUPERADMIN') {
-      throw new ApiError("Insufficient permissions to assign SuperAdmin role", 403);
+    if (DEFAULT_ROLES[roleId]) {
+      if (roleId === 'SUPERADMIN' && req.user.role !== 'SUPERADMIN') {
+        throw new ApiError("Insufficient permissions to assign SuperAdmin role", 403);
+      }
+      const isAdmin = ['ADMIN', 'SUPERADMIN'].includes(roleId) ? 1 : 0;
+      const isTrainer = roleId === 'INSTRUCTOR' ? 1 : 0;
+      const isEmployee = roleId === 'STUDENT' ? 1 : 0;
+      await executeQuery(
+        "UPDATE users SET role = ?, customRoleId = NULL, isAdmin = ?, isTrainer = ?, isEmployee = ? WHERE id = ?",
+        [roleId, isAdmin, isTrainer, isEmployee, userId]
+      );
+      roleName = DEFAULT_ROLES[roleId].name;
+    } else {
+      const customRole = await CustomRole.findById(roleId);
+      if (!customRole) throw new ApiError("Role not found", 404);
+      const flags = { isAdmin: 0, isTrainer: 0, isEmployee: 0 };
+      switch ((customRole.targetLayout || '').toLowerCase()) {
+        case 'admin': case 'superadmin': flags.isAdmin = 1; break;
+        case 'trainer': case 'instructor': flags.isTrainer = 1; break;
+        case 'student': case 'employee': flags.isEmployee = 1; break;
+      }
+      await executeQuery(
+        "UPDATE users SET role = 'CUSTOM', customRoleId = ?, isAdmin = ?, isTrainer = ?, isEmployee = ? WHERE id = ?",
+        [roleId, flags.isAdmin, flags.isTrainer, flags.isEmployee, userId]
+      );
+      roleName = customRole.name;
     }
 
-    const oldRole = user.role;
-    await executeQuery("UPDATE users SET role = ? WHERE id = ?", [roleId, userId]);
-
     const auditLogger = (await import("../utils/auditLogger.js")).default;
-    await auditLogger(req.user.id, 'ASSIGN_ROLE', { targetUserId: userId, targetUserName: user.fullName, oldRole, newRole: roleId, roleName: role.name });
+    await auditLogger(req.user.id, 'ASSIGN_ROLE', {
+      targetUserId: userId, targetUserName: user.fullName, oldRole, newRole: roleId, roleName
+    });
 
     res.json(new ApiResponse(200, {
-      userId, userEmail: user.email, userName: user.fullName,
-      oldRole, newRole: roleId, roleName: role.name
+      userId, userEmail: user.email, userName: user.fullName, oldRole, newRole: roleId, roleName
     }, "Role assigned successfully"));
 
   } catch (error) {
@@ -817,40 +833,61 @@ export const bulkAssignRoles = asyncHandler(async (req, res) => {
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) throw new ApiError("User IDs array is required", 400);
     if (!roleId) throw new ApiError("Role ID is required", 400);
 
-    const role = DEFAULT_ROLES[roleId];
-    if (!role) throw new ApiError("Role not found", 404);
-
     if (roleId === 'SUPERADMIN' && req.user.role !== 'SUPERADMIN') {
       throw new ApiError("Insufficient permissions to assign SuperAdmin role", 403);
     }
 
-    // Verify users
+    let roleName;
+    let isSystemRole = !!DEFAULT_ROLES[roleId];
+    let flags = { isAdmin: 0, isTrainer: 0, isEmployee: 0 };
+
+    if (isSystemRole) {
+      roleName = DEFAULT_ROLES[roleId].name;
+      flags.isAdmin = ['ADMIN', 'SUPERADMIN'].includes(roleId) ? 1 : 0;
+      flags.isTrainer = roleId === 'INSTRUCTOR' ? 1 : 0;
+      flags.isEmployee = roleId === 'STUDENT' ? 1 : 0;
+    } else {
+      const customRole = await CustomRole.findById(roleId);
+      if (!customRole) throw new ApiError("Role not found", 404);
+      roleName = customRole.name;
+      switch ((customRole.targetLayout || '').toLowerCase()) {
+        case 'admin': case 'superadmin': flags.isAdmin = 1; break;
+        case 'trainer': case 'instructor': flags.isTrainer = 1; break;
+        case 'student': case 'employee': flags.isEmployee = 1; break;
+      }
+    }
+
     const placeholders = userIds.map(() => '?').join(',');
     const [users] = await executeQuery(`SELECT * FROM users WHERE id IN (${placeholders})`, userIds);
     if (users.length !== userIds.length) throw new ApiError("Some users not found", 404);
 
     const results = { successful: [], failed: [] };
 
-    // In SQL we can do a bulk update, but we need individual results for the response/audit.
-    // Also need oldRole for audit.
-    // Iteration is acceptable for manageable bulk sizes.
-
     for (const user of users) {
       try {
         const oldRole = user.role;
-        await executeQuery("UPDATE users SET role = ? WHERE id = ?", [roleId, user.id]);
-
-        results.successful.push({
-          userId: user.id, userEmail: user.email, userName: user.fullName,
-          oldRole, newRole: roleId
-        });
-      } catch (error) {
-        results.failed.push({ userId: user.id, userEmail: user.email, error: error.message });
+        if (isSystemRole) {
+          await executeQuery(
+            "UPDATE users SET role = ?, customRoleId = NULL, isAdmin = ?, isTrainer = ?, isEmployee = ? WHERE id = ?",
+            [roleId, flags.isAdmin, flags.isTrainer, flags.isEmployee, user.id]
+          );
+        } else {
+          await executeQuery(
+            "UPDATE users SET role = 'CUSTOM', customRoleId = ?, isAdmin = ?, isTrainer = ?, isEmployee = ? WHERE id = ?",
+            [roleId, flags.isAdmin, flags.isTrainer, flags.isEmployee, user.id]
+          );
+        }
+        results.successful.push({ userId: user.id, userEmail: user.email, userName: user.fullName, oldRole, newRole: roleId });
+      } catch (err) {
+        results.failed.push({ userId: user.id, userEmail: user.email, error: err.message });
       }
     }
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
-    await auditLogger(req.user.id, 'BULK_ASSIGN_ROLES', { roleId, roleName: role.name, totalUsers: userIds.length, successful: results.successful.length, failed: results.failed.length });
+    await auditLogger(req.user.id, 'BULK_ASSIGN_ROLES', {
+      roleId, roleName, totalUsers: userIds.length,
+      successful: results.successful.length, failed: results.failed.length
+    });
 
     res.json(new ApiResponse(200, {
       results, summary: { total: userIds.length, successful: results.successful.length, failed: results.failed.length }
@@ -867,12 +904,24 @@ export const getUsersByRole = asyncHandler(async (req, res) => {
     const { roleId } = req.params;
     const { page = 1, limit = 20, search = "" } = req.query;
 
-    if (!DEFAULT_ROLES[roleId]) throw new ApiError("Role not found", 404);
-
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    let params = [roleId];
-    let whereSQL = "role = ?";
+    let roleName;
+    let whereSQL;
+    let baseParams;
 
+    if (DEFAULT_ROLES[roleId]) {
+      roleName = DEFAULT_ROLES[roleId].name;
+      whereSQL = "role = ?";
+      baseParams = [roleId];
+    } else {
+      const customRole = await CustomRole.findById(roleId);
+      if (!customRole) throw new ApiError("Role not found", 404);
+      roleName = customRole.name;
+      whereSQL = "customRoleId = ?";
+      baseParams = [roleId];
+    }
+
+    let params = [...baseParams];
     if (search) {
       whereSQL += " AND (fullName LIKE ? OR email LIKE ?)";
       params.push(`%${search}%`, `%${search}%`);
@@ -882,10 +931,10 @@ export const getUsersByRole = asyncHandler(async (req, res) => {
     const totalUsers = cntRows[0].cnt;
 
     const [users] = await executeQuery(`
-        SELECT id, fullName, email, createdAt, status 
-        FROM users 
+        SELECT id, fullName, email, createdAt, status
+        FROM users
         WHERE ${whereSQL}
-        ORDER BY createdAt DESC 
+        ORDER BY createdAt DESC
         OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `, [...params, offset, parseInt(limit)]);
 
@@ -897,7 +946,7 @@ export const getUsersByRole = asyncHandler(async (req, res) => {
         totalUsers,
         limit: parseInt(limit)
       },
-      role: { id: roleId, name: DEFAULT_ROLES[roleId].name }
+      role: { id: roleId, name: roleName }
     }, "Users fetched successfully"));
 
   } catch (error) {

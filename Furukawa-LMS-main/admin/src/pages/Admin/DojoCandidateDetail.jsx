@@ -454,7 +454,7 @@ const DojoCandidateDetail = () => {
                             variant="ghost"
                             size="sm"
                             className="h-7 gap-1.5 text-xs px-2"
-                            onClick={() => navigate(`/admin/evaluation-tests/attempt/${attempt.id}`)}
+                            onClick={() => navigate(`/admin/view-evaluation-attempt/${attempt.id}`)}
                           >
                             <IconEye className="h-3.5 w-3.5" />
                             View

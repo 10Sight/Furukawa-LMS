@@ -14,6 +14,7 @@ import socketIOService from "./utils/socketIO.js";
 // Routes
 import authRoutes from "./routes/auth.route.js";
 import userRoutes from "./routes/user.routes.js";
+import designationRoutes from "./routes/designation.routes.js";
 import courseRoutes from "./routes/course.routes.js";
 import quizRoutes from "./routes/quiz.routes.js";
 import attemptedQuizRoutes from "./routes/attemptedQuiz.routes.js";
@@ -56,6 +57,7 @@ import departmentStatusScheduler from "./services/departmentStatusScheduler.js";
 import reportScheduler from "./services/reportScheduler.js";
 import handoverNotificationScheduler from "./services/handoverNotificationScheduler.js";
 import sixteenDayMonitoringScheduler from "./services/sixteenDayMonitoringScheduler.js";
+import planNotificationScheduler from "./services/planNotificationScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
@@ -219,6 +221,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/v1/auth/", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/designations", designationRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/quizzes", quizRoutes);
 app.use("/api/attempts", attemptedQuizRoutes);
@@ -449,6 +452,7 @@ const startServer = async () => {
         reportScheduler.init();
         handoverNotificationScheduler.init();
         sixteenDayMonitoringScheduler.init();
+        planNotificationScheduler.init();
 
         // Initialize Core Tables
         await HandoverSheet.init();
@@ -493,6 +497,7 @@ const startServer = async () => {
             departmentStatusScheduler.stop();
             handoverNotificationScheduler.stop();
             sixteenDayMonitoringScheduler.stop();
+            planNotificationScheduler.stop();
             process.exit(0);
         });
 
@@ -501,6 +506,7 @@ const startServer = async () => {
             departmentStatusScheduler.stop();
             handoverNotificationScheduler.stop();
             sixteenDayMonitoringScheduler.stop();
+            planNotificationScheduler.stop();
             process.exit(0);
         });
 

@@ -15,22 +15,6 @@ export const userApi = createApi({
             providesTags: ['User'],
         }),
 
-        getUniqueDesignations: builder.query({
-            query: () => ({
-                url: "/api/users/designations/unique",
-                method: "GET"
-            }),
-            providesTags: ['User'],
-        }),
-
-        getDesignationsWithCounts: builder.query({
-            query: () => ({
-                url: "/api/users/designations/counts",
-                method: "GET"
-            }),
-            providesTags: ['User'],
-        }),
-
         getUserById: builder.query({
             query: (id) => ({
                 url: `/api/users/${id}`,
@@ -269,24 +253,6 @@ export const userApi = createApi({
             invalidatesTags: ['User'],
         }),
 
-        shutterDesignation: builder.mutation({
-            query: (designation) => ({
-                url: "/api/users/designations/shutter",
-                method: "POST",
-                data: { designation },
-            }),
-            invalidatesTags: ['User'],
-        }),
-
-        unshutterDesignation: builder.mutation({
-            query: (designation) => ({
-                url: "/api/users/designations/unshutter",
-                method: "POST",
-                data: { designation },
-            }),
-            invalidatesTags: ['User'],
-        }),
-
         bulkUpdateShiftSchedule: builder.mutation({
             query: (data) => ({
                 url: "/api/users/bulk-shift",
@@ -322,9 +288,5 @@ export const {
     useLazyGetNextTemporaryIdQuery,
     useChangePasswordMutation,
     useDojoRegisterMutation,
-    useGetUniqueDesignationsQuery,
-    useGetDesignationsWithCountsQuery,
-    useShutterDesignationMutation,
-    useUnshutterDesignationMutation,
     useBulkUpdateShiftScheduleMutation,
 } = userApi;

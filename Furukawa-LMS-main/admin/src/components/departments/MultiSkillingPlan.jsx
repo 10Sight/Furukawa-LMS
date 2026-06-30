@@ -17,6 +17,24 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 
+const addThreeMonths = (dateStr) => {
+    if (!dateStr) return "";
+    const [y, m, d] = dateStr.split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const date = new Date(y, m - 1 + 3, d);
+    if (date.getDate() !== d) date.setDate(0);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+};
+
+const ACTUAL_TO_PLAN = {
+    q1DateActual: "q2Date",
+    q2DateActual: "q3Date",
+    q3DateActual: "q4Date",
+};
+
 const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChange, disabled }) => {
     const [searchTerm, setSearchTerm] = useState(value || "");
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -108,17 +126,18 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
 
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
-    const [isLoadingPlan, setIsLoadingPlan] = useState(false);
+    const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
     // Reset loading state when department/section/year changes
     useEffect(() => {
         setHasLoaded(false);
         setRows([]);
+        setIsLoadingPlan(true);
     }, [departmentId, sectionId, year]);
 
     // Initialize rows when both students and plan details are ready
     useEffect(() => {
-        if (isLoadingPlan || hasLoaded || students.length === 0) return;
+        if (isLoadingPlan || hasLoaded || (students.length === 0 && Object.keys(tableData || {}).length === 0)) return;
 
         const savedRows = [];
         const savedUserIds = Object.keys(tableData || {});
@@ -153,6 +172,27 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
             });
         });
 
+        // Auto-add students (filtered by competency level) not already in the saved plan
+        const savedSet = new Set(savedUserIds.map(String));
+        students.forEach((s) => {
+            const uid = String(s._id || s.id);
+            if (!savedSet.has(uid)) {
+                savedRows.push({
+                    rowId: uid,
+                    userId: uid,
+                    userName: s.fullName || s.name || "",
+                    cardNo: s.cardNo || s.username || s.empId || "",
+                    shift: s.shift || "",
+                    modelLine: s.lineName || "",
+                    station: s.subSectionName || "",
+                    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
+                    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
+                    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
+                    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
+                });
+            }
+        });
+
         // Pad to 25 rows
         const totalRowsNeeded = 25;
         const currentCount = savedRows.length;
@@ -178,8 +218,32 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
         setHasLoaded(true);
     }, [tableData, students, isLoadingPlan, hasLoaded]);
 
+    // Safeguard: Update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
     useEffect(() => {
-        if (!departmentId) return;
+        if (students.length > 0 && hasLoaded && rows.length > 0) {
+            setRows(prev => prev.map(row => {
+                if (!row.userId) return row;
+                const user = students.find(s => String(s._id || s.id) === String(row.userId));
+                if (user) {
+                    return {
+                        ...row,
+                        userName: user.fullName || user.name || row.userName,
+                        cardNo: user.cardNo || user.username || user.empId || row.cardNo,
+                        shift: row.shift || user.shift || "",
+                        modelLine: row.modelLine || user.lineName || "",
+                        station: row.station || user.subSectionName || ""
+                    };
+                }
+                return row;
+            }));
+        }
+    }, [students, hasLoaded]);
+
+    useEffect(() => {
+        if (!departmentId) {
+            setIsLoadingPlan(false);
+            return;
+        }
         let cancelled = false;
 
         const loadSavedPlan = async () => {
@@ -236,10 +300,13 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
 
     const handleRowFieldChange = (rowId, field, value) => {
         setRows(prev => prev.map(row => {
-            if (row.rowId === rowId) {
-                return { ...row, [field]: value };
+            if (row.rowId !== rowId) return row;
+            const updated = { ...row, [field]: value };
+            const targetField = ACTUAL_TO_PLAN[field];
+            if (targetField && value && !row[targetField]) {
+                updated[targetField] = addThreeMonths(value);
             }
-            return row;
+            return updated;
         }));
     };
 
@@ -291,6 +358,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                 selectedLines: [],
                 tableData: newTableData,
             });
+            setTableData(newTableData);
             toast.success("Multi-skilling plan saved successfully");
         } catch (error) {
             toast.error(error?.response?.data?.message || "Failed to save multi-skilling plan");

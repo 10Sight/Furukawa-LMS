@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useGetDesignationsWithCountsQuery, useShutterDesignationMutation, useUnshutterDesignationMutation } from "@/Redux/AllApi/UserApi";
+import { useGetDesignationsWithCountsQuery, useShutterDesignationMutation, useUnshutterDesignationMutation } from "@/Redux/AllApi/DesignationApi";
 import {
     Table,
     TableBody,
@@ -106,7 +106,7 @@ const DesignationsPage = () => {
                             <TableHead className="font-semibold">Designation</TableHead>
                             <TableHead className="text-center font-semibold">Active Operators</TableHead>
                             <TableHead className="text-center font-semibold">Total Operators</TableHead>
-                            <TableHead className="text-center font-semibold">Shutter</TableHead>
+                            <TableHead className="text-center font-semibold">Visible</TableHead>
                             <TableHead className="w-10" />
                         </TableRow>
                     </TableHeader>
@@ -170,7 +170,7 @@ const DesignationsPage = () => {
                                 </TableCell>
                                 <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                                     <Switch
-                                        checked={!!row.isShuttered}
+                                        checked={!row.isShuttered}
                                         onCheckedChange={() => handleShutterToggle(row.designation, !!row.isShuttered)}
                                     />
                                 </TableCell>

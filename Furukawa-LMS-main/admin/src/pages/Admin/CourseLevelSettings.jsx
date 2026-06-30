@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -518,6 +519,19 @@ const CourseLevelSettings = () => {
                               onChange={(e) => handleLevelChange(index, "description", e.target.value)}
                               placeholder="Describe this level..."
                             />
+                          </div>
+
+                          <div className="flex items-center gap-3 md:col-span-2 lg:col-span-3">
+                            <Switch
+                              id={`ms-toggle-${index}`}
+                              checked={!!level.includeInMultiSkilling}
+                              onCheckedChange={(checked) =>
+                                handleLevelChange(index, "includeInMultiSkilling", checked)
+                              }
+                            />
+                            <Label htmlFor={`ms-toggle-${index}`} className="cursor-pointer">
+                              Include in Multi-Skilling Sheet
+                            </Label>
                           </div>
                         </div>
 

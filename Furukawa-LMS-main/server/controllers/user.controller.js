@@ -1,6 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
-import DesignationShutter from "../models/designationShutter.model.js";
+import CourseLevelConfig from "../models/courseLevelConfig.model.js";
 import validator from "validator";
 import { hasPermission } from "../middlewares/roleAuth.middleware.js";
 import { SYSTEM_PERMISSIONS } from "./rolesPermissions.controller.js";
@@ -206,6 +206,13 @@ const normalizeParam = (val) => {
   return val;
 };
 
+// Parses a single value or comma-separated list of values into an array of trimmed, non-empty ids.
+const toIdList = (val) => {
+  const normalized = normalizeParam(val);
+  if (!normalized) return [];
+  return String(normalized).split(',').map(id => id.trim()).filter(Boolean);
+};
+
 // Returns a SQL WHERE fragment (no extra params) for assignment-level filtering.
 // Relies on the aliases produced by getHierarchyJoinSQL being present in the query.
 const buildAssignmentClause = (assignmentStatus, assignmentType) => {
@@ -274,31 +281,36 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   if (req.query.unit) { whereClauses.push("u.unit = ?"); params.push(req.query.unit); }
   
-  const deptId = normalizeParam(req.query.departmentId);
-  const sectId = normalizeParam(req.query.sectionId);
-  const lnId = normalizeParam(req.query.lineId);
-  const subSectId = normalizeParam(req.query.subSectionId);
-  const stnId = normalizeParam(req.query.stationId);
+  const deptIds = toIdList(req.query.departmentId);
+  const sectIds = toIdList(req.query.sectionId);
+  const lnIds = toIdList(req.query.lineId);
+  const subSectIds = toIdList(req.query.subSectionId);
+  const stnIds = toIdList(req.query.stationId);
 
-  if (deptId) {
-    whereClauses.push("(u.departmentId = ? OR u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId = ?))");
-    params.push(deptId, deptId);
+  if (deptIds.length) {
+    const ph = deptIds.map(() => "?").join(",");
+    whereClauses.push(`(u.departmentId IN (${ph}) OR u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId IN (${ph})))`);
+    params.push(...deptIds, ...deptIds);
   }
-  if (sectId) {
-    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id = ?)");
-    params.push(sectId);
+  if (sectIds.length) {
+    const ph = sectIds.map(() => "?").join(",");
+    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id IN (${ph}))`);
+    params.push(...sectIds);
   }
-  if (lnId) {
-    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id = ?)");
-    params.push(lnId);
+  if (lnIds.length) {
+    const ph = lnIds.map(() => "?").join(",");
+    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id IN (${ph}))`);
+    params.push(...lnIds);
   }
-  if (subSectId) {
-    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id = ?)");
-    params.push(subSectId);
+  if (subSectIds.length) {
+    const ph = subSectIds.map(() => "?").join(",");
+    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id IN (${ph}))`);
+    params.push(...subSectIds);
   }
-  if (stnId) {
-    whereClauses.push("(u.stationId = ? OR (u.isTemporary = 1 AND u.targetStationId = ?) OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = ?))");
-    params.push(stnId, stnId, stnId);
+  if (stnIds.length) {
+    const ph = stnIds.map(() => "?").join(",");
+    whereClauses.push(`(u.stationId IN (${ph}) OR (u.isTemporary = 1 AND u.targetStationId IN (${ph})) OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id IN (${ph})))`);
+    params.push(...stnIds, ...stnIds, ...stnIds);
   }
   if (req.query.role) {
     const roles = req.query.role.split(",");
@@ -1277,26 +1289,37 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
     params.push(t, t, t);
   }
-  const deptId = normalizeParam(req.query.departmentId);
-  const sectId = normalizeParam(req.query.sectionId);
-  const lnId = normalizeParam(req.query.lineId);
-  const subSectId = normalizeParam(req.query.subSectionId);
-  const stnId = normalizeParam(req.query.stationId);
+  const deptIds = toIdList(req.query.departmentId);
+  const sectIds = toIdList(req.query.sectionId);
+  const lnIds = toIdList(req.query.lineId);
+  const subSectIds = toIdList(req.query.subSectionId);
+  const stnIds = toIdList(req.query.stationId);
 
-  if (deptId) { whereClauses.push("d.id = ?"); params.push(deptId); }
-  if (sectId) {
-    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id = ?)");
-    params.push(sectId);
+  if (deptIds.length) {
+    const ph = deptIds.map(() => "?").join(",");
+    whereClauses.push(`d.id IN (${ph})`);
+    params.push(...deptIds);
   }
-  if (lnId) {
-    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id = ?)");
-    params.push(lnId);
+  if (sectIds.length) {
+    const ph = sectIds.map(() => "?").join(",");
+    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id IN (${ph}))`);
+    params.push(...sectIds);
   }
-  if (subSectId) {
-    whereClauses.push("u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id = ?)");
-    params.push(subSectId);
+  if (lnIds.length) {
+    const ph = lnIds.map(() => "?").join(",");
+    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id IN (${ph}))`);
+    params.push(...lnIds);
   }
-  if (stnId) { whereClauses.push("u.stationId = ?"); params.push(stnId); }
+  if (subSectIds.length) {
+    const ph = subSectIds.map(() => "?").join(",");
+    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id IN (${ph}))`);
+    params.push(...subSectIds);
+  }
+  if (stnIds.length) {
+    const ph = stnIds.map(() => "?").join(",");
+    whereClauses.push(`u.stationId IN (${ph})`);
+    params.push(...stnIds);
+  }
   if (req.query.sixteenDayApprovedOnly === "true") {
     whereClauses.push(`EXISTS (
       SELECT 1 FROM (
@@ -1343,6 +1366,28 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     if (designations.length > 0) {
       whereClauses.push(`u.designation IN (${designations.map(() => "?").join(",")})`);
       params.push(...designations);
+    }
+  }
+
+  if (req.query.filterMultiSkillingLevels === "true") {
+    const activeConfig = await CourseLevelConfig.getActiveConfig();
+    if (activeConfig && activeConfig.levels) {
+      const allowedLevels = activeConfig.levels
+        .filter(l => l.includeInMultiSkilling === true || l.includeInMultiSkilling === 'true')
+        .map(l => l.name);
+
+      if (allowedLevels.length > 0) {
+        const placeholders = allowedLevels.map(() => "?").join(",");
+        // Mirror formatUser's level resolution: currentSkill[subSectionId] takes
+        // precedence over the currentLevel column, which is only synced on station change.
+        whereClauses.push(`
+          COALESCE(
+            JSON_VALUE(u.currentSkill, CONCAT('$."', COALESCE(u.subSectionId, u.targetSubSectionId), '"')),
+            u.currentLevel
+          ) IN (${placeholders})
+        `);
+        params.push(...allowedLevels);
+      }
     }
   }
 
@@ -1498,49 +1543,6 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       leftCount: statusCountsData[0]?.leftCount || 0,
     }
   }, "Students fetched successfully"));
-});
-
-export const getUniqueDesignations = asyncHandler(async (req, res) => {
-  const [rows] = await executeQuery(`
-    SELECT DISTINCT designation
-    FROM users
-    WHERE designation IS NOT NULL AND designation != '' AND (isDeleted = 0 OR isDeleted IS NULL)
-      AND designation NOT IN (SELECT designation FROM designation_shutters)
-    ORDER BY designation ASC
-  `);
-  const designations = rows.map(r => r.designation);
-  res.json(new ApiResponse(200, designations, "Unique designations fetched successfully"));
-});
-
-export const getDesignationsWithCounts = asyncHandler(async (req, res) => {
-  const [rows] = await executeQuery(`
-    SELECT
-      u.designation,
-      COUNT(*) AS totalCount,
-      SUM(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) AS activeCount,
-      CASE WHEN ds.designation IS NOT NULL THEN 1 ELSE 0 END AS isShuttered
-    FROM users u
-    LEFT JOIN designation_shutters ds ON ds.designation = u.designation
-    WHERE u.designation IS NOT NULL AND u.designation != '' AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-      AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
-    GROUP BY u.designation, ds.designation
-    ORDER BY u.designation ASC
-  `);
-  res.json(new ApiResponse(200, rows, "Designations with counts fetched successfully"));
-});
-
-export const shutterDesignation = asyncHandler(async (req, res) => {
-  const { designation } = req.body;
-  if (!designation) throw new ApiError(400, "designation is required");
-  await DesignationShutter.shutter(designation);
-  res.json(new ApiResponse(200, null, `Designation "${designation}" shuttered successfully`));
-});
-
-export const unshutterDesignation = asyncHandler(async (req, res) => {
-  const { designation } = req.body;
-  if (!designation) throw new ApiError(400, "designation is required");
-  await DesignationShutter.unshutter(designation);
-  res.json(new ApiResponse(200, null, `Designation "${designation}" unshuttered successfully`));
 });
 
 // Other specialized fetches (Mentors, Supervisors, Incharges) can be added similarly using formatUser
@@ -1843,9 +1845,11 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
         hierWhere.push("u.unit = ?");
         hierParams.push(filters.unit);
       }
-      if (filters?.departmentId && filters.departmentId !== "ALL") {
-        hierWhere.push("(u.departmentId = ? OR u.department = ?)");
-        hierParams.push(filters.departmentId, filters.departmentId);
+      const hierDeptIds = toIdList(filters?.departmentId);
+      if (hierDeptIds.length) {
+        const ph = hierDeptIds.map(() => "?").join(",");
+        hierWhere.push(`(u.departmentId IN (${ph}) OR u.department IN (${ph}))`);
+        hierParams.push(...hierDeptIds, ...hierDeptIds);
       }
 
       const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
@@ -1885,9 +1889,11 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
       whereClauses.push("unit = ?");
       params.push(filters.unit);
     }
-    if (filters?.departmentId && filters.departmentId !== "ALL") {
-      whereClauses.push("(departmentId = ? OR department = ?)");
-      params.push(filters.departmentId, filters.departmentId);
+    const flatDeptIds = toIdList(filters?.departmentId);
+    if (flatDeptIds.length) {
+      const ph = flatDeptIds.map(() => "?").join(",");
+      whereClauses.push(`(departmentId IN (${ph}) OR department IN (${ph}))`);
+      params.push(...flatDeptIds, ...flatDeptIds);
     }
 
     const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : "";
@@ -2092,9 +2098,11 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
         hierWhere.push("u.unit = ?");
         hierParams.push(filters.unit);
       }
-      if (filters?.departmentId && filters.departmentId !== "ALL") {
-        hierWhere.push("(u.departmentId = ? OR u.department = ?)");
-        hierParams.push(filters.departmentId, filters.departmentId);
+      const hierDeptIds = toIdList(filters?.departmentId);
+      if (hierDeptIds.length) {
+        const ph = hierDeptIds.map(() => "?").join(",");
+        hierWhere.push(`(u.departmentId IN (${ph}) OR u.department IN (${ph}))`);
+        hierParams.push(...hierDeptIds, ...hierDeptIds);
       }
 
       const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
@@ -2126,9 +2134,11 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
         whereClauses.push("unit = ?");
         params.push(filters.unit);
       }
-      if (filters?.departmentId && filters.departmentId !== "ALL") {
-        whereClauses.push("(departmentId = ? OR department = ?)");
-        params.push(filters.departmentId, filters.departmentId);
+      const flatDeptIds = toIdList(filters?.departmentId);
+      if (flatDeptIds.length) {
+        const ph = flatDeptIds.map(() => "?").join(",");
+        whereClauses.push(`(departmentId IN (${ph}) OR department IN (${ph}))`);
+        params.push(...flatDeptIds, ...flatDeptIds);
       }
 
       const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
@@ -2160,7 +2170,7 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
     const existing = parseJSON(u.shiftSchedule, {});
     const merged = { ...existing };
     for (const [date, shift] of Object.entries(shiftSchedulePatch)) {
-      if (shift === null || shift === "") {
+      if (shift === null || shift === "" || shift === "REMOVE") {
         delete merged[date];
       } else {
         merged[date] = shift;

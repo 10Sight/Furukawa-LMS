@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { formatPaperSubTitle } from "@/utils/formatters";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance from "@/Helper/axiosInstance";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -619,7 +620,7 @@ const TakeQuiz = () => {
                 {quiz?.paperTitle || "SKILL EVALUATION TEST PAPER"}
               </h1>
               <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
-                {quiz?.paperSubTitle || `New Manpower for ${quiz?.level || "L-2"}`}
+                {formatPaperSubTitle(quiz?.paperSubTitle, quiz?.level, quiz?.isDojo, "New Manpower")}
               </h2>
             </div>
 
@@ -1148,7 +1149,7 @@ const TakeQuiz = () => {
                 SKILL EVALUATION RESULT SHEET
               </h1>
               <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
-                Graded Sheet for {quiz?.level || "L-2"}
+                {formatPaperSubTitle(quiz?.paperSubTitle, quiz?.level, quiz?.isDojo, "Graded Sheet")}
               </h2>
             </div>
 

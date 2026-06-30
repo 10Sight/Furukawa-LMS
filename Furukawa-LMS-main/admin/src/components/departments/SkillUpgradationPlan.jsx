@@ -17,6 +17,24 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 
+const addThreeMonths = (dateStr) => {
+    if (!dateStr) return "";
+    const [y, m, d] = dateStr.split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const date = new Date(y, m - 1 + 3, d);
+    if (date.getDate() !== d) date.setDate(0);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+};
+
+const ACTUAL_TO_PLAN = {
+    q1DateActual: "q2Date",
+    q2DateActual: "q3Date",
+    q3DateActual: "q4Date",
+};
+
 const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChange, disabled }) => {
     const [searchTerm, setSearchTerm] = useState(value || "");
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -249,10 +267,13 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
     const handleRowFieldChange = (rowId, field, value) => {
         setRows(prev => prev.map(row => {
-            if (row.rowId === rowId) {
-                return { ...row, [field]: value };
+            if (row.rowId !== rowId) return row;
+            const updated = { ...row, [field]: value };
+            const targetField = ACTUAL_TO_PLAN[field];
+            if (targetField && value && !row[targetField]) {
+                updated[targetField] = addThreeMonths(value);
             }
-            return row;
+            return updated;
         }));
     };
 

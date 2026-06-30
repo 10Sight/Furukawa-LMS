@@ -24,6 +24,7 @@ const SHIFTS = [
   { key: "B", label: "Shift B", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   { key: "C", label: "Shift C", className: "bg-purple-50 text-purple-700 border-purple-200" },
   { key: "G", label: "General", className: "bg-amber-50 text-amber-700 border-amber-200" },
+  { key: "REMOVE", label: "Remove", className: "bg-red-50 text-red-700 border-red-200" },
 ];
 
 const shiftStyle = (key) => SHIFTS.find((s) => s.key === key)?.className || "";
@@ -231,18 +232,21 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-500 font-medium">Shift:</span>
           {SHIFTS.map((s) => (
-            <button
-              type="button"
-              key={s.key}
-              onClick={() => setPendingShift(s.key)}
-              className={cn(
-                "text-xs px-2.5 py-1 rounded-full border font-medium transition-all",
-                s.className,
-                pendingShift === s.key ? "ring-2 ring-offset-1 ring-gray-400 shadow-sm" : "opacity-70 hover:opacity-100"
-              )}
-            >
-              {s.label}
-            </button>
+            <>
+              {s.key === "REMOVE" && <span key="sep" className="w-px h-4 bg-gray-200 self-center" />}
+              <button
+                type="button"
+                key={s.key}
+                onClick={() => setPendingShift(s.key)}
+                className={cn(
+                  "text-xs px-2.5 py-1 rounded-full border font-medium transition-all",
+                  s.className,
+                  pendingShift === s.key ? "ring-2 ring-offset-1 ring-gray-400 shadow-sm" : "opacity-70 hover:opacity-100"
+                )}
+              >
+                {s.label}
+              </button>
+            </>
           ))}
         </div>
 
@@ -294,6 +298,7 @@ export default function ShiftScheduler({ schedule = {}, onChange }) {
       <div className="flex flex-wrap gap-2 border-t pt-3">
         {SHIFTS.map((s) => {
           const count = Object.values(schedule).filter((v) => v === s.key).length;
+          if (s.key === "REMOVE" && count === 0) return null;
           return (
             <span key={s.key} className={cn("text-[10px] px-2 py-0.5 rounded-full border font-medium", s.className)}>
               {s.label}: {count} day{count !== 1 ? "s" : ""}

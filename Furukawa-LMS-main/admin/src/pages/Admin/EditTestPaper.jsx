@@ -694,7 +694,7 @@ const EditTestPaper = () => {
                   name="paperSubTitle"
                   value={formData.paperSubTitle}
                   onChange={handleInputChange}
-                  placeholder={`Default: New Manpower for ${formData.level || "L-2"}`}
+                  placeholder={`Default: New Manpower for ${formData.level === "L0 (Dojo User)" || formData.isDojo ? "L0" : (formData.level || "L-2")}`}
                 />
                 <p className="text-[11px] text-muted-foreground">Shown below the title. Leave blank to use the default.</p>
               </div>

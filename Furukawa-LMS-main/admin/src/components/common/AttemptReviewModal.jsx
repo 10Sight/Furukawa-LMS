@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+import { formatPaperSubTitle } from "@/utils/formatters";
 import { useSelector } from "react-redux";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
@@ -222,7 +223,7 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                     {attempt.quiz?.paperTitle || "SKILL EVALUATION RESULT SHEET"}
                   </h1>
                   <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
-                    {attempt.quiz?.paperSubTitle || `Graded Sheet for ${attempt.quiz?.level || "L-2"}`}
+                    {formatPaperSubTitle(attempt.quiz?.paperSubTitle, attempt.quiz?.level, attempt.quiz?.isDojo, "Graded Sheet")}
                   </h2>
                 </div>
 

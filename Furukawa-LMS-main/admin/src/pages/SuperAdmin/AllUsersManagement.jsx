@@ -31,7 +31,8 @@ import {
   useUpdateUserMutation as useSuperAdminUpdateUserMutation,
   usePermanentDeleteUserMutation
 } from "@/Redux/AllApi/SuperAdminApi";
-import { useGetUniqueDesignationsQuery, useBulkUpdateShiftScheduleMutation } from "@/Redux/AllApi/UserApi";
+import { useBulkUpdateShiftScheduleMutation } from "@/Redux/AllApi/UserApi";
+import { useGetUniqueDesignationsQuery } from "@/Redux/AllApi/DesignationApi";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
@@ -55,6 +56,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import MultiSelectFilter from "@/components/common/MultiSelectFilter";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -474,7 +476,10 @@ const AllUsersManagement = () => {
     if (isBulkSubmitting) return;
     setIsBulkSubmitting(true);
     try {
-      const payload = { ids: selectedUsers, shiftSchedulePatch: bulkShiftScheduleDraft };
+      const patch = Object.fromEntries(
+        Object.entries(bulkShiftScheduleDraft).map(([date, shift]) => [date, shift === "REMOVE" ? null : shift])
+      );
+      const payload = { ids: selectedUsers, shiftSchedulePatch: patch };
       const result = await bulkUpdateShiftSchedule(payload).unwrap();
       toast.success(result?.message || "Shift schedule updated successfully!");
       setShowBulkShiftModal(false);
@@ -490,7 +495,10 @@ const AllUsersManagement = () => {
   const handleSaveShift = async () => {
     if (!shiftUser) return;
     try {
-      await updateUser({ id: shiftUser._id, shiftSchedule: shiftScheduleDraft }).unwrap();
+      const cleanedSchedule = Object.fromEntries(
+        Object.entries(shiftScheduleDraft).filter(([, v]) => v !== "REMOVE")
+      );
+      await updateUser({ id: shiftUser._id, shiftSchedule: cleanedSchedule }).unwrap();
       toast.success("Shift schedule saved!");
       setShowShiftModal(false);
       refetch();
@@ -1440,106 +1448,72 @@ const AllUsersManagement = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
-              <Select
-                value={filters.departmentId || (currentUser?.role === 'SUPERADMIN' || currentUser?.isAdmin === true ? "all" : (departments.length === 1 ? String(getDeptId(departments[0])) : "all-assigned"))}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
-                  departmentId: (val === "all" || val === "all-assigned") ? "" : val,
+              <MultiSelectFilter
+                placeholder={currentUser?.role === 'SUPERADMIN' || currentUser?.isAdmin === true ? "All Departments" : "All My Departments"}
+                options={departments.map(d => ({ id: String(getDeptId(d)), name: d.name }))}
+                selectedValues={filters.departmentId ? filters.departmentId.split(",").filter(Boolean) : []}
+                onChange={(vals) => setFilters({
+                  ...filters,
+                  departmentId: vals.join(","),
                   sectionId: "", lineId: "", subSectionId: "", stationId: ""
                 })}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select Department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {currentUser?.role === 'SUPERADMIN' || currentUser?.isAdmin === true ? (
-                    <SelectItem value="all">All Departments</SelectItem>
-                  ) : (
-                     departments.length > 1 && <SelectItem value="all-assigned">All My Departments</SelectItem>
-                  )}
-                  {departments.map(d => <SelectItem key={getDeptId(d)} value={String(getDeptId(d))}>{d.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Section</label>
-              <Select
-                value={filters.sectionId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
-                  sectionId: val === "all" ? "" : val,
+              <MultiSelectFilter
+                placeholder="All Sections"
+                options={sections.map(s => ({ id: String(s.id), name: s.name }))}
+                selectedValues={filters.sectionId ? filters.sectionId.split(",").filter(Boolean) : []}
+                onChange={(vals) => setFilters({
+                  ...filters,
+                  sectionId: vals.join(","),
                   lineId: "", subSectionId: "", stationId: ""
                 })}
                 disabled={!filters.departmentId}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="All Sections" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sections</SelectItem>
-                  {sections.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Line</label>
-              <Select
-                value={filters.lineId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
-                  lineId: val === "all" ? "" : val,
+              <MultiSelectFilter
+                placeholder="All Lines"
+                options={lines.map(l => ({ id: String(l.id), name: l.name }))}
+                selectedValues={filters.lineId ? filters.lineId.split(",").filter(Boolean) : []}
+                onChange={(vals) => setFilters({
+                  ...filters,
+                  lineId: vals.join(","),
                   subSectionId: "", stationId: ""
                 })}
                 disabled={!filters.sectionId}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="All Lines" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Lines</SelectItem>
-                  {lines.map(l => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Sub-Section</label>
-              <Select
-                value={filters.subSectionId || "all"}
-                onValueChange={(val) => setFilters({ 
-                  ...filters, 
-                  subSectionId: val === "all" ? "" : val,
+              <MultiSelectFilter
+                placeholder="All Sub-Sections"
+                options={subSections.map(ss => ({ id: String(ss.id), name: ss.name }))}
+                selectedValues={filters.subSectionId ? filters.subSectionId.split(",").filter(Boolean) : []}
+                onChange={(vals) => setFilters({
+                  ...filters,
+                  subSectionId: vals.join(","),
                   stationId: ""
                 })}
                 disabled={!filters.lineId}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="All Sub-Sections" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sub-Sections</SelectItem>
-                  {subSections.map(ss => <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Station</label>
-              <Select
-                value={filters.stationId || "all"}
-                onValueChange={(val) => setFilters({ ...filters, stationId: val === "all" ? "" : val })}
+              <MultiSelectFilter
+                placeholder="All Stations"
+                options={stations.map(st => ({ id: String(st.id), name: st.name }))}
+                selectedValues={filters.stationId ? filters.stationId.split(",").filter(Boolean) : []}
+                onChange={(vals) => setFilters({ ...filters, stationId: vals.join(",") })}
                 disabled={!filters.subSectionId}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="All Stations" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Stations</SelectItem>
-                  {stations.map(st => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             <div className="flex flex-col">

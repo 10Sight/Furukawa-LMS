@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 const AVAILABLE_FORMS = [
     "Multi Skill Sheet",
+    "Skill Upgradation Sheet",
     "Handover Sheet",
     "On Job Training Record Sheet",
     "On Job Training Evaluation Sheet",

@@ -27,10 +27,6 @@ import {
   getEmployeeById,
   getTemporaryUsers,
   getNextTemporaryId,
-  getUniqueDesignations,
-  getDesignationsWithCounts,
-  shutterDesignation,
-  unshutterDesignation,
 } from "../controllers/user.controller.js";
 import { AvailableUserRoles } from "../constants.js";
 
@@ -128,10 +124,6 @@ router.patch(
   upload.single("avatar"),
   updateAvatar
 );
-router.get("/designations/unique", verifyJWT, getUniqueDesignations);
-router.get("/designations/counts", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getDesignationsWithCounts);
-router.post("/designations/shutter", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), shutterDesignation);
-router.post("/designations/unshutter", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), unshutterDesignation);
 router.post("/bulk-shift", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), bulkUpdateShiftSchedule);
 router.get("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getUserById);
 router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE]), checkUserUpdatePrivilege, updateUser);

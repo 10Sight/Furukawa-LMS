@@ -18,9 +18,16 @@ export {
     useUpdateAvatarMutation,
     useUpdateUserMutation,
     useDeleteUserMutation,
+} from './UserApi';
+
+// Designation API exports
+export {
+    designationApi,
     useGetUniqueDesignationsQuery,
     useGetDesignationsWithCountsQuery,
-} from './UserApi';
+    useShutterDesignationMutation,
+    useUnshutterDesignationMutation,
+} from './DesignationApi';
 
 // Instructor API exports
 export {

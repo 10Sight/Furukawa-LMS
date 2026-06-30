@@ -78,6 +78,7 @@ const MultiSkilling = () => {
     const { data: studentsData } = useGetAllStudentsQuery({
         departmentId: dept,
         sectionId: section,
+        filterMultiSkillingLevels: "true",
         limit: 1000
     }, {
         skip: !dept || !section,

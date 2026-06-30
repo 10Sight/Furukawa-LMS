@@ -240,6 +240,113 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const yearsInRange = [...new Set(loopDates.map((d) => d.getFullYear()))];
 
+    // Attrition date parser for users table nvarchar date columns.
+    // leavingDate/joiningDate users table me nvarchar hai, isliye safe TRY_CONVERT multiple formats ke saath use karna zaroori hai.
+    const userDateToDateSql = (columnSql) => `
+        COALESCE(
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 23),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 103),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 105),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 120),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 121),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 101),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 110),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 106),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 107)
+        )
+    `;
+
+    const buildDailyAttritionDataFromUsers = async () => {
+        const leaveDateSql = userDateToDateSql("u.leavingDate");
+        let attritionHeadcountTotal = 0;
+
+        try {
+            let totalSql = `
+                SELECT COUNT(DISTINCT u.empId) AS total
+                FROM users u
+                WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  ${hierCondition}
+            `;
+            const totalParams = [];
+            // Attrition denominator me sirf permanent/non-temporary employees count honge.
+            // isTemporary = 1 employees attrition graph me include nahi honge.
+            // Shift selected ho to selected shift ke users hi count honge.
+            totalSql = addUserShiftFilter(totalSql, totalParams, "u");
+
+            const [totalRows] = await executeQuery(totalSql, totalParams);
+            attritionHeadcountTotal = Number(totalRows?.[0]?.total || 0);
+        } catch (e) {
+            console.warn("[DASHBOARD] Attrition total headcount query failed:", e.message);
+            attritionHeadcountTotal = 0;
+        }
+
+        let attrSql = `
+            SELECT
+                CONVERT(VARCHAR, parsed.leaving_date, 23) AS fullDate,
+                COUNT(DISTINCT parsed.empId) AS leftCount
+            FROM (
+                SELECT
+                    u.empId,
+                    u.shift,
+                    ${leaveDateSql} AS leaving_date
+                FROM users u
+                WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.leavingDate IS NOT NULL
+                  AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
+                  AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
+                  ${hierCondition}
+        `;
+
+        const attrParams = [];
+        attrSql = addUserShiftFilter(attrSql, attrParams, "u");
+        attrSql += `
+            ) parsed
+            WHERE parsed.leaving_date IS NOT NULL
+              AND parsed.leaving_date >= ?
+              AND parsed.leaving_date <= ?
+            GROUP BY parsed.leaving_date
+            ORDER BY parsed.leaving_date
+        `;
+        attrParams.push(sqlStartDate, sqlEndDate);
+
+        const [attrRows] = await executeQuery(attrSql, attrParams);
+
+        return loopDates
+            .map((iterDateRaw) => {
+                const iterDate = new Date(iterDateRaw);
+                const day = iterDate.getDate();
+                const monthShort = iterDate.toLocaleString("en-US", { month: "short" });
+                const dateStr = formatDateLocal(iterDate);
+
+                iterDate.setHours(0, 0, 0, 0);
+                const isFuture = iterDate > today;
+
+                if (isFuture) return null;
+
+                const row = attrRows.find((r) => r.fullDate === dateStr);
+                const leftCount = row ? Number(row.leftCount) || 0 : 0;
+                const totalHeadcount = Number(attritionHeadcountTotal) || 0;
+                const rate = totalHeadcount > 0
+                    ? Number(((leftCount / totalHeadcount) * 100).toFixed(2))
+                    : 0;
+
+                return {
+                    day: `${day} ${monthShort}`,
+                    actual: rate,
+                    leftCount,
+                    totalHeadcount,
+                    target: 2.0,
+                };
+            })
+            .filter(Boolean);
+    };
+
     // ============================================================
     // FIX: Selected date attendance gate
     // ============================================================
@@ -305,7 +412,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     };
                 });
 
-                const emptyAttritionData = loopDates.map((iterDateRaw) => {
+                let emptyAttritionData = loopDates.map((iterDateRaw) => {
                     const iterDate = new Date(iterDateRaw);
                     const day = iterDate.getDate();
                     const monthShort = iterDate.toLocaleString("en-US", { month: "short" });
@@ -318,6 +425,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                         target: 2.0,
                     };
                 });
+
+                try {
+                    // Even when attendance is not uploaded, attrition must still come from users.leavingDate.
+                    emptyAttritionData = await buildDailyAttritionDataFromUsers();
+                } catch (e) {
+                    console.warn("[DASHBOARD] Attendance gate attrition query failed:", e.message);
+                }
 
                 const [sOptions, dOptions] = await Promise.all([
                     getStateOptions().catch(() => []),
@@ -360,22 +474,31 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                                 masterAttendanceDate: null,
                                 attendanceDateAvailable: false,
                                 attendanceLogic:
-                                    "Selected date/range attendance not found in attendance_logs. All dashboard graphs returned as zero/empty to avoid wrong data.",
+                                    "Selected date/range attendance not found in attendance_logs. Attendance-dependent graphs returned as zero/empty, but attrition is calculated from users.leavingDate.",
                             },
                             debug: {
                                 requiredStartDate: sqlStartDate,
                                 requiredEndDate: sqlEndDate,
                                 attendanceRows: 0,
                                 reason:
-                                    "No attendance found in attendance_logs for selected date/range after selected hierarchy/shift filters.",
+                                    "No attendance found in attendance_logs for selected date/range after selected hierarchy/shift filters. Attrition data is still calculated from users.leavingDate.",
                             },
                         },
-                        "Selected date attendance not uploaded. No dashboard data shown."
+                        "Selected date attendance not uploaded. Attendance graphs are empty, attrition is shown from users.leavingDate."
                     )
                 );
             }
         } catch (e) {
             console.warn("[DASHBOARD] Attendance gate check failed:", e.message);
+
+            let fallbackAttritionData = [];
+            try {
+                // Attendance gate fail hone par bhi attrition graph users.leavingDate se calculate hoga.
+                fallbackAttritionData = await buildDailyAttritionDataFromUsers();
+            } catch (attrErr) {
+                console.warn("[DASHBOARD] Attendance gate fallback attrition query failed:", attrErr.message);
+                fallbackAttritionData = [];
+            }
 
             return res.status(200).json(
                 new ApiResponse(
@@ -383,7 +506,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     {
                         manpowerData: [],
                         absenteeismData: [],
-                        attritionData: [],
+                        attritionData: fallbackAttritionData,
                         skillGapData: [],
                         pieCharts: {
                             skillLevels: [],
@@ -407,7 +530,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                             endDate: sqlEndDate,
                             attendanceDateAvailable: false,
                             attendanceLogic:
-                                "Attendance check failed. Wrong data avoid karne ke liye dashboard graphs empty return kiye gaye.",
+                                "Attendance check failed. Attendance-dependent graphs empty return kiye gaye, but attrition users.leavingDate se calculate kiya gaya.",
                         },
                         debug: {
                             requiredStartDate: sqlStartDate,
@@ -847,84 +970,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     let attritionData = [];
 
     try {
-        let attrSql = `
-            SELECT
-                CONVERT(VARCHAR, parsed.leaving_date, 23) AS fullDate,
-                COUNT(DISTINCT parsed.empId) AS leftCount
-            FROM (
-                SELECT
-                    u.empId,
-                    u.shift,
-                    u.state,
-                    u.district,
-                    COALESCE(
-                        TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(u.leavingDate)), ''), 23),
-                        TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(u.leavingDate)), ''), 103),
-                        TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(u.leavingDate)), ''), 105),
-                        TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(u.leavingDate)), ''), 120)
-                    ) AS leaving_date,
-                    uhs.department,
-                    uhs.section,
-                    uhs.lines
-                FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-                    = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                AND ISNULL(u.isTemporary, 0) = 0
-                AND u.leavingDate IS NOT NULL
-                AND LTRIM(RTRIM(u.leavingDate)) != ''
-                ) parsed
-            WHERE parsed.leaving_date IS NOT NULL
-            AND parsed.leaving_date >= '${sqlStartDate}'
-            AND parsed.leaving_date <= '${sqlEndDate}'
-            ${departmentName ? `AND UPPER(LTRIM(RTRIM(parsed.department))) = UPPER('${safeName(departmentName)}')` : ""}
-            ${sectionName ? `AND UPPER(LTRIM(RTRIM(parsed.section))) = UPPER('${safeName(sectionName)}')` : ""}
-            ${lineName ? `AND UPPER(LTRIM(RTRIM(parsed.lines))) = UPPER('${safeName(lineName)}')` : ""}
-        `;
-        const attrParams = [];
-        if (selectedShiftValue) {
-            attrSql += ` AND UPPER(LTRIM(RTRIM(parsed.shift))) = UPPER(LTRIM(RTRIM(?)))`;
-            attrParams.push(selectedShiftValue);
-        }
-        attrSql += `
-            GROUP BY parsed.leaving_date
-            ORDER BY parsed.leaving_date
-        `;
-
-        const [attrRows] = await executeQuery(attrSql, attrParams);
-
-        attritionData = loopDates
-            .map((iterDateRaw) => {
-                const iterDate = new Date(iterDateRaw);
-                const day = iterDate.getDate();
-                const monthShort = iterDate.toLocaleString("en-US", { month: "short" });
-                const dateStr = formatDateLocal(iterDate);
-
-                iterDate.setHours(0, 0, 0, 0);
-                const isFuture = iterDate > today;
-
-                if (isFuture) return null;
-
-                const row = attrRows.find((r) => r.fullDate === dateStr);
-
-                const leftCount = row ? Number(row.leftCount) || 0 : 0;
-                const totalHeadcount = Number(snapshotTotal) || 0;
-
-                const rate =
-                    totalHeadcount > 0
-                        ? Number(((leftCount / totalHeadcount) * 100).toFixed(2))
-                        : 0;
-
-                return {
-                    day: `${day} ${monthShort}`,
-                    actual: rate,
-                    leftCount,
-                    totalHeadcount,
-                    target: 2.0,
-                };
-            })
-            .filter(Boolean);
+        // Attrition graph users.leavingDate se calculate hoga.
+        // IMPORTANT: sirf isTemporary = 0 employees count honge. isTemporary = 1 employees skip honge.
+        attritionData = await buildDailyAttritionDataFromUsers();
     } catch (e) {
         console.warn("[DASHBOARD] Attrition daily query failed:", e.message);
         attritionData = [];
@@ -2424,17 +2472,22 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
     const leaveDateSQL = `
         COALESCE(
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 23),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 103),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 105),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 120),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 121),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 101),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 110),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 106),
-            TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 107)
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 23),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 103),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 105),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 120),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 121),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 101),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 110),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 106),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))), ''), 'NULL'), 107)
         )
     `;
+
+    // Attrition tenure bucket joiningDate se hi calculate hoga.
+    // Agar joiningDate blank/invalid hai to employee tenure attrition graph me skip hoga,
+    // lekin Daily Attrition graph me valid leavingDate hone par count ho sakta hai.
+    const attritionJoinDateSQL = joinDateSQL;
 
     const bucketCaseSQL = `
         CASE
@@ -2682,7 +2735,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             FROM (
                 SELECT
                     u.empId,
-                    DATEDIFF(DAY, ${joinDateSQL}, ${leaveDateSQL}) AS tenureDays
+                    DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) AS tenureDays
                 FROM users u
                 LEFT JOIN user_hierarchy_snapshots uhs
                     ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
@@ -2691,7 +2744,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-                  AND ${joinDateSQL} IS NOT NULL
+                  AND ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} >= ?
                   AND ${leaveDateSQL} <= ?
@@ -2725,11 +2778,11 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-                  AND ${joinDateSQL} IS NOT NULL
+                  AND ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} >= ?
                   AND ${leaveDateSQL} <= ?
-                  AND DATEDIFF(DAY, ${joinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
+                  AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
                   ${hierCondition}
             `;
 
@@ -2776,7 +2829,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     masterLogic:
                         "Grey/dark yellow Users Total bar users table ka total active employee count hai. Shift filter ka effect is bar par nahi padega; baaki hierarchy/date filters apply rahenge.",
                     attritionLogic:
-                        "Attrition users.leavingDate se calculate hoga. Shift filter users.shift par lagega.",
+                        "Attrition users.leavingDate se calculate hoga. Sirf isTemporary = 0 employees count honge. Tenure attrition me joiningDate valid hona mandatory hai; blank joiningDate wale tenure graph me skip honge. Shift filter users.shift par lagega.",
                     matchingLogic:
                         "attendance_logs.payCode = users.empId and joiningDate se tenure bucket calculate hota hai.",
                     customTenureFrom: hasCustomTenureRange ? customFromDays : null,

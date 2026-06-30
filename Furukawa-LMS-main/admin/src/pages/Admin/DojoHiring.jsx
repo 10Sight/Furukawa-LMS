@@ -88,6 +88,12 @@ import HandoverSheetPage from "./HandoverSheetPage";
 import SixteenDayMonitoring from "./SixteenDayMonitoring";
 import Course from "./Course";
 
+const normalizeStatus = (status) => {
+    const s = status || "PRESENT";
+    if (s === "LEAVE") return "ON_LEAVE";
+    return s;
+};
+
 const DojoHiring = () => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -268,6 +274,22 @@ const DojoHiring = () => {
         } catch (error) {
             toast.error(error?.data?.message || "Failed to remove some candidates");
             setIsBulkDeleteOpen(false);
+        }
+    };
+
+    const handleQuickStatusChange = async (userId, newStatus) => {
+        if (newStatus === "LEFT") {
+            if (!window.confirm("Are you sure you want to mark this candidate as Left? They will be moved to the Left Candidates list.")) {
+                return;
+            }
+        }
+        try {
+            await updateUser({ id: userId, status: newStatus }).unwrap();
+            const label = newStatus === "ON_LEAVE" ? "On Leave" : newStatus.charAt(0) + newStatus.slice(1).toLowerCase();
+            toast.success(`Status updated to ${label}`);
+            refetch();
+        } catch (error) {
+            toast.error(error?.data?.message || "Failed to update status");
         }
     };
 
@@ -477,7 +499,7 @@ const DojoHiring = () => {
             pin: user.pin || "",
             busRoute: user.busRoute || "",
             unit: user.unit || "UNIT_1",
-            status: user.status || "PRESENT",
+            status: normalizeStatus(user.status),
             leavingDate: user.leavingDate ? String(user.leavingDate).substring(0, 10) : "",
             reasonOfLeaving: user.reasonOfLeaving || "",
             contractor: user.contractor || "",
@@ -507,6 +529,36 @@ const DojoHiring = () => {
         { label: "Male Candidates", value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
         { label: "Female Candidates", value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
     ];
+
+    const getStatusBadge = (status) => {
+        const normalized = normalizeStatus(status);
+        switch (normalized) {
+            case "PRESENT":
+                return (
+                    <Badge className="flex items-center gap-1 w-fit bg-emerald-50 text-emerald-700 border border-emerald-100 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Present
+                    </Badge>
+                );
+            case "ON_LEAVE":
+                return (
+                    <Badge className="flex items-center gap-1 w-fit bg-amber-50 text-amber-700 border border-amber-100 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
+                        <div className="h-1.5 w-1.5 rounded-full bg-amber-500" /> On Leave
+                    </Badge>
+                );
+            case "LEFT":
+                return (
+                    <Badge className="flex items-center gap-1 w-fit bg-rose-50 text-rose-700 border border-rose-100 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
+                        <div className="h-1.5 w-1.5 rounded-full bg-rose-500" /> Left
+                    </Badge>
+                );
+            default:
+                return (
+                    <Badge className="flex items-center gap-1 w-fit bg-slate-100 text-slate-600 border border-slate-200 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
+                        <div className="h-1.5 w-1.5 rounded-full bg-slate-400" /> {normalized}
+                    </Badge>
+                );
+        }
+    };
 
     const genderOptions = [
         { value: "ALL", label: "All Genders" },
@@ -754,17 +806,21 @@ const DojoHiring = () => {
                                                 <TableCell>
                                                     <div className="text-slate-600 text-sm">{user.sectionName || "—"}</div>
                                                 </TableCell>
-                                                <TableCell className="text-center">
-                                                    <Badge
-                                                        className={`font-black text-[10px] uppercase px-2 py-0.5 rounded-full border ${
-                                                            user.status === "PRESENT" ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-                                                            user.status === "LEAVE" ? "bg-amber-50 text-amber-700 border-amber-100" :
-                                                            user.status === "LEFT" ? "bg-rose-50 text-rose-700 border-rose-100" :
-                                                            "bg-slate-100 text-slate-600 border-slate-200"
-                                                        }`}
+                                                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <Select
+                                                        value={normalizeStatus(user.status)}
+                                                        onValueChange={(newStatus) => handleQuickStatusChange(user.id, newStatus)}
+                                                        disabled={!hasPermission("user:change_status") && !canUpdate}
                                                     >
-                                                        {user.status || "PRESENT"}
-                                                    </Badge>
+                                                        <SelectTrigger className="w-[130px] border-0 shadow-none p-0 h-auto focus:ring-0 [&>svg]:hidden">
+                                                            {getStatusBadge(user.status)}
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="PRESENT">Present</SelectItem>
+                                                            <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                                                            <SelectItem value="LEFT">Left</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="space-y-1 text-xs">
@@ -974,7 +1030,7 @@ const DojoHiring = () => {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="PRESENT" className="text-emerald-600 font-bold">Present</SelectItem>
-                                    <SelectItem value="LEAVE" className="text-amber-600 font-bold">Leave</SelectItem>
+                                    <SelectItem value="ON_LEAVE" className="text-amber-600 font-bold">On Leave</SelectItem>
                                     <SelectItem value="LEFT" className="text-rose-600 font-bold">Left</SelectItem>
                                 </SelectContent>
                             </Select>

@@ -254,7 +254,7 @@ export const PAGE_REGISTRY = [
     // { key: "incharges", label: "Incharges", labelKey: "nav.incharges", layout: "admin", link: "/admin/incharges", icon: "IconUserCheck" },
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
     // { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
-    { key: "learning", label: "Learning", labelKey: "nav.learning", layout: "admin", link: "/admin/learning", icon: "IconBook" },
+    { key: "learning", label: "Improvement Evidence", labelKey: "nav.learning", layout: "admin", link: "/admin/learning", icon: "IconBook" },
     // { key: "dojo-evaluation-test", label: "DOJO Evaluation Test", labelKey: "nav.evaluationTest", layout: "admin", link: "/admin/evaluation-test", icon: "IconClipboard" },
 
     // Dashboard-specific pages (often considered core Admin functions)

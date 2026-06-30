@@ -2267,7 +2267,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     }
                                     employeeCode={
                                         matrixEntries.find(e => e._id === selectedOperatorForEval)?.cardNo ||
-                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo ||
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.empId || ""
                                     }
                                     departmentId={evalDepartment || selectedDepartment}
                                     subSectionId={evalSubSection || selectedSubSection}

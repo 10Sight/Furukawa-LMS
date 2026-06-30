@@ -238,7 +238,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   let whereClauses = [
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
-    "(u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+    "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
   ];
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(
@@ -1236,7 +1236,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     "((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))",
     "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
-    "(u.designation IS NULL OR u.designation = '' OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+    "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
   ];
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(
@@ -1412,7 +1412,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     const [iDepts] = await executeQuery("SELECT id FROM departments WHERE instructor = ?", [req.user.id]);
     if (iDepts.length) {
       const ids = iDepts.map(d => d.id).join(',');
-      whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}))`);
+      whereClauses.push(`(u.departmentId IN (${ids}) OR u.department IN (${ids}) OR (u.isTemporary = 1 AND (u.targetDeptId IN (${ids}) OR u.targetDeptId IS NULL)))`);
     } else whereClauses.push("1=0");
   } else if (req.user.role === "CUSTOM") {
     const customTargetLayout = String(req.user.customRole?.targetLayout || '').toLowerCase();
@@ -1435,13 +1435,14 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       whereClauses.push(`(
         u.departmentId IN (${placeholders})
         OR u.department IN (${placeholders})
+        OR (u.isTemporary = 1 AND (u.targetDeptId IN (${placeholders}) OR u.targetDeptId IS NULL))
         OR EXISTS (
           SELECT 1 FROM OPENJSON(ISNULL(u.departments, '[]'))
           WITH (deptId INT '$')
           WHERE deptId IN (${placeholders})
         )
       )`);
-      params.push(...allowedDepts, ...allowedDepts, ...allowedDepts);
+      params.push(...allowedDepts, ...allowedDepts, ...allowedDepts, ...allowedDepts);
     } else {
       // Non-admin layout with no assigned departments: block all access
       whereClauses.push("1=0");

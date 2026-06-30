@@ -21,7 +21,7 @@ import { AlertCircle } from 'lucide-react';
 
 const Learning = () => {
   const navigate = useNavigate();
-  const { hasPrivilege } = usePrivileges();
+  const { hasPrivilege, loading: privilegesLoading } = usePrivileges();
   const [comparisons, setComparisons] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +31,7 @@ const Learning = () => {
   const canRead = hasPrivilege("learning:read");
 
   useEffect(() => {
+    if (privilegesLoading) return;
     const fetchComparisons = async () => {
       try {
         const res = await axiosInstance.get('/api/learning-comparisons');
@@ -42,8 +43,8 @@ const Learning = () => {
       }
     };
     if (canRead) fetchComparisons();
-    else if (!loading) setLoading(false);
-  }, [canRead, loading]);
+    else setLoading(false);
+  }, [canRead, privilegesLoading]);
 
   const handleDelete = async (id) => {
     if (!canDelete) return toast.error("You don't have permission to delete");
@@ -57,7 +58,7 @@ const Learning = () => {
     }
   };
 
-  if (!canRead && !loading) {
+  if (!canRead && !loading && !privilegesLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4">
@@ -104,7 +105,7 @@ const Learning = () => {
             </div>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
-            {loading ? (
+            {loading || privilegesLoading ? (
               <div className="py-20 text-center flex flex-col items-center justify-center gap-4">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
                 <p className="text-sm text-gray-500 font-medium">Fetching comparisons...</p>

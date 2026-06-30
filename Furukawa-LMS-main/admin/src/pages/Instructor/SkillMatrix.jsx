@@ -1203,8 +1203,9 @@ const InstructorSkillMatrix = () => {
                                         filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.name
                                     }
                                     employeeCode={
-                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.cardNo || 
-                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.cardNo ||
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.cardNo ||
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.empId || ""
                                     }
                                     departmentId={evalDepartment || selectedDepartment}
                                 />

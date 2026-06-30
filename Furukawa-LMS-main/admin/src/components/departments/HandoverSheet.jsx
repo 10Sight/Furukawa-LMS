@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+﻿import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -147,6 +147,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [submittedAt, setSubmittedAt] = useState(null);
     const [isNewSheet, setIsNewSheet] = useState(false);
+    const [eligibleUsers, setEligibleUsers] = useState([]);
 
     const [originalEntries, setOriginalEntries] = useState([]);
     const [originalMetadata, setOriginalMetadata] = useState({
@@ -259,6 +260,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
                 if (data && !data.isNew) {
                     setIsNewSheet(false);
+                    setEligibleUsers(data.eligibleUsers || []);
                     const fetchedEntries = data.entries || [];
                     if (fetchedEntries.length === 0) {
                         fetchedEntries.push({
@@ -287,85 +289,27 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                     setSubmittedAt(data.submittedAt);
                 } else {
                     setIsNewSheet(true);
+                    setEligibleUsers(data?.eligibleUsers || []);
                     // Reset to a clean slate for the new date
                     setIsSubmitted(false);
                     setSubmittedAt(null);
                     setSignatures({ educationCell: "", hod: "" });
 
-                    let initialEntries = [];
-
-                    // 1. Try auto-suggested entries from backend (from Handover Quizzes)
-                    if (data?.entries && data.entries.length > 0) {
-                        initialEntries = data.entries.map((student, index) => ({
-                            sn: index + 1,
-                            studentId: student.studentId,
-                            employeeName: student.employeeName,
-                            empCode: student.employeeCode || "",
-                            marks: student.marks || "0%",
-                            department: sectionName || departmentName || "",
-                            departmentId: student.targetDeptId || departmentId || null,
-                            sectionId: student.sectionId || null,
-                            lineId: student.lineId || null,
-                            subSectionId: student.subSectionId || null,
-                            stationId: student.stationId || null,
-                            process: (student.stationName && student.lineName) ? `${student.stationName} (${student.lineName})` : (student.stationName || ""),
-                            mentor: "",
-                            interview1: "",
-                            interview2: "",
-                            interviewStatus: "",
-                            statusActionBy: "",
-                            isAutoSuggested: true
-                        }));
-                    }
-                    // 2. Fallback to all eligible temporary students if no quiz-based suggestions and they are already loaded
-                    else if (students && students.length > 0) {
-                        const eligibleStudents = dojoHandoverPassedOnly
-                            ? students
-                            : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
-                        initialEntries = eligibleStudents.map((student, index) => {
-                            const studentProcess = student.stationName || "";
-                            const processWithLine = (studentProcess && student.lineName) ? `${studentProcess} (${student.lineName})` : studentProcess;
-                            return {
-                                sn: index + 1,
-                                studentId: student._id || student.id,
-                                employeeName: student.fullName,
-                                empCode: student.empId || "",
-                                marks: "0%",
-                                department: student.deptName || sectionName || departmentName || "",
-                                departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
-                                sectionId: student.sectionId || student.targetSectionId || null,
-                                lineId: student.lineId || student.targetLineId || null,
-                                subSectionId: student.subSectionId || student.targetSubSectionId || null,
-                                stationId: student.stationId || student.targetStationId || null,
-                                process: processWithLine,
-                                mentor: "",
-                                interview1: "",
-                                interview2: "",
-                                interviewStatus: "",
-                                statusActionBy: ""
-                            };
-                        });
-                    }
-
-                    // 3. Fallback to a single empty row if nothing else
-                    if (initialEntries.length === 0) {
-                        initialEntries.push({
-                            sn: 1,
-                            studentId: "",
-                            employeeName: "",
-                            empCode: "",
-                            marks: "0%",
-                            department: sectionName || departmentName || "",
-                            process: "",
-                            mentor: "",
-                            interview1: "",
-                            interview2: "",
-                            interviewStatus: "",
-                            statusActionBy: ""
-                        });
-                    }
-
-                    setEntries(initialEntries);
+                    // Start with a single empty row; user searches and selects from eligibleUsers
+                    setEntries([{
+                        sn: 1,
+                        studentId: "",
+                        employeeName: "",
+                        empCode: "",
+                        marks: "0%",
+                        department: sectionName || departmentName || "",
+                        process: "",
+                        mentor: "",
+                        interview1: "",
+                        interview2: "",
+                        interviewStatus: "",
+                        statusActionBy: ""
+                    }]);
                     setOriginalEntries([]);
                     setOriginalMetadata({
                         docNo: "FRM-HR-003",
@@ -385,46 +329,6 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
         fetchData();
     }, [departmentId, sectionId, date, departmentName, sectionName]);
 
-    // Auto-populate eligible temporary students in a new sheet once the student list loads
-    useEffect(() => {
-        if (!loading && isNewSheet && students && students.length > 0) {
-            // Check if we are currently showing just the single fallback empty row
-            const isCurrentlyEmpty = entries.length === 1 && entries[0].studentId === "" && !entries[0].employeeName;
-
-            if (isCurrentlyEmpty) {
-                const eligibleStudents = dojoHandoverPassedOnly
-                    ? students
-                    : students.filter(student => student.currentLevel && student.currentLevel !== 'L1');
-                if (eligibleStudents.length > 0) {
-                    const populatedEntries = eligibleStudents.map((student, index) => {
-                        const studentProcess = student.stationName || "";
-                        const processWithLine = (studentProcess && student.lineName) ? `${studentProcess} (${student.lineName})` : studentProcess;
-                        return {
-                            sn: index + 1,
-                            studentId: student._id || student.id,
-                            employeeName: student.fullName,
-                            empCode: student.empId || "",
-                            marks: "0%",
-                            department: student.deptName || sectionName || departmentName || "",
-                            departmentId: student.actualDeptId || student.departmentId || student.targetDeptId || null,
-                            sectionId: student.sectionId || student.targetSectionId || null,
-                            lineId: student.lineId || student.targetLineId || null,
-                            subSectionId: student.subSectionId || student.targetSubSectionId || null,
-                            stationId: student.stationId || student.targetStationId || null,
-                            process: processWithLine,
-                            mentor: "",
-                            interview1: "",
-                            interview2: "",
-                            interviewStatus: "",
-                            statusActionBy: ""
-                        };
-                    });
-                    setEntries(populatedEntries);
-                }
-            }
-        }
-    }, [loading, isNewSheet, students, entries, departmentName, sectionName, departmentId, sectionId]);
-
     const handleEntryChange = (index, field, value) => {
         const newEntries = [...entries];
         const updated = { ...newEntries[index], [field]: value };
@@ -439,9 +343,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
         const processWithLine = (userProcessName && user.lineName) ? `${userProcessName} (${user.lineName})` : userProcessName;
         newEntries[index] = {
             ...newEntries[index],
-            studentId: user.id,
-            employeeName: user.fullName,
-            empCode: user.userName || user.empId || "",
+            studentId: user.id || user.studentId,
+            employeeName: user.fullName || user.employeeName || "",
+            empCode: user.userName || user.empId || user.employeeCode || "",
+            marks: user.marks || "0%",
             department: user.deptName || sectionName || departmentName || "",
             departmentId: user.actualDeptId || user.departmentId || user.targetDeptId || null,
             sectionId: user.sectionId || user.targetSectionId || null,
@@ -927,6 +832,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 compact={true}
                                                                 includeTemporary="only"
                                                                 dojoHandoverPassedOnly={dojoHandoverPassedOnly}
+                                                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
                                                                 className="w-full"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                             />
@@ -993,6 +899,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                                                 compact={true}
                                                                 includeTemporary="only"
                                                                 dojoHandoverPassedOnly={dojoHandoverPassedOnly}
+                                                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
                                                                 className="min-w-[150px]"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                             />

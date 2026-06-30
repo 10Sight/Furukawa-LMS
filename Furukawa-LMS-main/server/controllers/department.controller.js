@@ -1053,12 +1053,11 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     const date = req.query.date || null;
     let sheet = await HandoverSheet.findSpecific(departmentId, sectionId, date);
 
-    if (!sheet) {
-        // Auto-suggest users from both sources: legacy handover quiz AND dojo evaluation test
-        let suggestedEntries = [];
-        if (date) {
-            // Source 1: Legacy — users who passed a handover quiz on this date
-            const [passedUsers] = await executeQuery(`
+    // Compute eligible users for autocomplete on every request when date is present
+    let eligibleUsers = [];
+    if (date) {
+        // Source 1: Legacy — users who passed a handover quiz on this date
+        const [passedUsers] = await executeQuery(`
                 SELECT DISTINCT
                     u.id as studentId,
                     u.fullName as employeeName,
@@ -1087,20 +1086,20 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                   AND (u.status IS NULL OR u.status != 'LEFT')
             `, [departmentId, date]);
 
-            const quizSuggested = passedUsers.map(user => {
-                let marksPercent = "0%";
-                try {
-                    const questions = JSON.parse(user.quizQuestions || "[]");
-                    const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
-                    marksPercent = `${Math.round((user.score / totalMarks) * 100)}%`;
-                } catch (e) {
-                    console.error("Error calculating marks:", e);
-                }
-                return { ...user, marks: marksPercent, passedQuizDate: date, isAutoSuggested: true };
-            });
+        const quizSuggested = passedUsers.map(user => {
+            let marksPercent = "0%";
+            try {
+                const questions = JSON.parse(user.quizQuestions || "[]");
+                const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
+                marksPercent = `${Math.round((user.score / totalMarks) * 100)}%`;
+            } catch (e) {
+                console.error("Error calculating marks:", e);
+            }
+            return { ...user, marks: marksPercent, passedQuizDate: date, isAutoSuggested: true };
+        });
 
-            // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
-            const [evalUsers] = await executeQuery(`
+        // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
+        const [evalUsers] = await executeQuery(`
                 SELECT DISTINCT
                     u.id as studentId,
                     u.fullName as employeeName,
@@ -1123,31 +1122,33 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                   AND (u.status IS NULL OR u.status != 'LEFT')
             `, [date, departmentId]);
 
-            const evalSuggested = evalUsers.map(user => ({
-                ...user,
-                marks: "100%",
-                passedQuizDate: date,
-                isAutoSuggested: true
-            }));
+        const evalSuggested = evalUsers.map(user => ({
+            ...user,
+            marks: "100%",
+            passedQuizDate: date,
+            isAutoSuggested: true
+        }));
 
-            // Merge: deduplicate by studentId; evaluation test entry wins over quiz entry
-            const mergedMap = new Map();
-            quizSuggested.forEach(e => mergedMap.set(e.studentId, e));
-            evalSuggested.forEach(e => mergedMap.set(e.studentId, e));
-            suggestedEntries = [...mergedMap.values()];
-        }
+        // Merge: deduplicate by studentId; evaluation test entry wins over quiz entry
+        const mergedMap = new Map();
+        quizSuggested.forEach(e => mergedMap.set(e.studentId, e));
+        evalSuggested.forEach(e => mergedMap.set(e.studentId, e));
+        eligibleUsers = [...mergedMap.values()];
+    }
 
+    if (!sheet) {
         return res.status(200).json(
             new ApiResponse(200, {
                 isNew: true,
-                entries: suggestedEntries,
-                date: date
-            }, suggestedEntries.length > 0 ? "Found suggested entries from evaluations" : "No record found")
+                entries: [],
+                eligibleUsers,
+                date
+            }, "No record found")
         );
     }
 
     return res.status(200).json(
-        new ApiResponse(200, { ...sheet, isNew: false }, "Handover Sheet fetched successfully")
+        new ApiResponse(200, { ...sheet, isNew: false, eligibleUsers }, "Handover Sheet fetched successfully")
     );
 });
 

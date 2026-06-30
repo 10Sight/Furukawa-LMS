@@ -533,7 +533,8 @@ const MultiSkilling = () => {
                                     filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.name || ""
                                 }
                                 employeeCode={
-                                    filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.cardNo || ""
+                                    filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.cardNo ||
+                                    filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.empId || ""
                                 }
                                 departmentId={evalDepartment}
                             />

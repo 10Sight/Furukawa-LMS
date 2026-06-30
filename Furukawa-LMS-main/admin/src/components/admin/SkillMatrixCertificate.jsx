@@ -409,9 +409,12 @@ const SkillMatrixCertificate = ({
                 setCurrentSheetIndex(data.sheetIndex || 1);
                 const fetchedHeader = data.headerData || {};
                 const mergedHeader = { ...defaultHeader, ...fetchedHeader };
-                if (!mergedHeader.trainee) mergedHeader.trainee = studentName || '';
-                if (!mergedHeader.employeeNo) mergedHeader.employeeNo = employeeCode || '';
-                setHeaderData(mergedHeader);
+                setHeaderData(prev => ({
+                    ...prev,
+                    ...mergedHeader,
+                    employeeNo: fetchedHeader.employeeNo || prev.employeeNo || employeeCode || '',
+                    trainee: fetchedHeader.trainee || prev.trainee || studentName || ''
+                }));
 
                 let fetchedDocData = data.docData || defaultDoc;
                 if (fetchedDocData.revNo && typeof fetchedDocData.revNo === 'string' && fetchedDocData.revNo.includes('.....')) {

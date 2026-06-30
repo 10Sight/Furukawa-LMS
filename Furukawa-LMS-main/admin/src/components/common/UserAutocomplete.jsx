@@ -22,7 +22,8 @@ const UserAutocomplete = ({
   excludeAdmins = false,
   includeTemporary = false,
   dojoHandoverPassedOnly = false,
-  onTextChange = null
+  onTextChange = null,
+  options = null // when provided, filter locally instead of querying backend
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
@@ -31,10 +32,11 @@ const UserAutocomplete = ({
   const [triggerStudents, { data: studentsData, isFetching: isFetchingStudents }] = useLazyGetAllStudentsQuery();
   const [triggerAll, { data: allUsersData, isFetching: isFetchingAll }] = useLazyGetAllUsersQuery();
 
-  const isFetching = mode === "all" ? isFetchingAll : isFetchingStudents;
+  const isFetching = options !== null ? false : (mode === "all" ? isFetchingAll : isFetchingStudents);
   const data = mode === "all" ? allUsersData : studentsData;
 
   useEffect(() => {
+    if (options !== null) return;
     if (open && debouncedSearch.length >= 2) {
       const searchParams = {
         search: debouncedSearch,
@@ -56,7 +58,7 @@ const UserAutocomplete = ({
         triggerStudents(searchParams);
       }
     }
-  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly]);
+  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly, options]);
 
   // Sync internal search state with external value when it changes externally
   useEffect(() => {
@@ -64,31 +66,41 @@ const UserAutocomplete = ({
   }, [value]);
 
   const handleSelect = (user) => {
+    const displayName = user.fullName || user.employeeName || "";
     if (clearOnSelect) {
       setSearch("");
     } else {
-      setSearch(user.fullName);
+      setSearch(displayName);
     }
     setOpen(false);
     if (onChange) {
       onChange({
         ...user,
-        fullName: user.fullName,
-        empId: user.empId,
-        userName: user.userName,
+        fullName: user.fullName || user.employeeName,
+        empId: user.empId || user.employeeCode,
+        userName: user.userName || user.employeeCode,
         currentLevel: user.currentLevel,
         fromInfo: user.fromInfo,
-        departmentId: user.departmentId,
+        departmentId: user.departmentId || user.targetDeptId,
         deptName: user.deptName,
         lineName: user.lineName,
         machineName: user.machineName || user.stationName,
         stationName: user.stationName || user.machineName,
-        id: user.id || user._id
+        id: user.id || user._id || user.studentId
       });
     }
   };
 
-  const users = data?.data?.users || [];
+  const localFilteredUsers = options !== null && debouncedSearch.length >= 2
+    ? options.filter(u => {
+        const name = (u.fullName || u.employeeName || "").toLowerCase();
+        const code = (u.empId || u.employeeCode || u.userName || "").toLowerCase();
+        const term = debouncedSearch.toLowerCase();
+        return name.includes(term) || code.includes(term);
+      })
+    : [];
+
+  const users = options !== null ? localFilteredUsers : (data?.data?.users || []);
 
   return (
     <div className={cn("relative w-full", className)}>
@@ -105,7 +117,7 @@ const UserAutocomplete = ({
                 setOpen(true);
                 if (onTextChange) onTextChange(val);
               }}
-              onFocus={() => setOpen(true)}
+              onFocus={() => { if (!search) setOpen(true); }}
               className={cn(compact ? "h-7 py-0 px-0 text-[10px] text-center" : "h-9", inputClassName)}
             />
             {!compact && (
@@ -146,16 +158,16 @@ const UserAutocomplete = ({
 
             {users.map((user) => (
               <div
-                key={user._id || user.id}
+                key={user._id || user.id || user.studentId}
                 className="flex flex-col p-2 hover:bg-gray-100 cursor-pointer border-b last:border-0"
                 onClick={() => handleSelect(user)}
               >
                 <div className="font-medium text-sm flex items-center gap-2">
                   <User className="h-3 w-3 text-gray-400" />
-                  {user.fullName}
+                  {user.fullName || user.employeeName}
                 </div>
                 <div className="text-xs text-gray-500 ml-5">
-                  ID: {user.empId || 'N/A'}
+                  ID: {user.empId || user.employeeCode || 'N/A'}
                 </div>
               </div>
             ))}

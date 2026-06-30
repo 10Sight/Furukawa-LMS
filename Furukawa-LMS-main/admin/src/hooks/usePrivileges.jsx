@@ -42,6 +42,11 @@ export const usePrivileges = () => {
         // Admin and Superadmin bypass
         if (user.isAdmin || user.role === 'SUPERADMIN' || user.role === 'ADMIN') return true;
 
+        // Custom role users store permissions as a string array — check directly
+        if (Array.isArray(user.customRole?.permissions) && typeof requiredPrivilege === 'string') {
+            if (user.customRole.permissions.includes(requiredPrivilege)) return true;
+        }
+
         if (!user.privileges) return false;
 
         // Parse user's privileges string "1, 3, 5" -> [1, 3, 5]

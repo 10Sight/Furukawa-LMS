@@ -153,7 +153,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
 
     // 4. Fetch users for matching trainee name / employee ID
     const { data: usersResponse } = useGetAllUsersQuery(
-        { search: traineeSearch, limit: 30 },
+        { search: traineeSearch, limit: 30, includeTemporary: "true" },
         { skip: isView || isEdit }
     );
     const matchingUsers = usersResponse?.users || usersResponse?.data?.users || [];

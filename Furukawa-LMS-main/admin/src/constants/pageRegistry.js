@@ -222,7 +222,7 @@ export const getFirstAllowedPage = (layout, user, t) => {
 export const PAGE_REGISTRY = [
     // Admin layout
     { key: "dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "admin", link: "/admin", icon: "IconLayoutDashboardFilled" },
-    { key: "dojo-hiring", label: "DOJO Hiring", labelKey: "nav.dojoHiring", layout: "admin", link: "/admin/dojo-hiring", icon: "IconUserPlus" },
+    { key: "dojo-hiring", label: "DOJO Hiring", labelKey: "nav.dojoHiring", layout: "admin", link: "/admin/dojo-hiring", icon: "IconUser" },
     // { key: "trainers", label: "Instructors", labelKey: "nav.instructors", layout: "admin", link: "/admin/trainers", icon: "IconUser" },
     { key: "courses", layout: "admin", link: "/admin/courses" },
     { key: "departments", label: "Departments", labelKey: "nav.departments", layout: "admin", link: "/admin/departments", icon: "IconFolder" },

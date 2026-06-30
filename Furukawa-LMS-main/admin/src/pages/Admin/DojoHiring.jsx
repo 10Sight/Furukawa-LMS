@@ -67,7 +67,8 @@ import {
     IconDownload,
     IconInfoCircle,
     IconX,
-    IconHistory
+    IconHistory,
+    IconUserMinus
 } from "@tabler/icons-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -140,12 +141,19 @@ const DojoHiring = () => {
     });
 
     const location = useLocation();
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, searchTerm, genderFilter]);
+
+    const getStatusParam = (tab) => tab === "left" ? "LEFT" : "ACTIVE";
+
     const [triggerGetTemporaryUsers] = useLazyGetTemporaryUsersQuery();
-    const { data: tempUsersData, isLoading: isLoadingUsers, refetch } = useGetTemporaryUsersQuery({ 
-        page: currentPage, 
+    const { data: tempUsersData, isLoading: isLoadingUsers, refetch } = useGetTemporaryUsersQuery({
+        page: currentPage,
         search: searchTerm,
         gender: genderFilter !== "ALL" ? genderFilter : "",
-        today: activeTab === "today" ? "true" : "false"
+        today: activeTab === "today" ? "true" : "false",
+        status: getStatusParam(activeTab),
     });
     const [dojoRegister, { isLoading: isCreating }] = useDojoRegisterMutation();
     const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation();
@@ -339,7 +347,8 @@ const DojoHiring = () => {
                     limit: PAGE_SIZE,
                     search: searchTerm || "",
                     gender: genderFilter !== "ALL" ? genderFilter : "",
-                    today: activeTab === "today" ? "true" : "false"
+                    today: activeTab === "today" ? "true" : "false",
+                    status: getStatusParam(activeTab),
                 }).unwrap();
 
                 const batch = result?.data?.users || [];
@@ -492,7 +501,8 @@ const DojoHiring = () => {
     };
 
     const stats = [
-        { label: "Total Candidates", value: tempUsersData?.data?.totalUsers || 0, icon: IconUsers, color: "blue" },
+        { label: "Total Candidates", value: tempUsersData?.data?.total || 0, icon: IconUsers, color: "blue" },
+        { label: "Left Candidates", value: tempUsersData?.data?.leftTotal || 0, icon: IconUserMinus, color: "rose" },
         { label: "Today's Hiring", value: tempUsersData?.data?.todayJoined || 0, icon: IconCalendar, color: "emerald" },
         { label: "Male Candidates", value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
         { label: "Female Candidates", value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
@@ -586,7 +596,7 @@ const DojoHiring = () => {
             </div>
 
             {/* Stats Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 {stats.map((stat, idx) => (
                     <StatCard 
                         key={idx}
@@ -606,6 +616,9 @@ const DojoHiring = () => {
                             <TabsList className="bg-slate-100 p-1 rounded-xl h-11">
                                 <TabsTrigger value="all" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
                                     All Candidates
+                                </TabsTrigger>
+                                <TabsTrigger value="left" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                                    Left Candidates
                                 </TabsTrigger>
                                 <TabsTrigger value="today" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
                                     Today's Entry
@@ -746,6 +759,7 @@ const DojoHiring = () => {
                                                         className={`font-black text-[10px] uppercase px-2 py-0.5 rounded-full border ${
                                                             user.status === "PRESENT" ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
                                                             user.status === "LEAVE" ? "bg-amber-50 text-amber-700 border-amber-100" :
+                                                            user.status === "LEFT" ? "bg-rose-50 text-rose-700 border-rose-100" :
                                                             "bg-slate-100 text-slate-600 border-slate-200"
                                                         }`}
                                                     >

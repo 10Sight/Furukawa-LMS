@@ -244,10 +244,10 @@ export const userApi = createApi({
             },
         }),
         getTemporaryUsers: builder.query({
-            query: ({ page = 1, limit = 20, search = "", gender = "", today = "" } = {}) => ({
+            query: ({ page = 1, limit = 20, search = "", gender = "", today = "", status = "" } = {}) => ({
                 url: "/api/users/temporary",
                 method: "GET",
-                params: { page, limit, search, gender, today }
+                params: { page, limit, search, gender, today, status }
             }),
             providesTags: ['User'],
         }),

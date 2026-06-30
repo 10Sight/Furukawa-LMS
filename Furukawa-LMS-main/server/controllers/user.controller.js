@@ -1948,6 +1948,13 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
   let whereClauses = ["u.isTemporary = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
   let params = [];
 
+  const status = req.query.status;
+  if (status === 'LEFT') {
+    whereClauses.push("u.status = 'LEFT'");
+  } else if (status === 'ACTIVE') {
+    whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
+  }
+
   if (req.query.search) {
     const t = `%${req.query.search}%`;
     whereClauses.push("(u.fullName LIKE ? OR u.empId LIKE ? OR u.phoneNumber LIKE ?)");
@@ -1967,14 +1974,15 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
-  // Fetch Stats
+  // Fetch Stats — always global, never filtered by search/gender/today/status
   const [statsData] = await executeQuery(`
-    SELECT 
-      COUNT(*) as total,
-      SUM(CASE WHEN CAST(createdAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
-      SUM(CASE WHEN gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
-      SUM(CASE WHEN gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
-    FROM users 
+    SELECT
+      SUM(CASE WHEN status != 'LEFT' OR status IS NULL THEN 1 ELSE 0 END) as total,
+      SUM(CASE WHEN status = 'LEFT' THEN 1 ELSE 0 END) as leftTotal,
+      SUM(CASE WHEN (status != 'LEFT' OR status IS NULL) AND CAST(createdAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
+      SUM(CASE WHEN (status != 'LEFT' OR status IS NULL) AND gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
+      SUM(CASE WHEN (status != 'LEFT' OR status IS NULL) AND gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
+    FROM users
     WHERE isTemporary = 1 AND (isDeleted = 0 OR isDeleted IS NULL)
   `);
 
@@ -1993,7 +2001,11 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     totalUsers: cnt[0].total,
     totalPages: Math.ceil(cnt[0].total / limit),
     currentPage: page,
-    ...statsData[0]
+    total: statsData[0].total,
+    leftTotal: statsData[0].leftTotal,
+    todayJoined: statsData[0].todayJoined,
+    maleCount: statsData[0].maleCount,
+    femaleCount: statsData[0].femaleCount,
   }, "Temporary users fetched successfully"));
 });
 

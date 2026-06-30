@@ -30,9 +30,9 @@ export const calculateUserEfficiency = (evalData) => {
 
     // L4: Whether he can operate in the standard time? (sIdx=3, iIdx=5 -> '3-5')
     // L3: Whether he can operate in the standard time? (sIdx=2, iIdx=0 -> '2-0')
-    // L2: Whether he can report the abnormality (Andon) correctly? (sIdx=1, iIdx=2 -> '1-2')
+    // L2: Whether his operation in charge is at least 75%? (sIdx=1, iIdx=1 -> '1-1')
     // L1: Speed is no more than 74% (sIdx=0, iIdx=2 -> '0-2')
-    for (const key of ['3-5', '2-0', '1-2', '0-2']) {
+    for (const key of ['3-5', '2-0', '1-1', '0-2']) {
         const d = parsed[key];
         if (d?.standard === 'OK') {
             const val = parseFloat(d.okVal);
@@ -48,7 +48,7 @@ export const computeEarnedLevel = (evalData, _skillCertConfig, activeConfigLevel
 
     // Efficiency key per level index (sIdx): the item where efficiency is entered.
     // Scan from highest to lowest — return the first level whose efficiency key is OK with a numeric value.
-    const efficiencyKeys = { 3: '3-5', 2: '2-0', 1: '1-2', 0: '0-2' };
+    const efficiencyKeys = { 3: '3-5', 2: '2-0', 1: '1-1', 0: '0-2' };
 
     for (let sIdx = activeConfigLevels.length - 1; sIdx >= 0; sIdx--) {
         const key = efficiencyKeys[sIdx];

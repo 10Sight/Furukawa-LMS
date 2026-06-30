@@ -717,6 +717,9 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
         try {
             const student = await User.findById(studentId);
             if (student) {
+                // Always update global efficiency regardless of subSection assignment
+                student.currentEffeciency = calculatedEfficiency;
+
                 const targetSubSectionId = subSectionId || student.subSectionId || student.targetSubSectionId;
 
                 if (targetSubSectionId) {
@@ -728,14 +731,11 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
 
                     // Update mapping
                     skillEffMap[subSecKey] = calculatedEfficiency;
-
-                    // Update fields
-                    student.currentEffeciency = calculatedEfficiency;
                     student.skillEffeciency = skillEffMap;
-
-                    await student.save();
-                    console.log(`[SkillMatrixEvaluation] Synced operator ${studentId} efficiency for subSectionId ${subSecKey}: ${calculatedEfficiency}%`);
                 }
+
+                await student.save();
+                console.log(`[SkillMatrixEvaluation] Synced operator ${studentId} efficiency: ${calculatedEfficiency}% (subSectionId: ${targetSubSectionId || 'none'})`);
             }
         } catch (err) {
             console.error("[SkillMatrixEvaluation] Failed to sync operator efficiency:", err);

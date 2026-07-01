@@ -26,7 +26,8 @@ export const createQuiz = asyncHandler(async (req, res) => {
     const {
         courseId, moduleId, lessonId, scope, title, questions,
         passingScore, description, timeLimit, attemptsAllowed,
-        skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle
+        skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle,
+        targetDeptId, targetSectionId
     } = req.body;
 
     if (!title || !questions || questions.length === 0) {
@@ -103,14 +104,16 @@ export const createQuiz = asyncHandler(async (req, res) => {
 
     const [insertRows] = await executeQuery(
         `INSERT INTO quizzes
-        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, createdBy, createdAt, updatedAt)
+        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, createdBy, targetDeptId, targetSectionId, createdAt, updatedAt)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
         [
             resolvedCourseId, finalModuleId, finalLessonId, actualScope, title, slug, description,
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
             JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true,
-            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy !== undefined && conductedBy !== null ? conductedBy : "", isMultiSkilling ? 1 : 0, paperTitle || null, paperSubTitle || null, req.user.id
+            JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy !== undefined && conductedBy !== null ? conductedBy : "", isMultiSkilling ? 1 : 0, paperTitle || null, paperSubTitle || null, req.user.id,
+            targetDeptId ? parseInt(targetDeptId) : null,
+            targetSectionId ? parseInt(targetSectionId) : null
         ]
     );
 
@@ -297,7 +300,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
 
     const {
         title, questions, description, passingScore, timeLimit,
-        attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle
+        attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle,
+        targetDeptId, targetSectionId
     } = req.body;
 
     const [rows] = await executeQuery("SELECT * FROM quizzes WHERE id = ?", [id]);
@@ -326,6 +330,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (isMultiSkilling !== undefined) { updates.push("isMultiSkilling = ?"); values.push(isMultiSkilling ? 1 : 0); }
     if (paperTitle !== undefined) { updates.push("paperTitle = ?"); values.push(paperTitle || null); }
     if (paperSubTitle !== undefined) { updates.push("paperSubTitle = ?"); values.push(paperSubTitle || null); }
+    if (targetDeptId !== undefined) { updates.push("targetDeptId = ?"); values.push(targetDeptId ? parseInt(targetDeptId) : null); }
+    if (targetSectionId !== undefined) { updates.push("targetSectionId = ?"); values.push(targetSectionId ? parseInt(targetSectionId) : null); }
 
     if (updates.length > 0) {
         updates.push("updatedAt = GETDATE()");

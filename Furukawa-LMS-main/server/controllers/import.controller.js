@@ -314,6 +314,7 @@ export const importEmployees = async (req, res) => {
                     leavingDate: normalizeDate(row["Date of Leaving"]),
                     reasonOfLeaving: (row["Reason of Leaving"])?.toString().trim(),
                     contractor: (row["Contractor"])?.toString().trim() || null,
+                    rawStatus: row["Status"]?.toString().trim() || null,
                     status: normalizeStatus(row["Status"]),
                 };
 
@@ -448,13 +449,39 @@ export const importEmployees = async (req, res) => {
                         const newVal = userData[field.key];
                         const oldVal = existingUser[field.key];
 
+                        const isNewValEmpty = newVal === null || newVal === undefined || newVal.toString().trim() === "";
+
+                        // Leaving details: only clear when status is explicitly PRESENT in Excel;
+                        // otherwise preserve existing DB values if the Excel cell is empty.
+                        if (['leavingDate', 'reasonOfLeaving'].includes(field.key)) {
+                            const explicitStatus = normalizedRow.rawStatus ? normalizeStatus(normalizedRow.rawStatus) : null;
+                            if (explicitStatus === "PRESENT") {
+                                if (oldVal !== null && oldVal !== undefined && oldVal !== "") {
+                                    updatedData[field.key] = null;
+                                    changes[field.label] = { from: oldVal, to: "Cleared (Status Present)" };
+                                }
+                            }
+                            // Whether we cleared or not, do not proceed to the normal diff logic.
+                            continue;
+                        }
+
+                        // Status: only update if the Excel cell was explicitly filled in.
+                        if (field.key === 'status' && !normalizedRow.rawStatus) {
+                            continue;
+                        }
+
+                        // All other fields: skip if Excel cell is empty to prevent wiping existing data.
+                        if (isNewValEmpty) {
+                            continue;
+                        }
+
                         let isDifferent = false;
                         if (['dob', 'joiningDate', 'leavingDate'].includes(field.key)) {
                             const d1 = safeDate(newVal);
                             const d2 = safeDate(oldVal);
                             if (d1 !== d2) isDifferent = true;
                         } else {
-                            const s1 = (newVal !== null && newVal !== undefined) ? newVal.toString().trim() : "";
+                            const s1 = newVal.toString().trim();
                             const s2 = (oldVal !== null && oldVal !== undefined) ? oldVal.toString().trim() : "";
                             if (s1 !== s2) isDifferent = true;
                         }
@@ -462,7 +489,7 @@ export const importEmployees = async (req, res) => {
                         if (isDifferent) {
                             updatedData[field.key] = userData[field.key];
 
-                            // Handle syncing string columns for hierarchy
+                            // Handle syncing string columns for hierarchy and contractor
                             if (field.key === 'departmentId') {
                                 updatedData.department = normalizedRow.department;
                                 changes[field.label] = { from: existingUser.departmentName || "N/A", to: normalizedRow.department || "N/A" };

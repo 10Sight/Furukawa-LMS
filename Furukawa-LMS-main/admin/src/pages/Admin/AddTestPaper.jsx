@@ -87,6 +87,8 @@ const AddTestPaper = () => {
     subSectionId: [],
     level: "",
     isDojo: false,
+    targetDeptId: "",
+    targetSectionId: "",
 
     isTheoretical: false,
     isMultiSkilling: false,
@@ -149,6 +151,13 @@ const AddTestPaper = () => {
   const { data: allSectionsData } = useGetSectionsByDepartmentQuery(selectedDeptIds, {
     skip: !selectedDeptIds
   });
+
+  const { data: targetSectionsData } = useGetSectionsByDepartmentQuery(formData.targetDeptId, {
+    skip: !formData.targetDeptId
+  });
+  const targetSectionOptions = React.useMemo(() => {
+    return (targetSectionsData?.data || []).map(s => ({ value: String(s.id), label: s.name }));
+  }, [targetSectionsData]);
 
   const { data: allLinesData } = useGetLinesQuery();
   const { data: allSubSectionsData } = useGetSubSectionsQuery({ limit: 1000 });
@@ -572,6 +581,8 @@ const AddTestPaper = () => {
         subSectionId: formData.subSectionId,
         level: formData.level,
         isDojo: formData.isDojo,
+        targetDeptId: formData.targetDeptId ? parseInt(formData.targetDeptId) : null,
+        targetSectionId: formData.targetSectionId ? parseInt(formData.targetSectionId) : null,
 
         isTheoretical: formData.isTheoretical,
         isMultiSkilling: formData.isMultiSkilling,
@@ -863,6 +874,63 @@ const AddTestPaper = () => {
                     )}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            {/* Handover Sheet Targeting */}
+            <div className="border rounded-lg p-4 bg-amber-50/30 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Handover Sheet Targeting (Optional)</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  When a student passes this test and the Dojo Evaluation Test, their score will
+                  automatically populate the Handover Sheet for the selected department and section.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Target Department */}
+                <div className="space-y-2">
+                  <Label>Target Department</Label>
+                  <Select
+                    key={`${departmentOptions.length}-${formData.targetDeptId}`}
+                    value={formData.targetDeptId || "none"}
+                    onValueChange={(val) => setFormData(prev => ({
+                      ...prev,
+                      targetDeptId: val === "none" ? "" : val,
+                      targetSectionId: "",   // reset section when dept changes
+                    }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select target department" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {departmentOptions.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Target Section */}
+                <div className="space-y-2">
+                  <Label>Target Section</Label>
+                  <Select
+                    key={`${targetSectionOptions.length}-${formData.targetSectionId}`}
+                    value={formData.targetSectionId || "none"}
+                    disabled={!formData.targetDeptId}
+                    onValueChange={(val) => setFormData(prev => ({
+                      ...prev,
+                      targetSectionId: val === "none" ? "" : val,
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={!formData.targetDeptId ? "Select target department first" : "Select target section"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {targetSectionOptions.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 

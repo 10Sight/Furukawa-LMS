@@ -1110,11 +1110,23 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                     u.targetSubSectionId as subSectionId,
                     u.targetStationId as stationId,
                     l.name as lineName,
-                    st.name as stationName
+                    st.name as stationName,
+                    tp.score as testPaperScore,
+                    tp.quizQuestions as testPaperQuestions
                 FROM evaluation_test_attempts eta
                 JOIN users u ON eta.userId = u.id
                 LEFT JOIN [lines] l ON u.targetLineId = l.id
                 LEFT JOIN machines st ON u.targetStationId = st.id
+                OUTER APPLY (
+                    SELECT TOP 1 aq2.score, q2.questions as quizQuestions
+                    FROM attempted_quizzes aq2
+                    JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
+                    WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
+                      AND q2.targetDeptId = u.targetDeptId
+                      AND q2.targetSectionId = u.targetSectionId
+                      AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
+                    ORDER BY aq2.completedAt DESC
+                ) tp
                 WHERE eta.isHandoverEligible = 1
                   AND CAST(eta.passedDate AS DATE) = CAST(? AS DATE)
                   AND u.targetDeptId = ?
@@ -1122,12 +1134,17 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                   AND (u.status IS NULL OR u.status != 'LEFT')
             `, [date, departmentId]);
 
-        const evalSuggested = evalUsers.map(user => ({
-            ...user,
-            marks: "100%",
-            passedQuizDate: date,
-            isAutoSuggested: true
-        }));
+        const evalSuggested = evalUsers.map(user => {
+            let marks = "100%";
+            if (user.testPaperScore !== null && user.testPaperScore !== undefined && user.testPaperQuestions) {
+                try {
+                    const questions = JSON.parse(user.testPaperQuestions || "[]");
+                    const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
+                    marks = `${Math.round((user.testPaperScore / totalMarks) * 100)}%`;
+                } catch (e) { /* fallback to 100% */ }
+            }
+            return { ...user, marks, passedQuizDate: date, isAutoSuggested: true };
+        });
 
         // Merge: deduplicate by studentId; evaluation test entry wins over quiz entry
         const mergedMap = new Map();

@@ -163,9 +163,21 @@ export const formatUser = (u) => {
     resolvedPrimaryLevel = u.currentLevel || null;
   }
 
+  let marksPercent;
+  if (u.quizScore !== null && u.quizScore !== undefined && u.quizQuestions) {
+    try {
+      const questions = parseJSON(u.quizQuestions, []);
+      const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
+      marksPercent = `${Math.round((u.quizScore / totalMarks) * 100)}%`;
+    } catch (e) {
+      console.error("Error calculating marks in formatUser:", e);
+    }
+  }
+
   const formatted = {
     ...u,
     _id: u.id,
+    ...(marksPercent !== undefined ? { marks: marksPercent } : {}),
     contractor: u.contractorName || u.contractor || "",
     avatar: parseJSON(u.avatar),
     assignments,
@@ -451,6 +463,20 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
+  const includeHandoverMarks = req.query.includeHandoverMarks === "true";
+  const marksJoinSQL = includeHandoverMarks ? `
+    OUTER APPLY (
+      SELECT TOP 1 aq.score, q.questions as quizQuestions
+      FROM attempted_quizzes aq
+      JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+      WHERE (CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student)
+        AND q.isDojo = 1
+        AND q.isHandover = 1
+        AND (aq.status = 'PASSED' OR aq.status = 'PASS')
+      ORDER BY aq.completedAt DESC
+    ) mq` : "";
+  const marksSelectSQL = includeHandoverMarks ? ", mq.score as quizScore, mq.quizQuestions as quizQuestions" : "";
+
   // --- NEW: Calculate Present/Absent counts for the cards ---
   // Create a version of where clauses that omits the specific status filter
   const countsWhereClauses = whereClauses.filter(c =>
@@ -491,17 +517,18 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const totalUsers = cnt[0].total;
 
   const [users] = await executeQuery(`
-    SELECT u.*, 
+    SELECT u.*,
            d.id as actualDeptId, d.deptName, d.deptInstructor,
            s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
            cr.name as customRoleName,
            al.logShift,
            al.logStatus,
-           al.logDate
+           al.logDate${marksSelectSQL}
     FROM users u
     ${getHierarchyJoinSQL}
     LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
     ${attendanceJoinSQL}
+    ${marksJoinSQL}
     ${whereSQL}
     ORDER BY u.createdAt DESC
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
@@ -1509,6 +1536,21 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+
+  const includeHandoverMarks = req.query.includeHandoverMarks === "true";
+  const marksJoinSQL = includeHandoverMarks ? `
+    OUTER APPLY (
+      SELECT TOP 1 aq.score, q.questions as quizQuestions
+      FROM attempted_quizzes aq
+      JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+      WHERE (CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student)
+        AND q.isDojo = 1
+        AND q.isHandover = 1
+        AND (aq.status = 'PASSED' OR aq.status = 'PASS')
+      ORDER BY aq.completedAt DESC
+    ) mq` : "";
+  const marksSelectSQL = includeHandoverMarks ? ", mq.score as quizScore, mq.quizQuestions as quizQuestions" : "";
+
   const [cnt] = await executeQuery(`
     SELECT COUNT(*) as total
     FROM users u ${getHierarchyJoinSQL}
@@ -1517,9 +1559,10 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   `, [...attendanceParams, ...params]);
   const [students] = await executeQuery(`
     SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
-           al.logShift, al.logStatus, al.logDate, c_res.contractorName
+           al.logShift, al.logStatus, al.logDate, c_res.contractorName${marksSelectSQL}
     FROM users u ${getHierarchyJoinSQL}
     ${attendanceJoinSQL}
+    ${marksJoinSQL}
     ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...attendanceParams, ...params, offset, limit]);

@@ -1123,7 +1123,9 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                     JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
                     WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
                       AND q2.targetDeptId = u.targetDeptId
-                      AND q2.targetSectionId = u.targetSectionId
+                      AND (q2.targetSectionId = u.targetSectionId OR (q2.targetSectionId IS NULL AND u.targetSectionId IS NULL))
+                      AND q2.isDojo = 1
+                      AND q2.isHandover = 1
                       AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
                     ORDER BY aq2.completedAt DESC
                 ) tp

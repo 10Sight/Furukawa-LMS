@@ -22,6 +22,7 @@ const UserAutocomplete = ({
   excludeAdmins = false,
   includeTemporary = false,
   dojoHandoverPassedOnly = false,
+  includeHandoverMarks = false,
   onTextChange = null,
   options = null // when provided, filter locally instead of querying backend
 }) => {
@@ -51,14 +52,16 @@ const UserAutocomplete = ({
         if (excludeAdmins) searchParams.excludeAdmins = "true";
         if (includeTemporary) searchParams.includeTemporary = String(includeTemporary);
         if (dojoHandoverPassedOnly) searchParams.dojoHandoverPassedOnly = String(dojoHandoverPassedOnly);
+        if (includeHandoverMarks) searchParams.includeHandoverMarks = "true";
         triggerAll(searchParams);
       } else {
         if (includeTemporary) searchParams.includeTemporary = String(includeTemporary);
         if (dojoHandoverPassedOnly) searchParams.dojoHandoverPassedOnly = String(dojoHandoverPassedOnly);
+        if (includeHandoverMarks) searchParams.includeHandoverMarks = "true";
         triggerStudents(searchParams);
       }
     }
-  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly, options]);
+  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly, includeHandoverMarks, options]);
 
   // Sync internal search state with external value when it changes externally
   useEffect(() => {

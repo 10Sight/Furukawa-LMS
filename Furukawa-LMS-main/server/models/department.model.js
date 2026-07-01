@@ -89,6 +89,13 @@ class Department {
             logger.info("Checked/Created departments table in MSSQL");
 
             const { migrationHelper } = await import("../db/migrationHelper.js");
+
+            // idx_instructor on a VARCHAR column blocks ALTER to NVARCHAR(MAX) — drop it first
+            await executeQuery(`
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_instructor' AND object_id = OBJECT_ID('departments'))
+                    DROP INDEX idx_instructor ON departments
+            `);
+
             await migrationHelper.ensureColumnType("departments", "instructor", "NVARCHAR(MAX)");
         } catch (error) {
             logger.error("Failed to initialize Department table", error);

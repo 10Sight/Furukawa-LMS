@@ -72,19 +72,26 @@ export const migrationHelper = {
             if (rows && rows.length > 0) {
                 const currentType = rows[0].DATA_TYPE.toLowerCase();
                 const currentLen = rows[0].CHARACTER_MAXIMUM_LENGTH;
-                
-                // Simplified check: if it's not what we expect (e.g. 'int' vs 'nvarchar')
-                if (currentType !== expectedType.split('(')[0].toLowerCase()) {
+
+                const expectedBase = expectedType.split('(')[0].toLowerCase();
+                const expectsMax = expectedType.toUpperCase().includes('(MAX)');
+
+                const typeMismatch = currentType !== expectedBase;
+                // SQL Server reports CHARACTER_MAXIMUM_LENGTH = -1 for MAX columns
+                const lengthMismatch = expectsMax && currentLen !== -1;
+
+                if (typeMismatch || lengthMismatch) {
                     logger.info(`Migration: Altering column '${columnName}' in table '${tableName}' to ${expectedType}...`);
                     const alterQuery = `ALTER TABLE ${tableName} ALTER COLUMN ${columnName} ${expectedType}`;
                     await executeQuery(alterQuery);
-                    
+
                     // If we converted from INT to NVARCHAR, wrap existing values in brackets to make them valid JSON arrays
-                    if (currentType === 'int' && expectedType.toLowerCase().includes('nvarchar')) {
+                    if (currentType === 'int' && expectedBase.includes('nvarchar')) {
                         logger.info(`Migration: Wrapping existing INT values in JSON arrays for column '${columnName}'...`);
                         await executeQuery(`UPDATE ${tableName} SET ${columnName} = '[' + CAST(${columnName} AS NVARCHAR(MAX)) + ']' WHERE ${columnName} IS NOT NULL AND ${columnName} NOT LIKE '[%'`);
                     }
-                    
+
+                    logger.info(`Migration: Successfully altered column '${columnName}' in '${tableName}' to ${expectedType}.`);
                     return true;
                 }
             }

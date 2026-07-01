@@ -273,6 +273,7 @@ export const importEmployees = async (req, res) => {
             updatedCount: 0
         };
 
+
         // Create Import Log entry
         const [logResult] = await executeQuery(
             "INSERT INTO import_logs (fileName, importType, totalRows, importedBy) OUTPUT INSERTED.id VALUES (?, ?, ?, ?)",

@@ -57,7 +57,7 @@ class Department {
                 slug VARCHAR(255) UNIQUE,
                 course VARCHAR(255),
                 courses NVARCHAR(MAX),
-                instructor VARCHAR(255),
+                instructor NVARCHAR(MAX),
                 students NVARCHAR(MAX),
                 startDate DATETIME,
                 endDate DATETIME,
@@ -74,7 +74,6 @@ class Department {
                 updatedAt DATETIME DEFAULT GETDATE()
             );
             CREATE INDEX idx_status ON departments(status);
-            CREATE INDEX idx_instructor ON departments(instructor);
             CREATE INDEX idx_statusUpdatedAt ON departments(statusUpdatedAt);
             END
             ELSE
@@ -88,6 +87,9 @@ class Department {
         try {
             await executeQuery(query);
             logger.info("Checked/Created departments table in MSSQL");
+
+            const { migrationHelper } = await import("../db/migrationHelper.js");
+            await migrationHelper.ensureColumnType("departments", "instructor", "NVARCHAR(MAX)");
         } catch (error) {
             logger.error("Failed to initialize Department table", error);
         }

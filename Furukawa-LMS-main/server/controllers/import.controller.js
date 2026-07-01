@@ -452,7 +452,7 @@ export const importEmployees = async (req, res) => {
                         const isNewValEmpty = newVal === null || newVal === undefined || newVal.toString().trim() === "";
 
                         // Leaving details: only clear when status is explicitly PRESENT in Excel;
-                        // otherwise preserve existing DB values if the Excel cell is empty.
+                        // otherwise fall through to normal diff logic so new values can be set.
                         if (['leavingDate', 'reasonOfLeaving'].includes(field.key)) {
                             const explicitStatus = normalizedRow.rawStatus ? normalizeStatus(normalizedRow.rawStatus) : null;
                             if (explicitStatus === "PRESENT") {
@@ -460,9 +460,9 @@ export const importEmployees = async (req, res) => {
                                     updatedData[field.key] = null;
                                     changes[field.label] = { from: oldVal, to: "Cleared (Status Present)" };
                                 }
+                                continue; // Skip normal diff — clearing is done
                             }
-                            // Whether we cleared or not, do not proceed to the normal diff logic.
-                            continue;
+                            // Status is not PRESENT: fall through to isNewValEmpty + diff logic below
                         }
 
                         // Status: only update if the Excel cell was explicitly filled in.

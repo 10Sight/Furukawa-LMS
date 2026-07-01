@@ -89,8 +89,8 @@ const EditTestPaper = () => {
     subSectionId: [],
     level: "",
     isDojo: false,
-    targetDeptId: "",
-    targetSectionId: "",
+    targetDeptId: [],
+    targetSectionId: [],
 
     isTheoretical: false,
     isMultiSkilling: false,
@@ -135,8 +135,8 @@ const EditTestPaper = () => {
         subSectionId: Array.isArray(q.subSectionId) ? q.subSectionId.map(String) : [],
         level: q.level || "",
         isDojo: !!q.isDojo,
-        targetDeptId: q.targetDeptId ? String(q.targetDeptId) : "",
-        targetSectionId: q.targetSectionId ? String(q.targetSectionId) : "",
+        targetDeptId: Array.isArray(q.targetDeptId) ? q.targetDeptId.map(String) : (q.targetDeptId ? [String(q.targetDeptId)] : []),
+        targetSectionId: Array.isArray(q.targetSectionId) ? q.targetSectionId.map(String) : (q.targetSectionId ? [String(q.targetSectionId)] : []),
 
         isTheoretical: !!q.isTheoretical,
         isMultiSkilling: !!q.isMultiSkilling,
@@ -182,12 +182,22 @@ const EditTestPaper = () => {
     skip: !selectedDeptIds
   });
 
-  const { data: targetSectionsData } = useGetSectionsByDepartmentQuery(formData.targetDeptId, {
-    skip: !formData.targetDeptId
+  const targetDeptIdsStr = formData.targetDeptId.join(',');
+  const { data: targetSectionsData } = useGetSectionsByDepartmentQuery(targetDeptIdsStr, {
+    skip: formData.targetDeptId.length === 0
   });
   const targetSectionOptions = React.useMemo(() => {
     return (targetSectionsData?.data || []).map(s => ({ value: String(s.id), label: s.name }));
   }, [targetSectionsData]);
+
+  React.useEffect(() => {
+    if (!targetSectionsData || formData.targetDeptId.length === 0 || formData.targetSectionId.length === 0) return;
+    const validIds = new Set(targetSectionOptions.map(o => o.value));
+    const filtered = formData.targetSectionId.filter(id => validIds.has(id));
+    if (filtered.length !== formData.targetSectionId.length) {
+      setFormData(prev => ({ ...prev, targetSectionId: filtered }));
+    }
+  }, [targetSectionsData, targetSectionOptions]);
 
   const { data: allLinesData } = useGetLinesQuery();
   const { data: allSubSectionsData } = useGetSubSectionsQuery({ limit: 1000 });
@@ -609,8 +619,8 @@ const EditTestPaper = () => {
         subSectionId: formData.subSectionId,
         level: formData.level || undefined,
         isDojo: formData.isDojo,
-        targetDeptId: formData.targetDeptId ? parseInt(formData.targetDeptId) : null,
-        targetSectionId: formData.targetSectionId ? parseInt(formData.targetSectionId) : null,
+        targetDeptId: formData.targetDeptId,
+        targetSectionId: formData.targetSectionId,
 
         isTheoretical: formData.isTheoretical,
         isMultiSkilling: formData.isMultiSkilling,
@@ -880,51 +890,100 @@ const EditTestPaper = () => {
                 <h3 className="text-sm font-semibold">Handover Sheet Targeting (Optional)</h3>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   When a student passes this test and the Dojo Evaluation Test, their score will
-                  automatically populate the Handover Sheet for the selected department and section.
+                  automatically populate the Handover Sheet for all selected departments and sections.
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Target Department */}
+                {/* Target Departments */}
                 <div className="space-y-2">
-                  <Label>Target Department</Label>
+                  <Label>Target Departments</Label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {formData.targetDeptId.map(id => {
+                      const dept = departmentOptions.find(o => o.value === id);
+                      return (
+                        <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-amber-50">
+                          {dept?.label || id}
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({
+                              ...prev,
+                              targetDeptId: prev.targetDeptId.filter(d => d !== id),
+                            }))}
+                            className="hover:bg-amber-100 rounded-full p-0.5"
+                          >
+                            <IconX className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
                   <Select
-                    key={`${departmentOptions.length}-${formData.targetDeptId}`}
-                    value={formData.targetDeptId || "none"}
                     onValueChange={(val) => setFormData(prev => ({
                       ...prev,
-                      targetDeptId: val === "none" ? "" : val,
-                      targetSectionId: "",   // reset section when dept changes
+                      targetDeptId: prev.targetDeptId.includes(val) ? prev.targetDeptId : [...prev.targetDeptId, val],
                     }))}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select target department" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder={formData.targetDeptId.length > 0 ? `${formData.targetDeptId.length} selected` : "Select target departments"} />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
                       {departmentOptions.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        <SelectItem key={opt.value} value={opt.value} disabled={formData.targetDeptId.includes(opt.value)}>
+                          {opt.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Target Section */}
+                {/* Target Sections */}
                 <div className="space-y-2">
-                  <Label>Target Section</Label>
+                  <Label>Target Sections</Label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {formData.targetSectionId.map(id => {
+                      const sec = targetSectionOptions.find(o => o.value === id);
+                      return (
+                        <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-amber-50/70">
+                          {sec?.label || id}
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({
+                              ...prev,
+                              targetSectionId: prev.targetSectionId.filter(s => s !== id),
+                            }))}
+                            className="hover:bg-amber-100 rounded-full p-0.5"
+                          >
+                            <IconX className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
                   <Select
-                    key={`${targetSectionOptions.length}-${formData.targetSectionId}`}
-                    value={formData.targetSectionId || "none"}
-                    disabled={!formData.targetDeptId}
                     onValueChange={(val) => setFormData(prev => ({
                       ...prev,
-                      targetSectionId: val === "none" ? "" : val,
+                      targetSectionId: prev.targetSectionId.includes(val) ? prev.targetSectionId : [...prev.targetSectionId, val],
                     }))}
+                    disabled={formData.targetDeptId.length === 0}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={!formData.targetDeptId ? "Select target department first" : "Select target section"} />
+                      <SelectValue placeholder={
+                        formData.targetDeptId.length === 0
+                          ? "Select target departments first"
+                          : formData.targetSectionId.length > 0
+                            ? `${formData.targetSectionId.length} selected`
+                            : "Select target sections"
+                      } />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {targetSectionOptions.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
+                      {targetSectionOptions.length === 0 ? (
+                        <SelectItem value="none" disabled>No sections available</SelectItem>
+                      ) : (
+                        targetSectionOptions.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value} disabled={formData.targetSectionId.includes(opt.value)}>
+                            {opt.label}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

@@ -290,33 +290,33 @@ export const importEmployees = async (req, res) => {
             try {
                 // Map Excel headers to internal names for validation and processing
                 const normalizedRow = {
-                    empId: (row["EmployeeID"] || row["Employee Code"] || row["Employee ID"])?.toString().trim(),
-                    idCard: (row["CardNo"] || row["Card No."] || row["Card No"])?.toString().trim(),
-                    fullName: (row["Name"] || row["Full Name"])?.toString().trim(),
-                    fatherHusbandName: (row["Father/HusbandName"] || row["Father / Husband Name"])?.toString().trim(),
-                    gender: (row["Gender"] || row["Gender "])?.toString().trim(),
-                    department: (row["Department"])?.toString().trim(),
-                    section: (row["Section"])?.toString().trim(),
-                    line: (row["Line"])?.toString().trim(),
-                    sub_section: (row["Sub Section"])?.toString().trim(),
-                    stationNo: (row["Station No."] || row["Station No"])?.toString().trim(),
-                    mentor: (row["Mentor"])?.toString().trim(),
-                    designation: (row["Designation"])?.toString().trim(),
-                    dob: normalizeDate(row["D.O.B."] || row["DOB"] || row["D.O.B"]),
-                    joiningDate: normalizeDate(row["D.O.J."] || row["DOJ"] || row["D.O.J"]),
-                    education: (row["Education"])?.toString().trim(),
-                    district: (row["District"] || row["Distt"] || row["Dist"])?.toString().trim(),
-                    state: (row["State"])?.toString().trim(),
-                    pin: (row["PIN"] || row["Pin"])?.toString().trim(),
-                    busRoute: (row["Bus Route"])?.toString().trim(),
-                    email: (row["E-Mail ID"] || row["Email"])?.toString().trim(),
-                    phoneNumber: (row["Mobile No."] || row["Mobile No"] || row["Mobile Number"])?.toString().trim(),
-                    currentLevel: (row["L"] || row["Lavel"] || row["Level"])?.toString().trim(),
-                    leavingDate: normalizeDate(row["Date of Leaving"]),
-                    reasonOfLeaving: (row["Reason of Leaving"])?.toString().trim(),
-                    contractor: (row["Contractor"])?.toString().trim() || null,
-                    rawStatus: row["Status"]?.toString().trim() || null,
-                    status: normalizeStatus(row["Status"]),
+                    empId: getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])?.toString().trim(),
+                    idCard: getRowVal(row, ["CardNo", "Card No.", "Card No"])?.toString().trim(),
+                    fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
+                    fatherHusbandName: getRowVal(row, ["Father/HusbandName", "Father / Husband Name"])?.toString().trim(),
+                    gender: getRowVal(row, ["Gender", "Gender "])?.toString().trim(),
+                    department: getRowVal(row, ["Department"])?.toString().trim(),
+                    section: getRowVal(row, ["Section"])?.toString().trim(),
+                    line: getRowVal(row, ["Line"])?.toString().trim(),
+                    sub_section: getRowVal(row, ["Sub Section"])?.toString().trim(),
+                    stationNo: getRowVal(row, ["Station No.", "Station No"])?.toString().trim(),
+                    mentor: getRowVal(row, ["Mentor"])?.toString().trim(),
+                    designation: getRowVal(row, ["Designation"])?.toString().trim(),
+                    dob: normalizeDate(getRowVal(row, ["D.O.B.", "DOB", "D.O.B"])),
+                    joiningDate: normalizeDate(getRowVal(row, ["D.O.J.", "DOJ", "D.O.J"])),
+                    education: getRowVal(row, ["Education"])?.toString().trim(),
+                    district: getRowVal(row, ["District", "Distt", "Dist"])?.toString().trim(),
+                    state: getRowVal(row, ["State"])?.toString().trim(),
+                    pin: getRowVal(row, ["PIN", "Pin", "Pin Code", "Pincode"])?.toString().trim(),
+                    busRoute: getRowVal(row, ["Bus Route"])?.toString().trim(),
+                    email: getRowVal(row, ["E-Mail ID", "Email", "Email ID"])?.toString().trim(),
+                    phoneNumber: getRowVal(row, ["Mobile No.", "Mobile No", "Mobile Number", "Phone", "Phone Number"])?.toString().trim(),
+                    currentLevel: getRowVal(row, ["L", "Lavel", "Level"])?.toString().trim(),
+                    leavingDate: normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"])),
+                    reasonOfLeaving: getRowVal(row, ["Reason of Leaving", "ReasonofLeaving"])?.toString().trim(),
+                    contractor: getRowVal(row, ["Contractor"])?.toString().trim() || null,
+                    rawStatus: getRowVal(row, ["Status"])?.toString().trim() || null,
+                    status: normalizeStatus(getRowVal(row, ["Status"])),
                 };
 
                 // Resolve hierarchy IDs
@@ -362,20 +362,38 @@ export const importEmployees = async (req, res) => {
                 // Helper for date comparison
                 const safeDate = (val) => normalizeDate(val);
 
-                // Check for duplicate phone number if provided
+                // Check if user already exists (needed for phone conflict resolution below)
+                let existingUser = null;
+                const [existing] = await executeQuery(
+                    "SELECT u.*, d.name as departmentName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName " +
+                    "FROM users u " +
+                    "LEFT JOIN departments d ON u.departmentId = d.id " +
+                    "LEFT JOIN sections s ON u.sectionId = s.id " +
+                    "LEFT JOIN [lines] l ON u.lineId = l.id " +
+                    "LEFT JOIN sub_sections ss ON u.subSectionId = ss.id " +
+                    "LEFT JOIN machines st ON u.stationId = st.id " +
+                    "WHERE u.userName = ?",
+                    [normalizedRow.empId.toLowerCase()]
+                );
+
+                if (existing && existing.length > 0) {
+                    existingUser = existing[0];
+                }
+
+                // Handle duplicate phone number gracefully instead of failing the row
                 if (normalizedRow.phoneNumber) {
                     const [dupPhone] = await executeQuery(
                         "SELECT id, userName FROM users WHERE phoneNumber = ? AND userName != ?",
                         [normalizedRow.phoneNumber, normalizedRow.empId.toLowerCase()]
                     );
                     if (dupPhone && dupPhone.length > 0) {
-                        const error = `Phone number ${normalizedRow.phoneNumber} is already used by another user (${dupPhone[0].userName})`;
-                        results.failed.push({ row: rowNumber, data: row, error });
-                        await executeQuery(
-                            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
-                            [logId, rowNumber, JSON.stringify(row), "FAILED", error]
-                        );
-                        continue;
+                        if (existingUser) {
+                            // Keep their existing phone number so the update doesn't hit the unique constraint
+                            normalizedRow.phoneNumber = existingUser.phoneNumber || null;
+                        } else {
+                            // New user: set null so insert succeeds (NULL is not subject to unique constraint)
+                            normalizedRow.phoneNumber = null;
+                        }
                     }
                 }
 
@@ -401,22 +419,7 @@ export const importEmployees = async (req, res) => {
                     sections: sectionId ? [sectionId] : []
                 };
 
-                // Check if user already exists
-                let existingUser = null;
-                const [existing] = await executeQuery(
-                    "SELECT u.*, d.name as departmentName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName " +
-                    "FROM users u " +
-                    "LEFT JOIN departments d ON u.departmentId = d.id " +
-                    "LEFT JOIN sections s ON u.sectionId = s.id " +
-                    "LEFT JOIN [lines] l ON u.lineId = l.id " +
-                    "LEFT JOIN sub_sections ss ON u.subSectionId = ss.id " +
-                    "LEFT JOIN machines st ON u.stationId = st.id " +
-                    "WHERE u.userName = ?",
-                    [userData.userName]
-                );
-
-                if (existing && existing.length > 0) {
-                    existingUser = existing[0];
+                if (existingUser) {
                     const changes = {};
                     const fieldsToCompare = [
                         { key: 'fullName', label: 'Name' },

@@ -58,8 +58,26 @@ class Quiz {
         this.lineId = typeof data.lineId === 'string' ? JSON.parse(data.lineId || "[]") : (data.lineId || []);
         this.subSectionId = typeof data.subSectionId === 'string' ? JSON.parse(data.subSectionId || "[]") : (data.subSectionId || []);
         this.level = data.level;
-        this.targetDeptId = data.targetDeptId ? parseInt(data.targetDeptId) : null;
-        this.targetSectionId = data.targetSectionId ? parseInt(data.targetSectionId) : null;
+        this.targetDeptId = (() => {
+            const v = data.targetDeptId;
+            if (!v && v !== 0) return [];
+            if (Array.isArray(v)) return v;
+            if (typeof v === 'string') {
+                try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; }
+                catch (e) { return [v]; }
+            }
+            return [v];
+        })();
+        this.targetSectionId = (() => {
+            const v = data.targetSectionId;
+            if (!v && v !== 0) return [];
+            if (Array.isArray(v)) return v;
+            if (typeof v === 'string') {
+                try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; }
+                catch (e) { return [v]; }
+            }
+            return [v];
+        })();
     }
 
     calculateType() {
@@ -133,8 +151,8 @@ class Quiz {
                             conductedBy NVARCHAR(255) DEFAULT '',
                             paperTitle NVARCHAR(500),
                             paperSubTitle NVARCHAR(500),
-                            targetDeptId INT NULL,
-                            targetSectionId INT NULL,
+                            targetDeptId NVARCHAR(MAX),
+                            targetSectionId NVARCHAR(MAX),
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
                         );
@@ -158,8 +176,8 @@ class Quiz {
                     { name: 'paperTitle', type: 'NVARCHAR(500)' },
                     { name: 'paperSubTitle', type: 'NVARCHAR(500)' },
                     { name: 'isMultiSkilling', type: 'BIT DEFAULT 0' },
-                    { name: 'targetDeptId', type: 'INT NULL' },
-                    { name: 'targetSectionId', type: 'INT NULL' }
+                    { name: 'targetDeptId', type: 'NVARCHAR(MAX)' },
+                    { name: 'targetSectionId', type: 'NVARCHAR(MAX)' }
                 ];
 
                 for (const col of columns) {
@@ -180,6 +198,8 @@ class Quiz {
                 await migrationHelper.ensureColumnType('quizzes', 'sectionId', 'NVARCHAR(MAX)');
                 await migrationHelper.ensureColumnType('quizzes', 'lineId', 'NVARCHAR(MAX)');
                 await migrationHelper.ensureColumnType('quizzes', 'subSectionId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('quizzes', 'targetDeptId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('quizzes', 'targetSectionId', 'NVARCHAR(MAX)');
 
                 logger.info("Quiz table initialized successfully");
                 break; // Success
@@ -222,7 +242,7 @@ class Quiz {
 
         const values = fields.map(field => {
             let val = quiz[field];
-            if (field === 'questions' || field === 'departmentId' || field === 'sectionId' || field === 'lineId' || field === 'subSectionId') return JSON.stringify(val || []);
+            if (['questions', 'departmentId', 'sectionId', 'lineId', 'subSectionId', 'targetDeptId', 'targetSectionId'].includes(field)) return JSON.stringify(val || []);
             if (val === undefined) return null;
             return val;
         });
@@ -310,7 +330,7 @@ class Quiz {
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => {
             let val = this[field];
-            if (field === 'questions' || field === 'departmentId' || field === 'sectionId' || field === 'lineId' || field === 'subSectionId') return JSON.stringify(val || []);
+            if (['questions', 'departmentId', 'sectionId', 'lineId', 'subSectionId', 'targetDeptId', 'targetSectionId'].includes(field)) return JSON.stringify(val || []);
             return val;
         });
         values.push(this.id);

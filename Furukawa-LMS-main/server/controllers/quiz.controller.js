@@ -112,8 +112,8 @@ export const createQuiz = asyncHandler(async (req, res) => {
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
             JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true,
             JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy !== undefined && conductedBy !== null ? conductedBy : "", isMultiSkilling ? 1 : 0, paperTitle || null, paperSubTitle || null, req.user.id,
-            targetDeptId ? parseInt(targetDeptId) : null,
-            targetSectionId ? parseInt(targetSectionId) : null
+            JSON.stringify(Array.isArray(targetDeptId) ? targetDeptId : (targetDeptId ? [targetDeptId] : [])),
+            JSON.stringify(Array.isArray(targetSectionId) ? targetSectionId : (targetSectionId ? [targetSectionId] : []))
         ]
     );
 
@@ -237,6 +237,8 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         q.sectionId = parseJSON(q.sectionId, []);
         q.lineId = parseJSON(q.lineId, []);
         q.subSectionId = parseJSON(q.subSectionId, []);
+        q.targetDeptId = parseJSON(q.targetDeptId, []);
+        q.targetSectionId = parseJSON(q.targetSectionId, []);
         q.course = { id: q.course, title: q.cTitle };
         q.module = q.module ? { id: q.module, title: q.mTitle } : null;
         q.createdBy = { id: q.createdBy, fullName: q.fullName, email: q.email, role: q.role };
@@ -273,7 +275,9 @@ export const getQuizById = asyncHandler(async (req, res) => {
     quiz.sectionId = parseJSON(quiz.sectionId, []);
     quiz.lineId = parseJSON(quiz.lineId, []);
     quiz.subSectionId = parseJSON(quiz.subSectionId, []);
-    
+    quiz.targetDeptId = parseJSON(quiz.targetDeptId, []);
+    quiz.targetSectionId = parseJSON(quiz.targetSectionId, []);
+
     // Fetch sub-section names
     let subSectionNames = [];
     if (quiz.subSectionId && quiz.subSectionId.length > 0) {
@@ -330,8 +334,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (isMultiSkilling !== undefined) { updates.push("isMultiSkilling = ?"); values.push(isMultiSkilling ? 1 : 0); }
     if (paperTitle !== undefined) { updates.push("paperTitle = ?"); values.push(paperTitle || null); }
     if (paperSubTitle !== undefined) { updates.push("paperSubTitle = ?"); values.push(paperSubTitle || null); }
-    if (targetDeptId !== undefined) { updates.push("targetDeptId = ?"); values.push(targetDeptId ? parseInt(targetDeptId) : null); }
-    if (targetSectionId !== undefined) { updates.push("targetSectionId = ?"); values.push(targetSectionId ? parseInt(targetSectionId) : null); }
+    if (targetDeptId !== undefined) { updates.push("targetDeptId = ?"); values.push(JSON.stringify(Array.isArray(targetDeptId) ? targetDeptId : (targetDeptId ? [targetDeptId] : []))); }
+    if (targetSectionId !== undefined) { updates.push("targetSectionId = ?"); values.push(JSON.stringify(Array.isArray(targetSectionId) ? targetSectionId : (targetSectionId ? [targetSectionId] : []))); }
 
     if (updates.length > 0) {
         updates.push("updatedAt = GETDATE()");
@@ -348,6 +352,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     quiz.sectionId = parseJSON(quiz.sectionId, []);
     quiz.lineId = parseJSON(quiz.lineId, []);
     quiz.subSectionId = parseJSON(quiz.subSectionId, []);
+    quiz.targetDeptId = parseJSON(quiz.targetDeptId, []);
+    quiz.targetSectionId = parseJSON(quiz.targetSectionId, []);
 
     res.json(new ApiResponse(200, quiz, "Updated"));
 });

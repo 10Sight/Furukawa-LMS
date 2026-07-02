@@ -289,6 +289,7 @@ export const importEmployees = async (req, res) => {
 
             try {
                 // Map Excel headers to internal names for validation and processing
+                const leavingDateVal = normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"]));
                 const normalizedRow = {
                     empId: getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])?.toString().trim(),
                     idCard: getRowVal(row, ["CardNo", "Card No.", "Card No"])?.toString().trim(),
@@ -312,11 +313,11 @@ export const importEmployees = async (req, res) => {
                     email: getRowVal(row, ["E-Mail ID", "Email", "Email ID"])?.toString().trim(),
                     phoneNumber: getRowVal(row, ["Mobile No.", "Mobile No", "Mobile Number", "Phone", "Phone Number"])?.toString().trim(),
                     currentLevel: getRowVal(row, ["L", "Lavel", "Level"])?.toString().trim(),
-                    leavingDate: normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"])),
+                    leavingDate: leavingDateVal,
                     reasonOfLeaving: getRowVal(row, ["Reason of Leaving", "ReasonofLeaving"])?.toString().trim(),
                     contractor: getRowVal(row, ["Contractor"])?.toString().trim() || null,
                     rawStatus: getRowVal(row, ["Status"])?.toString().trim() || null,
-                    status: normalizeStatus(getRowVal(row, ["Status"])),
+                    status: leavingDateVal ? "LEFT" : normalizeStatus(getRowVal(row, ["Status"])),
                 };
 
                 // Resolve hierarchy IDs
@@ -455,22 +456,22 @@ export const importEmployees = async (req, res) => {
 
                         const isNewValEmpty = newVal === null || newVal === undefined || newVal.toString().trim() === "";
 
-                        // Leaving details: only clear when status is explicitly PRESENT in Excel;
+                        // Leaving details: only clear when status is explicitly PRESENT in Excel and no leavingDate is set in Excel;
                         // otherwise fall through to normal diff logic so new values can be set.
                         if (['leavingDate', 'reasonOfLeaving'].includes(field.key)) {
                             const explicitStatus = normalizedRow.rawStatus ? normalizeStatus(normalizedRow.rawStatus) : null;
-                            if (explicitStatus === "PRESENT") {
+                            if (explicitStatus === "PRESENT" && !normalizedRow.leavingDate) {
                                 if (oldVal !== null && oldVal !== undefined && oldVal !== "") {
                                     updatedData[field.key] = null;
                                     changes[field.label] = { from: oldVal, to: "Cleared (Status Present)" };
                                 }
                                 continue; // Skip normal diff — clearing is done
                             }
-                            // Status is not PRESENT: fall through to isNewValEmpty + diff logic below
+                            // Status is not PRESENT (or leavingDate is set): fall through to isNewValEmpty + diff logic below
                         }
 
-                        // Status: only update if the Excel cell was explicitly filled in.
-                        if (field.key === 'status' && !normalizedRow.rawStatus) {
+                        // Status: only update if the Excel cell was explicitly filled in or if we are forcing it to LEFT.
+                        if (field.key === 'status' && !normalizedRow.rawStatus && !normalizedRow.leavingDate) {
                             continue;
                         }
 

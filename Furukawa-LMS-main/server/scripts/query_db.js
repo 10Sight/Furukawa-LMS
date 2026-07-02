@@ -8,11 +8,11 @@ async function main() {
             console.log(`Config: ${c.name}, levels =`, c.levels);
         });
 
-        console.log("=== USER 14900 ===");
-        const [users] = await executeQuery("SELECT id, fullName, currentLevel, currentSkill, subSectionId, targetSubSectionId FROM users WHERE id = 14900");
+        console.log("=== USERS FROM MATRIX 16 ===");
+        const [users] = await executeQuery("SELECT id, fullName, currentLevel, currentSkill, subSectionId, targetSubSectionId FROM users WHERE id IN (17489, 17483, 16803, 15056, 14656)");
         if (users.length > 0) {
             users.forEach(u => {
-                console.log(`User ${u.id} (${u.fullName}): currentLevel = ${u.currentLevel}, currentSkill =`, u.currentSkill);
+                console.log(`User ${u.id} (${u.fullName}): currentLevel = ${u.currentLevel}, activeSubSecId = ${u.subSectionId || u.targetSubSectionId}, currentSkill =`, u.currentSkill);
             });
         }
 

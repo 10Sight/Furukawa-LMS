@@ -28,6 +28,7 @@ const normalizeParam = (val) => {
     return val;
 };
 
+
 // Resolves a level string to a comparable weight. Numeric "L<n>" levels (including negative
 // trainee levels like "L-3") are weighted by their own suffix, matching the numeric convention
 // used elsewhere (e.g. Rule B reconstructs level strings as `L${weight}`). Only non-numeric,

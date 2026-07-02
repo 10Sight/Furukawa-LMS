@@ -368,6 +368,78 @@ class User {
                 console.error("Error during currentSkill schema migration:", migrationErr);
             }
 
+            // One-time backfill: derive hierarchy reference IDs (departmentId, sectionId,
+            // lineId, subSectionId, stationId) for users that still have them NULL.
+            // Step 1 trusts the already-resolved IDs stored in the JSON array columns.
+            // Step 2 falls back to matching the raw legacy string columns against the
+            // master tables, scoped to the parent ID resolved in the previous step so
+            // identical names in different branches of the hierarchy don't cross-link.
+            try {
+                await executeQuery(`
+                    UPDATE u SET u.departmentId = TRY_CAST(dep.value AS INT)
+                    FROM users u
+                    OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.departments) WHERE [key] = '0') dep
+                    WHERE u.departmentId IS NULL AND u.departments IS NOT NULL AND ISJSON(u.departments) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.sectionId = TRY_CAST(sec.value AS INT)
+                    FROM users u
+                    OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.sections) WHERE [key] = '0') sec
+                    WHERE u.sectionId IS NULL AND u.sections IS NOT NULL AND ISJSON(u.sections) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.lineId = TRY_CAST(ln.value AS INT)
+                    FROM users u
+                    OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.lines) WHERE [key] = '0') ln
+                    WHERE u.lineId IS NULL AND u.lines IS NOT NULL AND ISJSON(u.lines) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.subSectionId = TRY_CAST(ss.value AS INT)
+                    FROM users u
+                    OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.subSections) WHERE [key] = '0') ss
+                    WHERE u.subSectionId IS NULL AND u.subSections IS NOT NULL AND ISJSON(u.subSections) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.stationId = TRY_CAST(st.value AS INT)
+                    FROM users u
+                    OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.stations) WHERE [key] = '0') st
+                    WHERE u.stationId IS NULL AND u.stations IS NOT NULL AND ISJSON(u.stations) = 1
+                `);
+
+                await executeQuery(`
+                    UPDATE u SET u.departmentId = d.id
+                    FROM users u
+                    JOIN departments d ON LTRIM(RTRIM(u.department)) = LTRIM(RTRIM(d.name))
+                    WHERE u.departmentId IS NULL AND u.department IS NOT NULL AND u.department != ''
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.sectionId = s.id
+                    FROM users u
+                    JOIN sections s ON LTRIM(RTRIM(u.section)) = LTRIM(RTRIM(s.name)) AND s.departmentId = u.departmentId
+                    WHERE u.sectionId IS NULL AND u.section IS NOT NULL AND u.section != '' AND u.departmentId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.lineId = l.id
+                    FROM users u
+                    JOIN [lines] l ON LTRIM(RTRIM(u.line)) = LTRIM(RTRIM(l.name)) AND l.sectionId = u.sectionId
+                    WHERE u.lineId IS NULL AND u.line IS NOT NULL AND u.line != '' AND u.sectionId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.subSectionId = ss.id
+                    FROM users u
+                    JOIN sub_sections ss ON LTRIM(RTRIM(u.sub_section)) = LTRIM(RTRIM(ss.name)) AND ss.lineId = u.lineId
+                    WHERE u.subSectionId IS NULL AND u.sub_section IS NOT NULL AND u.sub_section != '' AND u.lineId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.stationId = m.id
+                    FROM users u
+                    JOIN machines m ON LTRIM(RTRIM(u.stationNo)) = LTRIM(RTRIM(m.name)) AND m.subSectionId = u.subSectionId
+                    WHERE u.stationId IS NULL AND u.stationNo IS NOT NULL AND u.stationNo != '' AND u.subSectionId IS NOT NULL
+                `);
+            } catch (backfillErr) {
+                console.error("Error during hierarchy reference ID backfill migration:", backfillErr);
+            }
+
             console.log("Users table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating users table in MSSQL:", error);

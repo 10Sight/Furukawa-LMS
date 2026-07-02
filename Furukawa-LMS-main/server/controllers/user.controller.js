@@ -181,6 +181,8 @@ export const formatUser = (u) => {
     contractor: u.contractorName || u.contractor || "",
     avatar: parseJSON(u.avatar),
     assignments,
+    departments: parseJSON(u.departments, []),
+    stations: parseJSON(u.stations, []),
     sections: parseJSON(u.sections, []),
     lines: parseJSON(u.lines, []),
     subSections: parseJSON(u.subSections, []),

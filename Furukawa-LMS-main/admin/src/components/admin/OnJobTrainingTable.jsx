@@ -114,6 +114,16 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
 
     const handleEntryChange = (index, field, value) => {
         if (readOnly) return;
+        if (field === 'date' && value) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const enteredDate = new Date(value);
+            enteredDate.setHours(0, 0, 0, 0);
+            if (enteredDate < today) {
+                toast.error("You cannot select a past date");
+                return;
+            }
+        }
         const newEntries = [...entries];
         newEntries[index] = { ...newEntries[index], [field]: value };
         setEntries(newEntries);
@@ -300,6 +310,10 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                 <div className="border-b border-black h-5 px-2 font-medium">{headerInfo.line} / {headerInfo.machine}</div>
                                 <span className="font-bold">Date of Joining:</span>
                                 <div className="border-b border-black h-5 px-2 font-medium">{headerInfo.doj}</div>
+                                <span className="font-bold">Created Date:</span>
+                                <div className="border-b border-black h-5 px-2 font-medium">
+                                    {ojtData?.data?.createdAt ? new Date(ojtData.data.createdAt).toLocaleDateString() : ""}
+                                </div>
                             </div>
                         </div>
 
@@ -336,7 +350,8 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                             <td className="border border-black p-0 h-8">
                                                 <Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0"
                                                     value={row.date?.toString().split('T')[0] ?? ""}
-                                                    onChange={e => handleEntryChange(index, 'date', e.target.value)} type="date" />
+                                                    onChange={e => handleEntryChange(index, 'date', e.target.value)} type="date"
+                                                    min={new Date().toLocaleDateString('en-CA')} />
                                             </td>
                                             <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.hours ?? ""} onChange={e => handleEntryChange(index, 'hours', e.target.value)} /></td>
                                             <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.productionTarget ?? ""} onChange={e => handleEntryChange(index, 'productionTarget', e.target.value)} /></td>

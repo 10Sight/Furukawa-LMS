@@ -113,9 +113,92 @@ export const getAdminHomeHandoverStats = asyncHandler(async (req, res) => {
     );
 });
 
+// Mirrors normalizeContentStructure from EvaluationTestAttemptPage.jsx / evaluationTestAttempt.model.js
+const normalizeContentStructureLocal = (structure, fallbackTitle) => {
+    if (!Array.isArray(structure) || structure.length === 0) {
+        return [{ id: "mt-auto", title: fallbackTitle || "Main Title Section", contentSections: [] }];
+    }
+    const isNewFormat = structure.every(item => item && Array.isArray(item.contentSections));
+    if (isNewFormat) {
+        return structure.map(block => ({
+            id: block.id || "mt-auto",
+            title: block.title || "Main Title Section",
+            contentSections: Array.isArray(block.contentSections) ? block.contentSections : []
+        }));
+    }
+    return [{ id: "mt-auto-generated", title: fallbackTitle || "Main Title Section", contentSections: structure }];
+};
+
+// Mirrors getDynamicPerformDateCount from EvaluationTestAttemptPage.jsx / evaluationTestAttempt.model.js
+const getDynamicPerformDateCountLocal = (attemptDataObj, performDatesArr, baseCount) => {
+    let lastEvaluatedColIdx = -1;
+    for (let colIdx = 0; colIdx < 100; colIdx++) {
+        const hasDate = !!(performDatesArr && performDatesArr[colIdx]);
+        let hasGrade = false;
+        for (const qId of Object.keys(attemptDataObj || {})) {
+            if (qId.startsWith("_")) continue;
+            const score = attemptDataObj[qId]?.results?.[colIdx];
+            if (score && score !== "") { hasGrade = true; break; }
+        }
+        if (hasDate || hasGrade) lastEvaluatedColIdx = colIdx;
+    }
+    let count = Math.max(baseCount || 4, lastEvaluatedColIdx + 1);
+    while (count < 100) {
+        const lastColIdx = count - 1;
+        const hasFailure = Object.keys(attemptDataObj || {}).some(qId => {
+            if (qId.startsWith("_")) return false;
+            return attemptDataObj[qId]?.results?.[lastColIdx] === "X";
+        });
+        if (hasFailure) count++;
+        else break;
+    }
+    return count;
+};
+
+// Determines pass/fail for a DOJO evaluation attempt at its last evaluated perform-date column.
+// Pass: every check/question is "✓" in that column. Fail: any check is "X" or left blank.
+// Returns null when the test has no gradable questions (attempt is excluded from stats).
+const checkAttemptPassStatus = (attemptDataRaw, performDateCountBase, contentStructureRaw) => {
+    let attemptData;
+    try {
+        attemptData = typeof attemptDataRaw === 'string' ? JSON.parse(attemptDataRaw) : (attemptDataRaw || {});
+    } catch {
+        attemptData = {};
+    }
+
+    let contentStructure;
+    try {
+        contentStructure = typeof contentStructureRaw === 'string' ? JSON.parse(contentStructureRaw) : (contentStructureRaw || []);
+    } catch {
+        contentStructure = [];
+    }
+
+    const normalized = normalizeContentStructureLocal(contentStructure);
+    const allQIds = [];
+    normalized.forEach(block => {
+        (block.contentSections || []).forEach(content => {
+            (content.categories || []).forEach(cat => {
+                (cat.questions || []).forEach(q => allQIds.push(q.id));
+            });
+        });
+    });
+
+    if (allQIds.length === 0) return null;
+
+    const performDates = attemptData._performDates || [];
+    const count = getDynamicPerformDateCountLocal(attemptData, performDates, performDateCountBase || 4);
+    const lastColIdx = count - 1;
+
+    return allQIds.every(qId => attemptData[qId]?.results?.[lastColIdx] === "✓");
+};
+
 /**
  * Get Test Paper stats for the Admin Home page
  * Returns aggregated totals + date-bucketed trend series for charts.
+ *
+ * "Theoretical" comes from theoretical quizzes (attempted_quizzes/quizzes).
+ * "Practical" comes from DOJO evaluation test attempts (evaluation_test_attempts) —
+ * pass/fail is derived from the last evaluated perform-date column (see checkAttemptPassStatus).
  */
 export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
     const { startDate, endDate, departmentId, isDojo, groupBy = 'monthly' } = req.query;
@@ -163,78 +246,165 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
         baseParams.push(isDojo === 'true' || isDojo === '1' ? 1 : 0);
     }
 
+    // Only theoretical quizzes feed the quiz-based side of these stats now —
+    // practical numbers come from DOJO evaluation test attempts below.
     const baseFrom = `
         FROM attempted_quizzes aq
         JOIN quizzes q ON aq.quiz = q.id
         JOIN users u ON aq.student = u.id
         WHERE aq.completedAt >= ? AND aq.completedAt <= ?
+        AND q.isTheoretical = 1
         ${filterClause}
     `;
 
     // Aggregated totals (used for footer metrics)
     const totalQuery = `
         SELECT
-            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END AS name,
+            'Theoretical' AS name,
             COUNT(*) AS value
         ${baseFrom}
-        GROUP BY CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END
     `;
 
     const passFailQuery = `
         SELECT
-            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END AS type,
+            'Theoretical' AS type,
             CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END AS status,
             COUNT(*) AS value
         ${baseFrom}
-        GROUP BY
-            CASE WHEN q.isTheoretical = 1 THEN 'Theoretical' ELSE 'Practical' END,
-            CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END
+        GROUP BY CASE WHEN aq.status = 'PASSED' THEN 'Passed' ELSE 'Failed' END
     `;
 
-    // Time-series for Chart 1: theoretical vs practical counts per period
+    // Time-series for Chart 1: theoretical quiz volume per period
     const trendByTypeQuery = `
         SELECT
             ${periodExpr} AS period,
-            SUM(CASE WHEN q.isTheoretical = 1 THEN 1 ELSE 0 END) AS theoretical,
-            SUM(CASE WHEN q.isTheoretical = 0 THEN 1 ELSE 0 END) AS practical
+            COUNT(*) AS theoretical
         ${baseFrom}
         GROUP BY ${periodExpr}
         ORDER BY period ASC
     `;
 
-    // Time-series for Chart 2: pass/fail broken down by test type per period
+    // Time-series for Chart 2 (theoretical half): pass/fail per period
     const trendByResultQuery = `
         SELECT
             ${periodExpr} AS period,
-            SUM(CASE WHEN aq.status = 'PASSED' AND q.isTheoretical = 1 THEN 1 ELSE 0 END) AS passedTheoretical,
-            SUM(CASE WHEN aq.status != 'PASSED' AND q.isTheoretical = 1 THEN 1 ELSE 0 END) AS failedTheoretical,
-            SUM(CASE WHEN aq.status = 'PASSED' AND q.isTheoretical = 0 THEN 1 ELSE 0 END) AS passedPractical,
-            SUM(CASE WHEN aq.status != 'PASSED' AND q.isTheoretical = 0 THEN 1 ELSE 0 END) AS failedPractical
+            SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END) AS passedTheoretical,
+            SUM(CASE WHEN aq.status != 'PASSED' THEN 1 ELSE 0 END) AS failedTheoretical
         ${baseFrom}
         GROUP BY ${periodExpr}
         ORDER BY period ASC
+    `;
+
+    // Build the equivalent filters for DOJO evaluation test attempts (practical side)
+    const evalPeriodFormatMap = {
+        daily:   "FORMAT(CAST(a.createdAt AS DATE), 'yyyy-MM-dd')",
+        monthly: "FORMAT(CAST(a.createdAt AS DATE), 'yyyy-MM')",
+        yearly:  "FORMAT(CAST(a.createdAt AS DATE), 'yyyy')",
+    };
+    const evalPeriodExpr = evalPeriodFormatMap[safeGroupBy];
+
+    let evalFilterClause = '';
+    const evalParams = [start, end];
+
+    if (departmentId && departmentId !== 'all' && departmentId !== '') {
+        evalFilterClause += ' AND COALESCE(u.departmentId, CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END) = ?';
+        evalParams.push(departmentId);
+    }
+
+    if (isDojo !== undefined && isDojo !== '' && isDojo !== 'all') {
+        evalFilterClause += ' AND u.isTemporary = ?';
+        evalParams.push(isDojo === 'true' || isDojo === '1' ? 1 : 0);
+    }
+
+    const evalAttemptsQuery = `
+        SELECT
+            a.attemptData,
+            t.performDateCount,
+            t.contentStructure,
+            ${evalPeriodExpr} AS period
+        FROM evaluation_test_attempts a
+        JOIN evaluation_tests t ON a.testId = t.id
+        LEFT JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
+        WHERE a.createdAt >= ? AND a.createdAt <= ?
+        ${evalFilterClause}
     `;
 
     const [totalRows]       = await executeQuery(totalQuery,       baseParams);
     const [passFailRows]    = await executeQuery(passFailQuery,    baseParams);
     const [trendTypeRows]   = await executeQuery(trendByTypeQuery, baseParams);
     const [trendResultRows] = await executeQuery(trendByResultQuery, baseParams);
+    const [evalRows]        = await executeQuery(evalAttemptsQuery, evalParams);
+
+    // Compute pass/fail per DOJO evaluation attempt, grouped by period
+    const evalByPeriod = {};
+    let totalPracticalPassed = 0;
+    let totalPracticalFailed = 0;
+    evalRows.forEach(row => {
+        const passed = checkAttemptPassStatus(row.attemptData, row.performDateCount, row.contentStructure);
+        if (passed === null) return; // no gradable questions — exclude from stats
+
+        if (!evalByPeriod[row.period]) {
+            evalByPeriod[row.period] = { passedPractical: 0, failedPractical: 0 };
+        }
+        if (passed) {
+            evalByPeriod[row.period].passedPractical++;
+            totalPracticalPassed++;
+        } else {
+            evalByPeriod[row.period].failedPractical++;
+            totalPracticalFailed++;
+        }
+    });
+
+    // Merge theoretical (SQL) + practical (JS-computed) trend series by period
+    const trendMap = {};
+    trendResultRows.forEach(r => {
+        trendMap[r.period] = {
+            period: r.period,
+            passedTheoretical: Number(r.passedTheoretical) || 0,
+            failedTheoretical: Number(r.failedTheoretical) || 0,
+            passedPractical: 0,
+            failedPractical: 0,
+        };
+    });
+    Object.entries(evalByPeriod).forEach(([period, counts]) => {
+        if (!trendMap[period]) {
+            trendMap[period] = { period, passedTheoretical: 0, failedTheoretical: 0, passedPractical: 0, failedPractical: 0 };
+        }
+        trendMap[period].passedPractical = counts.passedPractical;
+        trendMap[period].failedPractical = counts.failedPractical;
+    });
+    const trendByResult = Object.values(trendMap).sort((a, b) => a.period.localeCompare(b.period));
+
+    // Merge theoretical (SQL) + practical (JS-computed) type-volume trend by period
+    const typeTrendMap = {};
+    trendTypeRows.forEach(r => {
+        typeTrendMap[r.period] = { period: r.period, theoretical: Number(r.theoretical) || 0, practical: 0 };
+    });
+    Object.entries(evalByPeriod).forEach(([period, counts]) => {
+        if (!typeTrendMap[period]) {
+            typeTrendMap[period] = { period, theoretical: 0, practical: 0 };
+        }
+        typeTrendMap[period].practical = counts.passedPractical + counts.failedPractical;
+    });
+    const trendByType = Object.values(typeTrendMap).sort((a, b) => a.period.localeCompare(b.period));
 
     const totalDistribution = [
-        { name: 'Theoretical', value: 0 },
-        { name: 'Practical',   value: 0 },
+        { name: 'Theoretical', value: totalRows[0]?.value || 0 },
+        { name: 'Practical',   value: totalPracticalPassed + totalPracticalFailed },
     ];
-    totalRows.forEach(row => {
-        const item = totalDistribution.find(d => d.name === row.name);
-        if (item) item.value = row.value;
-    });
+
+    const passFailData = [
+        ...passFailRows,
+        { type: 'Practical', status: 'Passed', value: totalPracticalPassed },
+        { type: 'Practical', status: 'Failed', value: totalPracticalFailed },
+    ];
 
     res.status(200).json(
         new ApiResponse(200, {
             totalDistribution,
-            passFailData:   passFailRows,
-            trendByType:    trendTypeRows,
-            trendByResult:  trendResultRows,
+            passFailData,
+            trendByType,
+            trendByResult,
             groupBy:        safeGroupBy,
             start,
             end,

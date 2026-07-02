@@ -176,10 +176,10 @@ export const departmentApi = createApi({
         }),
 
         getHandoverSheetsMonitoring: builder.query({
-            query: ({ departmentId = 'all', sectionId = 'all', month = 'all', year = 'all' } = {}) => ({
+            query: ({ departmentId = 'all', sectionId = 'all', month = 'all', year = 'all', shift = 'all' } = {}) => ({
                 url: "/api/departments/handover-sheet/monitoring",
                 method: "GET",
-                params: { departmentId, sectionId, month, year }
+                params: { departmentId, sectionId, month, year, shift }
             }),
             providesTags: ['Department'],
         }),
@@ -188,6 +188,15 @@ export const departmentApi = createApi({
             query: (id) => ({
                 url: `/api/departments/handover-sheet/${id}`,
                 method: "DELETE",
+            }),
+            invalidatesTags: ['Department'],
+        }),
+
+        bulkDeleteHandoverSheets: builder.mutation({
+            query: (ids) => ({
+                url: "/api/departments/handover-sheet/bulk-delete",
+                method: "POST",
+                data: { ids }
             }),
             invalidatesTags: ['Department'],
         }),
@@ -216,4 +225,5 @@ export const {
     useLazyExportDepartmentsQuery,
     useGetHandoverSheetsMonitoringQuery,
     useDeleteHandoverSheetMutation,
+    useBulkDeleteHandoverSheetsMutation,
 } = departmentApi;

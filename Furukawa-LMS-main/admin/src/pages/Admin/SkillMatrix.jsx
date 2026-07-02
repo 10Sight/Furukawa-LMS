@@ -167,6 +167,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [evalLine, setEvalLine] = useState("");
     const [evalSubSection, setEvalSubSection] = useState("");
     const [evalSearchText, setEvalSearchText] = useState("");
+    const [evalOperatorsPage, setEvalOperatorsPage] = useState(1);
+    const evalOperatorsPerPage = 30;
 
     // Observance Finder State
     const [observanceDepartment, setObservanceDepartment] = useState("");
@@ -176,6 +178,9 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [observanceStation, setObservanceStation] = useState("");
     const [observanceSearchText, setObservanceSearchText] = useState("");
     const [selectedOperatorForObservance, setSelectedOperatorForObservance] = useState(null);
+    const [observanceSummaryMap, setObservanceSummaryMap] = useState({});
+    const [observanceOperatorsPage, setObservanceOperatorsPage] = useState(1);
+    const observanceOperatorsPerPage = 30;
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -244,19 +249,39 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         subSectionId: evalSubSection || undefined,
         role: "STUDENT,CUSTOM",
         includeTemporary: "true",
+        includeEvaluationInfo: "true",
         limit: 1000
     }, { skip: !evalDepartment });
 
     // Client-side filter for searched users
     const filteredEvalUsers = React.useMemo(() => {
-        const users = evalUsersData?.data?.users || [];
-        if (!evalSearchText.trim()) return users;
-        const searchLower = evalSearchText.toLowerCase();
-        return users.filter(u =>
-            (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-            (u.cardNo || u.empId || "").toLowerCase().includes(searchLower)
+        let users = evalUsersData?.data?.users || [];
+        if (evalSearchText.trim()) {
+            const searchLower = evalSearchText.toLowerCase();
+            users = users.filter(u =>
+                (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
+                (u.cardNo || u.empId || "").toLowerCase().includes(searchLower)
+            );
+        }
+        return [...users].sort((a, b) =>
+            (a.fullName || a.name || "").localeCompare(b.fullName || b.name || "", undefined, { sensitivity: 'base' })
         );
     }, [evalUsersData, evalSearchText]);
+
+    const evalOperatorsTotalPages = Math.max(1, Math.ceil(filteredEvalUsers.length / evalOperatorsPerPage));
+
+    const paginatedEvalUsers = React.useMemo(() => {
+        const start = (evalOperatorsPage - 1) * evalOperatorsPerPage;
+        return filteredEvalUsers.slice(start, start + evalOperatorsPerPage);
+    }, [filteredEvalUsers, evalOperatorsPage]);
+
+    useEffect(() => {
+        setEvalOperatorsPage(1);
+    }, [evalDepartment, evalSection, evalLine, evalSubSection, evalSearchText]);
+
+    useEffect(() => {
+        if (evalOperatorsPage > evalOperatorsTotalPages) setEvalOperatorsPage(evalOperatorsTotalPages);
+    }, [evalOperatorsTotalPages, evalOperatorsPage]);
 
     // Observance Form Data
     const { data: observanceSectionsData } = useGetSectionsByDepartmentQuery(observanceDepartment, { skip: !observanceDepartment });
@@ -315,6 +340,39 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 
         return users;
     }, [observanceUsersData, observanceSearchText, observanceStation]);
+
+    const observanceOperatorsTotalPages = Math.max(1, Math.ceil(filteredObservanceUsers.length / observanceOperatorsPerPage));
+
+    const paginatedObservanceUsers = React.useMemo(() => {
+        const start = (observanceOperatorsPage - 1) * observanceOperatorsPerPage;
+        return filteredObservanceUsers.slice(start, start + observanceOperatorsPerPage);
+    }, [filteredObservanceUsers, observanceOperatorsPage]);
+
+    useEffect(() => {
+        setObservanceOperatorsPage(1);
+    }, [observanceDepartment, observanceSection, observanceLine, observanceSubSection, observanceStation, observanceSearchText]);
+
+    useEffect(() => {
+        if (observanceOperatorsPage > observanceOperatorsTotalPages) setObservanceOperatorsPage(observanceOperatorsTotalPages);
+    }, [observanceOperatorsTotalPages, observanceOperatorsPage]);
+
+    // Fetch observance summary (last updated, status, current observance stage) for the visible operators
+    useEffect(() => {
+        const ids = paginatedObservanceUsers.map(u => u._id || u.id).filter(Boolean);
+        if (ids.length === 0) {
+            setObservanceSummaryMap({});
+            return;
+        }
+        let cancelled = false;
+        axiosInstance.get(`/api/operator-observance/summary/list`, { params: { studentIds: ids.join(",") } })
+            .then(res => {
+                if (!cancelled && res.data?.success) {
+                    setObservanceSummaryMap(res.data.data || {});
+                }
+            })
+            .catch(err => console.error("Failed to fetch observance summary:", err));
+        return () => { cancelled = true; };
+    }, [paginatedObservanceUsers]);
 
     const isMachinesLoading = isDeptMachinesLoading || isSectMachinesLoading || isLineMachinesLoading || isSubSectionMachinesLoading;
 
@@ -401,13 +459,6 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     useEffect(() => {
         setSelectedOperatorForObservance(null);
     }, [observanceDepartment, observanceSection, observanceLine, observanceSubSection, observanceStation]);
-
-    useEffect(() => {
-        const actualOps = matrixEntries.filter(e => !e.isManual);
-        if (actualOps.length > 0 && !selectedOperatorForEval) {
-            setSelectedOperatorForEval(actualOps[0]._id);
-        }
-    }, [matrixEntries, selectedOperatorForEval]);
 
     const fetchDashboardConfig = async () => {
         try {
@@ -2227,32 +2278,6 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 />
                             </div>
                         </div>
-
-                        <div className="flex flex-col gap-1 pt-2 border-t">
-                            <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold text-blue-600">Select Operator to Evaluate</label>
-                            <Select
-                                value={selectedOperatorForEval || ""}
-                                onValueChange={setSelectedOperatorForEval}
-                                disabled={!evalDepartment || filteredEvalUsers.length === 0}
-                            >
-                                <SelectTrigger className="h-9">
-                                    <SelectValue placeholder={
-                                        !evalDepartment
-                                            ? "Please select a department first"
-                                            : filteredEvalUsers.length === 0
-                                                ? "No operators found matching the criteria"
-                                                : "Select an operator"
-                                    } />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {filteredEvalUsers.map(u => (
-                                        <SelectItem key={u._id} value={u._id}>
-                                            {u.fullName || u.name} {(u.cardNo || u.empId) ? `(${u.cardNo || u.empId})` : ""}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
                     </div>
 
                     {selectedOperatorForEval ? (
@@ -2297,6 +2322,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         </p>
                                     </div>
                                     <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setSelectedOperatorForEval(null)}
+                                            className="text-xs font-semibold"
+                                        >
+                                            Back to Operators
+                                        </Button>
                                         <Button
                                             onClick={handleCreateNewSheetFromList}
                                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs"
@@ -2381,9 +2413,99 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 )}
                             </div>
                         )
-                    ) : (
+                    ) : !evalDepartment ? (
                         <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
-                            No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                            Please select a Department to view the list of operators.
+                        </div>
+                    ) : (
+                        <div className="bg-white border rounded overflow-hidden shadow">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                    <tr>
+                                        <th className="p-3 border-b text-left">Operator Name</th>
+                                        <th className="p-3 border-b text-left">Emp ID</th>
+                                        <th className="p-3 border-b text-left">Last Evaluation Date</th>
+                                        <th className="p-3 border-b text-left">Current Level</th>
+                                        <th className="p-3 border-b text-left">Primary Station (Sub-Section)</th>
+                                        <th className="p-3 border-b text-left">Current Sheet (Year)</th>
+                                        <th className="p-3 border-b text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {paginatedEvalUsers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="text-center py-10 text-gray-400 italic">
+                                                No operators found matching the criteria.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginatedEvalUsers.map(u => {
+                                            const stationLabel = [u.primaryStationName, u.subSectionName].filter(Boolean).join(' (') + (u.subSectionName ? ')' : '');
+                                            const evalYear = u.lastEvalDate
+                                                ? new Date(u.lastEvalDate).getFullYear()
+                                                : (u.lastEvalPeriod ? u.lastEvalPeriod.split('-')[0] : null);
+                                            return (
+                                                <tr
+                                                    key={u._id}
+                                                    className="hover:bg-muted/30 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                    onClick={() => setSelectedOperatorForEval(u._id)}
+                                                >
+                                                    <td className="p-3 font-bold">{u.fullName || u.name}</td>
+                                                    <td className="p-3">{u.empId || u.cardNo || "-"}</td>
+                                                    <td className="p-3">
+                                                        {u.lastEvalDate ? new Date(u.lastEvalDate).toLocaleDateString('en-GB') : "No Evaluation"}
+                                                    </td>
+                                                    <td className="p-3 font-semibold text-blue-600">{u.primaryLevel || u.currentLevel || "-"}</td>
+                                                    <td className="p-3">{stationLabel || "-"}</td>
+                                                    <td className="p-3">
+                                                        {u.lastEvalSheetIndex ? `Sheet ${u.lastEvalSheetIndex}${evalYear ? ` (${evalYear})` : ""}` : "-"}
+                                                    </td>
+                                                    <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                                        <Button
+                                                            size="xs"
+                                                            className="h-7 text-xs font-semibold px-3 bg-blue-600 hover:bg-blue-700 text-white"
+                                                            onClick={() => setSelectedOperatorForEval(u._id)}
+                                                        >
+                                                            Evaluate
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                            {filteredEvalUsers.length > 0 && (
+                                <div className="flex justify-between items-center px-3 py-2 border-t bg-gray-50 text-xs">
+                                    <span className="text-gray-500">
+                                        Showing {(evalOperatorsPage - 1) * evalOperatorsPerPage + 1}
+                                        {"-"}{Math.min(evalOperatorsPage * evalOperatorsPerPage, filteredEvalUsers.length)} of {filteredEvalUsers.length} operators
+                                    </span>
+                                    <div className="flex gap-2 items-center">
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={evalOperatorsPage <= 1}
+                                            onClick={() => setEvalOperatorsPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <span className="font-semibold text-gray-600">
+                                            Page {evalOperatorsPage} of {evalOperatorsTotalPages}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={evalOperatorsPage >= evalOperatorsTotalPages}
+                                            onClick={() => setEvalOperatorsPage(p => Math.min(evalOperatorsTotalPages, p + 1))}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </ConditionalTabsContent>
@@ -2493,7 +2615,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
+                        <div className="grid grid-cols-1 gap-4 pt-2 border-t">
                             <div className="flex flex-col gap-1">
                                 <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold">Search Operator</label>
                                 <Input
@@ -2507,37 +2629,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     disabled={!observanceDepartment}
                                 />
                             </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold text-blue-600">Select Operator to Observe</label>
-                                <Select
-                                    value={selectedOperatorForObservance || ""}
-                                    onValueChange={setSelectedOperatorForObservance}
-                                    disabled={!observanceDepartment || filteredObservanceUsers.length === 0}
-                                >
-                                    <SelectTrigger className="h-9">
-                                        <SelectValue placeholder={
-                                            !observanceDepartment
-                                                ? "Please select a department first"
-                                                : filteredObservanceUsers.length === 0
-                                                    ? "No operators found matching the criteria"
-                                                    : "Select an operator"
-                                        } />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {filteredObservanceUsers.map(u => (
-                                            <SelectItem key={u._id || u.id} value={u._id || u.id}>
-                                                {u.fullName || u.name} {u.cardNo || u.empId ? `(${u.cardNo || u.empId})` : ""}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
                         </div>
                     </div>
 
                     {selectedOperatorForObservance ? (
-                        <div className="bg-white border rounded p-4 shadow">
+                        <div className="bg-white border rounded p-4 shadow space-y-4">
+                            <div className="flex justify-end no-print">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs font-semibold"
+                                    onClick={() => setSelectedOperatorForObservance(null)}
+                                >
+                                    Back to Operator List
+                                </Button>
+                            </div>
                             <OperatorObservanceSheet
                                 studentId={selectedOperatorForObservance}
                                 studentName={
@@ -2550,9 +2656,110 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 }
                             />
                         </div>
-                    ) : (
+                    ) : !observanceDepartment ? (
                         <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
-                            No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                            Please select a Department to view the list of operators.
+                        </div>
+                    ) : (
+                        <div className="bg-white border rounded overflow-hidden shadow">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                    <tr>
+                                        <th className="p-3 border-b text-left">Operator Name</th>
+                                        <th className="p-3 border-b text-left">Emp ID</th>
+                                        <th className="p-3 border-b text-left">Last Updated</th>
+                                        <th className="p-3 border-b text-left">Current Level</th>
+                                        <th className="p-3 border-b text-left">Station (Sub-Section)</th>
+                                        <th className="p-3 border-b text-left">Status</th>
+                                        <th className="p-3 border-b text-left">Currently Working On</th>
+                                        <th className="p-3 border-b text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {paginatedObservanceUsers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={8} className="text-center py-10 text-gray-400 italic">
+                                                No operators found matching the criteria.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginatedObservanceUsers.map(u => {
+                                            const uid = u._id || u.id;
+                                            const summary = observanceSummaryMap[uid];
+                                            const stationLabel = u.subSectionName
+                                                ? `${u.primaryStationName || u.stationName || "No Station"} (${u.subSectionName})`
+                                                : (u.primaryStationName || u.stationName || "-");
+                                            return (
+                                                <tr
+                                                    key={uid}
+                                                    className="hover:bg-muted/30 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                    onClick={() => setSelectedOperatorForObservance(uid)}
+                                                >
+                                                    <td className="p-3 font-bold">{u.fullName || u.name}</td>
+                                                    <td className="p-3">{u.empId || u.cardNo || "-"}</td>
+                                                    <td className="p-3">
+                                                        {summary?.updatedAt ? new Date(summary.updatedAt).toLocaleDateString('en-GB') : "Not Updated"}
+                                                    </td>
+                                                    <td className="p-3 font-semibold text-blue-600">{u.primaryLevel || u.currentLevel || "-"}</td>
+                                                    <td className="p-3">{stationLabel}</td>
+                                                    <td className="p-3">
+                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                                            summary?.status === 'Submitted'
+                                                                ? 'bg-green-100 text-green-800 border border-green-200'
+                                                                : summary
+                                                                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                                                                    : 'bg-gray-100 text-gray-500 border border-gray-200'
+                                                        }`}>
+                                                            {summary?.status || "Not Started"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3">{summary?.stageLabel || "Not Started"}</td>
+                                                    <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                                        <Button
+                                                            size="xs"
+                                                            className="h-7 text-xs font-semibold px-3 bg-blue-600 hover:bg-blue-700 text-white"
+                                                            onClick={() => setSelectedOperatorForObservance(uid)}
+                                                        >
+                                                            Observe
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                            {filteredObservanceUsers.length > 0 && (
+                                <div className="flex justify-between items-center px-3 py-2 border-t bg-gray-50 text-xs">
+                                    <span className="text-gray-500">
+                                        Showing {(observanceOperatorsPage - 1) * observanceOperatorsPerPage + 1}
+                                        {"-"}{Math.min(observanceOperatorsPage * observanceOperatorsPerPage, filteredObservanceUsers.length)} of {filteredObservanceUsers.length} operators
+                                    </span>
+                                    <div className="flex gap-2 items-center">
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={observanceOperatorsPage <= 1}
+                                            onClick={() => setObservanceOperatorsPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <span className="font-semibold text-gray-600">
+                                            Page {observanceOperatorsPage} of {observanceOperatorsTotalPages}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={observanceOperatorsPage >= observanceOperatorsTotalPages}
+                                            onClick={() => setObservanceOperatorsPage(p => Math.min(observanceOperatorsTotalPages, p + 1))}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </ConditionalTabsContent>

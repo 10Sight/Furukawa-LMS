@@ -7,10 +7,10 @@ export const userApi = createApi({
     tagTypes: ['User', 'ImportLog'],
     endpoints: (builder) => ({
         getAllUsers: builder.query({
-            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", isStaff = "", excludeCustomRoles = "", excludeTrainers = "", excludeAdmins = "", departmentId = "", sectionId = "", lineId = "", subSectionId = "", stationId = "", passedQuizOnly = "", includeTemporary = "", dojoHandoverPassedOnly = "", designation = "" } = {}) => ({
+            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", isStaff = "", excludeCustomRoles = "", excludeTrainers = "", excludeAdmins = "", departmentId = "", sectionId = "", lineId = "", subSectionId = "", stationId = "", passedQuizOnly = "", includeTemporary = "", dojoHandoverPassedOnly = "", designation = "", includeEvaluationInfo = "" } = {}) => ({
                 url: "/api/users",
                 method: "GET",
-                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, isStaff, excludeCustomRoles, excludeTrainers, excludeAdmins, departmentId, sectionId, lineId, subSectionId, stationId, passedQuizOnly, includeTemporary, dojoHandoverPassedOnly, designation }
+                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, isStaff, excludeCustomRoles, excludeTrainers, excludeAdmins, departmentId, sectionId, lineId, subSectionId, stationId, passedQuizOnly, includeTemporary, dojoHandoverPassedOnly, designation, includeEvaluationInfo }
             }),
             providesTags: ['User'],
         }),

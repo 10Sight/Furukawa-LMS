@@ -7,10 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { IconPrinter, IconDeviceFloppy, IconArrowLeft, IconCamera, IconTrash, IconDownload, IconPlus, IconSend, IconCheck, IconX } from "@tabler/icons-react";
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
-import { useGetOnJobTrainingByIdQuery, useUpdateOnJobTrainingMutation } from "@/Redux/AllApi/OnJobTrainingApi";
+import { useGetOnJobTrainingByIdQuery, useGetPublicOnJobTrainingQuery, useUpdateOnJobTrainingMutation } from "@/Redux/AllApi/OnJobTrainingApi";
 import UserAutocomplete from "@/components/common/UserAutocomplete";
 
-const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnly = false, onBack }) => {
+const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Name", readOnly = false, onBack }) => {
     const { user: authUser } = useSelector((state) => state.auth);
 
     const hasPermission = (permission) => {
@@ -27,7 +27,11 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
     const componentRef = useRef();
 
     // API Hooks
-    const { data: ojtData, isLoading, refetch } = useGetOnJobTrainingByIdQuery(ojtId, { skip: !ojtId });
+    const { data: ojtByIdData, isLoading: isLoadingById, refetch: refetchById } = useGetOnJobTrainingByIdQuery(ojtId, { skip: !ojtId || !!shareToken });
+    const { data: ojtByTokenData, isLoading: isLoadingByToken, error: shareError, refetch: refetchByToken } = useGetPublicOnJobTrainingQuery(shareToken, { skip: !shareToken });
+    const ojtData = shareToken ? ojtByTokenData : ojtByIdData;
+    const isLoading = shareToken ? isLoadingByToken : isLoadingById;
+    const refetch = shareToken ? refetchByToken : refetchById;
     const [updateOnJobTraining, { isLoading: isSaving }] = useUpdateOnJobTrainingMutation();
 
     // State
@@ -93,11 +97,31 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
 
     const handleInputChange = (field, value) => {
         if (readOnly) return;
+        if (field === 'date' && value) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const enteredDate = new Date(value);
+            enteredDate.setHours(0, 0, 0, 0);
+            if (enteredDate < today) {
+                toast.error("You cannot select a past date");
+                return;
+            }
+        }
         setTrainingData(prev => ({ ...prev, [field]: value }));
     };
 
     const handleAttendanceChange = (index, field, value) => {
         if (readOnly) return;
+        if (field === 'date' && value) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const enteredDate = new Date(value);
+            enteredDate.setHours(0, 0, 0, 0);
+            if (enteredDate < today) {
+                toast.error("You cannot select a past date");
+                return;
+            }
+        }
         setTrainingData(prev => {
             const newRecords = [...prev.attendanceRecords];
             newRecords[index] = { ...newRecords[index], [field]: value };
@@ -179,6 +203,7 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
     };
 
     if (isLoading) return <div className="p-4 text-center">Loading training record...</div>;
+    if (shareToken && shareError) return <div className="p-4 text-center text-rose-600 font-semibold">This shared link is invalid or has expired.</div>;
 
     return (
         <div className="space-y-6 print:space-y-0 text-xs text-black">
@@ -330,6 +355,7 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                         className="inline w-32 border-none h-auto p-0 focus-visible:ring-0 text-blue-600 font-semibold text-right"
                                         value={trainingData.date}
                                         onChange={e => handleInputChange('date', e.target.value)}
+                                        min={new Date().toISOString().split('T')[0]}
                                     />
                                 </div>
                             </div>
@@ -357,6 +383,15 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                         onChange={e => handleInputChange('trainingTopic', e.target.value)}
                                         placeholder="Topic Name"
                                     />
+                                </div>
+                            </div>
+
+                            <div className="flex border-b border-black text-xs">
+                                <div className="flex-1 p-1 pl-2 flex items-center">
+                                    <span className="font-bold whitespace-nowrap">Sheet Created Date :-</span>
+                                    <span className="ml-2 text-blue-600 font-semibold">
+                                        {ojtData?.data?.createdAt ? new Date(ojtData.data.createdAt).toLocaleDateString() : ""}
+                                    </span>
                                 </div>
                             </div>
 
@@ -574,7 +609,9 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                                         <td className="border-r border-black text-center font-bold text-blue-600">{leftIndex + 1}</td>
                                                         <td className="border-r border-black p-0">
                                                             <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent"
-                                                                value={trainingData.attendanceRecords[leftIndex]?.date || ""} onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)} />
+                                                                value={trainingData.attendanceRecords[leftIndex]?.date || ""} 
+                                                                onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)} 
+                                                                min={new Date().toISOString().split('T')[0]} />
                                                         </td>
                                                         <td className="border-r border-black p-0 overflow-visible relative">
                                                             <UserAutocomplete
@@ -605,7 +642,9 @@ const OJTTrainingRecordSheet = ({ ojtId, studentName = "Associate Name", readOnl
                                                             <>
                                                                 <td className="border-r border-black p-0">
                                                                     <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent"
-                                                                        value={trainingData.attendanceRecords[rightIndex]?.date || ""} onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)} />
+                                                                        value={trainingData.attendanceRecords[rightIndex]?.date || ""} 
+                                                                        onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)} 
+                                                                        min={new Date().toISOString().split('T')[0]} />
                                                                 </td>
                                                                 <td className="border-r border-black p-0 overflow-visible relative">
                                                                     <UserAutocomplete

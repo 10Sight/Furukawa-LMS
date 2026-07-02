@@ -837,7 +837,9 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                             onClick={() => {
                               const base = "/" + (window.location.pathname.split('/')[1] || "admin");
                               const quizPath = base === "/student" ? "quiz" : "take-test";
-                              navigate(`${base}/${quizPath}/${quiz._id}`);
+                              navigate(`${base}/${quizPath}/${quiz._id}`, {
+                                state: { from: window.location.pathname + window.location.search }
+                              });
                             }}
                             className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
                           >

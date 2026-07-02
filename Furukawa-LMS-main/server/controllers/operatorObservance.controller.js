@@ -56,6 +56,133 @@ const resolveStudentId = async (studentId) => {
     return users.length > 0 ? users[0].id : null;
 };
 
+// Same row ids as CHECK_CONTENTS in OperatorObservanceSheet.jsx (frontend)
+const CHECK_ROW_IDS = [
+    "workingManner",
+    "cycleTime",
+    "checkSheets",
+    "processProductAwareness",
+    "pastCustomerClaim",
+    "checkedByLine",
+    "verificationByShift"
+];
+const OBS_COLUMNS = ["obs1", "obs2", "obs3", "obs4", "obs5", "obs6"];
+const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+
+const isCellFilled = (cell) => {
+    if (!cell) return false;
+    return String(cell.status || "").trim() !== "" || String(cell.val || "").trim() !== "";
+};
+
+const isCellComplete = (cell) => {
+    if (!cell) return false;
+    return String(cell.status || "").trim() !== "" && String(cell.val || "").trim() !== "";
+};
+
+const isSubColumnStarted = (data, colId) => {
+    const date = data?.columnDates?.[colId];
+    if (date && String(date).trim() !== "") return true;
+    return CHECK_ROW_IDS.some((rowId) => isCellFilled(data?.[rowId]?.[colId]));
+};
+
+const isSubColumnComplete = (data, colId) => {
+    const date = data?.columnDates?.[colId];
+    if (!date || String(date).trim() === "") return false;
+    return CHECK_ROW_IDS.every((rowId) => isCellComplete(data?.[rowId]?.[colId]));
+};
+
+// Mirrors client-side validation in OperatorObservanceSheet.jsx
+const validateObservanceData = (observanceData) => {
+    const data = observanceData || {};
+
+    const anyDateFilled = Object.values(data.columnDates || {}).some((d) => d && String(d).trim() !== "");
+    const anyRowFilled = CHECK_ROW_IDS.some((rowId) =>
+        OBS_COLUMNS.some((col) => isCellFilled(data?.[rowId]?.[col]) || isCellFilled(data?.[rowId]?.[`${col}Re`]))
+    );
+    if (!anyDateFilled && !anyRowFilled) {
+        return "Please fill at least one observance before saving.";
+    }
+
+    for (let i = 0; i < OBS_COLUMNS.length; i++) {
+        const col = OBS_COLUMNS[i];
+        const colRe = `${col}Re`;
+        const ordinal = ORDINALS[i];
+
+        const primaryStarted = isSubColumnStarted(data, col) || isSubColumnStarted(data, colRe);
+        if (primaryStarted && !isSubColumnComplete(data, col)) {
+            return `${ordinal} Observance: Please select the 1st Time date and fill OK/NG status with result description for all check content rows before saving.`;
+        }
+
+        const reStarted = isSubColumnStarted(data, colRe);
+        if (reStarted && !isSubColumnComplete(data, colRe)) {
+            return `${ordinal} Observance: You have started the Reinspect column — please select the reinspection date and fill OK/NG status with result description for all check content rows before saving.`;
+        }
+    }
+
+    return null;
+};
+
+// Determines which observance column (1st..6th Observance) the operator is currently on,
+// based on whether every check-content row has a status recorded for that column.
+const computeCurrentStage = (observanceData) => {
+    if (!observanceData) return { stageLabel: "Not Started", stageIndex: 0 };
+
+    for (let i = 0; i < OBS_COLUMNS.length; i++) {
+        const colId = OBS_COLUMNS[i];
+        const allFilled = CHECK_ROW_IDS.every((rowId) => {
+            const cell = observanceData?.[rowId]?.[colId];
+            return cell && String(cell.status || "").trim() !== "";
+        });
+        if (!allFilled) {
+            const anyFilled = CHECK_ROW_IDS.some((rowId) => {
+                const cell = observanceData?.[rowId]?.[colId];
+                return cell && (String(cell.status || "").trim() !== "" || String(cell.val || "").trim() !== "");
+            });
+            return {
+                stageLabel: `${ORDINALS[i]} Observance${anyFilled ? " (In Progress)" : ""}`,
+                stageIndex: i + 1
+            };
+        }
+    }
+    return { stageLabel: "Completed", stageIndex: OBS_COLUMNS.length };
+};
+
+export const getObservanceSummary = asyncHandler(async (req, res) => {
+    const studentIds = String(req.query.studentIds || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id && !isNaN(id));
+
+    if (studentIds.length === 0) {
+        return res.json(new ApiResponse(200, {}, "No student IDs provided"));
+    }
+
+    const placeholders = studentIds.map(() => "?").join(",");
+    const [rows] = await executeQuery(
+        `SELECT studentId, observanceData, status, updatedAt FROM operator_observances WHERE studentId IN (${placeholders})`,
+        studentIds
+    );
+
+    const summary = {};
+    for (const row of rows) {
+        let observanceData = {};
+        try {
+            observanceData = typeof row.observanceData === "string" ? JSON.parse(row.observanceData) : (row.observanceData || {});
+        } catch (e) {
+            observanceData = {};
+        }
+        const { stageLabel, stageIndex } = computeCurrentStage(observanceData);
+        summary[row.studentId] = {
+            status: row.status || "Draft",
+            updatedAt: row.updatedAt,
+            stageLabel,
+            stageIndex
+        };
+    }
+
+    res.json(new ApiResponse(200, summary, "Observance summary fetched"));
+});
+
 export const getObservanceByStudent = asyncHandler(async (req, res) => {
     const { studentId } = req.params;
     if (!studentId) throw new ApiError("Student ID is required", 400);
@@ -91,6 +218,9 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
 
     const resolvedId = await resolveStudentId(studentId);
     if (!resolvedId) throw new ApiError("Student not found", 404);
+
+    const validationError = validateObservanceData(data.observanceData);
+    if (validationError) throw new ApiError(validationError, 400);
 
     const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
     const finalLevel1Date = data.level1Date || derivedLevel1Date || null;

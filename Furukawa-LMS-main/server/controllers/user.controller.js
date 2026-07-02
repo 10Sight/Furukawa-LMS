@@ -503,6 +503,16 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     ) mq` : "";
   const marksSelectSQL = includeHandoverMarks ? ", mq.score as quizScore, mq.quizQuestions as quizQuestions" : "";
 
+  const includeEvaluationInfo = req.query.includeEvaluationInfo === "true";
+  const evalJoinSQL = includeEvaluationInfo ? `
+    OUTER APPLY (
+      SELECT TOP 1 sme.updatedAt as lastEvalDate, sme.sheetIndex as lastEvalSheetIndex, sme.period as lastEvalPeriod
+      FROM skill_matrix_evaluations sme
+      WHERE sme.studentId = u.id
+      ORDER BY sme.sheetIndex DESC, sme.createdAt DESC
+    ) eval_res` : "";
+  const evalSelectSQL = includeEvaluationInfo ? ", eval_res.lastEvalDate, eval_res.lastEvalSheetIndex, eval_res.lastEvalPeriod" : "";
+
   // --- NEW: Calculate Present/Absent counts for the cards ---
   // Create a version of where clauses that omits the specific status filter
   const countsWhereClauses = whereClauses.filter(c =>
@@ -549,12 +559,13 @@ export const getAllUsers = asyncHandler(async (req, res) => {
            cr.name as customRoleName,
            al.logShift,
            al.logStatus,
-           al.logDate${marksSelectSQL}
+           al.logDate${marksSelectSQL}${evalSelectSQL}
     FROM users u
     ${getHierarchyJoinSQL}
     LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
     ${attendanceJoinSQL}
     ${marksJoinSQL}
+    ${evalJoinSQL}
     ${whereSQL}
     ORDER BY u.createdAt DESC
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY

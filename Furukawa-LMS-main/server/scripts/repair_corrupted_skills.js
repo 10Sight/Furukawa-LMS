@@ -130,7 +130,11 @@ async function repair() {
             if (activeSubSecId) {
                 resolvedLevel = finalSkillMap[String(activeSubSecId)] || uData.dbLevel || "L1";
             } else {
-                const maxWeight = uData.maxWeights.length > 0 ? Math.max(...uData.maxWeights, 1) : 1;
+                // Floor at the user's existing DB level so users with no active sub-section
+                // (mentors/trainers) are never downgraded just because the matrices we found
+                // them in show lower station levels. Mirrors saveSkillMatrix's Rule B.
+                const dbWeight = getLevelWeight(uData.dbLevel, activeLevels);
+                const maxWeight = Math.max(...uData.maxWeights, dbWeight, 1);
                 resolvedLevel = `L${maxWeight}`;
             }
 

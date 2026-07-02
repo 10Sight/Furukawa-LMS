@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 
@@ -5,6 +6,7 @@ class OnJobTraining {
     constructor(data) {
         this.id = data.id;
         this._id = data.id; // Compatibility
+        this.shareToken = data.shareToken;
 
         this.student = data.student;
         this.name = data.name || "Level-1 Practical Evaluation of On the Job Training";
@@ -47,6 +49,7 @@ class OnJobTraining {
             BEGIN
             CREATE TABLE on_job_trainings (
                 id INT IDENTITY(1,1) PRIMARY KEY,
+                shareToken NVARCHAR(64) NULL,
                 student VARCHAR(255) NULL,
                 name NVARCHAR(255) DEFAULT 'Level-1 Practical Evaluation of On the Job Training',
                 department VARCHAR(255) NOT NULL,
@@ -82,6 +85,7 @@ class OnJobTraining {
             );
             CREATE INDEX idx_student ON on_job_trainings(student);
             CREATE INDEX idx_department ON on_job_trainings(department);
+            CREATE UNIQUE INDEX idx_ojt_shareToken ON on_job_trainings(shareToken);
             END
             ELSE
             BEGIN
@@ -97,7 +101,7 @@ class OnJobTraining {
                 BEGIN
                     ALTER TABLE on_job_trainings ADD trainingLog NVARCHAR(MAX);
                 END
-                
+
                 -- Ensure student, line, and machine columns are nullable and updated to appropriate types
                 ALTER TABLE on_job_trainings ALTER COLUMN student VARCHAR(255) NULL;
                 
@@ -146,12 +150,38 @@ class OnJobTraining {
         } catch (error) {
             logger.error("Failed to initialize OnJobTraining table", error);
         }
+
+        // Run as separate statements/batches: SQL Server cannot reliably reference
+        // a column in the same batch that an earlier statement just added via ALTER TABLE.
+        try {
+            const [[col]] = await executeQuery(
+                "SELECT COL_LENGTH('on_job_trainings', 'shareToken') AS len"
+            );
+            if (col?.len === null) {
+                await executeQuery("ALTER TABLE on_job_trainings ADD shareToken NVARCHAR(64) NULL");
+            }
+
+            await executeQuery(
+                "UPDATE on_job_trainings SET shareToken = LOWER(CONVERT(NVARCHAR(36), NEWID())) WHERE shareToken IS NULL"
+            );
+
+            const [[idx]] = await executeQuery(
+                "SELECT COUNT(*) AS cnt FROM sys.indexes WHERE name = 'idx_ojt_shareToken' AND object_id = OBJECT_ID('on_job_trainings')"
+            );
+            if (idx?.cnt === 0) {
+                await executeQuery("CREATE UNIQUE INDEX idx_ojt_shareToken ON on_job_trainings(shareToken)");
+            }
+            logger.info("Checked/Backfilled shareToken column on on_job_trainings");
+        } catch (error) {
+            logger.error("Failed to migrate shareToken column on on_job_trainings", error);
+        }
     }
 
     static async create(data) {
         const ojt = new OnJobTraining(data);
 
         const fields = [
+            "shareToken",
             "student", "name", "department", "section", "line", "subSection", "machine",
             "entries", "scoring", "totalMarks", "totalMarksObtained",
             "totalPercentage", "result", "guidelines", "remarks", "remarkImage",
@@ -161,6 +191,7 @@ class OnJobTraining {
         ];
 
         if (!ojt.createdAt) ojt.createdAt = new Date();
+        if (!ojt.shareToken) ojt.shareToken = crypto.randomUUID();
 
         const values = fields.map(field => {
             let val = ojt[field];

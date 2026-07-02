@@ -94,6 +94,7 @@ const MultiSkilling = lazy(() => import("./pages/Admin/MultiSkilling"));
 const DojoHiring = lazy(() => import("./pages/Admin/DojoHiring"));
 const DojoCandidateDetail = lazy(() => import("./pages/Admin/DojoCandidateDetail"));
 const OnJobTraining = lazy(() => import("./pages/Admin/OnJobTraining"));
+const OJTShareView = lazy(() => import("./pages/Public/OJTShareView"));
 const Contractors = lazy(() => import("./pages/Admin/Contractors"));
 const ContractorDetail = lazy(() => import("./pages/Admin/ContractorDetail"));
 const DesignationsPage = lazy(() => import("./pages/Admin/DesignationsPage"));
@@ -188,7 +189,8 @@ const App = () => {
             }
           />
 
-
+          {/* Public, no-login read-only OJT share link */}
+          <Route path="/ojt/share/:token" element={<OJTShareView />} />
 
           {/* Landing Page as default authenticated route */}
           <Route

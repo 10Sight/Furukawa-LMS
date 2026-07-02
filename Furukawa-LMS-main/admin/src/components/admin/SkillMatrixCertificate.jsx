@@ -8,6 +8,7 @@ import { exportToExcel } from "@/utils/exportHelper";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -498,8 +499,54 @@ const SkillMatrixCertificate = ({
         }
     };
 
+    const isEvaluationEmpty = () => {
+        const levelKeys = [0, 1, 2, 3];
+        for (const sIdx of levelKeys) {
+            const levelContent = skillConfig.levels?.[sIdx];
+            if (!levelContent || !levelContent.items) continue;
+
+            for (let iIdx = 0; iIdx < levelContent.items.length; iIdx++) {
+                const itemKey = `${sIdx}-${iIdx}`;
+                const data = evalData[itemKey];
+                if (data) {
+                    const item = levelContent.items[iIdx];
+                    const isSpeedCell = (
+                        (sIdx === 0 && item.id === 3) ||
+                        (sIdx === 1 && item.id === 2) ||
+                        (sIdx === 2 && item.id === 1) ||
+                        (sIdx === 3 && item.id === 6)
+                    );
+
+                    if (isSpeedCell) {
+                        if (
+                            (data.actualSec && String(data.actualSec).trim() !== '') ||
+                            (data.targetSec && String(data.targetSec).trim() !== '') ||
+                            (data.standard && data.standard.trim() !== '')
+                        ) {
+                            return false;
+                        }
+                    } else {
+                        if (
+                            (data.standardText && data.standardText.trim() !== '') ||
+                            (data.standard && data.standard.trim() !== '')
+                        ) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    };
+
     const handleSave = async (triggerEmail = false) => {
         if (!studentId || !selectedSheetId) return;
+
+        if (isEvaluationEmpty()) {
+            toast.error("Cannot save an empty sheet. Please fill at least one evaluation item.");
+            return;
+        }
+
         try {
             setSaving(true);
             const payload = {
@@ -623,9 +670,15 @@ const SkillMatrixCertificate = ({
                     const calculatedEff = Math.round((tgt / act) * 100);
                     updated.okVal = String(calculatedEff);
                     updated.ngVal = String(calculatedEff);
+
+                    const minEff = displayLevels[levelIdx]?.minEfficiency;
+                    if (minEff !== undefined && minEff !== null && minEff !== '') {
+                        updated.standard = calculatedEff >= Number(minEff) ? 'OK' : 'NG';
+                    }
                 } else {
                     updated.okVal = '';
                     updated.ngVal = '';
+                    updated.standard = '';
                 }
             }
 
@@ -1042,16 +1095,31 @@ const SkillMatrixCertificate = ({
                                         {items.length > 0 ? items.map((item, iIdx) => {
                                             const itemKey = `${sIdx}-${iIdx}`;
                                             const currentData = evalData[itemKey] || {};
+                                            const isSpeedCell = (
+                                                (sIdx === 0 && item.id === 3) ||
+                                                (sIdx === 1 && item.id === 2) ||
+                                                (sIdx === 2 && item.id === 1) ||
+                                                (sIdx === 3 && item.id === 6)
+                                            );
                                             return (
                                                 <div key={iIdx} className="flex border-b border-black last:border-b-0">
                                                     <div className="w-[50px] p-2 border-r border-black text-center flex items-center justify-center">{item.id || iIdx + 1}</div>
                                                     <div className="flex-1 p-2 border-r border-black whitespace-pre-wrap">{item.text}</div>
-                                                    <div className="w-[250px] p-2 border-r border-black whitespace-pre-wrap">{item.method}</div>
+                                                    <div className="w-[250px] p-2 border-r border-black whitespace-pre-wrap">
+                                                        {item.method}
+                                                        {isSpeedCell &&
+                                                          displayLevels[sIdx]?.minEfficiency !== undefined &&
+                                                          displayLevels[sIdx]?.minEfficiency !== null &&
+                                                          displayLevels[sIdx]?.minEfficiency !== '' && (
+                                                            <div className="mt-1">
+                                                                <Badge variant="info" className="whitespace-nowrap">
+                                                                    Target Eff: {displayLevels[sIdx].minEfficiency}% - {displayLevels[sIdx].maxEfficiency}%
+                                                                </Badge>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <div className="w-[110px] p-2 border-r border-black flex items-center justify-center bg-white">
-                                                        {((sIdx === 0 && item.id === 3) ||
-                                                          (sIdx === 1 && item.id === 2) ||
-                                                          (sIdx === 2 && item.id === 1) ||
-                                                          (sIdx === 3 && item.id === 6)) ? (
+                                                        {isSpeedCell ? (
                                                             <div className="flex flex-col gap-1 w-full text-xs">
                                                                 <div className="flex flex-col">
                                                                     <span className="font-semibold text-gray-600 text-[10px]">Actual (Sec):</span>
@@ -1089,22 +1157,17 @@ const SkillMatrixCertificate = ({
                                                     </div>
                                                     <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-2 bg-white">
                                                         <select
-                                                            className="w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400"
+                                                            className={`w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400 ${isSpeedCell ? 'cursor-not-allowed bg-gray-100 text-gray-500' : ''}`}
                                                             value={currentData.standard || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
-                                                            disabled={!isEditable}
+                                                            disabled={!isEditable || isSpeedCell}
+                                                            title={isSpeedCell ? 'Auto-calculated from efficiency, cannot be changed manually' : undefined}
                                                         >
                                                             <option value="">Select</option>
                                                             <option value="OK">OK</option>
                                                             <option value="NG">NG</option>
                                                         </select>
                                                         {(() => {
-                                                            const isSpeedCell = (
-                                                                (sIdx === 0 && item.id === 3) ||
-                                                                (sIdx === 1 && item.id === 2) ||
-                                                                (sIdx === 2 && item.id === 1) ||
-                                                                (sIdx === 3 && item.id === 6)
-                                                            );
                                                             if (!isSpeedCell || !currentData.standard) return null;
                                                             const act = parseFloat(currentData.actualSec);
                                                             const tgt = parseFloat(currentData.targetSec);

@@ -40,8 +40,66 @@ const CHECK_CONTENTS = [
     { id: "verificationByShift", title: "Verification By (Shift Incharge)", desc: "" }
 ];
 
+const CHECK_ROW_IDS = CHECK_CONTENTS.map((row) => row.id);
+const OBS_COLUMNS = ["obs1", "obs2", "obs3", "obs4", "obs5", "obs6"];
+const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+
+const isCellFilled = (cell) => {
+    if (!cell) return false;
+    return String(cell.status || "").trim() !== "" || String(cell.val || "").trim() !== "";
+};
+
+const isCellComplete = (cell) => {
+    if (!cell) return false;
+    return String(cell.status || "").trim() !== "" && String(cell.val || "").trim() !== "";
+};
+
+const isSubColumnStarted = (data, colId) => {
+    const date = data?.columnDates?.[colId];
+    if (date && String(date).trim() !== "") return true;
+    return CHECK_ROW_IDS.some((rowId) => isCellFilled(data?.[rowId]?.[colId]));
+};
+
+const isSubColumnComplete = (data, colId) => {
+    const date = data?.columnDates?.[colId];
+    if (!date || String(date).trim() === "") return false;
+    return CHECK_ROW_IDS.every((rowId) => isCellComplete(data?.[rowId]?.[colId]));
+};
+
+// Mirrors server-side validation in operatorObservance.controller.js
+const validateObservanceSheet = (observanceData) => {
+    const data = observanceData || {};
+
+    const anyDateFilled = Object.values(data.columnDates || {}).some((d) => d && String(d).trim() !== "");
+    const anyRowFilled = CHECK_ROW_IDS.some((rowId) =>
+        OBS_COLUMNS.some((col) => isCellFilled(data?.[rowId]?.[col]) || isCellFilled(data?.[rowId]?.[`${col}Re`]))
+    );
+    if (!anyDateFilled && !anyRowFilled) {
+        return "Please fill at least one observance before saving.";
+    }
+
+    for (let i = 0; i < OBS_COLUMNS.length; i++) {
+        const col = OBS_COLUMNS[i];
+        const colRe = `${col}Re`;
+        const ordinal = ORDINALS[i];
+
+        const primaryStarted = isSubColumnStarted(data, col) || isSubColumnStarted(data, colRe);
+        if (primaryStarted && !isSubColumnComplete(data, col)) {
+            return `${ordinal} Observance: Please select the 1st Time date and fill OK/NG status with result description for all check content rows before saving.`;
+        }
+
+        const reStarted = isSubColumnStarted(data, colRe);
+        if (reStarted && !isSubColumnComplete(data, colRe)) {
+            return `${ordinal} Observance: You have started the Reinspect column — please select the reinspection date and fill OK/NG status with result description for all check content rows before saving.`;
+        }
+    }
+
+    return null;
+};
+
 const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "", readOnly = false }) => {
     const authUser = useSelector((state) => state.auth?.user);
+    const todayStr = new Date().toISOString().split('T')[0];
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -57,6 +115,14 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
     const canEdit = !readOnly && hasObservancePermission('operator_observance:update');
     const [isEditMode, setIsEditMode] = useState(canEdit);
 
+    // Admins/Superadmins and users with explicit manage permission can edit already-saved cells.
+    const canBypassLock = (() => {
+        if (!authUser) return false;
+        if (authUser.role === 'ADMIN' || authUser.role === 'SUPERADMIN') return true;
+        const customPerms = authUser.customRole?.permissions || [];
+        return customPerms.includes('operator_observance:manage');
+    })();
+
     // Header Data
     const [headerData, setHeaderData] = useState({
         lineName: "",
@@ -68,9 +134,37 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
         verifiedBy: ""
     });
 
-    // Table Data Structure: 
+    // Table Data Structure:
     // { rowId: { obs1: {date, val}, obs1Re: {date, val}, obs2: {...}, obs2Re: {...}, obs3: {...}, obs3Re: {...}, obs4: {...}, obs4Re: {...}, remarks: "" } }
     const [tableData, setTableData] = useState({});
+
+    // Snapshot of last-saved data, used to lock already-filled headers/cells for non-privileged users.
+    const [originalHeaderData, setOriginalHeaderData] = useState({});
+    const [originalTableData, setOriginalTableData] = useState({});
+
+    // Determines if a given header field, column date, or check-content cell was already saved
+    // and should therefore be locked from further edits (unless the user can bypass the lock).
+    const isCellLocked = (type, key, subKey) => {
+        if (canBypassLock) return false;
+        if (type === 'header') {
+            return Boolean(String(originalHeaderData[key] || "").trim());
+        }
+        if (type === 'date') {
+            return Boolean(String(originalTableData.columnDates?.[key] || "").trim());
+        }
+        if (type === 'cell') {
+            return isCellFilled(originalTableData[key]?.[subKey]);
+        }
+        if (type === 'remarks') {
+            return Boolean(String(originalTableData[key]?.remarks || "").trim());
+        }
+        return false;
+    };
+
+    // Operator search/autocomplete (edit mode only)
+    const [operatorSuggestions, setOperatorSuggestions] = useState([]);
+    const [showOperatorSuggestions, setShowOperatorSuggestions] = useState(false);
+    const [isSearchingOperator, setIsSearchingOperator] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -137,7 +231,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
             if (response.data.success) {
                 const data = response.data.data;
                 if (!data.isNew) {
-                    setHeaderData({
+                    const loadedHeaderData = {
                         lineName: data.lineName || assignmentLineName || "",
                         processName: data.processName || assignmentProcessName || "",
                         level1Date: data.level1Date ? new Date(data.level1Date).toISOString().split('T')[0] : "",
@@ -145,8 +239,12 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         preparedBy: data.preparedBy || "",
                         checkedBy: data.checkedBy || "",
                         verifiedBy: data.verifiedBy || ""
-                    });
-                    setTableData(data.observanceData || {});
+                    };
+                    const loadedTableData = data.observanceData || {};
+                    setHeaderData(loadedHeaderData);
+                    setTableData(loadedTableData);
+                    setOriginalHeaderData(loadedHeaderData);
+                    setOriginalTableData(loadedTableData);
                 } else {
                     setHeaderData(prev => ({
                         ...prev,
@@ -169,6 +267,12 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
     };
 
     const handleSave = async (targetStatus) => {
+        const validationError = validateObservanceSheet(tableData);
+        if (validationError) {
+            toast.error(validationError);
+            return;
+        }
+
         try {
             setSaving(true);
             const payload = {
@@ -183,6 +287,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                 ...prev,
                 status: targetStatus
             }));
+            setOriginalHeaderData(headerData);
+            setOriginalTableData(tableData);
 
             if (targetStatus === "Submitted") {
                 toast.success("Observance Sheet Submitted & Emailed Successfully");
@@ -191,17 +297,66 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
             }
         } catch (error) {
             console.error("Error saving observance data:", error);
-            toast.error("Failed to save data");
+            toast.error(error.response?.data?.message || "Failed to save data");
         } finally {
             setSaving(false);
         }
     };
 
     const handleHeaderChange = (field, value) => {
+        if (field === 'level1Date' && value) {
+            if (value < todayStr) {
+                toast.error("Date of Level-1 Complete cannot be in the past");
+                return;
+            }
+        }
         setHeaderData(prev => ({ ...prev, [field]: value }));
     };
 
+    const handleOperatorChange = async (value) => {
+        handleHeaderChange('operatorNameCode', value);
+
+        if (!value.trim() || value.length < 2) {
+            setOperatorSuggestions([]);
+            setShowOperatorSuggestions(false);
+            return;
+        }
+
+        try {
+            setIsSearchingOperator(true);
+            const response = await axiosInstance.get('/api/users/students', {
+                params: {
+                    search: value,
+                    page: 1,
+                    limit: 10,
+                    includeTemporary: "true",
+                    ojtApprovedToday: "true"
+                }
+            });
+            const list = response.data?.data?.users || [];
+            setOperatorSuggestions(list);
+            setShowOperatorSuggestions(list.length > 0);
+        } catch (err) {
+            console.error("Failed to search operators:", err);
+        } finally {
+            setIsSearchingOperator(false);
+        }
+    };
+
+    const handleSelectOperator = (student) => {
+        const nameCode = [student.fullName, student.empId].filter(Boolean).join(" - ");
+        handleHeaderChange('operatorNameCode', nameCode);
+        setOperatorSuggestions([]);
+        setShowOperatorSuggestions(false);
+    };
+
     const handleTableChange = (rowId, colId, subField, value) => {
+        if (rowId === 'columnDates' && value) {
+            if (value < todayStr) {
+                toast.error("Inspection date cannot be in the past");
+                return;
+            }
+        }
         setTableData(prev => {
             const row = prev[rowId] || {};
             const col = row[colId] || {};
@@ -218,10 +373,12 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
 
     const renderCell = (rowId, colId) => {
         const cellData = tableData[rowId]?.[colId] || {};
+        const locked = isCellLocked('cell', rowId, colId);
+        const disabled = !isEditMode || locked;
 
         const getSelectClass = (status) => {
             const base = "h-7 w-20 text-[10px] px-1 py-0.5 rounded border font-semibold focus:outline-none focus:ring-1 transition-colors text-center ";
-            const cursorClass = isEditMode ? "cursor-pointer " : "cursor-default opacity-70 ";
+            const cursorClass = !disabled ? "cursor-pointer " : "cursor-default opacity-70 ";
             if (status === "OK") return base + cursorClass + "bg-green-50 border-green-200 text-green-700 focus:ring-green-500";
             if (status === "NG") return base + cursorClass + "bg-red-50 border-red-200 text-red-700 focus:ring-red-500";
             return base + cursorClass + "bg-white border-gray-200 text-gray-400 focus:ring-blue-500";
@@ -234,8 +391,9 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     <div className="flex items-center justify-center py-1 border-b border-dashed border-gray-100">
                         <select
                             value={cellData.status || ""}
-                            onChange={(e) => isEditMode && handleTableChange(rowId, colId, 'status', e.target.value)}
-                            disabled={!isEditMode}
+                            onChange={(e) => !disabled && handleTableChange(rowId, colId, 'status', e.target.value)}
+                            disabled={disabled}
+                            title={locked ? "Already saved — locked" : undefined}
                             className={getSelectClass(cellData.status)}
                         >
                             <option value="" className="text-gray-400 font-normal bg-white">Select...</option>
@@ -246,10 +404,11 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                 </div>
                 <Textarea
                     className="flex-1 min-h-[50px] text-xs resize-none p-1 border-gray-200 disabled:opacity-70 disabled:cursor-default disabled:resize-none"
-                    placeholder={isEditMode ? "Result..." : ""}
+                    placeholder={!disabled ? "Result..." : ""}
                     value={cellData.val || ""}
                     onChange={(e) => handleTableChange(rowId, colId, 'val', e.target.value)}
-                    disabled={!isEditMode}
+                    disabled={disabled}
+                    title={locked ? "Already saved — locked" : undefined}
                 />
             </div>
         );
@@ -420,7 +579,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.lineName}
                                 onChange={e => handleHeaderChange('lineName', e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('header', 'lineName')}
                             />
                         </div>
                         <div className="p-2 flex flex-col gap-1">
@@ -429,7 +588,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.processName}
                                 onChange={e => handleHeaderChange('processName', e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('header', 'processName')}
                             />
                         </div>
                         <div className="p-2 flex flex-col gap-1">
@@ -439,17 +598,40 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.level1Date}
                                 onChange={e => handleHeaderChange('level1Date', e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('header', 'level1Date')}
+                                min={todayStr}
                             />
                         </div>
-                        <div className="p-2 flex flex-col gap-1">
+                        <div className="p-2 flex flex-col gap-1 relative">
                             <span className="font-semibold">Operator Name & Code-</span>
                             <Input
                                 className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
                                 value={headerData.operatorNameCode}
-                                onChange={e => handleHeaderChange('operatorNameCode', e.target.value)}
-                                disabled={!isEditMode}
+                                onChange={e => handleOperatorChange(e.target.value)}
+                                onFocus={() => { if (isEditMode && operatorSuggestions.length > 0) setShowOperatorSuggestions(true); }}
+                                onBlur={() => setTimeout(() => setShowOperatorSuggestions(false), 200)}
+                                placeholder={isEditMode ? "Type to search..." : ""}
+                                disabled={!isEditMode || isCellLocked('header', 'operatorNameCode')}
                             />
+                            {isEditMode && isSearchingOperator && (
+                                <div className="absolute right-1 top-9 text-[10px] text-gray-400">
+                                    Searching...
+                                </div>
+                            )}
+                            {isEditMode && showOperatorSuggestions && operatorSuggestions.length > 0 && (
+                                <ul className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto z-50 text-left font-normal">
+                                    {operatorSuggestions.map(student => (
+                                        <li
+                                            key={student.id || student._id}
+                                            onMouseDown={() => handleSelectOperator(student)}
+                                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm flex flex-col"
+                                        >
+                                            <span className="font-bold text-gray-800">{student.fullName}</span>
+                                            <span className="text-xs text-gray-500 font-mono">E.Code: {student.empId || '—'}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -477,7 +659,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs1 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs1', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs1')}
+                                min={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -487,7 +670,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs1Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs1Re', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs1Re')}
+                                min={todayStr}
                             />
                         </div>
 
@@ -498,7 +682,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs2 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs2', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs2')}
+                                min={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -508,7 +693,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs2Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs2Re', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs2Re')}
+                                min={todayStr}
                             />
                         </div>
 
@@ -519,7 +705,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs3 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs3', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs3')}
+                                min={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -529,7 +716,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs3Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs3Re', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs3Re')}
+                                min={todayStr}
                             />
                         </div>
 
@@ -540,7 +728,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs4 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs4', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs4')}
+                                min={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -550,7 +739,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs4Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs4Re', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs4Re')}
+                                min={todayStr}
                             />
                         </div>
 
@@ -561,7 +751,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs5 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs5', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs5')}
+                                min={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -571,7 +762,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs5Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs5Re', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs5Re')}
+                                min={todayStr}
                             />
                         </div>
 
@@ -582,7 +774,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs6 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs6', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs6')}
+                                min={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -592,7 +785,8 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
                                 value={tableData.columnDates?.obs6Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs6Re', null, e.target.value)}
-                                disabled={!isEditMode}
+                                disabled={!isEditMode || isCellLocked('date', 'obs6Re')}
+                                min={todayStr}
                             />
                         </div>
                     </div>
@@ -635,7 +829,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                     className="w-full h-full min-h-[80px] text-xs resize-none border-none p-1 focus-visible:ring-0 disabled:opacity-70 disabled:cursor-default disabled:resize-none"
                                     value={tableData[row.id]?.remarks || ""}
                                     onChange={(e) => handleTableChange(row.id, 'remarks', null, e.target.value)}
-                                    disabled={!isEditMode}
+                                    disabled={!isEditMode || isCellLocked('remarks', row.id)}
                                 />
                             </div>
                         </div>

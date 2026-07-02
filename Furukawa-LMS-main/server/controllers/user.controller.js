@@ -891,6 +891,14 @@ export const updateUser = asyncHandler(async (req, res) => {
         updates.push("phoneNumber = ?"); values.push(data[f]);
       } else if (f === "phoneNumber" && !data[f]) {
         updates.push("phoneNumber = NULL");
+      } else if (f === "email") {
+        const emailVal = (data[f] && data[f].trim()) ? data[f].trim().toLowerCase() : null;
+        if (emailVal) {
+          updates.push("email = ?");
+          values.push(emailVal);
+        } else {
+          updates.push("email = NULL");
+        }
       } else if (f === "departmentId") {
         updates.push("departmentId = ?"); values.push(data[f] || null);
         if (data[f]) {

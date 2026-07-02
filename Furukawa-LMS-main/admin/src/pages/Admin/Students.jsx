@@ -583,9 +583,7 @@ const Students = () => {
     if (!formData.userName?.trim()) {
       errors.userName = "Username is required";
     }
-    if (!formData.phoneNumber?.trim()) {
-      errors.phoneNumber = "Phone number is required";
-    }
+    // Phone number is optional
     if (!formData.password?.trim()) {
       errors.password = "Password is required";
     }
@@ -686,12 +684,28 @@ const Students = () => {
   };
 
   const handleEditStudent = async () => {
+    // Reset previous errors
+    setFormErrors({});
+    const errors = {};
+
     if (
       !formData.fullName?.trim() ||
-      !formData.userName?.trim() ||
-      !formData.phoneNumber?.trim()
+      !formData.userName?.trim()
     ) {
       showToast("error", "Basic fields are required");
+      return;
+    }
+
+    // Validate email format if provided
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (formData.email?.trim() && !emailRegex.test(formData.email.trim())) {
+      errors.email = "Please enter a valid email address";
+    }
+
+    // If there are validation errors, show them and return
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showToast("error", "Please fix the form errors before submitting");
       return;
     }
 
@@ -1205,6 +1219,7 @@ const Students = () => {
       shift: student.shift || "",
     });
 
+    setFormErrors({});
     setIsEditDialogOpen(true);
   };
 
@@ -2729,7 +2744,7 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="phoneNumber">Mobile No *</Label>
+              <Label htmlFor="phoneNumber">Mobile No</Label>
               <Input
                 id="phoneNumber"
                 name="phoneNumber"
@@ -3200,7 +3215,7 @@ const Students = () => {
 
             {/* Contact Details */}
             <div className="grid gap-2">
-              <Label htmlFor="edit-email">Email *</Label>
+              <Label htmlFor="edit-email">Email</Label>
               <Input
                 id="edit-email"
                 name="email"
@@ -3208,18 +3223,22 @@ const Students = () => {
                 value={formData.email}
                 onChange={handleInputChange}
                 placeholder="email@example.com"
+                className={formErrors.email ? "border-red-500" : ""}
               />
+              {formErrors.email && <p className="text-xs text-red-600">{formErrors.email}</p>}
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="edit-phoneNumber">Mobile No *</Label>
+              <Label htmlFor="edit-phoneNumber">Mobile No</Label>
               <Input
                 id="edit-phoneNumber"
                 name="phoneNumber"
                 value={formData.phoneNumber}
                 onChange={handleInputChange}
                 placeholder="10 digit number"
+                className={formErrors.phoneNumber ? "border-red-500" : ""}
               />
+              {formErrors.phoneNumber && <p className="text-xs text-red-600">{formErrors.phoneNumber}</p>}
             </div>
 
             {/* Address Details */}

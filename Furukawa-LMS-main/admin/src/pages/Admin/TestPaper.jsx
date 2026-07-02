@@ -59,27 +59,39 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     currentUser?.role === "ADMIN" ||
     hasPermission("test_paper:delete");
 
+  // Helper: normalise an ID that may be a primitive or an object with id/_id
+  const normalizeId = (v) => {
+    if (v && typeof v === 'object') return String(v.id || v._id || '');
+    return String(v);
+  };
+
+  const assignedDepartments = useMemo(() => {
+    const rawAssigned = Array.isArray(currentUser?.departments) ? [...currentUser.departments] : [];
+    if (currentUser?.departmentId) rawAssigned.push(currentUser.departmentId);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
+  }, [currentUser]);
+
   const assignedSections = useMemo(() => {
     const rawAssigned = Array.isArray(currentUser?.sections) ? [...currentUser.sections] : [];
     if (currentUser?.sectionId) rawAssigned.push(currentUser.sectionId);
-    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
   }, [currentUser]);
 
   const assignedLines = useMemo(() => {
     const rawAssigned = Array.isArray(currentUser?.lines) ? [...currentUser.lines] : [];
     if (currentUser?.lineId) rawAssigned.push(currentUser.lineId);
-    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
   }, [currentUser]);
 
   const assignedSubSections = useMemo(() => {
     const rawAssigned = Array.isArray(currentUser?.subSections) ? [...currentUser.subSections] : [];
     if (currentUser?.subSectionId) rawAssigned.push(currentUser.subSectionId);
-    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
   }, [currentUser]);
 
   const [selectedDepartment, setSelectedDepartment] = useState(() => {
-    if (!isAuthorizedToAccessAll && currentUser?.departmentId) {
-      return String(currentUser.departmentId);
+    if (!isAuthorizedToAccessAll && assignedDepartments.length === 1) {
+      return assignedDepartments[0];
     }
     return "ALL";
   });
@@ -111,7 +123,15 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Fetch Departments
   const { data: departmentsData, isLoading: departmentsLoading } = useGetAllDepartmentsQuery({ limit: 1000 });
-  const departments = departmentsData?.data?.departments || [];
+  const allDepartments = departmentsData?.data?.departments || [];
+
+  // Filter departments to only those assigned to the current user (if restricted)
+  const departments = useMemo(() => {
+    if (isAuthorizedToAccessAll || assignedDepartments.length === 0) {
+      return allDepartments;
+    }
+    return allDepartments.filter(dept => assignedDepartments.includes(String(dept._id || dept.id)));
+  }, [allDepartments, isAuthorizedToAccessAll, assignedDepartments]);
 
   // Fetch Sections based on selected Department
   const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(
@@ -259,7 +279,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
   }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType, isOjtApproved, currentUser]);
 
   const handleReset = () => {
-    setSelectedDepartment(!isAuthorizedToAccessAll && currentUser?.departmentId ? String(currentUser.departmentId) : "ALL");
+    setSelectedDepartment(!isAuthorizedToAccessAll && assignedDepartments.length === 1 ? assignedDepartments[0] : "ALL");
     setSelectedSection(!isAuthorizedToAccessAll && assignedSections.length === 1 ? assignedSections[0] : "ALL");
     setSelectedLine(!isAuthorizedToAccessAll && assignedLines.length === 1 ? assignedLines[0] : "ALL");
     setSelectedSubSection(!isAuthorizedToAccessAll && assignedSubSections.length === 1 ? assignedSubSections[0] : "ALL");
@@ -477,13 +497,15 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   setSelectedLine("ALL");
                   setSelectedSubSection("ALL");
                 }}
-                disabled={!isAuthorizedToAccessAll && !!currentUser?.departmentId}
+                disabled={!isAuthorizedToAccessAll && assignedDepartments.length === 1}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Departments</SelectItem>
+                  {(isAuthorizedToAccessAll || assignedDepartments.length !== 1) && (
+                    <SelectItem value="ALL">All Departments</SelectItem>
+                  )}
                   {departments.map((dept) => (
                     <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
                       {dept.name}
@@ -502,7 +524,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   setSelectedLine("ALL");
                   setSelectedSubSection("ALL");
                 }}
-                disabled={(!isAuthorizedToAccessAll && assignedSections.length === 1) || selectedDepartment === "ALL"}
+                disabled={(!isAuthorizedToAccessAll && assignedSections.length === 1) || (selectedDepartment === "ALL" && assignedDepartments.length !== 1)}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={selectedDepartment === "ALL" ? "Select department first" : "Select Section"} />

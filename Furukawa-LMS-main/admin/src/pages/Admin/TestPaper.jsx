@@ -238,6 +238,22 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   const quizzes = useMemo(() => {
     return rawQuizzes.filter(quiz => {
+      // 0a. Department restriction (local fallback for custom role users)
+      if (!isAuthorizedToAccessAll && assignedDepartments.length > 0) {
+        const quizDeptIds = (quiz.departmentId || []).map(String);
+        if (quizDeptIds.length > 0 && !quizDeptIds.some(id => assignedDepartments.includes(id))) {
+          return false;
+        }
+      }
+
+      // 0b. Section restriction (local fallback for custom role users)
+      if (!isAuthorizedToAccessAll && assignedSections.length > 0) {
+        const quizSectIds = (quiz.sectionId || []).map(String);
+        if (quizSectIds.length > 0 && !quizSectIds.some(id => assignedSections.includes(id))) {
+          return false;
+        }
+      }
+
       // 1. Line Filter
       if (selectedLine !== "ALL") {
         const quizLineIds = (quiz.lineId || []).map(String);
@@ -276,7 +292,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
       return true;
     });
-  }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType, isOjtApproved, currentUser]);
+  }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType, isOjtApproved, currentUser, isAuthorizedToAccessAll, assignedDepartments, assignedSections]);
 
   const handleReset = () => {
     setSelectedDepartment(!isAuthorizedToAccessAll && assignedDepartments.length === 1 ? assignedDepartments[0] : "ALL");

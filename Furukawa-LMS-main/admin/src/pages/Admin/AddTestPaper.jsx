@@ -72,6 +72,24 @@ const AddTestPaper = () => {
     return userPermissions.includes("test_paper:access_all");
   }, [currentUser]);
 
+  // Helper: normalise an ID that may be a primitive or an object with id/_id
+  const normalizeId = (v) => {
+    if (v && typeof v === 'object') return String(v.id || v._id || '');
+    return String(v);
+  };
+
+  const assignedDepartments = React.useMemo(() => {
+    const rawAssigned = Array.isArray(currentUser?.departments) ? [...currentUser.departments] : [];
+    if (currentUser?.departmentId) rawAssigned.push(currentUser.departmentId);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
+  }, [currentUser]);
+
+  const assignedSections = React.useMemo(() => {
+    const rawAssigned = Array.isArray(currentUser?.sections) ? [...currentUser.sections] : [];
+    if (currentUser?.sectionId) rawAssigned.push(currentUser.sectionId);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
+  }, [currentUser]);
+
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -137,11 +155,11 @@ const AddTestPaper = () => {
     if (!isAuthorizedToAccessAll && currentUser) {
       setFormData(prev => ({
         ...prev,
-        departmentId: currentUser.departmentId ? [String(currentUser.departmentId)] : prev.departmentId,
-        sectionId: currentUser.sectionId ? [String(currentUser.sectionId)] : prev.sectionId,
+        departmentId: assignedDepartments.length > 0 ? assignedDepartments : prev.departmentId,
+        sectionId: assignedSections.length > 0 ? assignedSections : prev.sectionId,
       }));
     }
-  }, [currentUser, isAuthorizedToAccessAll]);
+  }, [currentUser, isAuthorizedToAccessAll, assignedDepartments, assignedSections]);
 
   // Fetch all departments and sections to show options
   const { data: allDepartmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
@@ -182,20 +200,20 @@ const AddTestPaper = () => {
   }, [activeConfigData, formData.level]);
 
   const departmentOptions = React.useMemo(() => {
-    const all = (allDepartmentsData?.data?.departments || []).map(d => ({ value: String(d.id), label: d.name }));
-    if (!isAuthorizedToAccessAll && currentUser?.departmentId) {
-      return all.filter(opt => opt.value === String(currentUser.departmentId));
+    const all = (allDepartmentsData?.data?.departments || []).map(d => ({ value: String(d.id || d._id), label: d.name }));
+    if (!isAuthorizedToAccessAll && assignedDepartments.length > 0) {
+      return all.filter(opt => assignedDepartments.includes(opt.value));
     }
     return all;
-  }, [allDepartmentsData, isAuthorizedToAccessAll, currentUser]);
+  }, [allDepartmentsData, isAuthorizedToAccessAll, assignedDepartments]);
 
   const sectionOptions = React.useMemo(() => {
-    const all = (allSectionsData?.data || []).map(s => ({ value: String(s.id), label: s.name }));
-    if (!isAuthorizedToAccessAll && currentUser?.sectionId) {
-      return all.filter(opt => opt.value === String(currentUser.sectionId));
+    const all = (allSectionsData?.data || []).map(s => ({ value: String(s.id || s._id), label: s.name }));
+    if (!isAuthorizedToAccessAll && assignedSections.length > 0) {
+      return all.filter(opt => assignedSections.includes(opt.value));
     }
     return all;
-  }, [allSectionsData, isAuthorizedToAccessAll, currentUser]);
+  }, [allSectionsData, isAuthorizedToAccessAll, assignedSections]);
 
   const lineOptions = React.useMemo(() => {
     const allLines = allLinesData?.data || [];
@@ -703,7 +721,7 @@ const AddTestPaper = () => {
                     return (
                       <Badge key={id} variant="secondary" className="gap-1 pr-1 py-1">
                         {dept?.label || id}
-                        {(!isAuthorizedToAccessAll && currentUser?.departmentId && String(currentUser.departmentId) === id) ? null : (
+                        {(!isAuthorizedToAccessAll && assignedDepartments.length === 1 && assignedDepartments.includes(id)) ? null : (
                           <button
                             type="button"
                             onClick={() => removeItem('departmentId', id)}
@@ -718,7 +736,7 @@ const AddTestPaper = () => {
                 </div>
                 <Select
                   onValueChange={(val) => toggleItem('departmentId', val)}
-                  disabled={!isAuthorizedToAccessAll && !!currentUser?.departmentId}
+                  disabled={!isAuthorizedToAccessAll && assignedDepartments.length === 1}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={formData.departmentId.length > 0 
@@ -754,7 +772,7 @@ const AddTestPaper = () => {
                     return (
                       <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-blue-50/50">
                         {sec?.label || id}
-                        {(!isAuthorizedToAccessAll && currentUser?.sectionId && String(currentUser.sectionId) === id) ? null : (
+                        {(!isAuthorizedToAccessAll && assignedSections.length === 1 && assignedSections.includes(id)) ? null : (
                           <button
                             type="button"
                             onClick={() => removeItem('sectionId', id)}
@@ -769,7 +787,7 @@ const AddTestPaper = () => {
                 </div>
                 <Select
                   onValueChange={(val) => toggleItem('sectionId', val)}
-                  disabled={(!isAuthorizedToAccessAll && !!currentUser?.sectionId) || formData.departmentId.length === 0}
+                  disabled={(!isAuthorizedToAccessAll && assignedSections.length === 1) || formData.departmentId.length === 0}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={formData.sectionId.length > 0 

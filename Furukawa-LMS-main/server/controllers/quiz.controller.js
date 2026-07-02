@@ -186,6 +186,57 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         params.push(req.query.isDojo === 'true' || req.query.isDojo === '1' || req.query.isDojo === true ? 1 : 0);
     }
 
+    // Restrict quiz visibility for custom role users (non-student, non-admin) without access_all
+    if (req.user && req.user.role !== 'STUDENT' && !req.user.isTemporary) {
+        const isSuperAdminOrAdmin = req.user.role === 'SUPERADMIN' || req.user.role === 'ADMIN';
+        const userPerms = req.user.customRole?.permissions || [];
+        const hasAccessAll = userPerms.includes("test_paper:access_all");
+
+        if (!isSuperAdminOrAdmin && !hasAccessAll) {
+            // Resolve allowed departments
+            let allowedDepts = [];
+            if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+            try {
+                const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
+                if (Array.isArray(parsedDepts)) parsedDepts.forEach(d => {
+                    const id = (d && typeof d === 'object') ? String(d.id || d._id || '') : String(d);
+                    if (id) allowedDepts.push(id);
+                });
+            } catch (e) { /* ignore parse errors */ }
+            allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
+
+            if (allowedDepts.length > 0) {
+                const deptPlaceholders = allowedDepts.map(() => '?').join(',');
+                whereClauses.push(`(
+                    q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = ''
+                    OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value IN (${deptPlaceholders}))
+                )`);
+                params.push(...allowedDepts);
+            }
+
+            // Resolve allowed sections
+            let allowedSections = [];
+            if (req.user.sectionId) allowedSections.push(String(req.user.sectionId));
+            try {
+                const parsedSections = typeof req.user.sections === 'string' ? JSON.parse(req.user.sections) : (req.user.sections || []);
+                if (Array.isArray(parsedSections)) parsedSections.forEach(s => {
+                    const id = (s && typeof s === 'object') ? String(s.id || s._id || '') : String(s);
+                    if (id) allowedSections.push(id);
+                });
+            } catch (e) { /* ignore parse errors */ }
+            allowedSections = [...new Set(allowedSections)].filter(Boolean);
+
+            if (allowedSections.length > 0) {
+                const secPlaceholders = allowedSections.map(() => '?').join(',');
+                whereClauses.push(`(
+                    q.sectionId IS NULL OR q.sectionId = '[]' OR q.sectionId = ''
+                    OR EXISTS (SELECT 1 FROM OPENJSON(q.sectionId) WHERE value IN (${secPlaceholders}))
+                )`);
+                params.push(...allowedSections);
+            }
+        }
+    }
+
     if (req.query.skillUpgradation !== undefined) {
         const val = req.query.skillUpgradation === 'true' || req.query.skillUpgradation === '1' ? 'true' : 'false';
         whereClauses.push("COALESCE(q.skillUpgradation, 'false') = ?");

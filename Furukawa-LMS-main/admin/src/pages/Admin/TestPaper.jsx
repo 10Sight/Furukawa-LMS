@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -71,6 +71,10 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
   }, [currentUser]);
 
+  // Custom/restricted role users don't always carry role === "CUSTOM" (e.g. operators/employees
+  // default to role "STUDENT" with a customRole attached) — detect by department restriction instead.
+  const isCustomRoleUser = !isAuthorizedToAccessAll && assignedDepartments.length > 0;
+
   const assignedSections = useMemo(() => {
     const rawAssigned = Array.isArray(currentUser?.sections) ? [...currentUser.sections] : [];
     if (currentUser?.sectionId) rawAssigned.push(currentUser.sectionId);
@@ -127,11 +131,25 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Filter departments to only those assigned to the current user (if restricted)
   const departments = useMemo(() => {
-    if (isAuthorizedToAccessAll || assignedDepartments.length === 0) {
-      return allDepartments;
+    const list = (isAuthorizedToAccessAll || assignedDepartments.length === 0)
+      ? allDepartments
+      : allDepartments.filter(dept => assignedDepartments.includes(String(dept._id || dept.id)));
+
+    if (isCustomRoleUser) {
+      return [...list].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     }
-    return allDepartments.filter(dept => assignedDepartments.includes(String(dept._id || dept.id)));
-  }, [allDepartments, isAuthorizedToAccessAll, assignedDepartments]);
+    return list;
+  }, [allDepartments, isAuthorizedToAccessAll, assignedDepartments, isCustomRoleUser]);
+
+  // Auto-select the first department for custom role users once departments load
+  useEffect(() => {
+    if (isCustomRoleUser && departments.length > 0) {
+      const isValid = departments.some(dept => String(dept._id || dept.id) === selectedDepartment);
+      if (!isValid) {
+        setSelectedDepartment(String(departments[0]._id || departments[0].id));
+      }
+    }
+  }, [isCustomRoleUser, departments, selectedDepartment]);
 
   // Fetch Sections based on selected Department
   const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(
@@ -295,7 +313,11 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
   }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType, isOjtApproved, currentUser, isAuthorizedToAccessAll, assignedDepartments, assignedSections]);
 
   const handleReset = () => {
-    setSelectedDepartment(!isAuthorizedToAccessAll && assignedDepartments.length === 1 ? assignedDepartments[0] : "ALL");
+    if (isCustomRoleUser && departments.length > 0) {
+      setSelectedDepartment(String(departments[0]._id || departments[0].id));
+    } else {
+      setSelectedDepartment(!isAuthorizedToAccessAll && assignedDepartments.length === 1 ? assignedDepartments[0] : "ALL");
+    }
     setSelectedSection(!isAuthorizedToAccessAll && assignedSections.length === 1 ? assignedSections[0] : "ALL");
     setSelectedLine(!isAuthorizedToAccessAll && assignedLines.length === 1 ? assignedLines[0] : "ALL");
     setSelectedSubSection(!isAuthorizedToAccessAll && assignedSubSections.length === 1 ? assignedSubSections[0] : "ALL");
@@ -519,7 +541,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(isAuthorizedToAccessAll || assignedDepartments.length !== 1) && (
+                  {!isCustomRoleUser && (isAuthorizedToAccessAll || assignedDepartments.length !== 1) && (
                     <SelectItem value="ALL">All Departments</SelectItem>
                   )}
                   {departments.map((dept) => (

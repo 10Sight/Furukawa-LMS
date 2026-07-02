@@ -840,7 +840,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
     "contractor", "contractorId", "expectedHandover",
-    "customRoleId", "currentLevel", "isTemporary",
+    "customRoleId", "currentLevel", "currentSkill", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "departments", "stations", "sections", "lines", "subSections", "shiftSchedule"
   ];
@@ -854,20 +854,23 @@ export const updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  // If station is being updated, sync currentLevel with the skill level for that station's sub-section
+  // If station is being updated, sync currentLevel with the skill level for that station's sub-section.
+  // Never drop an existing currentLevel to null just because the new sub-section has no recorded
+  // skill yet (e.g. a Mentor with currentLevel L3 being assigned their first station) — preserve it
+  // and seed currentSkill for the new sub-section so the two stay consistent going forward.
   if (data.stationId && data.stationId !== oldUser.stationId) {
-    let currentSkill = oldUser.currentSkill || {};
-    if (typeof currentSkill === 'string') {
-      try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
-    }
-    // Set currentLevel to the level associated with the new station's sub-section
+    const currentSkillMap = parseJSON(oldUser.currentSkill, {});
     const [machRows] = await executeQuery("SELECT subSectionId FROM machines WHERE id = ?", [data.stationId]);
-    if (machRows.length > 0) {
-      const subSecId = machRows[0].subSectionId;
-      data.currentLevel = (subSecId && currentSkill[subSecId]) || null;
+    const subSecId = machRows.length > 0 ? machRows[0].subSectionId : null;
+    if (subSecId && currentSkillMap[subSecId]) {
+      data.currentLevel = currentSkillMap[subSecId];
+    } else if (oldUser.currentLevel) {
+      data.currentLevel = oldUser.currentLevel;
+      if (subSecId) currentSkillMap[subSecId] = oldUser.currentLevel;
     } else {
       data.currentLevel = null;
     }
+    data.currentSkill = currentSkillMap;
   }
 
   // Auto-set leavingDate if status is changed to LEFT and no date is provided
@@ -939,6 +942,22 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (effective.targetSubSectionId !== before.targetSubSectionId) data.targetSubSectionId = effective.targetSubSectionId;
   if (effective.targetStationId !== before.targetStationId) data.targetStationId = effective.targetStationId;
 
+  // If the admin is directly editing currentLevel (not via the station-change sync above, which
+  // already keeps currentSkill in step), mirror the new level into currentSkill for whichever
+  // sub-section is currently active — same resolution formatUser uses (subSectionId, else
+  // targetSubSectionId for temporary users) — so a manual level bump doesn't drift out of sync
+  // with the per-station skill map. Users with no active sub-section (e.g. Mentors) have nothing
+  // to write into, so currentLevel alone remains the source of truth for them.
+  const stationChanged = data.stationId && data.stationId !== oldUser.stationId;
+  if (!stationChanged && data.currentLevel !== undefined && data.currentLevel && data.currentLevel !== oldUser.currentLevel) {
+    const activeSubSecId = effective.subSectionId || effective.targetSubSectionId;
+    if (activeSubSecId) {
+      const currentSkillMap = data.currentSkill !== undefined ? parseJSON(data.currentSkill, {}) : parseJSON(oldUser.currentSkill, {});
+      currentSkillMap[activeSubSecId] = data.currentLevel;
+      data.currentSkill = currentSkillMap;
+    }
+  }
+
   for (const f of fieldsToUpdate) {
     if (data[f] !== undefined) {
       if (f === "userName") {
@@ -985,6 +1004,9 @@ export const updateUser = asyncHandler(async (req, res) => {
       } else if (f === "shiftSchedule") {
         updates.push("shiftSchedule = ?");
         values.push(JSON.stringify(typeof data[f] === 'object' && data[f] !== null ? data[f] : {}));
+      } else if (f === "currentSkill") {
+        updates.push("currentSkill = ?");
+        values.push(JSON.stringify(parseJSON(data[f], {})));
       } else {
         updates.push(`${f} = ?`);
         values.push(['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f) ? (data[f] ? 1 : 0) : (data[f] === undefined ? null : data[f]));

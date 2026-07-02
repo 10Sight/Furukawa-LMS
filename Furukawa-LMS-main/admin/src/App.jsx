@@ -147,6 +147,8 @@ const StudentCertificates = lazy(() => import("./pages/Student/Certificates.jsx"
 const ResourcePreview = lazy(() => import("./pages/Student/ResourcePreview.jsx"));
 const StudentOnJobTraining = lazy(() => import("./pages/Student/OnJobTraining.jsx"));
 const StudentFeedback = lazy(() => import("./pages/Student/Feedback.jsx"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const AccessDenied = lazy(() => import("./pages/AccessDenied"));
 
 const RoleRedirect = () => {
   const { user } = useSelector((state) => state.auth);
@@ -521,6 +523,10 @@ const App = () => {
             <Route path="designations" element={<DesignationsPage />} />
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
           </Route>
+
+          {/* Fallback routes */}
+          <Route path="/access-denied" element={<AccessDenied />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
     </Router>

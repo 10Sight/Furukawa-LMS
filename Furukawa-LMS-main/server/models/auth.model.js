@@ -6,6 +6,27 @@ import crypto from "crypto";
 import ENV from "../configs/env.config.js";
 import { slugify } from "../utils/slugify.js";
 
+// Cascades NULLs down the section -> line -> subSection -> station hierarchy (and the
+// mirrored target* chain used for temporary users) on a plain object carrying those keys.
+const applyHierarchyCascade = (obj) => {
+    if (!obj.sectionId) {
+        obj.lineId = null;
+        obj.lines = [];
+    }
+    if (!obj.lineId) {
+        obj.subSectionId = null;
+        obj.subSections = [];
+    }
+    if (!obj.subSectionId) {
+        obj.stationId = null;
+        obj.stations = [];
+    }
+
+    if (!obj.targetSectionId) obj.targetLineId = null;
+    if (!obj.targetLineId) obj.targetSubSectionId = null;
+    if (!obj.targetSubSectionId) obj.targetStationId = null;
+};
+
 class User {
     constructor(data) {
         this.id = data.id;
@@ -498,6 +519,36 @@ class User {
                     WHERE u.stationId IS NULL AND u.stationNo IS NOT NULL AND u.stationNo != ''
                 `);
 
+                // 3f. Cascade NULLs down the hierarchy: if a parent is NULL, its children must be
+                // NULL too. Run as separate sequential statements rather than one UPDATE with CASE
+                // expressions -- SQL Server evaluates every SET expression in a single-table UPDATE
+                // against the pre-update row image, so a CASE checking a column set earlier in the
+                // same statement would still see its old value.
+                await executeQuery(`
+                    UPDATE users SET lineId = NULL, lines = '[]'
+                    WHERE sectionId IS NULL AND lineId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET subSectionId = NULL, subSections = '[]'
+                    WHERE lineId IS NULL AND subSectionId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET stationId = NULL, stations = '[]'
+                    WHERE subSectionId IS NULL AND stationId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET targetLineId = NULL
+                    WHERE targetSectionId IS NULL AND targetLineId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET targetSubSectionId = NULL
+                    WHERE targetLineId IS NULL AND targetSubSectionId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET targetStationId = NULL
+                    WHERE targetSubSectionId IS NULL AND targetStationId IS NOT NULL
+                `);
+
                 // 4. Sync Array Columns from ID Columns (Forward sync)
                 await executeQuery(`
                     UPDATE users SET departments = CONCAT('[', departmentId, ']')
@@ -583,6 +634,8 @@ class User {
         if (dataToInsert.subSections && Array.isArray(dataToInsert.subSections) && dataToInsert.subSections.length > 0) {
             dataToInsert.subSectionId = dataToInsert.subSectionId || parseInt(dataToInsert.subSections[0]);
         }
+
+        applyHierarchyCascade(dataToInsert);
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
@@ -904,6 +957,8 @@ class User {
         if (this.subSections && Array.isArray(this.subSections) && this.subSections.length > 0) {
             this.subSectionId = this.subSectionId || parseInt(this.subSections[0]);
         }
+
+        applyHierarchyCascade(this);
 
         // Only update fields that are defined on the instance
         const definedFields = fields.filter(field => this[field] !== undefined);

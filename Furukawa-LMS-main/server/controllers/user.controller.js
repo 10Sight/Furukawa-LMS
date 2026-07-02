@@ -39,6 +39,30 @@ const parseArray = (val) => {
 
 // --- Helpers ---
 
+// Cascades NULLs down the section -> line -> subSection -> station hierarchy (and the
+// mirrored target* chain used for temporary users) on a plain object carrying those keys.
+// Must run against the *effective* post-update state (i.e. after merging in any existing
+// values for fields the caller isn't touching), not against a raw partial request body,
+// otherwise a patch that only sends the parent field won't cascade to its children.
+const applyHierarchyCascade = (obj) => {
+  if (!obj.sectionId) {
+    obj.lineId = null;
+    if (Array.isArray(obj.lines)) obj.lines.length = 0;
+  }
+  if (!obj.lineId) {
+    obj.subSectionId = null;
+    if (Array.isArray(obj.subSections)) obj.subSections.length = 0;
+  }
+  if (!obj.subSectionId) {
+    obj.stationId = null;
+    if (Array.isArray(obj.stations)) obj.stations.length = 0;
+  }
+
+  if (!obj.targetSectionId) obj.targetLineId = null;
+  if (!obj.targetLineId) obj.targetSubSectionId = null;
+  if (!obj.targetSubSectionId) obj.targetStationId = null;
+};
+
 const handleInstructorAssignments = async (userId, departmentIds) => {
   const [departments] = await executeQuery("SELECT * FROM departments");
   const userIdStr = String(userId);
@@ -637,6 +661,12 @@ export const createUser = asyncHandler(async (req, res) => {
     data.subSectionId = parseInt(subSections[0]);
   }
 
+  // Enforce hierarchy: a NULL parent forces its children to NULL too. Aliasing the array
+  // consts onto `data` lets the cascade clear them in place, which also keeps the later
+  // machine_assignments/hierarchy-sync loops (which read `stations`/`lines`/`subSections`
+  // directly) consistent with the cleared IDs.
+  applyHierarchyCascade(Object.assign(data, { lines, subSections, stations }));
+
   // Sync department name
   let departmentName = data.department;
   if (data.departmentId) {
@@ -880,6 +910,34 @@ export const updateUser = asyncHandler(async (req, res) => {
     if (data.subSectionId !== undefined) { data.targetSubSectionId = data.subSectionId; data.subSectionId = null; }
     if (data.stationId !== undefined) { data.targetStationId = data.stationId; data.stationId = null; }
   }
+
+  // Enforce hierarchy cascade: if a parent level ends up NULL, its children must be NULL too.
+  // This is a partial-update (PATCH) endpoint, so `data` may omit fields entirely — cascade
+  // against the *effective* post-update state (falling back to oldUser for anything `data`
+  // doesn't touch), then write back only what the cascade actually changed so it's picked up
+  // by the fieldsToUpdate loop below.
+  const effective = {
+    sectionId: data.sectionId !== undefined ? data.sectionId : oldUser.sectionId,
+    lineId: data.lineId !== undefined ? data.lineId : oldUser.lineId,
+    subSectionId: data.subSectionId !== undefined ? data.subSectionId : oldUser.subSectionId,
+    stationId: data.stationId !== undefined ? data.stationId : oldUser.stationId,
+    lines: data.lines !== undefined ? parseArray(data.lines) : parseArray(oldUser.lines),
+    subSections: data.subSections !== undefined ? parseArray(data.subSections) : parseArray(oldUser.subSections),
+    stations: data.stations !== undefined ? parseArray(data.stations) : parseArray(oldUser.stations),
+    targetSectionId: data.targetSectionId !== undefined ? data.targetSectionId : oldUser.targetSectionId,
+    targetLineId: data.targetLineId !== undefined ? data.targetLineId : oldUser.targetLineId,
+    targetSubSectionId: data.targetSubSectionId !== undefined ? data.targetSubSectionId : oldUser.targetSubSectionId,
+    targetStationId: data.targetStationId !== undefined ? data.targetStationId : oldUser.targetStationId,
+  };
+  const before = { ...effective, lines: [...effective.lines], subSections: [...effective.subSections], stations: [...effective.stations] };
+  applyHierarchyCascade(effective);
+
+  if (effective.lineId !== before.lineId) { data.lineId = effective.lineId; data.lines = effective.lines; }
+  if (effective.subSectionId !== before.subSectionId) { data.subSectionId = effective.subSectionId; data.subSections = effective.subSections; }
+  if (effective.stationId !== before.stationId) { data.stationId = effective.stationId; data.stations = effective.stations; }
+  if (effective.targetLineId !== before.targetLineId) data.targetLineId = effective.targetLineId;
+  if (effective.targetSubSectionId !== before.targetSubSectionId) data.targetSubSectionId = effective.targetSubSectionId;
+  if (effective.targetStationId !== before.targetStationId) data.targetStationId = effective.targetStationId;
 
   for (const f of fieldsToUpdate) {
     if (data[f] !== undefined) {

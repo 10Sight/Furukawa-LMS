@@ -407,7 +407,7 @@ const Instructor = () => {
     try {
       const instructorData = {
         ...formData,
-        role: "INSTRUCTOR",
+        role: selectedInstructor?.role === "CUSTOM" ? "CUSTOM" : "INSTRUCTOR",
         isTrainer: true,
         isEmployee: true,
         fullName: formData.fullName.trim(),
@@ -444,7 +444,7 @@ const Instructor = () => {
       await updateTrainer({
         id: selectedInstructor._id,
         ...updateData,
-        role: "INSTRUCTOR",
+        role: selectedInstructor?.role === "CUSTOM" ? "CUSTOM" : "INSTRUCTOR",
         isTrainer: true,
       }).unwrap();
 

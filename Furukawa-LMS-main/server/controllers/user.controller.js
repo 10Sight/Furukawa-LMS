@@ -283,7 +283,6 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   let whereClauses = [
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
-    "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
   ];
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(
@@ -1375,7 +1374,6 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     "((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))",
     "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
-    "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
   ];
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(

@@ -8,11 +8,11 @@ import { SkillMatrixEvaluation } from "../models/skillMatrixEvaluation.model.js"
 import SkillMatrixDashboardConfig from "../models/skillMatrixDashboardConfig.model.js";
 import User from "../models/auth.model.js";
 import CourseLevelConfig from "../models/courseLevelConfig.model.js";
-import { 
-    calculateUserEfficiency, 
-    computeEarnedLevel, 
-    getPeriodFromDate, 
-    DEFAULT_SKILL_CONFIG 
+import {
+    calculateUserEfficiency,
+    isLevelFullyOK,
+    getPeriodFromDate,
+    DEFAULT_SKILL_CONFIG
 } from "../utils/skillMatrix.util.js";
 
 // Helper to safely parse JSON
@@ -729,14 +729,56 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
     }
 
     const studentId = existingSheet.studentId;
-    const calculatedEfficiency = calculateUserEfficiency(evalData);
-    
-    // Compute level
+
+    // Compute level config context
     const activeConfig = await CourseLevelConfig.getActiveConfig();
     const certConfig = await SkillMatrixConfig.findByDepartmentId(departmentId || 'GLOBAL');
     const skillCertConfig = certConfig?.config || DEFAULT_SKILL_CONFIG;
-    const parsedEvalData = parseJSON(evalData, {});
-    const earnedLevelName = computeEarnedLevel(parsedEvalData, skillCertConfig, activeConfig.levels) || 'L0';
+
+    // Resolve the student's current level/skill once, up-front, so we can determine
+    // which level section is "unlocked" and never trust the client for this decision.
+    const [uRows] = await executeQuery(
+        "SELECT currentLevel, currentSkill, subSectionId, targetSubSectionId FROM users WHERE id = ?", [studentId]
+    );
+    const userData = uRows[0] || null;
+    const currentGlobal = userData?.currentLevel || 'L0';
+    let skillMap = parseJSON(userData?.currentSkill, {});
+
+    const normalizeId = (id) => {
+        if (!id || id === 'undefined' || id === 'null' || id === '') return null;
+        return id;
+    };
+    const targetSubSecId = normalizeId(subSectionId) || normalizeId(userData?.subSectionId) || normalizeId(userData?.targetSubSectionId);
+    const subSecKeyForLevel = targetSubSecId ? String(targetSubSecId) : null;
+
+    const resolvedLevelName = (subSecKeyForLevel && skillMap[subSecKeyForLevel]) || currentGlobal || 'L1';
+    const currentLevelIdx = (() => {
+        const idx = (activeConfig.levels || []).findIndex(
+            l => l.name?.toUpperCase() === String(resolvedLevelName).toUpperCase()
+        );
+        return idx >= 0 ? idx : 0;
+    })();
+
+    // Whitelist incoming evalData to only the student's current level; keys for any other
+    // level are dropped and the previously-saved values for those levels are preserved as-is.
+    // This stops a tampered/forged payload from planting fake "OK" data in a level the
+    // student hasn't reached yet (which could trigger an unearned auto-upgrade later).
+    const incomingEvalData = parseJSON(evalData, {});
+    const existingEvalData = parseJSON(existingSheet.evalData, {});
+    const mergedEvalData = { ...existingEvalData };
+    for (const key of Object.keys(incomingEvalData)) {
+        if (key.split('-')[0] === String(currentLevelIdx)) {
+            mergedEvalData[key] = incomingEvalData[key];
+        }
+    }
+
+    const calculatedEfficiency = calculateUserEfficiency(mergedEvalData);
+
+    // A level upgrade only happens when every item in the student's CURRENT level is OK.
+    const hasNextLevel = currentLevelIdx + 1 < (activeConfig.levels?.length || 0);
+    const levelFullyOK = isLevelFullyOK(mergedEvalData, skillCertConfig, currentLevelIdx);
+    const nextLevelObj = hasNextLevel ? activeConfig.levels.find(l => l.order === currentLevelIdx + 1) : null;
+    const earnedLevelName = (levelFullyOK && nextLevelObj) ? nextLevelObj.name : 'L0';
 
     const updatedBy = req.user.id;
     const evaluation = await SkillMatrixEvaluation.upsert({
@@ -745,7 +787,7 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
         departmentId,
         headerData,
         docData,
-        evalData,
+        evalData: mergedEvalData,
         opinion,
         updatedBy,
         sheetIndex: existingSheet.sheetIndex,
@@ -758,7 +800,7 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
     let levelUpgraded = false;
     let newLevel = null;
 
-    const hasEvalData = Object.keys(parsedEvalData).length > 0;
+    const hasEvalData = Object.keys(mergedEvalData).length > 0;
 
     // Only update student stats and sync matrix if this sheet is active AND has evaluated data.
     // Saving an empty active sheet must not overwrite the operator's current efficiency/level.
@@ -792,28 +834,15 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
 
         // Level upgrade sync
         try {
-            if (earnedLevelName) {
-                const [uRows] = await executeQuery(
-                    "SELECT currentLevel, currentSkill, subSectionId, targetSubSectionId FROM users WHERE id = ?", [studentId]
-                );
-                if (uRows.length > 0) {
-                    const userData = uRows[0];
-                    const currentGlobal = userData.currentLevel || 'L0';
-                    
+            if (earnedLevelName && userData) {
+                {
                     const currentLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === currentGlobal.toUpperCase());
                     const currentLevelOrder = currentLevelObj ? currentLevelObj.order : -1;
 
                     const earnedLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === earnedLevelName.toUpperCase());
                     const earnedLevelOrder = earnedLevelObj ? earnedLevelObj.order : -1;
 
-                    let skillMap = parseJSON(userData.currentSkill, {});
                     let skillMapChanged = false;
-
-                    const normalizeId = (id) => {
-                        if (!id || id === 'undefined' || id === 'null' || id === '') return null;
-                        return id;
-                    };
-                    const targetSubSecId = normalizeId(subSectionId) || normalizeId(userData.subSectionId) || normalizeId(userData.targetSubSectionId);
 
                     if (targetSubSecId) {
                         const subSecKey = String(targetSubSecId);

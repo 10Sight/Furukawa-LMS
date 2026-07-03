@@ -258,6 +258,8 @@ const SkillMatrixCertificate = ({
     const [currentSheetIndex, setCurrentSheetIndex] = useState(1);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [activeStandardTooltip, setActiveStandardTooltip] = useState(null);
+    const [studentCurrentLevel, setStudentCurrentLevel] = useState(null);
+    const [studentSkillMap, setStudentSkillMap] = useState({});
 
     useEffect(() => {
         if (activeStandardTooltip === null) return;
@@ -282,6 +284,16 @@ const SkillMatrixCertificate = ({
     const activeConfig = activeConfigData?.data;
     const displayLevels = activeConfig?.levels || [];
     const maxLevels = displayLevels.length;
+
+    // Resolve which level section is unlocked for editing: prefer the subSection-specific
+    // skill level, fall back to the student's global level, default to index 0 if unresolvable.
+    const resolvedLevelName = (subSectionId && studentSkillMap?.[subSectionId]) || studentCurrentLevel || 'L1';
+    const currentLevelIdx = (() => {
+        const match = displayLevels.findIndex(
+            l => l.name?.toUpperCase() === String(resolvedLevelName).toUpperCase()
+        );
+        return match >= 0 ? match : 0;
+    })();
 
     // Load configs
     useEffect(() => {
@@ -318,6 +330,8 @@ const SkillMatrixCertificate = ({
                         trainee: studentName || prev.trainee,
                         employeeNo: user.empId || employeeCode || prev.employeeNo
                     }));
+                    setStudentCurrentLevel(user.currentLevel || null);
+                    setStudentSkillMap(user.currentSkill || {});
                 } else {
                     setHeaderData(prev => ({
                         ...prev,
@@ -546,16 +560,12 @@ const SkillMatrixCertificate = ({
         return items.every((item, iIdx) => isItemFilled(sIdx, item, iIdx));
     };
 
-    const hasOneCompleteLevel = () => {
-        const levelCount = maxLevels || Object.keys(skillConfig.levels || {}).length;
-        return Array.from({ length: levelCount }, (_, i) => i).some(isLevelComplete);
-    };
-
     const handleSave = async (triggerEmail = false) => {
         if (!studentId || !selectedSheetId) return;
 
-        if (!hasOneCompleteLevel()) {
-            toast.error("Please fill in every item of at least one full level before saving.");
+        if (!isLevelComplete(currentLevelIdx)) {
+            const levelName = displayLevels[currentLevelIdx]?.name || `Level ${currentLevelIdx + 1}`;
+            toast.error(`Please complete all items in your current level (${levelName}) before saving.`);
             return;
         }
 
@@ -569,7 +579,8 @@ const SkillMatrixCertificate = ({
                 evalData,
                 opinion,
                 sendEmail: triggerEmail,
-                period: currentPeriod
+                period: currentPeriod,
+                currentLevelIdx
             };
             const response = await axiosInstance.put(`/api/skill-matrix/evaluation/sheet/${selectedSheetId}/save`, payload);
             toast.success(triggerEmail ? "Evaluation saved and email sent successfully" : "Evaluation saved successfully");
@@ -1073,17 +1084,25 @@ const SkillMatrixCertificate = ({
 
                                 const filledCount = items.filter((item, iIdx) => isItemFilled(sIdx, item, iIdx)).length;
                                 const levelDone = items.length > 0 && filledCount === items.length;
+                                const isCurrentLevelSection = sIdx === currentLevelIdx;
+                                const sectionEditable = isEditable && isCurrentLevelSection;
 
                                 return (
-                                    <div key={sIdx} className="border-b last:border-b-0 border-black">
+                                    <div key={sIdx} className={`border-b last:border-b-0 border-black ${isEditable && !isCurrentLevelSection ? 'bg-gray-50 opacity-70' : ''}`}>
                                         {/* Section Title */}
                                         <div className="flex border-b border-black bg-gray-50/50 p-2 items-center gap-2">
                                             <LevelIcon level={sIdx + 1} maxLevels={maxLevels} size={24} />
                                             <span className="font-bold text-sm">{sIdx + 1} : {levelContent.title}</span>
                                             {items.length > 0 && isEditable && (
-                                                <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print ${levelDone ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-                                                    {levelDone ? 'Complete' : `${filledCount}/${items.length} filled`}
-                                                </span>
+                                                isCurrentLevelSection ? (
+                                                    <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print ${levelDone ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                        {levelDone ? 'Complete' : `${filledCount}/${items.length} filled`}
+                                                    </span>
+                                                ) : (
+                                                    <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print bg-gray-200 text-gray-500">
+                                                        Locked — not current level
+                                                    </span>
+                                                )
                                             )}
                                         </div>
 
@@ -1146,7 +1165,7 @@ const SkillMatrixCertificate = ({
                                                                         placeholder="..."
                                                                         value={currentData.actualSec || ''}
                                                                         onChange={e => handleEvalChange(sIdx, iIdx, 'actualSec', e.target.value)}
-                                                                        disabled={!isEditable}
+                                                                        disabled={!sectionEditable}
                                                                     />
                                                                 </div>
                                                                 <div className="flex flex-col">
@@ -1157,7 +1176,7 @@ const SkillMatrixCertificate = ({
                                                                         placeholder="..."
                                                                         value={currentData.targetSec || ''}
                                                                         onChange={e => handleEvalChange(sIdx, iIdx, 'targetSec', e.target.value)}
-                                                                        disabled={!isEditable}
+                                                                        disabled={!sectionEditable}
                                                                     />
                                                                 </div>
                                                             </div>
@@ -1168,7 +1187,7 @@ const SkillMatrixCertificate = ({
                                                                 placeholder="..."
                                                                 value={currentData.standardText || ''}
                                                                 onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
-                                                                disabled={!isEditable}
+                                                                disabled={!sectionEditable}
                                                             />
                                                         )}
                                                     </div>
@@ -1177,7 +1196,7 @@ const SkillMatrixCertificate = ({
                                                             className={`w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400 ${isSpeedCell ? 'cursor-not-allowed bg-gray-100 text-gray-500' : ''}`}
                                                             value={currentData.standard || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
-                                                            disabled={!isEditable || isSpeedCell}
+                                                            disabled={!sectionEditable || isSpeedCell}
                                                             title={isSpeedCell ? 'Auto-calculated from efficiency, cannot be changed manually' : undefined}
                                                         >
                                                             <option value="">Select</option>
@@ -1203,7 +1222,7 @@ const SkillMatrixCertificate = ({
                                                             rows={3}
                                                             value={currentData.reEducation || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'reEducation', e.target.value)}
-                                                            disabled={!isEditable}
+                                                            disabled={!sectionEditable}
                                                         ></textarea>
                                                     </div>
                                                 </div>

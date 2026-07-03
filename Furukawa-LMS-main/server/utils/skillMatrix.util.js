@@ -62,6 +62,15 @@ export const computeEarnedLevel = (evalData, _skillCertConfig, activeConfigLevel
     return null;
 };
 
+// Checks whether every item in a given level index has been evaluated as 'OK'.
+// Used to gate level-up decisions to "the whole level was passed", not just one speed item.
+export const isLevelFullyOK = (evalData, skillCertConfig, levelIdx) => {
+    if (!evalData || levelIdx === null || levelIdx === undefined) return false;
+    const items = skillCertConfig?.levels?.[levelIdx]?.items;
+    if (!items || items.length === 0) return false;
+    return items.every((_, iIdx) => evalData[`${levelIdx}-${iIdx}`]?.standard === 'OK');
+};
+
 export const getPeriodFromDate = (date = new Date()) => {
     const d = new Date(date);
     const year = d.getFullYear();

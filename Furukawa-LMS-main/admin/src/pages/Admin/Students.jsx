@@ -158,12 +158,16 @@ const Students = () => {
       const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
       const isAdminLayout = ['admin', 'superadmin'].includes(layout);
       if (!isAdminLayout) return true;
-      // Admin-layout custom users are restricted if they have explicitly assigned departments
+      // Admin-layout custom users are restricted if they have explicitly assigned departments or sections
       const allowedDepts = [...new Set([
         currentUser.departmentId ? String(currentUser.departmentId) : null,
         ...(Array.isArray(currentUser.departments) ? currentUser.departments.map(String) : [])
       ])].filter(Boolean);
-      return allowedDepts.length > 0;
+      const allowedSections = [...new Set([
+        currentUser.sectionId ? String(currentUser.sectionId) : null,
+        ...(Array.isArray(currentUser.sections) ? currentUser.sections.map(String) : [])
+      ])].filter(Boolean);
+      return allowedDepts.length > 0 || allowedSections.length > 0;
     }
     return false;
   }, [currentUser]);
@@ -454,24 +458,39 @@ const Students = () => {
       if (allowedDepts.length > 0) {
         return departments.filter(d => allowedDepts.includes(String(d._id || d.id)));
       }
-      // No assigned departments: admin-layout sees all, non-admin layout sees none
-      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
-      return ['admin', 'superadmin'].includes(layout) ? departments : [];
+      // No assigned departments: fall back to all departments
+      return departments;
     }
     return departments;
   }, [departments, currentUser]);
+
+  const allowedSectionsList = useMemo(() => {
+    if (!currentUser) return [];
+    let allowed = [];
+    if (currentUser.sectionId) allowed.push(String(currentUser.sectionId));
+    const sectList = Array.isArray(currentUser.sections) ? currentUser.sections : [];
+    sectList.forEach(s => allowed.push(String(s)));
+    return [...new Set(allowed)].filter(Boolean);
+  }, [currentUser]);
+
+  const availableSections = useMemo(() => {
+    const rawSections = filterSections;
+    if (currentUser?.role === 'CUSTOM' && allowedSectionsList.length > 0) {
+      return rawSections.filter(s => allowedSectionsList.includes(String(s.id || s._id)));
+    }
+    return rawSections;
+  }, [filterSections, currentUser, allowedSectionsList]);
 
   // Pre-populate filters for restricted users once departments load
   useEffect(() => {
     if (!isRestrictedUser || !availableDepartments.length) return;
     setFilters(prev => {
       if (prev.departmentId !== "") return prev;
-      const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
-      const sectId = currentUser?.sectionId ? String(currentUser.sectionId) : "";
-      if (!deptId && !sectId) return prev;
-      return { ...prev, departmentId: deptId, sectionId: sectId };
+      const deptIdsStr = availableDepartments.map(d => String(d._id || d.id)).join(",");
+      const sectIdsStr = allowedSectionsList.length > 0 ? allowedSectionsList.join(",") : "";
+      return { ...prev, departmentId: deptIdsStr, sectionId: sectIdsStr };
     });
-  }, [isRestrictedUser, availableDepartments, currentUser]);
+  }, [isRestrictedUser, availableDepartments, allowedSectionsList]);
 
   // Filter options for reusable components
   const statusOptions = [
@@ -1506,10 +1525,10 @@ const Students = () => {
 
   const clearFilters = () => {
     const defaultDeptId = isRestrictedUser && availableDepartments.length > 0
-      ? String(availableDepartments[0]._id || availableDepartments[0].id)
+      ? availableDepartments.map(d => String(d._id || d.id)).join(",")
       : "";
-    const defaultSectId = isRestrictedUser && currentUser?.sectionId
-      ? String(currentUser.sectionId)
+    const defaultSectId = isRestrictedUser && allowedSectionsList.length > 0
+      ? allowedSectionsList.join(",")
       : "";
     setFilters({
       status: "",
@@ -1983,14 +2002,14 @@ const Students = () => {
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Section</label>
               <MultiSelectFilter
                 placeholder="All Sections"
-                options={filterSections.map(s => ({ id: String(s.id), name: s.name }))}
+                options={availableSections.map(s => ({ id: String(s.id), name: s.name }))}
                 selectedValues={filters.sectionId ? filters.sectionId.split(",").filter(Boolean) : []}
                 onChange={(vals) => setFilters({
                   ...filters,
                   sectionId: vals.join(","),
                   lineId: "", subSectionId: "", stationId: ""
                 })}
-                disabled={!filters.departmentId || (isRestrictedUser && !!currentUser?.sectionId)}
+                disabled={!filters.departmentId || (isRestrictedUser && availableSections.length <= 1)}
               />
             </div>
 

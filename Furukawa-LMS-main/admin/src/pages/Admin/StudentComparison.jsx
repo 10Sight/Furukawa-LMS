@@ -454,9 +454,16 @@ const StudentComparison = () => {
         {/* Grid 1: Manpower present in both Excel and Database */}
         <Card>
           <CardHeader className="flex flex-col gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Matched Manpower</h2>
-              <p className="text-sm text-gray-500">Present in the Excel sheet and already in the database.</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Matched Manpower</h2>
+                <p className="text-sm text-gray-500">Present in the Excel sheet and already in the database.</p>
+              </div>
+              {hasUploadedFile && !isLoadingDb && (
+                <Badge variant="outline" className="whitespace-nowrap">
+                  {matchedUsers.length} {matchedUsers.length === 1 ? "User" : "Users"}
+                </Badge>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -524,10 +531,17 @@ const StudentComparison = () => {
                 <h2 className="text-lg font-semibold text-gray-900">Missing From Excel</h2>
                 <p className="text-sm text-gray-500">Exist in the database but not present in the uploaded sheet.</p>
               </div>
-              <Button variant="outline" onClick={loadDbStudents} disabled={isLoadingDb}>
-                {isLoadingDb ? <IconLoader2 className="h-4 w-4 mr-2 animate-spin" /> : <IconRefresh className="h-4 w-4 mr-2" />}
-                Refresh
-              </Button>
+              <div className="flex items-center gap-2">
+                {hasUploadedFile && !isLoadingDb && (
+                  <Badge variant="outline" className="whitespace-nowrap">
+                    {missingUsers.length} {missingUsers.length === 1 ? "User" : "Users"}
+                  </Badge>
+                )}
+                <Button variant="outline" onClick={loadDbStudents} disabled={isLoadingDb}>
+                  {isLoadingDb ? <IconLoader2 className="h-4 w-4 mr-2 animate-spin" /> : <IconRefresh className="h-4 w-4 mr-2" />}
+                  Refresh
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>

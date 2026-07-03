@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -240,6 +240,14 @@ const SkillMatrixCertificate = ({
     const [traineeSuggestions, setTraineeSuggestions] = useState([]);
     const [showTraineeSuggestions, setShowTraineeSuggestions] = useState(false);
     const [isSearchingTrainee, setIsSearchingTrainee] = useState(false);
+    const traineeSearchTimeoutRef = useRef(null);
+
+    // Clear any pending debounced trainee search on unmount
+    useEffect(() => {
+        return () => {
+            if (traineeSearchTimeoutRef.current) clearTimeout(traineeSearchTimeoutRef.current);
+        };
+    }, []);
 
     // Multi-sheet State
     const [sheets, setSheets] = useState([]);
@@ -610,34 +618,39 @@ const SkillMatrixCertificate = ({
         }
     };
 
-    const handleTraineeChange = async (value) => {
+    const handleTraineeChange = (value) => {
         setHeaderData(prev => ({ ...prev, trainee: value }));
 
+        if (traineeSearchTimeoutRef.current) clearTimeout(traineeSearchTimeoutRef.current);
+
         if (!value.trim() || value.length < 2) {
+            setIsSearchingTrainee(false);
             setTraineeSuggestions([]);
             setShowTraineeSuggestions(false);
             return;
         }
 
-        try {
-            setIsSearchingTrainee(true);
-            const response = await axiosInstance.get('/api/users/students', {
-                params: {
-                    search: value,
-                    page: 1,
-                    limit: 10,
-                    includeTemporary: "true",
-                    ojtApprovedToday: "true"
-                }
-            });
-            const list = response.data?.data?.users || [];
-            setTraineeSuggestions(list);
-            setShowTraineeSuggestions(list.length > 0);
-        } catch (err) {
-            console.error("Failed to search trainees:", err);
-        } finally {
-            setIsSearchingTrainee(false);
-        }
+        setIsSearchingTrainee(true);
+        traineeSearchTimeoutRef.current = setTimeout(async () => {
+            try {
+                const response = await axiosInstance.get('/api/users/students', {
+                    params: {
+                        search: value,
+                        page: 1,
+                        limit: 10,
+                        includeTemporary: "true",
+                        ojtApprovedToday: "true"
+                    }
+                });
+                const list = response.data?.data?.users || [];
+                setTraineeSuggestions(list);
+                setShowTraineeSuggestions(list.length > 0);
+            } catch (err) {
+                console.error("Failed to search trainees:", err);
+            } finally {
+                setIsSearchingTrainee(false);
+            }
+        }, 500);
     };
 
     const handleSelectTrainee = (student) => {
@@ -829,7 +842,8 @@ const SkillMatrixCertificate = ({
                                         disabled={!isEditable}
                                     />
                                     {isSearchingTrainee && (
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-gray-400">
+                                            <Loader2 className="h-3 w-3 animate-spin" />
                                             Searching...
                                         </div>
                                     )}

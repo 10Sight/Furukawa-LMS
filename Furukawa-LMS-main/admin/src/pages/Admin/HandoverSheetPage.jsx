@@ -195,7 +195,7 @@ const HandoverSheetPage = () => {
     const canDelete = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:delete');
 
     const [searchParams, setSearchParams] = useSearchParams();
-    const [activeTab, setActiveTab] = useState('sheets');
+    const [activeTab, setActiveTab] = useState(searchParams.get('subTab') || 'sheets');
 
     if (!hasReadPermission) {
         return (
@@ -230,14 +230,30 @@ const HandoverSheetPage = () => {
     });
 
     useEffect(() => {
-        const params = { tab: activeTab };
+        const subTabParam = searchParams.get('subTab');
+        if (subTabParam && subTabParam !== activeTab) {
+            setActiveTab(subTabParam);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams.get('subTab')]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(searchParams);
+        params.set('subTab', activeTab);
         if (sheetMode && activeSheet) {
-            params.mode = sheetMode;
-            if (activeSheet.id) params.sheetId = activeSheet.id;
-            if (activeSheet.departmentId) params.dept = activeSheet.departmentId;
-            if (activeSheet.sectionId) params.section = activeSheet.sectionId;
-            if (activeSheet.shift) params.shift = activeSheet.shift;
-            if (activeSheet.date) params.date = activeSheet.date;
+            params.set('mode', sheetMode);
+            if (activeSheet.id) params.set('sheetId', activeSheet.id); else params.delete('sheetId');
+            if (activeSheet.departmentId) params.set('dept', activeSheet.departmentId); else params.delete('dept');
+            if (activeSheet.sectionId) params.set('section', activeSheet.sectionId); else params.delete('section');
+            if (activeSheet.shift) params.set('shift', activeSheet.shift); else params.delete('shift');
+            if (activeSheet.date) params.set('date', activeSheet.date); else params.delete('date');
+        } else {
+            params.delete('mode');
+            params.delete('sheetId');
+            params.delete('dept');
+            params.delete('section');
+            params.delete('shift');
+            params.delete('date');
         }
         setSearchParams(params, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps

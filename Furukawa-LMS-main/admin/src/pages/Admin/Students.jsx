@@ -87,6 +87,7 @@ import {
   IconCalendar,
   IconCheck,
   IconClock,
+  IconArrowsLeftRight,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -1934,6 +1935,15 @@ const Students = () => {
                 Import Operators
               </Button>
             )}
+
+            <Button
+              variant="outline"
+              onClick={() => navigate(`comparison`)}
+              className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+            >
+              <IconArrowsLeftRight className="h-4 w-4 mr-2" />
+              Comparison
+            </Button>
 
             <Button
               onClick={() => {

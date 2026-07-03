@@ -48,6 +48,7 @@ const EditModulePage = lazy(() => import("./pages/Admin/EditModulePage"));
 const AddCourse = lazy(() => import("./pages/Admin/AddCourse"));
 const Departments = lazy(() => import("./pages/Admin/Departments"));
 const Students = lazy(() => import("./pages/Admin/Students"));
+const StudentComparison = lazy(() => import("./pages/Admin/StudentComparison"));
 const DepartmentDetail = lazy(() => import("./pages/Admin/DepartmentDetail"));
 const LineDetail = lazy(() => import("./pages/Admin/LineDetail"));
 const SubSectionDetail = lazy(() => import("./pages/Admin/SubSectionDetail"));
@@ -247,6 +248,7 @@ const App = () => {
             <Route path="departments" element={<Departments pageName="Departments" />} />
             <Route path="employees" element={<Students pageName="Employees" />} />
             <Route path="employees/import-logs" element={<OperatorImportLogs />} />
+            <Route path="employees/comparison" element={<StudentComparison />} />
             <Route path="employees/:studentId" element={<StudentDetail />} />
             <Route path="departments/:departmentId" element={<DepartmentDetail pageName="Department Detail" />} />
             <Route path="departments/:departmentId/lines/:lineId" element={<LineDetail />} />
@@ -409,6 +411,7 @@ const App = () => {
             <Route path="trainers/:id" element={<InstructorDetail />} />
             <Route path="employees" element={<Students pageName="Employees" />} />
             <Route path="employees/import-logs" element={<OperatorImportLogs />} />
+            <Route path="employees/comparison" element={<StudentComparison />} />
             <Route path="employees/:studentId" element={<StudentDetail />} />
             <Route path="soft-deleted-users" element={<SoftDeletedUsersManagement />} />
             <Route path="roles-permissions" element={<RolesPermissions />} />
@@ -492,8 +495,10 @@ const App = () => {
             <Route path="departments/:departmentId/lines/:lineId/sub-sections/:subSectionId" element={<SubSectionDetail />} />
             <Route path="departments/:departmentId/lines/:lineId/sub-sections/:subSectionId/machines/:machineId" element={<MachineDetail />} />
             <Route path="employees" element={<Students pageName="Trainees" />} />
+            <Route path="employees/comparison" element={<StudentComparison />} />
             <Route path="employees/:studentId" element={<StudentDetail />} />
             <Route path="trainees" element={<Students pageName="Trainees" />} />
+            <Route path="trainees/comparison" element={<StudentComparison />} />
             <Route path="trainees/:studentId" element={<StudentDetail />} />
             <Route path="trainers/:id" element={<InstructorDetail />} />
             <Route path="dojo-hiring/:studentId" element={<DojoCandidateDetail />} />

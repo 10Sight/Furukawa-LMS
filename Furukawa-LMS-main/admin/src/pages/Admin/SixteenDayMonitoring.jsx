@@ -59,11 +59,9 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
         const managePerm = permissions.includes('sixteen_day:manage') || permissions.includes('three_day:manage');
         const editLayoutPerm = permissions.includes('sixteen_day:edit_layout') || permissions.includes('three_day:edit_layout');
 
-        const isSubject = authUser?.isEmployee ||
-            authUser?.role === 'STUDENT' ||
+        const isSubject = authUser?.role === 'STUDENT' ||
             (authUser?.role === 'CUSTOM' && authUser.customRole?.targetLayout === 'operator') ||
-            (authUser?.role === 'CUSTOM' && !editLayoutPerm && !managePerm && !isAdmin &&
-                authUser.customRole?.targetLayout !== 'admin' && authUser.customRole?.targetLayout !== 'trainer');
+            (authUser?.role !== 'CUSTOM' && authUser?.role !== 'ADMIN' && authUser?.role !== 'SUPERADMIN' && authUser?.role !== 'INSTRUCTOR' && authUser?.isEmployee);
 
         const canManageFeedback = permissions.includes('mentee_feedback:manage') || isAdmin;
 

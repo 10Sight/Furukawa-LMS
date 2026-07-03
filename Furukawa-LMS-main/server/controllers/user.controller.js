@@ -521,26 +521,30 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   );
   const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
-  const [countsData] = await executeQuery(`
-    SELECT 
-      SUM(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as presentCount,
-      SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as absentCount,
-      SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
-      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
-      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
-      AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
-    FROM users u 
-    ${getHierarchyJoinSQL} 
-    ${attendanceJoinSQL}
-    ${countsWhereSQL}
-  `, [...attendanceParams, ...params]); // We use the same params as the filters built so far
+  let presentCount = 0, absentCount = 0, leftCount = 0, presentEfficiency = 0, overallEfficiency = 0, systemEfficiency = 0;
 
-  const presentCount = countsData[0]?.presentCount || 0;
-  const absentCount = countsData[0]?.absentCount || 0;
-  const leftCount = countsData[0]?.leftCount || 0;
-  const presentEfficiency = countsData[0]?.presentEfficiency || 0;
-  const overallEfficiency = countsData[0]?.overallEfficiency || 0;
-  const systemEfficiency = countsData[0]?.systemEfficiency || 0;
+  if (req.query.excludeCounts !== "true") {
+    const [countsData] = await executeQuery(`
+      SELECT
+        SUM(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as presentCount,
+        SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as absentCount,
+        SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
+        AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
+        AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
+        AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
+      FROM users u
+      ${getHierarchyJoinSQL}
+      ${attendanceJoinSQL}
+      ${countsWhereSQL}
+    `, [...attendanceParams, ...params]); // We use the same params as the filters built so far
+
+    presentCount = countsData[0]?.presentCount || 0;
+    absentCount = countsData[0]?.absentCount || 0;
+    leftCount = countsData[0]?.leftCount || 0;
+    presentEfficiency = countsData[0]?.presentEfficiency || 0;
+    overallEfficiency = countsData[0]?.overallEfficiency || 0;
+    systemEfficiency = countsData[0]?.systemEfficiency || 0;
+  }
   // ----------------------------------------------------------
 
   const [cnt] = await executeQuery(`

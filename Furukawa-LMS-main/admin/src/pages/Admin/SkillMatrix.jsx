@@ -167,8 +167,14 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [evalLine, setEvalLine] = useState("");
     const [evalSubSection, setEvalSubSection] = useState("");
     const [evalSearchText, setEvalSearchText] = useState("");
+    const [debouncedEvalSearchText, setDebouncedEvalSearchText] = useState("");
     const [evalOperatorsPage, setEvalOperatorsPage] = useState(1);
     const evalOperatorsPerPage = 30;
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedEvalSearchText(evalSearchText), 500);
+        return () => clearTimeout(timer);
+    }, [evalSearchText]);
 
     // Observance Finder State
     const [observanceDepartment, setObservanceDepartment] = useState("");
@@ -177,10 +183,16 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [observanceSubSection, setObservanceSubSection] = useState("");
     const [observanceStation, setObservanceStation] = useState("");
     const [observanceSearchText, setObservanceSearchText] = useState("");
+    const [debouncedObservanceSearchText, setDebouncedObservanceSearchText] = useState("");
     const [selectedOperatorForObservance, setSelectedOperatorForObservance] = useState(null);
     const [observanceSummaryMap, setObservanceSummaryMap] = useState({});
     const [observanceOperatorsPage, setObservanceOperatorsPage] = useState(1);
     const observanceOperatorsPerPage = 30;
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedObservanceSearchText(observanceSearchText), 500);
+        return () => clearTimeout(timer);
+    }, [observanceSearchText]);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -242,7 +254,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const { data: evalSubSectionsData } = useGetSubSectionsByLineQuery(evalLine, { skip: !evalLine });
 
     // Fetch users for evaluation search based on evaluation hierarchy
-    const { data: evalUsersData } = useGetAllUsersQuery({
+    const { data: evalUsersData, isFetching: isEvalUsersFetching } = useGetAllUsersQuery({
         departmentId: evalDepartment || undefined,
         sectionId: evalSection || undefined,
         lineId: evalLine || undefined,
@@ -250,23 +262,17 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         role: "STUDENT,CUSTOM",
         includeTemporary: "true",
         includeEvaluationInfo: "true",
+        search: debouncedEvalSearchText || undefined,
+        excludeCounts: "true",
         limit: 1000
     }, { skip: !evalDepartment });
 
-    // Client-side filter for searched users
     const filteredEvalUsers = React.useMemo(() => {
-        let users = evalUsersData?.data?.users || [];
-        if (evalSearchText.trim()) {
-            const searchLower = evalSearchText.toLowerCase();
-            users = users.filter(u =>
-                (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-                (u.cardNo || u.empId || "").toLowerCase().includes(searchLower)
-            );
-        }
+        const users = evalUsersData?.data?.users || [];
         return [...users].sort((a, b) =>
             (a.fullName || a.name || "").localeCompare(b.fullName || b.name || "", undefined, { sensitivity: 'base' })
         );
-    }, [evalUsersData, evalSearchText]);
+    }, [evalUsersData]);
 
     const evalOperatorsTotalPages = Math.max(1, Math.ceil(filteredEvalUsers.length / evalOperatorsPerPage));
 
@@ -304,28 +310,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     }, [observanceDepartment, observanceSection, observanceLine, observanceSubSection, obsMachinesBySubSectionData, obsMachinesByLineData, obsMachinesBySectionData, obsMachinesByDepartmentData]);
 
     // Fetch users for observance search based on observance hierarchy
-    const { data: observanceUsersData } = useGetAllUsersQuery({
+    const { data: observanceUsersData, isFetching: isObservanceUsersFetching } = useGetAllUsersQuery({
         departmentId: observanceDepartment || undefined,
         sectionId: observanceSection || undefined,
         lineId: observanceLine || undefined,
         subSectionId: observanceSubSection || undefined,
         role: "STUDENT,CUSTOM",
         includeTemporary: "true",
+        search: debouncedObservanceSearchText || undefined,
+        excludeCounts: "true",
         limit: 1000
     }, { skip: !observanceDepartment });
 
-    // Client-side filter and station filtering for searched observance users
+    // Client-side station filtering for observance users (search is server-side)
     const filteredObservanceUsers = React.useMemo(() => {
         let users = observanceUsersData?.data?.users || [];
-
-        // Filter by search text
-        if (observanceSearchText.trim()) {
-            const searchLower = observanceSearchText.toLowerCase();
-            users = users.filter(u =>
-                (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-                (u.cardNo || u.empId || "").toLowerCase().includes(searchLower)
-            );
-        }
 
         // Filter by selected station if selected
         if (observanceStation && observanceStation !== "All" && observanceStation !== "undefined") {
@@ -339,7 +338,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         }
 
         return users;
-    }, [observanceUsersData, observanceSearchText, observanceStation]);
+    }, [observanceUsersData, observanceStation]);
 
     const observanceOperatorsTotalPages = Math.max(1, Math.ceil(filteredObservanceUsers.length / observanceOperatorsPerPage));
 
@@ -2432,7 +2431,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {paginatedEvalUsers.length === 0 ? (
+                                    {isEvalUsersFetching ? (
+                                        <tr>
+                                            <td colSpan={7} className="text-center py-10">
+                                                <IconLoader className="animate-spin h-6 w-6 mx-auto text-gray-400" />
+                                            </td>
+                                        </tr>
+                                    ) : paginatedEvalUsers.length === 0 ? (
                                         <tr>
                                             <td colSpan={7} className="text-center py-10 text-gray-400 italic">
                                                 No operators found matching the criteria.
@@ -2676,7 +2681,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {paginatedObservanceUsers.length === 0 ? (
+                                    {isObservanceUsersFetching ? (
+                                        <tr>
+                                            <td colSpan={8} className="text-center py-10">
+                                                <IconLoader className="animate-spin h-6 w-6 mx-auto text-gray-400" />
+                                            </td>
+                                        </tr>
+                                    ) : paginatedObservanceUsers.length === 0 ? (
                                         <tr>
                                             <td colSpan={8} className="text-center py-10 text-gray-400 italic">
                                                 No operators found matching the criteria.

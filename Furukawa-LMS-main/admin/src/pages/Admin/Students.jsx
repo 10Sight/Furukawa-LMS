@@ -1786,9 +1786,11 @@ const Students = () => {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <TabsList className="grid grid-cols-5 w-full sm:w-auto">
+            {/* All */}
             <TabsTrigger value="all" onClick={() => clearFilters()}>
               All
             </TabsTrigger>
+            {/* Present */}
             <TabsTrigger
               value="active"
               onClick={() => {
@@ -1799,26 +1801,7 @@ const Students = () => {
             >
               Present
             </TabsTrigger>
-            <TabsTrigger
-              value="assigned"
-              onClick={() => {
-                clearFilters();
-                setActiveTab("assigned");
-                setCurrentPage(1);
-              }}
-            >
-              Assigned
-            </TabsTrigger>
-            <TabsTrigger
-              value="unassigned"
-              onClick={() => {
-                clearFilters();
-                setActiveTab("unassigned");
-                setCurrentPage(1);
-              }}
-            >
-              Unassigned
-            </TabsTrigger>
+                        {/* Left Operators  */}
             <TabsTrigger
               value="left"
               onClick={() => {
@@ -1829,6 +1812,28 @@ const Students = () => {
               }}
             >
               Left Operators
+            </TabsTrigger>
+            {/* Assigned */}
+            <TabsTrigger
+              value="assigned"
+              onClick={() => {
+                clearFilters();
+                setActiveTab("assigned");
+                setCurrentPage(1);
+              }}
+            >
+              Assigned
+            </TabsTrigger>
+            {/* Unassigned */}
+            <TabsTrigger
+              value="unassigned"
+              onClick={() => {
+                clearFilters();
+                setActiveTab("unassigned");
+                setCurrentPage(1);
+              }}
+            >
+              Unassigned
             </TabsTrigger>
           </TabsList>
 

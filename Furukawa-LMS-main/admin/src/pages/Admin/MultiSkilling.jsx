@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     Select,
@@ -18,7 +18,8 @@ import {
     IconArrowLeft,
     IconEye,
     IconCalendarTime,
-    IconCalendar
+    IconCalendar,
+    IconLoader
 } from "@tabler/icons-react";
 import MultiSkillingPlan from '@/components/departments/MultiSkillingPlan';
 
@@ -162,33 +163,34 @@ const MultiSkilling = () => {
     const [evalLine, setEvalLine] = useState("");
     const [evalSubSection, setEvalSubSection] = useState("");
     const [evalSearchText, setEvalSearchText] = useState("");
+    const [debouncedEvalSearchText, setDebouncedEvalSearchText] = useState("");
     const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedEvalSearchText(evalSearchText), 500);
+        return () => clearTimeout(timer);
+    }, [evalSearchText]);
 
     // Queries for Skill Evaluation Operator Finder
     const { data: evalSectionsData } = useGetSectionsByDepartmentQuery(evalDepartment, { skip: !evalDepartment });
     const { data: evalLinesData } = useGetLinesBySectionQuery(evalSection, { skip: !evalSection });
     const { data: evalSubSectionsData } = useGetSubSectionsByLineQuery(evalLine, { skip: !evalLine });
 
-    const { data: evalUsersData } = useGetAllUsersQuery({
+    const { data: evalUsersData, isFetching: isEvalUsersFetching } = useGetAllUsersQuery({
         departmentId: evalDepartment || undefined,
         sectionId: evalSection || undefined,
         lineId: evalLine || undefined,
         subSectionId: evalSubSection || undefined,
         role: "STUDENT,CUSTOM",
         includeTemporary: "true",
+        search: debouncedEvalSearchText || undefined,
+        excludeCounts: "true",
         limit: 1000
     }, { skip: !evalDepartment });
 
-    // Client-side filter for searched operators list
     const filteredEvalUsers = useMemo(() => {
-        const users = evalUsersData?.data?.users || [];
-        if (!evalSearchText.trim()) return users;
-        const searchLower = evalSearchText.toLowerCase();
-        return users.filter(u =>
-            (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-            (u.cardNo || "").toLowerCase().includes(searchLower)
-        );
-    }, [evalUsersData, evalSearchText]);
+        return evalUsersData?.data?.users || [];
+    }, [evalUsersData]);
 
     return (
         <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
@@ -503,16 +505,22 @@ const MultiSkilling = () => {
                             <Select
                                 value={selectedOperatorForEval || ""}
                                 onValueChange={setSelectedOperatorForEval}
-                                disabled={!evalDepartment || filteredEvalUsers.length === 0}
+                                disabled={!evalDepartment || isEvalUsersFetching || filteredEvalUsers.length === 0}
                             >
                                 <SelectTrigger className="h-9">
-                                    <SelectValue placeholder={
-                                        !evalDepartment
-                                            ? "Please select a department first"
-                                            : filteredEvalUsers.length === 0
-                                                ? "No operators found matching the criteria"
-                                                : "Select an operator"
-                                    } />
+                                    {isEvalUsersFetching ? (
+                                        <span className="flex items-center gap-2 text-slate-500">
+                                            <IconLoader className="animate-spin h-4 w-4" /> Loading operators...
+                                        </span>
+                                    ) : (
+                                        <SelectValue placeholder={
+                                            !evalDepartment
+                                                ? "Please select a department first"
+                                                : filteredEvalUsers.length === 0
+                                                    ? "No operators found matching the criteria"
+                                                    : "Select an operator"
+                                        } />
+                                    )}
                                 </SelectTrigger>
                                 <SelectContent>
                                     {filteredEvalUsers.map(u => (

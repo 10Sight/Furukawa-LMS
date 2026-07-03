@@ -254,7 +254,48 @@ const DojoHiring = () => {
     };
 
     const allUsers = tempUsersData?.data?.users || [];
+    const totalPages = tempUsersData?.data?.totalPages || 1;
     const isAllSelected = allUsers.length > 0 && selectedRows.size === allUsers.length;
+
+    const [goToPageInput, setGoToPageInput] = useState("");
+
+    const getPageNumbers = () => {
+        const delta = 2;
+        const range = [];
+        const rangeWithDots = [];
+        let last;
+
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+                range.push(i);
+            }
+        }
+
+        range.forEach((i) => {
+            if (last) {
+                if (i - last === 2) {
+                    rangeWithDots.push(last + 1);
+                } else if (i - last !== 1) {
+                    rangeWithDots.push("...");
+                }
+            }
+            rangeWithDots.push(i);
+            last = i;
+        });
+
+        return rangeWithDots;
+    };
+
+    const handleGoToPage = (e) => {
+        e.preventDefault();
+        const pageNum = parseInt(goToPageInput, 10);
+        if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+            setCurrentPage(pageNum);
+            setGoToPageInput("");
+        } else {
+            toast.error(`Enter a page number between 1 and ${totalPages}`);
+        }
+    };
 
     const toggleSelectAll = () => {
         if (isAllSelected) {
@@ -853,7 +894,7 @@ const DojoHiring = () => {
                                                     )}
                                                 </TableCell>
                                                 <TableCell className="pr-6 text-right" onClick={(e) => e.stopPropagation()}>
-                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <div className="flex justify-end gap-1">
                                                         {canUpdate && (
                                                             <Button
                                                                 variant="ghost"
@@ -903,32 +944,70 @@ const DojoHiring = () => {
                 </CardContent>
             </Card>
 
-            {/* Pagination Placeholder (similar to Students.jsx) */}
-            <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-400 text-sm font-medium">
-                    Showing <span className="text-slate-900 font-bold">{(currentPage - 1) * 10 + 1}</span> to <span className="text-slate-900 font-bold">{Math.min(currentPage * 10, tempUsersData?.data?.totalUsers || 0)}</span> of <span className="text-slate-900 font-bold">{tempUsersData?.data?.totalUsers || 0}</span> entries
-                </p>
-                <div className="flex gap-2">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        disabled={currentPage === 1}
-                        onClick={() => setCurrentPage(prev => prev - 1)}
-                        className="rounded-lg border-slate-200"
-                    >
-                        Previous
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        disabled={currentPage >= (tempUsersData?.data?.totalPages || 1)}
-                        onClick={() => setCurrentPage(prev => prev + 1)}
-                        className="rounded-lg border-slate-200"
-                    >
-                        Next
-                    </Button>
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div className="flex flex-col items-center gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                    <p className="text-sm text-slate-500 font-medium">
+                        Showing <span className="text-slate-900 font-bold">{allUsers.length}</span> of{" "}
+                        <span className="text-slate-900 font-bold">{tempUsersData?.data?.totalUsers || 0}</span> candidates
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(currentPage - 1)}
+                            className="rounded-lg border-slate-200"
+                        >
+                            Previous
+                        </Button>
+                        {getPageNumbers().map((page, idx) =>
+                            page === "..." ? (
+                                <span
+                                    key={`dots-${idx}`}
+                                    className="px-2 text-sm text-muted-foreground select-none"
+                                >
+                                    ...
+                                </span>
+                            ) : (
+                                <Button
+                                    key={page}
+                                    variant={page === currentPage ? "default" : "outline"}
+                                    size="sm"
+                                    className="w-9 px-0"
+                                    onClick={() => setCurrentPage(page)}
+                                >
+                                    {page}
+                                </Button>
+                            )
+                        )}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(currentPage + 1)}
+                            className="rounded-lg border-slate-200"
+                        >
+                            Next
+                        </Button>
+                    </div>
+                    <form onSubmit={handleGoToPage} className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Go to page</span>
+                        <Input
+                            type="number"
+                            min={1}
+                            max={totalPages}
+                            value={goToPageInput}
+                            onChange={(e) => setGoToPageInput(e.target.value)}
+                            className="h-8 w-20"
+                            placeholder={String(currentPage)}
+                        />
+                        <Button type="submit" variant="outline" size="sm">
+                            Go
+                        </Button>
+                    </form>
                 </div>
-            </div>
+            )}
         </TabsContent>
 
             <TabsContent value="testPaper" className="space-y-6">

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
 import {
@@ -9,19 +9,17 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import SearchInput from "@/components/common/SearchInput";
 import {
     IconArrowLeft,
-    IconSearch,
     IconUsers,
     IconLoader,
-    IconChevronLeft,
-    IconChevronRight,
+    IconArrowUp,
 } from "@tabler/icons-react";
 
-const PAGE_SIZE = 20;
+const CHUNK_SIZE = 30;
 
 const DesignationUsersPage = () => {
     const { designationName } = useParams();
@@ -30,23 +28,78 @@ const DesignationUsersPage = () => {
 
     const [search, setSearch] = useState("");
     const [page, setPage] = useState(1);
+    const [users, setUsers] = useState([]);
+    const [showScrollTop, setShowScrollTop] = useState(false);
 
-    const { data: response, isLoading, isError } = useGetAllUsersQuery({
+    const sentinelRef = useRef(null);
+    const isFetchingRef = useRef(false);
+
+    const { data: response, isLoading, isFetching, isError } = useGetAllUsersQuery({
         designation,
         search,
         page,
-        limit: PAGE_SIZE,
+        limit: CHUNK_SIZE,
         excludeAdmins: "true",
     });
 
-    const users = response?.data?.users || [];
     const totalUsers = response?.data?.totalUsers || 0;
     const totalPages = response?.data?.totalPages || 1;
+    const hasMore = page < totalPages;
 
-    const handleSearchChange = (e) => {
-        setSearch(e.target.value);
+    useEffect(() => {
+        isFetchingRef.current = isFetching;
+    }, [isFetching]);
+
+    // Reset the accumulated list whenever the (debounced) search term changes
+    useEffect(() => {
         setPage(1);
+        setUsers([]);
+    }, [search, designation]);
+
+    // Append each newly fetched chunk onto the accumulated list, skipping any ids already present
+    useEffect(() => {
+        if (!response?.data?.users) return;
+        setUsers((prev) => {
+            if (page === 1) return response.data.users;
+            const seen = new Set(prev.map((u) => u._id || u.id));
+            const newOnes = response.data.users.filter((u) => !seen.has(u._id || u.id));
+            return [...prev, ...newOnes];
+        });
+    }, [response, page]);
+
+    // Load the next chunk once the sentinel at the bottom of the list scrolls into view.
+    // Reads isFetching via a ref (rather than as a dependency) so the observer isn't torn
+    // down and recreated on every fetch — that recreation used to re-fire immediately for
+    // an already-visible sentinel and over-eagerly load pages ahead of actual scroll position.
+    useEffect(() => {
+        if (!hasMore) return;
+        const sentinel = sentinelRef.current;
+        if (!sentinel) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && !isFetchingRef.current) {
+                    setPage((p) => p + 1);
+                }
+            },
+            { rootMargin: "100px" }
+        );
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [hasMore]);
+
+    // Toggle the "scroll to top" button based on page scroll position
+    useEffect(() => {
+        const handleScroll = () => setShowScrollTop(window.scrollY > 100);
+        window.addEventListener("scroll", handleScroll);
+        return () => window.removeEventListener("scroll", handleScroll);
+    }, []);
+
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
     };
+
+    const isInitialLoading = isLoading && page === 1 && users.length === 0;
+    const isLoadingMore = isFetching && page > 1;
 
     const getStatusBadge = (user) => {
         if (user.status === "LEFT") {
@@ -77,7 +130,7 @@ const DesignationUsersPage = () => {
             </div>
 
             {/* Stats row */}
-            {!isLoading && !isError && (
+            {!isInitialLoading && !isError && (
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                     <IconUsers size={16} />
                     <span>
@@ -87,15 +140,12 @@ const DesignationUsersPage = () => {
             )}
 
             {/* Search */}
-            <div className="relative w-full max-w-sm">
-                <IconSearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <Input
-                    className="pl-9"
-                    placeholder="Search by name, username, or emp ID..."
-                    value={search}
-                    onChange={handleSearchChange}
-                />
-            </div>
+            <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search by name, username, or emp ID..."
+                className="max-w-sm"
+            />
 
             {/* Table */}
             <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
@@ -111,7 +161,7 @@ const DesignationUsersPage = () => {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {isLoading && (
+                        {isInitialLoading && (
                             <TableRow>
                                 <TableCell colSpan={6} className="text-center py-16">
                                     <div className="flex flex-col items-center gap-2 text-gray-400">
@@ -130,7 +180,7 @@ const DesignationUsersPage = () => {
                             </TableRow>
                         )}
 
-                        {!isLoading && !isError && users.length === 0 && (
+                        {!isInitialLoading && !isError && users.length === 0 && (
                             <TableRow>
                                 <TableCell colSpan={6} className="text-center py-16">
                                     <div className="flex flex-col items-center gap-2 text-gray-400">
@@ -145,14 +195,14 @@ const DesignationUsersPage = () => {
                             </TableRow>
                         )}
 
-                        {!isLoading && !isError && users.map((user, idx) => (
+                        {!isInitialLoading && !isError && users.map((user, idx) => (
                             <TableRow
                                 key={user._id || user.id}
                                 className="cursor-pointer hover:bg-gray-50 transition-colors"
                                 onClick={() => navigate(`/admin/employees/${user._id || user.id}`)}
                             >
                                 <TableCell className="text-center text-gray-400 text-sm">
-                                    {(page - 1) * PAGE_SIZE + idx + 1}
+                                    {idx + 1}
                                 </TableCell>
                                 <TableCell>
                                     <div>
@@ -176,38 +226,35 @@ const DesignationUsersPage = () => {
                         ))}
                     </TableBody>
                 </Table>
+
+                {/* Sentinel: loading the next chunk fires when this scrolls into view */}
+                {!isInitialLoading && !isError && hasMore && (
+                    <div ref={sentinelRef} className="flex items-center justify-center py-6">
+                        {isLoadingMore && (
+                            <div className="flex items-center gap-2 text-gray-400 text-sm">
+                                <IconLoader size={18} className="animate-spin" />
+                                Loading more...
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
-            {/* Pagination */}
-            {!isLoading && !isError && totalPages > 1 && (
-                <div className="flex items-center justify-between text-sm text-gray-500">
-                    <span>
-                        Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalUsers)} of {totalUsers}
-                    </span>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={page === 1}
-                            onClick={() => setPage(p => p - 1)}
-                        >
-                            <IconChevronLeft size={16} />
-                            Prev
-                        </Button>
-                        <span className="px-2">
-                            Page {page} of {totalPages}
-                        </span>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={page === totalPages}
-                            onClick={() => setPage(p => p + 1)}
-                        >
-                            Next
-                            <IconChevronRight size={16} />
-                        </Button>
-                    </div>
-                </div>
+            {!isInitialLoading && !isError && users.length > 0 && (
+                <p className="text-center text-sm text-gray-400">
+                    Showing {users.length} of {totalUsers} operators
+                </p>
+            )}
+
+            {/* Scroll to top */}
+            {showScrollTop && (
+                <button
+                    onClick={scrollToTop}
+                    className="fixed bottom-6 right-6 z-50 flex items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition-all"
+                    title="Scroll to top"
+                >
+                    <IconArrowUp size={20} />
+                </button>
             )}
         </div>
     );

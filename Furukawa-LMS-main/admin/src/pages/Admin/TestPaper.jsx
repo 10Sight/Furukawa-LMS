@@ -26,7 +26,7 @@ import {
   IconTrash
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { useSelector } from "react-redux";
@@ -35,9 +35,38 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import AdminQuizMonitoring from "./QuizMonitoring";
 import CertificateTemplates from "./CertificateTemplates";
 
+const VALID_TEST_PAPER_TABS = ["testPaper", "testMonitoring", "certificateTemplates"];
+
 const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, skillUpgradation: forceSkillUpgradation }) => {
   const navigate = useNavigate();
   const currentUser = useSelector((state) => state.auth.user);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Use a dedicated `testPaperTab` param (instead of `tab`) so this component's own
+  // internal tabs never collide with the parent page's `tab` param when embedded
+  // inside SkillMatrix / MultiSkilling / DojoHiring (which each already own `?tab=`).
+  const [activeTestPaperTab, setActiveTestPaperTab] = useState(() => {
+    const tabFromUrl = searchParams.get('testPaperTab');
+    return VALID_TEST_PAPER_TABS.includes(tabFromUrl) ? tabFromUrl : "testPaper";
+  });
+
+  const handleTestPaperTabChange = (tab) => {
+    setActiveTestPaperTab(tab);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('testPaperTab', tab);
+      return next;
+    }, { replace: true });
+  };
+
+  // Keep activeTestPaperTab in sync with the URL (e.g. browser back/forward, deep links)
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('testPaperTab');
+    if (VALID_TEST_PAPER_TABS.includes(tabFromUrl) && tabFromUrl !== activeTestPaperTab) {
+      setActiveTestPaperTab(tabFromUrl);
+    }
+  }, [searchParams]);
 
   const hasPermission = (permission) => {
     if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
@@ -471,7 +500,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Standard Admin/Student UI
   return (
-    <Tabs defaultValue="testPaper" className="w-full space-y-6">
+    <Tabs value={activeTestPaperTab} onValueChange={handleTestPaperTabChange} className="w-full space-y-6">
       <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
         <TabsTrigger value="testPaper" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
           Test Paper

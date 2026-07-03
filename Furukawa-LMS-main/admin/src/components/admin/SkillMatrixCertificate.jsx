@@ -91,7 +91,7 @@ const DEFAULT_SKILL_CONFIG = {
                 },
                 {
                     id: 3, text: "Whether his operation in charge is no more than 74%",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 },
                 {
                     id: 4, text: "The operation method is correct with the standard or not",
@@ -120,7 +120,7 @@ const DEFAULT_SKILL_CONFIG = {
                 },
                 {
                     id: 2, text: "Whether his operation in charge is at least 75%?",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 },
                 {
                     id: 3, text: "Whether he can report the abnormality (Andon) correctly?",
@@ -136,7 +136,7 @@ const DEFAULT_SKILL_CONFIG = {
             title: "Able to operation by himself (Speed & operation as the standard is OK)", items: [
                 {
                     id: 1, text: "Whether he can operate in the standard time?",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 },
                 {
                     id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?",
@@ -178,7 +178,7 @@ const DEFAULT_SKILL_CONFIG = {
                 },
                 {
                     id: 6, text: "Whether he can operate in the standard time?",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 }]
         }
 
@@ -507,51 +507,55 @@ const SkillMatrixCertificate = ({
         }
     };
 
-    const isEvaluationEmpty = () => {
-        const levelKeys = [0, 1, 2, 3];
-        for (const sIdx of levelKeys) {
-            const levelContent = skillConfig.levels?.[sIdx];
-            if (!levelContent || !levelContent.items) continue;
+    const getIsSpeedCell = (sIdx, item) => {
+        if (item.isSpeedCell !== undefined) return item.isSpeedCell;
+        // Fallback for configs saved before the explicit flag existed
+        return (
+            (sIdx === 0 && item.id === 3) ||
+            (sIdx === 1 && item.id === 2) ||
+            (sIdx === 2 && item.id === 1) ||
+            (sIdx === 3 && item.id === 6)
+        );
+    };
 
-            for (let iIdx = 0; iIdx < levelContent.items.length; iIdx++) {
-                const itemKey = `${sIdx}-${iIdx}`;
-                const data = evalData[itemKey];
-                if (data) {
-                    const item = levelContent.items[iIdx];
-                    const isSpeedCell = (
-                        (sIdx === 0 && item.id === 3) ||
-                        (sIdx === 1 && item.id === 2) ||
-                        (sIdx === 2 && item.id === 1) ||
-                        (sIdx === 3 && item.id === 6)
-                    );
+    const isItemFilled = (sIdx, item, iIdx) => {
+        const data = evalData[`${sIdx}-${iIdx}`];
+        if (!data) return false;
 
-                    if (isSpeedCell) {
-                        if (
-                            (data.actualSec && String(data.actualSec).trim() !== '') ||
-                            (data.targetSec && String(data.targetSec).trim() !== '') ||
-                            (data.standard && data.standard.trim() !== '')
-                        ) {
-                            return false;
-                        }
-                    } else {
-                        if (
-                            (data.standardText && data.standardText.trim() !== '') ||
-                            (data.standard && data.standard.trim() !== '')
-                        ) {
-                            return false;
-                        }
-                    }
-                }
+        if (getIsSpeedCell(sIdx, item)) {
+            const hasTimes = !!(data.actualSec && String(data.actualSec).trim() !== '') &&
+                !!(data.targetSec && String(data.targetSec).trim() !== '');
+            if (!hasTimes) return false;
+            if (data.standard === 'NG') {
+                return !!(data.reEducation && data.reEducation.trim() !== '');
             }
+            return true;
+        }
+
+        const baseFilled = !!(data.standard && data.standard.trim() !== '');
+        if (!baseFilled) return false;
+        if (data.standard === 'NG') {
+            return !!(data.reEducation && data.reEducation.trim() !== '');
         }
         return true;
+    };
+
+    const isLevelComplete = (sIdx) => {
+        const items = skillConfig.levels?.[sIdx]?.items;
+        if (!items || items.length === 0) return false;
+        return items.every((item, iIdx) => isItemFilled(sIdx, item, iIdx));
+    };
+
+    const hasOneCompleteLevel = () => {
+        const levelCount = maxLevels || Object.keys(skillConfig.levels || {}).length;
+        return Array.from({ length: levelCount }, (_, i) => i).some(isLevelComplete);
     };
 
     const handleSave = async (triggerEmail = false) => {
         if (!studentId || !selectedSheetId) return;
 
-        if (isEvaluationEmpty()) {
-            toast.error("Cannot save an empty sheet. Please fill at least one evaluation item.");
+        if (!hasOneCompleteLevel()) {
+            toast.error("Please fill in every item of at least one full level before saving.");
             return;
         }
 
@@ -669,12 +673,8 @@ const SkillMatrixCertificate = ({
             const existing = prev[itemKey] || {};
             const updated = { ...existing, [field]: value };
 
-            const isSpeedCell = (
-                (levelIdx === 0 && itemIdx === 2) ||
-                (levelIdx === 1 && itemIdx === 1) ||
-                (levelIdx === 2 && itemIdx === 0) ||
-                (levelIdx === 3 && itemIdx === 5)
-            );
+            const itemConfig = skillConfig.levels?.[levelIdx]?.items?.[itemIdx];
+            const isSpeedCell = itemConfig ? getIsSpeedCell(levelIdx, itemConfig) : false;
 
             if (isSpeedCell) {
                 const act = parseFloat(field === 'actualSec' ? value : updated.actualSec);
@@ -1071,12 +1071,20 @@ const SkillMatrixCertificate = ({
                                 const levelContent = skillConfig.levels?.[sIdx] || { title: section.description || section.name, items: [] };
                                 const items = levelContent.items || [];
 
+                                const filledCount = items.filter((item, iIdx) => isItemFilled(sIdx, item, iIdx)).length;
+                                const levelDone = items.length > 0 && filledCount === items.length;
+
                                 return (
                                     <div key={sIdx} className="border-b last:border-b-0 border-black">
                                         {/* Section Title */}
                                         <div className="flex border-b border-black bg-gray-50/50 p-2 items-center gap-2">
                                             <LevelIcon level={sIdx + 1} maxLevels={maxLevels} size={24} />
                                             <span className="font-bold text-sm">{sIdx + 1} : {levelContent.title}</span>
+                                            {items.length > 0 && isEditable && (
+                                                <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print ${levelDone ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                    {levelDone ? 'Complete' : `${filledCount}/${items.length} filled`}
+                                                </span>
+                                            )}
                                         </div>
 
                                         {/* Table Header for this level */}
@@ -1109,12 +1117,7 @@ const SkillMatrixCertificate = ({
                                         {items.length > 0 ? items.map((item, iIdx) => {
                                             const itemKey = `${sIdx}-${iIdx}`;
                                             const currentData = evalData[itemKey] || {};
-                                            const isSpeedCell = (
-                                                (sIdx === 0 && item.id === 3) ||
-                                                (sIdx === 1 && item.id === 2) ||
-                                                (sIdx === 2 && item.id === 1) ||
-                                                (sIdx === 3 && item.id === 6)
-                                            );
+                                            const isSpeedCell = getIsSpeedCell(sIdx, item);
                                             return (
                                                 <div key={iIdx} className="flex border-b border-black last:border-b-0">
                                                     <div className="w-[50px] p-2 border-r border-black text-center flex items-center justify-center">{item.id || iIdx + 1}</div>

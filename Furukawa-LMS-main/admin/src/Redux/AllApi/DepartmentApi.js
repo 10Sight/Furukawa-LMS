@@ -53,11 +53,23 @@ export const departmentApi = createApi({
         }),
 
         getAllDepartments: builder.query({
-            query: ({ page = 1, limit = 20, search = "" } = {}) => ({
+            query: ({ page = 1, limit = 30, search = "", status = "" } = {}) => ({
                 url: "/api/departments",
                 method: "GET",
-                params: { page, limit, search }
+                params: { page, limit, search, status }
             }),
+            serializeQueryArgs: ({ queryArgs }) => {
+                const { search = "", status = "" } = queryArgs || {};
+                return { search, status };
+            },
+            merge: (currentCache, newData, { arg }) => {
+                if (!arg || arg.page === 1) {
+                    return newData;
+                }
+                currentCache.data.departments.push(...newData.data.departments);
+                currentCache.data.currentPage = newData.data.currentPage;
+            },
+            forceRefetch: ({ currentArg, previousArg }) => currentArg?.page !== previousArg?.page,
             providesTags: ['Department'],
         }),
 

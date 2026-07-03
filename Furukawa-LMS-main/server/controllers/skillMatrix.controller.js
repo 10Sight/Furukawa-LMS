@@ -218,7 +218,15 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
 
                         if (entry.stations && Array.isArray(entry.stations)) {
                             entry.stations.forEach(s => {
-                                const levelStr = s.curr || "L-1";
+                                // Skip stations with no real level assigned yet. handleSave on the
+                                // frontend submits the ENTIRE visible matrix (every row currently on
+                                // screen), not just the row the admin actually edited. Defaulting an
+                                // empty/unset curr to "L-1" here used to certify every other user in
+                                // the batch at Level 1 and overwrite their currentLevel/currentSkill,
+                                // even though nobody touched their data.
+                                if (!s.curr || s.curr === '-' || s.curr === 'L-0') return;
+
+                                const levelStr = s.curr;
                                 const stationIdStr = String(s.machineId || "");
                                 const subSectionIdStr = machineSubSectionMap[stationIdStr];
                                 const weight = getLevelWeight(levelStr, activeLevels);

@@ -179,7 +179,6 @@ const Students = () => {
   };
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const navigate = useNavigate();
   const location = useLocation();
@@ -307,14 +306,10 @@ const Students = () => {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isImporting]);
 
-  // Debounce search term to prevent excessive API calls
+  // SearchInput already debounces internally before calling setSearchTerm,
+  // so just reset to the first page whenever the (already-debounced) term changes.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      setCurrentPage(1); // Reset to first page when searching
-    }, 500);
-
-    return () => clearTimeout(timer);
+    setCurrentPage(1);
   }, [searchTerm]);
 
 
@@ -365,8 +360,8 @@ const Students = () => {
   } = useGetAllStudentsQuery(
     {
       page: currentPage,
-      limit: 10,
-      search: debouncedSearchTerm || "",
+      limit: 30,
+      search: searchTerm || "",
       status: filters.status,
       unit: filters.unit,
       departmentId: filters.departmentId,
@@ -447,6 +442,47 @@ const Students = () => {
   const students = studentsData?.data?.users || [];
   const totalPages = studentsData?.data?.totalPages || 1;
   const departments = departmentsData?.data?.departments || [];
+
+  // Centered pagination with ellipses (e.g. 1, 2, 3 ... 245, 246, 247)
+  const [goToPageInput, setGoToPageInput] = useState("");
+
+  const getPageNumbers = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    let last;
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    range.forEach((i) => {
+      if (last) {
+        if (i - last === 2) {
+          rangeWithDots.push(last + 1);
+        } else if (i - last !== 1) {
+          rangeWithDots.push("...");
+        }
+      }
+      rangeWithDots.push(i);
+      last = i;
+    });
+
+    return rangeWithDots;
+  };
+
+  const handleGoToPage = (e) => {
+    e.preventDefault();
+    const pageNum = parseInt(goToPageInput, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum);
+      setGoToPageInput("");
+    } else {
+      showToast("error", `Enter a page number between 1 and ${totalPages}`);
+    }
+  };
 
   const availableDepartments = useMemo(() => {
     if (currentUser?.role === 'CUSTOM') {
@@ -556,6 +592,35 @@ const Students = () => {
   const filteredStudents = useMemo(() => {
     return students;
   }, [students]);
+
+  // Lazily render rows as the user scrolls, instead of mounting the whole page at once
+  const [visibleCount, setVisibleCount] = useState(10);
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    setVisibleCount(10);
+  }, [currentPage, filters, searchTerm, activeTab]);
+
+  useEffect(() => {
+    if (visibleCount >= filteredStudents.length) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 10, filteredStudents.length));
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleCount, filteredStudents.length]);
+
+  const visibleStudents = useMemo(
+    () => filteredStudents.slice(0, visibleCount),
+    [filteredStudents, visibleCount]
+  );
 
   // Toast helpers to prevent spam
   const showToast = useCallback(
@@ -895,7 +960,7 @@ const Students = () => {
         ? {
             isAllSelected: true,
             filters: {
-              search: debouncedSearchTerm,
+              search: searchTerm,
               status: filters.status,
               unit: filters.unit,
               departmentId: filters.departmentId,
@@ -943,7 +1008,7 @@ const Students = () => {
         ? {
             isAllSelected: true,
             filters: {
-              search: debouncedSearchTerm,
+              search: searchTerm,
               status: filters.status,
               unit: filters.unit,
               departmentId: filters.departmentId,
@@ -1172,7 +1237,7 @@ const Students = () => {
         const result = await triggerGetAllStudents({
           page,
           limit: PAGE_SIZE,
-          search: debouncedSearchTerm || "",
+          search: searchTerm || "",
           status: filters.status,
           unit: filters.unit,
           departmentId: filters.departmentId,
@@ -2333,7 +2398,7 @@ const Students = () => {
             </TableHeader>
             <TableBody>
               {filteredStudents.length > 0 ? (
-                filteredStudents.map((student) => (
+                visibleStudents.map((student) => (
                   <TableRow
                     key={student._id}
                     className="group hover:bg-muted/30 cursor-pointer"
@@ -2555,7 +2620,18 @@ const Students = () => {
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
+              ) : null}
+              {filteredStudents.length > 0 && visibleCount < filteredStudents.length && (
+                <TableRow ref={sentinelRef}>
+                  <TableCell colSpan={10} className="text-center py-4">
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <IconLoader className="h-4 w-4 animate-spin" />
+                      Loading more...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+              {filteredStudents.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={10} className="text-center py-10">
                     <div className="flex flex-col items-center space-y-3">
@@ -2588,12 +2664,12 @@ const Students = () => {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col items-center gap-3">
           <p className="text-sm text-muted-foreground">
             Showing {filteredStudents.length} of{" "}
             {studentsData?.data?.totalUsers || 0} employees
           </p>
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap items-center justify-center gap-1">
             <Button
               variant="outline"
               size="sm"
@@ -2602,9 +2678,26 @@ const Students = () => {
             >
               Previous
             </Button>
-            <div className="flex items-center justify-center px-4 text-sm">
-              Page {currentPage} of {totalPages}
-            </div>
+            {getPageNumbers().map((page, idx) =>
+              page === "..." ? (
+                <span
+                  key={`dots-${idx}`}
+                  className="px-2 text-sm text-muted-foreground select-none"
+                >
+                  ...
+                </span>
+              ) : (
+                <Button
+                  key={page}
+                  variant={page === currentPage ? "default" : "outline"}
+                  size="sm"
+                  className="w-9 px-0"
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </Button>
+              )
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -2614,6 +2707,21 @@ const Students = () => {
               Next
             </Button>
           </div>
+          <form onSubmit={handleGoToPage} className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Go to page</span>
+            <Input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={goToPageInput}
+              onChange={(e) => setGoToPageInput(e.target.value)}
+              className="h-8 w-20"
+              placeholder={String(currentPage)}
+            />
+            <Button type="submit" variant="outline" size="sm">
+              Go
+            </Button>
+          </form>
         </div>
       )}
 

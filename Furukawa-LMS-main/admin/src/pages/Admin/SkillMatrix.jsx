@@ -52,6 +52,18 @@ const normalizeLevel = (levelStr) => {
     return levelStr.replace('-', '');
 };
 
+const VALID_SKILL_MATRIX_TABS = [
+    "handoverSheet",
+    "sixteenDayMonitoring",
+    "skillUpgradation",
+    "ojt",
+    "testPaper",
+    "cycle10",
+    "evaluation",
+    "skillMatrix",
+    "observance",
+];
+
 const getLevelWeight = (levelStr) => {
     if (!levelStr) return 0;
     const match = levelStr.match(/\d+/);
@@ -84,7 +96,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const isEmbeddedView = isEmbedded === true || isEmbedded === "true";
     const componentRef = useRef();
     const tableRef = useRef(null);
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [isGeneratingImage, setIsGeneratingImage] = useState(false);
     const [selectedDepartment, setSelectedDepartment] = useState("");
     const [selectedSection, setSelectedSection] = useState("");
@@ -94,7 +106,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [selectedMonth, setSelectedMonth] = useState("");
     const [selectedLevel, setSelectedLevel] = useState("All");
     const [isMatrixOpen, setIsMatrixOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState(isEmbeddedView ? "skillMatrix" : "handoverSheet");
+    const [activeTab, setActiveTab] = useState(() => {
+        if (isEmbeddedView) return "skillMatrix";
+        const tabFromUrl = searchParams.get('tab');
+        return VALID_SKILL_MATRIX_TABS.includes(tabFromUrl) ? tabFromUrl : "handoverSheet";
+    });
+
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+        if (isEmbeddedView) return;
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', tab);
+            return next;
+        }, { replace: true });
+    };
     const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
     const [evaluationSheets, setEvaluationSheets] = useState([]);
     const [selectedSheetId, setSelectedSheetId] = useState(null);
@@ -444,6 +470,15 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
             setIsMatrixOpen(true);
         }
     }, [searchParams]);
+
+    // Keep activeTab in sync with the URL (e.g. browser back/forward, deep links)
+    useEffect(() => {
+        if (isEmbeddedView) return;
+        const tabFromUrl = searchParams.get('tab');
+        if (VALID_SKILL_MATRIX_TABS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+            setActiveTab(tabFromUrl);
+        }
+    }, [searchParams, isEmbeddedView]);
 
     useEffect(() => {
         if (selectedDepartment) {
@@ -1191,7 +1226,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 `}
             </style>
 
-            <ConditionalTabs isEmbedded={isEmbeddedView} activeTab={activeTab} setActiveTab={setActiveTab}>
+            <ConditionalTabs isEmbedded={isEmbeddedView} activeTab={activeTab} setActiveTab={handleTabChange}>
                 {!isEmbeddedView && (
                     <TabsList className="no-print mb-6 flex gap-2 w-fit bg-gray-100 p-1.5 rounded-lg shadow-sm border border-gray-200">
                         <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Handover Sheet</TabsTrigger>
@@ -1942,7 +1977,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                                 setEvalLine(selectedLine);
                                                                                 setEvalSubSection(selectedSubSection);
                                                                                 setSelectedOperatorForEval(entry._id);
-                                                                                setActiveTab("evaluation");
+                                                                                handleTabChange("evaluation");
                                                                             }
                                                                         }}
                                                                         className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full whitespace-normal break-words"
@@ -2191,7 +2226,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 <h2 className="text-lg font-bold text-gray-800">Operator Evaluation Finder</h2>
                                 <p className="text-xs text-gray-500">Filter and select an operator to view/edit their skill certificate</p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => setActiveTab("skillMatrix")}>
+                            <Button variant="outline" size="sm" onClick={() => handleTabChange("skillMatrix")}>
                                 Back to Matrix Grid
                             </Button>
                         </div>
@@ -2527,7 +2562,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 <h2 className="text-lg font-bold text-gray-800">Operator Observance Finder</h2>
                                 <p className="text-xs text-gray-500">Filter and select an operator to view/edit their observance sheet</p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => setActiveTab("skillMatrix")}>
+                            <Button variant="outline" size="sm" onClick={() => handleTabChange("skillMatrix")}>
                                 Back to Matrix Grid
                             </Button>
                         </div>

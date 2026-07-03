@@ -567,7 +567,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     ${marksJoinSQL}
     ${evalJoinSQL}
     ${whereSQL}
-    ORDER BY u.createdAt DESC
+    ORDER BY u.createdAt DESC, u.id DESC
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...attendanceParams, ...params, offset, limit]);
 

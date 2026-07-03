@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     Select,
@@ -41,12 +42,43 @@ import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
 import { useGetSubSectionsByLineQuery } from '@/Redux/AllApi/SubSectionApi';
 import { useGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 
+const VALID_MULTI_SKILLING_TABS = [
+    "planCalendar",
+    "ojt",
+    "testPaper",
+    "daily5m",
+    "cycle10",
+    "threeDay",
+    "evaluation",
+    "skillMatrix",
+];
+
 const MultiSkilling = () => {
 
+    const [searchParams, setSearchParams] = useSearchParams();
 
+    // Active Tab State (defaults to 'planCalendar', restored from ?tab= in URL)
+    const [activeTab, setActiveTab] = useState(() => {
+        const tabFromUrl = searchParams.get('tab');
+        return VALID_MULTI_SKILLING_TABS.includes(tabFromUrl) ? tabFromUrl : "planCalendar";
+    });
 
-    // Active Tab State (defaults to 'planCalendar')
-    const [activeTab, setActiveTab] = useState("planCalendar");
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', tab);
+            return next;
+        }, { replace: true });
+    };
+
+    // Keep activeTab in sync with the URL (e.g. browser back/forward, deep links)
+    useEffect(() => {
+        const tabFromUrl = searchParams.get('tab');
+        if (VALID_MULTI_SKILLING_TABS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+            setActiveTab(tabFromUrl);
+        }
+    }, [searchParams]);
 
     // Plan Calander Hierarchy Selections
     const [dept, setDept] = useState("");
@@ -208,7 +240,7 @@ const MultiSkilling = () => {
             </div>
 
             {/* Tabbed Navigation Menu */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
                 <TabsList className="no-print mb-6 flex flex-wrap gap-2 w-fit bg-slate-100 p-1.5 rounded-xl shadow-sm border border-slate-200">
                     <TabsTrigger value="planCalendar" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">Plan Calander</TabsTrigger>
                     <TabsTrigger value="ojt" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">OJT</TabsTrigger>
@@ -413,7 +445,7 @@ const MultiSkilling = () => {
                                 <h2 className="text-lg font-bold text-slate-800">Operator Evaluation Finder</h2>
                                 <p className="text-xs text-slate-500 font-medium">Filter and select an operator to view/edit their skill certificate</p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => setActiveTab("planCalendar")} className="border-slate-200">
+                            <Button variant="outline" size="sm" onClick={() => handleTabChange("planCalendar")} className="border-slate-200">
                                 Back to Plan Calander
                             </Button>
                         </div>
@@ -565,7 +597,7 @@ const MultiSkilling = () => {
                             setEvalLine(lineId);
                             setEvalSubSection(subSectId);
                             setSelectedOperatorForEval(operatorId);
-                            setActiveTab("evaluation");
+                            handleTabChange("evaluation");
                         }}
                     />
                 </TabsContent>

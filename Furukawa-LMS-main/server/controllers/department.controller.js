@@ -317,11 +317,20 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 1000);
     const offset = (page - 1) * limit;
     const search = req.query.search || "";
+    const status = req.query.status || "";
     let whereSql = "WHERE 1=1";
     let params = [];
     if (search) {
         whereSql += " AND name LIKE ?";
         params.push(`%${search}%`);
+    }
+    if (status === "HAS_INSTRUCTOR") {
+        whereSql += " AND instructor IS NOT NULL";
+    } else if (status === "NO_INSTRUCTOR") {
+        whereSql += " AND instructor IS NULL";
+    } else if (["UPCOMING", "ONGOING", "COMPLETED", "CANCELLED"].includes(status)) {
+        whereSql += " AND status = ?";
+        params.push(status);
     }
     if (!req.query.includeDeleted || (req.user.role !== "SUPERADMIN" && !req.user.isAdmin && !req.user.isEmployee)) {
         whereSql += " AND (isDeleted IS NULL OR isDeleted = 0)";

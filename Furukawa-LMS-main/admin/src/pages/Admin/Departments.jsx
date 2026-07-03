@@ -1,5 +1,5 @@
 // src/pages/Admin/Departments.jsx
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,8 +89,7 @@ import { useLazyExportDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 
 const Departments = () => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [page, setPage] = useState(1);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -125,27 +124,25 @@ const Departments = () => {
   // Get current user from Redux store
   const { user } = useSelector((state) => state.auth);
 
-  // Debounce search term
+  // searchTerm is already debounced by SearchInput before it reaches us;
+  // reset to page 1 whenever the effective search or status filter changes.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      setCurrentPage(1);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
+    setPage(1);
+  }, [searchTerm, statusFilter]);
 
   // API Hooks
   const {
     data: departmentsData,
     isLoading,
+    isFetching,
     error: departmentsError,
     refetch,
   } = useGetAllDepartmentsQuery(
     {
-      page: currentPage,
-      limit: 10,
-      search: debouncedSearchTerm || "",
+      page,
+      limit: 30,
+      search: searchTerm || "",
+      status: statusFilter !== "ALL" ? statusFilter : "",
     },
     {
       refetchOnMountOrArgChange: true,
@@ -153,6 +150,19 @@ const Departments = () => {
       refetchOnReconnect: false,
     }
   );
+
+  const isFetchingNextPage = isFetching && !isLoading;
+
+  // After a mutation, reload from page 1 instead of re-fetching whatever page
+  // the user has scrolled to — re-fetching a later page would append onto the
+  // merged infinite-scroll cache again and duplicate rows.
+  const reloadDepartments = () => {
+    if (page === 1) {
+      refetch();
+    } else {
+      setPage(1);
+    }
+  };
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -239,6 +249,31 @@ const Departments = () => {
   const students = studentsData?.data?.users || [];
   const allCourses = coursesData?.data?.courses || [];
 
+  // Infinite scroll: load the next batch of departments when the sentinel
+  // row at the bottom of the table scrolls into view.
+  const scrollSentinelRef = useRef(null);
+  const isFetchingRef = useRef(isFetching);
+  useEffect(() => {
+    isFetchingRef.current = isFetching;
+  }, [isFetching]);
+
+  useEffect(() => {
+    const node = scrollSentinelRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingRef.current && page < totalPages) {
+          setPage((prev) => prev + 1);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [page, totalPages]);
+
   // Filter options
   const statusOptions = [
     { value: "ALL", label: "All Status" },
@@ -268,45 +303,32 @@ const Departments = () => {
     return filters;
   }, [statusFilter, searchTerm, statusOptions]);
 
-  // Filter departments based on status and role-based restrictions
+  // Apply role-based restrictions to the (already server-filtered by status/search) departments
   const filteredDepartments = useMemo(() => {
-    let result = departments;
-
-    // 1. Apply role-based filtering first
     const isRestricted = user?.role !== 'SUPERADMIN' && user?.isAdmin !== true;
-    if (isRestricted) {
-      // Get assigned department info
-      const assignedIds = new Set();
-      if (Array.isArray(user?.departments)) {
-        user.departments.forEach(id => assignedIds.add(String(id)));
-      }
-      if (user?.departmentId) assignedIds.add(String(user.departmentId));
-      if (user?.department?._id) assignedIds.add(String(user.department._id));
-      
-      const userDeptName = user?.deptName?.trim().toLowerCase();
+    if (!isRestricted) return departments;
 
-      // ONLY FILTER if there is actually an assignment to restrict by
-      // Otherwise, the user can see everything in this layout
-      if (assignedIds.size > 0 || userDeptName) {
-        result = result.filter(dept => {
-          const dId = String(dept.id || dept._id);
-          const hasIdMatch = assignedIds.has(dId);
-          const hasNameMatch = userDeptName && dept.name?.trim().toLowerCase() === userDeptName;
-          return hasIdMatch || hasNameMatch;
-        });
-      }
+    // Get assigned department info
+    const assignedIds = new Set();
+    if (Array.isArray(user?.departments)) {
+      user.departments.forEach(id => assignedIds.add(String(id)));
     }
+    if (user?.departmentId) assignedIds.add(String(user.departmentId));
+    if (user?.department?._id) assignedIds.add(String(user.department._id));
 
-    // 2. Apply existing UI filters (status)
-    return result.filter((department) => {
-      const statusMatch =
-        statusFilter === "ALL" ||
-        (statusFilter === "HAS_INSTRUCTOR" && department.instructor) ||
-        (statusFilter === "NO_INSTRUCTOR" && !department.instructor) ||
-        department.status === statusFilter;
-      return statusMatch;
+    const userDeptName = user?.deptName?.trim().toLowerCase();
+
+    // ONLY FILTER if there is actually an assignment to restrict by
+    // Otherwise, the user can see everything in this layout
+    if (assignedIds.size === 0 && !userDeptName) return departments;
+
+    return departments.filter(dept => {
+      const dId = String(dept.id || dept._id);
+      const hasIdMatch = assignedIds.has(dId);
+      const hasNameMatch = userDeptName && dept.name?.trim().toLowerCase() === userDeptName;
+      return hasIdMatch || hasNameMatch;
     });
-  }, [departments, statusFilter, user]);
+  }, [departments, user]);
 
   // Toast helper
   const showToast = useCallback(
@@ -369,7 +391,7 @@ const Departments = () => {
       showToast("success", "Department created successfully");
       setIsAddDialogOpen(false);
       resetForm();
-      refetch();
+      reloadDepartments();
     } catch (err) {
       showToast("error", err?.data?.message || "Failed to create department");
     } finally {
@@ -396,7 +418,7 @@ const Departments = () => {
       showToast("success", "Department updated successfully");
       setIsEditDialogOpen(false);
       resetForm();
-      refetch();
+      reloadDepartments();
     } catch (err) {
       showToast("error", err?.data?.message || "Failed to update department");
     } finally {
@@ -409,7 +431,7 @@ const Departments = () => {
       await deleteDepartment(selectedDepartment.id || selectedDepartment._id).unwrap();
       showToast("success", "Department deleted successfully");
       setIsDeleteDialogOpen(false);
-      refetch();
+      reloadDepartments();
     } catch (err) {
       showToast("error", err?.data?.message || "Failed to delete department");
     }
@@ -423,7 +445,7 @@ const Departments = () => {
       }).unwrap();
       showToast("success", "Trainer assigned successfully");
       setIsAssignInstructorDialogOpen(false);
-      refetch();
+      reloadDepartments();
     } catch (err) {
       showToast("error", err?.data?.message || "Failed to assign trainer");
     }
@@ -435,7 +457,7 @@ const Departments = () => {
       await removeInstructor(selectedDepartment.id || selectedDepartment._id).unwrap();
       showToast("success", "Trainer removed successfully");
       setIsAssignInstructorDialogOpen(false);
-      refetch();
+      reloadDepartments();
     } catch (err) {
       showToast("error", err?.data?.message || "Failed to remove trainer");
     }
@@ -454,7 +476,7 @@ const Departments = () => {
       showToast("success", "Department cancelled successfully");
       setIsCancelDepartmentDialogOpen(false);
       setCancelReason("");
-      refetch();
+      reloadDepartments();
     } catch (err) {
       showToast("error", err?.data?.message || "Failed to cancel department");
     } finally {
@@ -481,7 +503,7 @@ const Departments = () => {
       showToast("success", "Students added successfully");
       setIsManageStudentsDialogOpen(false);
       setSelectedStudents([]);
-      refetch();
+      reloadDepartments();
     } catch (err) {
       console.error(err);
       showToast("error", err?.data?.message || err.message || "Failed to add students");
@@ -498,7 +520,7 @@ const Departments = () => {
     try {
       await removeStudentFromDepartment({ departmentId, studentId }).unwrap();
       showToast("success", "Student removed successfully");
-      refetch();
+      reloadDepartments();
 
       // Update local state if dialog is open
       if (selectedDepartment && (selectedDepartment.id || selectedDepartment._id) === departmentId) {
@@ -897,7 +919,7 @@ const Departments = () => {
                   try {
                     const { data } = await triggerExportDepartments({
                       format: 'excel',
-                      search: debouncedSearchTerm || '',
+                      search: searchTerm || '',
                       status: statusFilter !== 'ALL' ? statusFilter : ''
                     });
                     const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -922,7 +944,7 @@ const Departments = () => {
                   try {
                     const { data } = await triggerExportDepartments({
                       format: 'pdf',
-                      search: debouncedSearchTerm || '',
+                      search: searchTerm || '',
                       status: statusFilter !== 'ALL' ? statusFilter : ''
                     });
                     const blob = new Blob([data], { type: 'application/pdf' });
@@ -964,7 +986,8 @@ const Departments = () => {
             </TableHeader>
             <TableBody>
               {filteredDepartments.length > 0 ? (
-                filteredDepartments.map((department) => (
+                <>
+                {filteredDepartments.map((department) => (
                   <TableRow
                     key={department._id}
                     className="group hover:bg-muted/30"
@@ -1154,7 +1177,22 @@ const Departments = () => {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
+                ))}
+                {page < totalPages && (
+                  <TableRow ref={scrollSentinelRef}>
+                    <TableCell colSpan={7} className="text-center py-4">
+                      {isFetchingNextPage ? (
+                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                          <IconLoader className="h-4 w-4 animate-spin" />
+                          Loading more departments...
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">&nbsp;</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )}
+                </>
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-10">
@@ -1186,34 +1224,12 @@ const Departments = () => {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
-            Showing {filteredDepartments.length} of {totalCount} departments
-          </p>
-          <div className="flex space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-            >
-              Previous
-            </Button>
-            <div className="flex items-center justify-center px-4 text-sm">
-              Page {currentPage} of {totalPages}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+      {/* Load status */}
+      {filteredDepartments.length > 0 && (
+        <p className="text-sm text-muted-foreground text-center">
+          Showing {filteredDepartments.length} of {totalCount} departments
+          {page >= totalPages && " — end of list"}
+        </p>
       )}
 
       {/* Create Department Dialog */}

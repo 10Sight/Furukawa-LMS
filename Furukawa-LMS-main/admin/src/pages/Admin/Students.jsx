@@ -378,7 +378,7 @@ const Students = () => {
       dateTo: filters.dateTo,
       shift: filters.shift,
       date: filters.date,
-      includeLeft: "true",
+      includeLeft: (activeTab === "assigned" || activeTab === "unassigned") ? "false" : "true",
       designation: filters.designation,
       assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
       assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
@@ -1184,7 +1184,7 @@ const Students = () => {
           dateTo: filters.dateTo,
           shift: filters.shift,
           date: filters.date,
-          includeLeft: "true",
+          includeLeft: (activeTab === "assigned" || activeTab === "unassigned") ? "false" : "true",
           designation: filters.designation,
           assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
           assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
@@ -1804,61 +1804,140 @@ const Students = () => {
 
       {/* Tabs for filtering */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <TabsList className="grid grid-cols-5 w-full sm:w-auto">
-            {/* All */}
-            <TabsTrigger value="all" onClick={() => clearFilters()}>
-              All
-            </TabsTrigger>
-            {/* Present */}
-            <TabsTrigger
-              value="active"
-              onClick={() => {
-                clearFilters();
-                setFilters(prev => ({ ...prev, status: "Present" }));
-                setActiveTab("active");
-              }}
-            >
-              Present
-            </TabsTrigger>
-                        {/* Left Operators  */}
-            <TabsTrigger
-              value="left"
-              onClick={() => {
-                clearFilters();
-                setFilters(prev => ({ ...prev, status: "LEFT" }));
-                setActiveTab("left");
-                setCurrentPage(1);
-              }}
-            >
-              Left Operators
-            </TabsTrigger>
-            {/* Assigned */}
-            <TabsTrigger
-              value="assigned"
-              onClick={() => {
-                clearFilters();
-                setActiveTab("assigned");
-                setCurrentPage(1);
-              }}
-            >
-              Assigned
-            </TabsTrigger>
-            {/* Unassigned */}
-            <TabsTrigger
-              value="unassigned"
-              onClick={() => {
-                clearFilters();
-                setActiveTab("unassigned");
-                setCurrentPage(1);
-              }}
-            >
-              Unassigned
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <TabsList className="grid grid-cols-5 w-full sm:w-auto">
+              {/* All */}
+              <TabsTrigger value="all" onClick={() => clearFilters()}>
+                All
+              </TabsTrigger>
+              {/* Present */}
+              <TabsTrigger
+                value="active"
+                onClick={() => {
+                  clearFilters();
+                  setFilters(prev => ({ ...prev, status: "Present" }));
+                  setActiveTab("active");
+                }}
+              >
+                Present
+              </TabsTrigger>
+              {/* Left Operators  */}
+              <TabsTrigger
+                value="left"
+                onClick={() => {
+                  clearFilters();
+                  setFilters(prev => ({ ...prev, status: "LEFT" }));
+                  setActiveTab("left");
+                  setCurrentPage(1);
+                }}
+              >
+                Left Operators
+              </TabsTrigger>
+              {/* Assigned */}
+              <TabsTrigger
+                value="assigned"
+                onClick={() => {
+                  clearFilters();
+                  setActiveTab("assigned");
+                  setCurrentPage(1);
+                }}
+              >
+                Assigned
+              </TabsTrigger>
+              {/* Unassigned */}
+              <TabsTrigger
+                value="unassigned"
+                onClick={() => {
+                  clearFilters();
+                  setActiveTab("unassigned");
+                  setCurrentPage(1);
+                }}
+              >
+                Unassigned
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowFilters(!showFilters)}
+                className={`${showFilters ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" : ""} h-9`}
+              >
+                <IconFilter className="h-4 w-4 mr-2" />
+                Filters
+              </Button>
+
+              {/* Hidden file input */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".xlsx,.xls"
+                className="hidden"
+              />
+
+              <Button
+                variant="outline"
+                onClick={handleExportExcel}
+                className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+              >
+                <IconDownload className="h-4 w-4 mr-2" />
+                Export Excel
+              </Button>
+
+              {hasPermission("user:import_logs") && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    navigate(`import-logs`);
+                  }}
+                  className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
+                >
+                  <IconHistory className="h-4 w-4 mr-2" />
+                  Import Logs
+                </Button>
+              )}
+
+              {hasPermission("user:import_excel") && (
+                <Button
+                  variant="outline"
+                  onClick={handleImportClick}
+                  className="bg-green-600 hover:bg-green-700 text-white shadow-sm border-green-700"
+                >
+                  <IconUpload className="h-4 w-4 mr-2" />
+                  Import Operators
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                onClick={() => navigate(`comparison`)}
+                className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+              >
+                <IconArrowsLeftRight className="h-4 w-4 mr-2" />
+                Comparison
+              </Button>
+
+              <Button
+                onClick={() => {
+                  resetForm();
+                  if (isRestrictedUser && availableDepartments.length === 1) {
+                    const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
+                    setFormData(prev => ({ ...prev, departments: [deptId] }));
+                  }
+                  setIsAddDialogOpen(true);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+              >
+                <IconPlus className="h-4 w-4 mr-2" />
+                Add Operator
+              </Button>
+            </div>
+          </div>
 
           {(activeTab === "assigned" || activeTab === "unassigned") && (
-            <div className="flex flex-wrap gap-2 mt-3 w-full sm:w-auto">
+            <div className="flex flex-wrap gap-2">
               {[
                 { key: "department", label: "Department" },
                 { key: "section", label: "Section" },
@@ -1883,83 +1962,6 @@ const Students = () => {
               ))}
             </div>
           )}
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className={`${showFilters ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" : ""} h-9`}
-            >
-              <IconFilter className="h-4 w-4 mr-2" />
-              Filters
-            </Button>
-
-            {/* Hidden file input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".xlsx,.xls"
-              className="hidden"
-            />
-
-            <Button
-              variant="outline"
-              onClick={handleExportExcel}
-              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-            >
-              <IconDownload className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
-
-            {hasPermission("user:import_logs") && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  navigate(`import-logs`);
-                }}
-                className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
-              >
-                <IconHistory className="h-4 w-4 mr-2" />
-                Import Logs
-              </Button>
-            )}
-
-            {hasPermission("user:import_excel") && (
-              <Button
-                variant="outline"
-                onClick={handleImportClick}
-                className="bg-green-600 hover:bg-green-700 text-white shadow-sm border-green-700"
-              >
-                <IconUpload className="h-4 w-4 mr-2" />
-                Import Operators
-              </Button>
-            )}
-
-            <Button
-              variant="outline"
-              onClick={() => navigate(`comparison`)}
-              className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
-            >
-              <IconArrowsLeftRight className="h-4 w-4 mr-2" />
-              Comparison
-            </Button>
-
-            <Button
-              onClick={() => {
-                resetForm();
-                if (isRestrictedUser && availableDepartments.length === 1) {
-                  const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
-                  setFormData(prev => ({ ...prev, departments: [deptId] }));
-                }
-                setIsAddDialogOpen(true);
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-            >
-              <IconPlus className="h-4 w-4 mr-2" />
-              Add Operator
-            </Button>
-          </div>
         </div>
       </Tabs>
 

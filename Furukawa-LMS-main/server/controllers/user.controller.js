@@ -639,12 +639,12 @@ export const createUser = asyncHandler(async (req, res) => {
   // Duplicate Check
   let dupQuery = "SELECT id FROM users WHERE userName = ?";
   let dupParams = [data.userName.toLowerCase()];
-  if (data.phoneNumber) {
-    dupQuery += " OR phoneNumber = ?";
-    dupParams.push(data.phoneNumber);
+  if (data.idCard) {
+    dupQuery += " OR idCard = ?";
+    dupParams.push(data.idCard);
   }
   const [dupes] = await executeQuery(dupQuery, dupParams);
-  if (dupes.length > 0) throw new ApiError("Username or Phone number already in use", 400);
+  if (dupes.length > 0) throw new ApiError("Username or ID Card already in use", 400);
 
   const bcrypt = (await import("bcryptjs")).default;
   const hashedPassword = await bcrypt.hash(data.password, 10);
@@ -976,11 +976,15 @@ export const updateUser = asyncHandler(async (req, res) => {
         if (ex.length) throw new ApiError("Username already in use", 400);
         updates.push("userName = ?"); values.push(data[f].toLowerCase());
       } else if (f === "phoneNumber" && data[f]) {
-        const [ex] = await executeQuery("SELECT id FROM users WHERE phoneNumber = ? AND id != ?", [data[f], userId]);
-        if (ex.length) throw new ApiError("Phone number already in use", 400);
         updates.push("phoneNumber = ?"); values.push(data[f]);
       } else if (f === "phoneNumber" && !data[f]) {
         updates.push("phoneNumber = NULL");
+      } else if (f === "idCard" && data[f]) {
+        const [ex] = await executeQuery("SELECT id FROM users WHERE idCard = ? AND id != ?", [data[f], userId]);
+        if (ex.length) throw new ApiError("ID Card already in use", 400);
+        updates.push("idCard = ?"); values.push(data[f]);
+      } else if (f === "idCard" && !data[f]) {
+        updates.push("idCard = NULL");
       } else if (f === "email") {
         const emailVal = (data[f] && data[f].trim()) ? data[f].trim().toLowerCase() : null;
         if (emailVal) {
@@ -1237,11 +1241,6 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
   const [rows] = await executeQuery("SELECT id, phoneNumber FROM users WHERE id = ?", [userId]);
   if (rows.length === 0) throw new ApiError("User not found", 404);
-
-  if (phoneNumber && phoneNumber !== rows[0].phoneNumber) {
-    const [exist] = await executeQuery("SELECT id FROM users WHERE phoneNumber = ? AND id != ?", [phoneNumber, userId]);
-    if (exist.length > 0) throw new ApiError("Phone number already in use", 400);
-  }
 
   let updates = ["updatedAt = GETDATE()"];
   let values = [];

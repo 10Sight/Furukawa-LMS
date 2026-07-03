@@ -162,6 +162,28 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User', 'ImportLog'],
         }),
+        startImportEmployees: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees/start",
+                method: "POST",
+                data,
+            }),
+        }),
+        processEmployeesChunk: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees/process-chunk",
+                method: "POST",
+                data,
+            }),
+        }),
+        finalizeImportEmployees: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees/finalize",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ['User', 'ImportLog'],
+        }),
         importDojoCandidates: builder.mutation({
             query: (formData) => ({
                 url: "/api/import/dojo-candidates",
@@ -278,6 +300,9 @@ export const {
     useRestoreUserMutation,
     useLazyExportStudentsQuery,
     useImportEmployeesMutation,
+    useStartImportEmployeesMutation,
+    useProcessEmployeesChunkMutation,
+    useFinalizeImportEmployeesMutation,
     useImportDojoCandidatesMutation,
     useLazyGetImportTemplateQuery,
     useLazyGetDojoImportTemplateQuery,

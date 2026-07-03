@@ -1147,9 +1147,9 @@ function EditUserDialog({ isOpen, setIsOpen, user, currentRoleId, onSuccess }) {
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         {/* Show current role, Operator (STUDENT), and Custom Role User (CUSTOM) */}
-                                        <SelectItem value="STUDENT">Operator (Student)</SelectItem>
                                         <SelectItem value="CUSTOM">Custom Role User</SelectItem>
-                                        {user && user.role !== "STUDENT" && user.role !== "CUSTOM" && (
+                                        <SelectItem value="STUDENT">Operator (Student)</SelectItem>
+                                        {user && user.role !== "CUSTOM" && user.role !== "STUDENT" && (
                                             <SelectItem value={user.role}>{user.role}</SelectItem>
                                         )}
                                     </SelectContent>

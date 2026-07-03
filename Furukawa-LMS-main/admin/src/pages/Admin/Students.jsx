@@ -1,5 +1,6 @@
 // src/pages/Admin/Students.jsx
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSelector } from "react-redux";
 import axiosInstance from "@/Helper/axiosInstance";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@/Redux/AllApi/InstructorApi";
 import { format } from "date-fns";
 import ExcelJS from 'exceljs'
+import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { useUserRegisterMutation } from "@/Redux/AllApi/AuthApi";
 import {
@@ -16,7 +18,9 @@ import {
   useDeleteUserMutation,
   useBulkDeleteUsersMutation,
   useBulkUpdateShiftScheduleMutation,
-  useImportEmployeesMutation,
+  useStartImportEmployeesMutation,
+  useProcessEmployeesChunkMutation,
+  useFinalizeImportEmployeesMutation,
   useLazyExportStudentsQuery,
   useLazyGetImportTemplateQuery,
   useGetImportLogsQuery,
@@ -81,6 +85,8 @@ import {
   IconUserX,
   IconUserMinus,
   IconCalendar,
+  IconCheck,
+  IconClock,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -134,6 +140,13 @@ const safeDateToISO = (dateValue) => {
   return dateToInputFormat(dateValue);
 };
 
+const formatDuration = (totalSeconds) => {
+  const seconds = Math.max(0, Math.round(totalSeconds || 0));
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+};
+
 const Students = () => {
   const currentUser = useSelector((state) => state.auth.user);
 
@@ -174,6 +187,17 @@ const Students = () => {
   const [isBulkShiftSubmitting, setIsBulkShiftSubmitting] = useState(false);
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({
+    total: 0,
+    current: 0,
+    success: 0,
+    failed: 0,
+    timeElapsed: 0,
+    timeLeft: 0,
+    errors: [],
+    done: false,
+  });
   const [isShiftDialogOpen, setIsShiftDialogOpen] = useState(false);
   const [shiftStudent, setShiftStudent] = useState(null);
   const [shiftScheduleDraft, setShiftScheduleDraft] = useState({});
@@ -251,6 +275,32 @@ const Students = () => {
       toast.error("Could not open student details: Missing ID");
     }
   };
+
+  // Tick the elapsed/remaining time while an import is running
+  useEffect(() => {
+    if (!isImporting || importProgress.done) return;
+    const interval = setInterval(() => {
+      setImportProgress((prev) => {
+        const timeElapsed = prev.timeElapsed + 1;
+        const timeLeft = prev.current > 0
+          ? Math.round((timeElapsed / prev.current) * (prev.total - prev.current))
+          : 0;
+        return { ...prev, timeElapsed, timeLeft };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isImporting, importProgress.done]);
+
+  // Warn before the user navigates away mid-import
+  useEffect(() => {
+    if (!isImporting) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isImporting]);
 
   // Debounce search term to prevent excessive API calls
   useEffect(() => {
@@ -356,7 +406,9 @@ const Students = () => {
   const [bulkDeleteUsers] = useBulkDeleteUsersMutation();
   const [bulkUpdateShiftSchedule] = useBulkUpdateShiftScheduleMutation();
   const [assignStudent] = useAddStudentToDepartmentMutation();
-  const [importEmployees] = useImportEmployeesMutation();
+  const [startImportEmployees] = useStartImportEmployeesMutation();
+  const [processEmployeesChunk] = useProcessEmployeesChunkMutation();
+  const [finalizeImportEmployees] = useFinalizeImportEmployeesMutation();
   const [triggerGetTemplate] = useLazyGetImportTemplateQuery();
   const [triggerGetAllStudents] = useLazyGetAllStudentsQuery();
   const { data: importLogsData, isLoading: isLoadingLogs } = useGetImportLogsQuery();
@@ -977,32 +1029,114 @@ const Students = () => {
       return;
     }
 
-    const toastId = toast.loading("Importing employees...");
+    // Parse the workbook client-side, using the same header-row detection the backend used to do
+    let rows, headerRowIndex;
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+
+      headerRowIndex = -1;
+      for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+        const row = allRows[i];
+        if (row && Array.isArray(row) && row.some((cell) => {
+          if (!cell) return false;
+          const c = cell.toString().trim().toLowerCase();
+          return c === "employeeid" || c === "employee code" || c === "employee id";
+        })) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+      if (headerRowIndex === -1) headerRowIndex = 0;
+
+      const headers = allRows[headerRowIndex].map((h) => h?.toString().trim() || "");
+      const rawData = allRows.slice(headerRowIndex + 1);
+      rows = rawData
+        .map((r) => {
+          const obj = {};
+          headers.forEach((h, idx) => {
+            obj[h || `__EMPTY_${idx}`] = r[idx];
+          });
+          return obj;
+        })
+        .filter((r) => Object.values(r).some((v) => v !== null && v !== undefined && v.toString().trim() !== ""));
+
+      if (rows.length === 0) {
+        showToast("error", "No data found in the Excel file");
+        return;
+      }
+    } catch (error) {
+      console.error("Excel parse error:", error);
+      showToast("error", "Failed to read the Excel file");
+      return;
+    }
+
+    setIsImportDialogOpen(false);
+    setImportProgress({
+      total: rows.length,
+      current: 0,
+      success: 0,
+      failed: 0,
+      timeElapsed: 0,
+      timeLeft: 0,
+      errors: [],
+      done: false,
+    });
+    setIsImporting(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      const startResult = await startImportEmployees({
+        fileName: file.name,
+        totalRows: rows.length,
+      }).unwrap();
+      const logId = startResult.data.logId;
 
-      const result = await importEmployees(formData).unwrap();
+      const CHUNK_SIZE = 25;
+      let current = 0, success = 0, failed = 0;
+      const errors = [];
 
-      const successCount = result.data.success?.length || 0;
-      const failedCount = result.data.failed?.length || 0;
+      for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+        const chunkRows = rows.slice(i, i + CHUNK_SIZE);
+        const startIndex = headerRowIndex + i + 2; // Excel row number of the first row in this chunk
 
-      if (failedCount > 0) {
-        showToast("warning", `Imported ${successCount} employees. ${failedCount} failed.`);
-        console.warn("Failed imports:", result.data.failed);
-      } else {
-        showToast("success", `Successfully imported ${successCount} employees!`);
-        setIsImportDialogOpen(false);
+        const chunkResult = await processEmployeesChunk({ logId, rows: chunkRows, startIndex }).unwrap();
+        const { results: chunkDetails = [], successCount = 0, failedCount = 0 } = chunkResult.data || {};
+
+        current += chunkRows.length;
+        success += successCount;
+        failed += failedCount;
+
+        chunkDetails
+          .filter((r) => r.status === "FAILED")
+          .forEach((r) => errors.push(`Row ${r.rowNumber}: ${r.error}`));
+
+        setImportProgress((prev) => ({ ...prev, current, success, failed, errors: [...errors] }));
       }
 
-      toast.dismiss(toastId);
+      await finalizeImportEmployees({ logId }).unwrap();
+      setImportProgress((prev) => ({ ...prev, done: true }));
       refetch();
     } catch (error) {
       console.error("Import error:", error);
-      toast.dismiss(toastId);
-      showToast("error", error?.data?.message || "Failed to import employees");
+      const message = error?.data?.message || error?.message || "Failed to import employees";
+      setImportProgress((prev) => ({ ...prev, done: true, errors: [...prev.errors, `Import stopped: ${message}`] }));
     }
+  };
+
+  const closeImportOverlay = () => {
+    setIsImporting(false);
+    setImportProgress({
+      total: 0,
+      current: 0,
+      success: 0,
+      failed: 0,
+      timeElapsed: 0,
+      timeLeft: 0,
+      errors: [],
+      done: false,
+    });
   };
 
   const handleExportExcel = async () => {
@@ -1475,6 +1609,94 @@ const Students = () => {
   const todayKey   = format(new Date(), "yyyy-MM-dd");
 
   return (
+    <>
+    {isImporting && createPortal(
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
+          <div className="flex flex-col items-center gap-3 text-center">
+            {!importProgress.done ? (
+              <div className="h-12 w-12 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" />
+            ) : (
+              <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+                <IconCheck className="h-7 w-7 text-green-600" />
+              </div>
+            )}
+            <h3 className="text-lg font-bold text-slate-900">
+              {importProgress.done ? "Import Complete" : "Importing Trainees..."}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {importProgress.done
+                ? "Review the summary below and close when ready."
+                : "Please keep this tab open until the import finishes."}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-all duration-300 ease-out"
+                style={{
+                  width: `${importProgress.total > 0 ? Math.min(100, (importProgress.current / importProgress.total) * 100) : 0}%`,
+                }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground text-right">
+              Processed: {importProgress.current} / {importProgress.total}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+              <div className="text-xs text-green-700 font-medium">Succeeded</div>
+              <div className="text-xl font-bold text-green-900">{importProgress.success}</div>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <div className="text-xs text-red-700 font-medium">Failed</div>
+              <div className="text-xl font-bold text-red-900">{importProgress.failed}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2">
+              <IconClock className="h-4 w-4 text-slate-500" />
+              <div>
+                <div className="text-xs text-slate-600 font-medium">Time Elapsed</div>
+                <div className="text-sm font-bold text-slate-900">{formatDuration(importProgress.timeElapsed)}</div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2">
+              <IconClock className="h-4 w-4 text-slate-500" />
+              <div>
+                <div className="text-xs text-slate-600 font-medium">Est. Time Left</div>
+                <div className="text-sm font-bold text-slate-900">
+                  {importProgress.done ? "--" : formatDuration(importProgress.timeLeft)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {importProgress.errors.length > 0 && (
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <IconAlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                Skipped / Failed Rows ({importProgress.errors.length})
+              </h4>
+              <div className="max-h-32 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 space-y-1">
+                {importProgress.errors.map((err, idx) => (
+                  <div key={idx} className="text-xs text-red-700 font-mono break-words">
+                    {err}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {importProgress.done && (
+            <Button onClick={closeImportOverlay} className="w-full">
+              Done
+            </Button>
+          )}
+        </div>
+      </div>,
+      document.body
+    )}
     <Tabs defaultValue="operators" className="w-full space-y-6">
       <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
         <TabsTrigger value="operators" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
@@ -1563,7 +1785,7 @@ const Students = () => {
       {/* Tabs for filtering */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <TabsList className="grid grid-cols-4 w-full sm:w-auto">
+          <TabsList className="grid grid-cols-5 w-full sm:w-auto">
             <TabsTrigger value="all" onClick={() => clearFilters()}>
               All
             </TabsTrigger>
@@ -1596,6 +1818,17 @@ const Students = () => {
               }}
             >
               Unassigned
+            </TabsTrigger>
+            <TabsTrigger
+              value="left"
+              onClick={() => {
+                clearFilters();
+                setFilters(prev => ({ ...prev, status: "LEFT" }));
+                setActiveTab("left");
+                setCurrentPage(1);
+              }}
+            >
+              Left Operators
             </TabsTrigger>
           </TabsList>
 
@@ -3688,6 +3921,7 @@ const Students = () => {
         <StudentLevelManager />
       </TabsContent>
     </Tabs>
+    </>
   );
 };
 

@@ -115,9 +115,9 @@ export const register = asyncHandler(async (req, res) => {
   email = email.toLowerCase();
   userName = userName.toLowerCase();
 
-  if (phoneNumber) {
-    const phoneExists = await User.findOne({ phoneNumber });
-    if (phoneExists) throw new ApiError("Phone number already in use", 400);
+  if (idCard) {
+    const idCardExists = await User.findOne({ idCard });
+    if (idCardExists) throw new ApiError("ID Card already in use", 400);
   }
 
   const usernameExists = await User.findOne({ userName });
@@ -414,9 +414,9 @@ export const dojoRegister = asyncHandler(async (req, res) => {
   const usernameExists = await User.findOne({ userName });
   if (usernameExists) throw new ApiError("Username already in use", 400);
 
-  if (phoneNumber) {
-    const phoneExists = await User.findOne({ phoneNumber });
-    if (phoneExists) throw new ApiError("Phone number already in use", 400);
+  if (idCard) {
+    const idCardExists = await User.findOne({ idCard });
+    if (idCardExists) throw new ApiError("ID Card already in use", 400);
   }
 
   const cleanId = (val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);

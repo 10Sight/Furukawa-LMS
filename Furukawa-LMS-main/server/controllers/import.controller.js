@@ -193,6 +193,304 @@ const normalizeStatus = (val) => {
 };
 
 /**
+ * Process a single employee row: validates, resolves hierarchy IDs, creates/updates the user,
+ * and writes the outcome to import_log_details. Shared by the single-shot and chunked import endpoints.
+ */
+const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectionMap, contractorMap }) => {
+    const leavingDateVal = normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"]));
+    const normalizedRow = {
+        empId: getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])?.toString().trim(),
+        idCard: getRowVal(row, ["CardNo", "Card No.", "Card No"])?.toString().trim(),
+        fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
+        fatherHusbandName: getRowVal(row, ["Father/HusbandName", "Father / Husband Name"])?.toString().trim(),
+        gender: getRowVal(row, ["Gender", "Gender "])?.toString().trim(),
+        department: getRowVal(row, ["Department"])?.toString().trim(),
+        section: getRowVal(row, ["Section"])?.toString().trim(),
+        line: getRowVal(row, ["Line"])?.toString().trim(),
+        sub_section: getRowVal(row, ["Sub Section"])?.toString().trim(),
+        stationNo: getRowVal(row, ["Station No.", "Station No"])?.toString().trim(),
+        mentor: getRowVal(row, ["Mentor"])?.toString().trim(),
+        designation: getRowVal(row, ["Designation"])?.toString().trim(),
+        dob: normalizeDate(getRowVal(row, ["D.O.B.", "DOB", "D.O.B"])),
+        joiningDate: normalizeDate(getRowVal(row, ["D.O.J.", "DOJ", "D.O.J"])),
+        education: getRowVal(row, ["Education"])?.toString().trim(),
+        district: getRowVal(row, ["District", "Distt", "Dist"])?.toString().trim(),
+        state: getRowVal(row, ["State"])?.toString().trim(),
+        pin: getRowVal(row, ["PIN", "Pin", "Pin Code", "Pincode"])?.toString().trim(),
+        busRoute: getRowVal(row, ["Bus Route"])?.toString().trim(),
+        email: getRowVal(row, ["E-Mail ID", "Email", "Email ID"])?.toString().trim(),
+        phoneNumber: getRowVal(row, ["Mobile No.", "Mobile No", "Mobile Number", "Phone", "Phone Number"])?.toString().trim(),
+        currentLevel: getRowVal(row, ["L", "Lavel", "Level"])?.toString().trim(),
+        leavingDate: leavingDateVal,
+        reasonOfLeaving: getRowVal(row, ["Reason of Leaving", "ReasonofLeaving"])?.toString().trim(),
+        contractor: getRowVal(row, ["Contractor"])?.toString().trim() || null,
+        rawStatus: getRowVal(row, ["Status"])?.toString().trim() || null,
+        status: leavingDateVal ? "LEFT" : normalizeStatus(getRowVal(row, ["Status"])),
+    };
+
+    // Resolve hierarchy IDs
+    const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
+    const sectionId = (departmentId && normalizedRow.section)
+        ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`)
+        : null;
+
+    const stationId = null;
+    const subSectionId = null;
+    const lineId = null;
+    const contractorId = normalizedRow.contractor
+        ? (contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null)
+        : null;
+
+    // Validate required fields (phoneNumber is optional)
+    if (!normalizedRow.empId || !normalizedRow.idCard || !normalizedRow.fullName) {
+        const isEssentiallyEmpty = !normalizedRow.empId && !normalizedRow.idCard && !normalizedRow.fullName;
+        if (isEssentiallyEmpty) return { skip: true };
+
+        const isHeaderRow = ["employeeid", "employee code", "employee id", "emp code", "emp id"].includes(normalizedRow.empId?.toLowerCase());
+        if (isHeaderRow) return { skip: true };
+
+        if (normalizedRow.empId && (normalizedRow.empId.includes(' ') || normalizedRow.empId.length > 15)) {
+            return { skip: true };
+        }
+
+        if (normalizedRow.phoneNumber && !/^\d{8,15}$/.test(normalizedRow.phoneNumber.replace(/\D/g, ''))) {
+            return { skip: true };
+        }
+
+        const error = "Missing required fields: EmployeeID, CardNo, and Name are mandatory.";
+        await executeQuery(
+            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+            [logId, rowNumber, JSON.stringify(row), "FAILED", error]
+        );
+        return { status: "FAILED", rowNumber, error };
+    }
+
+    try {
+        // Helper for date comparison
+        const safeDate = (val) => normalizeDate(val);
+
+        // Check if user already exists (needed for phone conflict resolution below)
+        let existingUser = null;
+        const [existing] = await executeQuery(
+            "SELECT u.*, d.name as departmentName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName " +
+            "FROM users u " +
+            "LEFT JOIN departments d ON u.departmentId = d.id " +
+            "LEFT JOIN sections s ON u.sectionId = s.id " +
+            "LEFT JOIN [lines] l ON u.lineId = l.id " +
+            "LEFT JOIN sub_sections ss ON u.subSectionId = ss.id " +
+            "LEFT JOIN machines st ON u.stationId = st.id " +
+            "WHERE u.userName = ?",
+            [normalizedRow.empId.toLowerCase()]
+        );
+
+        if (existing && existing.length > 0) {
+            existingUser = existing[0];
+        }
+
+        // Handle duplicate ID card gracefully instead of failing the row
+        if (normalizedRow.idCard) {
+            const [dupIdCard] = await executeQuery(
+                "SELECT id, userName FROM users WHERE idCard = ? AND userName != ?",
+                [normalizedRow.idCard, normalizedRow.empId.toLowerCase()]
+            );
+            if (dupIdCard && dupIdCard.length > 0) {
+                if (existingUser) {
+                    // Keep their existing ID card so the update doesn't hit the unique constraint
+                    normalizedRow.idCard = existingUser.idCard || null;
+                } else {
+                    // New user: set null so insert succeeds (NULL is not subject to unique constraint)
+                    normalizedRow.idCard = null;
+                }
+            }
+        }
+
+        // Prepare user data (Prioritize isEmployee for tracking)
+        // Line, Sub-Section, and Station are never assigned on import — cleared here so
+        // User.create() below doesn't persist the raw text values scraped from Excel.
+        const userData = {
+            ...normalizedRow,
+            departmentId,
+            sectionId,
+            lineId,
+            subSectionId,
+            stationId,
+            line: null,
+            sub_section: null,
+            stationNo: null,
+            lines: [],
+            subSections: [],
+            stations: [],
+            contractorId,
+            userName: normalizedRow.empId.toLowerCase(),
+            password: normalizedRow.empId,
+            role: "STUDENT",
+            unit: "UNIT_1",
+            isEmployee: true,
+            isAdmin: false,
+            isTrainer: false,
+            email: normalizedRow.email || null,
+            status: normalizedRow.status || "PRESENT",
+            departments: departmentId ? [departmentId] : [],
+            sections: sectionId ? [sectionId] : []
+        };
+
+        if (existingUser) {
+            const changes = {};
+            const fieldsToCompare = [
+                { key: 'fullName', label: 'Name' },
+                { key: 'idCard', label: 'Card No.' },
+                { key: 'fatherHusbandName', label: 'Father/Husband Name' },
+                { key: 'gender', label: 'Gender' },
+                { key: 'departmentId', label: 'Department' },
+                { key: 'sectionId', label: 'Section' },
+                // Line, Sub-Section, and Station are EXCLUDED from updates as per requirement
+                { key: 'mentor', label: 'Mentor' },
+                { key: 'designation', label: 'Designation' },
+                { key: 'dob', label: 'DOB' },
+                { key: 'joiningDate', label: 'Joining Date' },
+                { key: 'leavingDate', label: 'Date of Leaving' },
+                { key: 'reasonOfLeaving', label: 'Reason of Leaving' },
+                { key: 'contractorId', label: 'Contractor' },
+                { key: 'education', label: 'Education' },
+                { key: 'district', label: 'District' },
+                { key: 'state', label: 'State' },
+                { key: 'pin', label: 'PIN' },
+                { key: 'busRoute', label: 'Bus Route' },
+                { key: 'email', label: 'Email' },
+                { key: 'phoneNumber', label: 'Mobile No.' },
+                { key: 'currentLevel', label: 'Level' },
+                { key: 'status', label: 'Status' },
+            ];
+
+            const updatedData = {};
+
+            for (const field of fieldsToCompare) {
+                const newVal = userData[field.key];
+                const oldVal = existingUser[field.key];
+
+                const isNewValEmpty = newVal === null || newVal === undefined || newVal.toString().trim() === "";
+
+                // Leaving details: only clear when status is explicitly PRESENT in Excel and no leavingDate is set in Excel;
+                // otherwise fall through to normal diff logic so new values can be set.
+                if (['leavingDate', 'reasonOfLeaving'].includes(field.key)) {
+                    const explicitStatus = normalizedRow.rawStatus ? normalizeStatus(normalizedRow.rawStatus) : null;
+                    if (explicitStatus === "PRESENT" && !normalizedRow.leavingDate) {
+                        if (oldVal !== null && oldVal !== undefined && oldVal !== "") {
+                            updatedData[field.key] = null;
+                            changes[field.label] = { from: oldVal, to: "Cleared (Status Present)" };
+                        }
+                        continue; // Skip normal diff — clearing is done
+                    }
+                    // Status is not PRESENT (or leavingDate is set): fall through to isNewValEmpty + diff logic below
+                }
+
+                // Status: only update if the Excel cell was explicitly filled in or if we are forcing it to LEFT.
+                if (field.key === 'status' && !normalizedRow.rawStatus && !normalizedRow.leavingDate) {
+                    continue;
+                }
+
+                // All other fields: skip if Excel cell is empty to prevent wiping existing data.
+                if (isNewValEmpty) {
+                    continue;
+                }
+
+                let isDifferent = false;
+                if (['dob', 'joiningDate', 'leavingDate'].includes(field.key)) {
+                    const d1 = safeDate(newVal);
+                    const d2 = safeDate(oldVal);
+                    if (d1 !== d2) isDifferent = true;
+                } else {
+                    const s1 = newVal.toString().trim();
+                    const s2 = (oldVal !== null && oldVal !== undefined) ? oldVal.toString().trim() : "";
+                    if (s1 !== s2) isDifferent = true;
+                }
+
+                if (isDifferent) {
+                    updatedData[field.key] = userData[field.key];
+
+                    // Handle syncing string columns for hierarchy and contractor
+                    if (field.key === 'departmentId') {
+                        updatedData.department = normalizedRow.department;
+                        changes[field.label] = { from: existingUser.departmentName || "N/A", to: normalizedRow.department || "N/A" };
+                    } else if (field.key === 'sectionId') {
+                        updatedData.section = normalizedRow.section;
+                        changes[field.label] = { from: existingUser.sectionName || "N/A", to: normalizedRow.section || "N/A" };
+                    } else if (field.key === 'contractorId') {
+                        updatedData.contractorId = userData.contractorId;
+                        updatedData.contractor = normalizedRow.contractor || null;
+                        changes[field.label] = { from: existingUser.contractor || "N/A", to: normalizedRow.contractor || "N/A" };
+                    } else {
+                        changes[field.label] = { from: oldVal || "N/A", to: newVal || "N/A" };
+                    }
+                }
+            }
+
+            // ALWAYS ensure departments and sections arrays are in sync with their IDs
+            if (userData.departmentId) {
+                updatedData.departments = JSON.stringify([userData.departmentId]);
+            }
+            if (userData.sectionId) {
+                updatedData.sections = JSON.stringify([userData.sectionId]);
+            }
+
+            if (Object.keys(updatedData).length > 0) {
+                const updateFields = Object.keys(updatedData).map(k => `${k} = ?`).join(', ');
+                const values = [...Object.values(updatedData), existingUser.id];
+
+                await executeQuery(`UPDATE users SET ${updateFields}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
+
+                const status = Object.keys(changes).length > 0 ? "UPDATED" : "SUCCESS";
+
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId, changes) VALUES (?, ?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), status, existingUser.id, JSON.stringify(changes)]
+                );
+
+                // Always ensure department students list is synced for any processed operator
+                // This helper now handles moving from one department to another correctly
+                await syncDepartmentStudents(existingUser.id, userData.departmentId);
+
+                return { status, rowNumber, userName: userData.userName, empId: normalizedRow.empId };
+            } else {
+                // This case should theoretically not happen now as departments is always synced if departmentId exists
+                await executeQuery("UPDATE users SET isDeleted = 0 WHERE id = ?", [existingUser.id]);
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), "SUCCESS", existingUser.id]
+                );
+                return { status: "SUCCESS", rowNumber, userName: userData.userName, empId: normalizedRow.empId };
+            }
+        }
+
+        // Insert user
+        const newUser = await User.create(userData);
+
+        // Sync department students list for new user
+        if (departmentId) {
+            await syncDepartmentStudents(newUser.id, departmentId);
+        }
+
+        // Log to DB
+        await executeQuery(
+            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
+            [logId, rowNumber, JSON.stringify(row), "CREATED", newUser.id]
+        );
+
+        return { status: "CREATED", rowNumber, userName: userData.userName, empId: normalizedRow.empId };
+    } catch (error) {
+        const errorMsg = error.message || "Failed to import user";
+
+        // Log to DB
+        await executeQuery(
+            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+            [logId, rowNumber, JSON.stringify(row), "FAILED", errorMsg]
+        );
+
+        return { status: "FAILED", rowNumber, error: errorMsg };
+    }
+};
+
+/**
  * Import employees from Excel file
  * Expected columns: EmployeeID, CardNo, Name, Father/HusbandName, Gender, Department, Section, Line, Sub Section, Station No., Mentor, Designation, D.O.B., D.O.J., Education, District, State, PIN, Bus Route, E-Mail ID, Mobile No., L, Date of Leaving, Reason of Leaving, Status
  */
@@ -281,314 +579,20 @@ export const importEmployees = async (req, res) => {
         );
         const logId = logResult[0].id;
 
-        // Process each row
+        // Process each row via the shared row processor
         const hIndex = headerRowIndex === -1 ? 0 : headerRowIndex;
         for (let i = 0; i < data.length; i++) {
             const row = data[i];
             const rowNumber = hIndex + i + 2; // Excel row number (1-indexed + header)
 
-            try {
-                // Map Excel headers to internal names for validation and processing
-                const leavingDateVal = normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"]));
-                const normalizedRow = {
-                    empId: getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])?.toString().trim(),
-                    idCard: getRowVal(row, ["CardNo", "Card No.", "Card No"])?.toString().trim(),
-                    fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
-                    fatherHusbandName: getRowVal(row, ["Father/HusbandName", "Father / Husband Name"])?.toString().trim(),
-                    gender: getRowVal(row, ["Gender", "Gender "])?.toString().trim(),
-                    department: getRowVal(row, ["Department"])?.toString().trim(),
-                    section: getRowVal(row, ["Section"])?.toString().trim(),
-                    line: getRowVal(row, ["Line"])?.toString().trim(),
-                    sub_section: getRowVal(row, ["Sub Section"])?.toString().trim(),
-                    stationNo: getRowVal(row, ["Station No.", "Station No"])?.toString().trim(),
-                    mentor: getRowVal(row, ["Mentor"])?.toString().trim(),
-                    designation: getRowVal(row, ["Designation"])?.toString().trim(),
-                    dob: normalizeDate(getRowVal(row, ["D.O.B.", "DOB", "D.O.B"])),
-                    joiningDate: normalizeDate(getRowVal(row, ["D.O.J.", "DOJ", "D.O.J"])),
-                    education: getRowVal(row, ["Education"])?.toString().trim(),
-                    district: getRowVal(row, ["District", "Distt", "Dist"])?.toString().trim(),
-                    state: getRowVal(row, ["State"])?.toString().trim(),
-                    pin: getRowVal(row, ["PIN", "Pin", "Pin Code", "Pincode"])?.toString().trim(),
-                    busRoute: getRowVal(row, ["Bus Route"])?.toString().trim(),
-                    email: getRowVal(row, ["E-Mail ID", "Email", "Email ID"])?.toString().trim(),
-                    phoneNumber: getRowVal(row, ["Mobile No.", "Mobile No", "Mobile Number", "Phone", "Phone Number"])?.toString().trim(),
-                    currentLevel: getRowVal(row, ["L", "Lavel", "Level"])?.toString().trim(),
-                    leavingDate: leavingDateVal,
-                    reasonOfLeaving: getRowVal(row, ["Reason of Leaving", "ReasonofLeaving"])?.toString().trim(),
-                    contractor: getRowVal(row, ["Contractor"])?.toString().trim() || null,
-                    rawStatus: getRowVal(row, ["Status"])?.toString().trim() || null,
-                    status: leavingDateVal ? "LEFT" : normalizeStatus(getRowVal(row, ["Status"])),
-                };
+            const outcome = await processSingleEmployeeRow({ row, rowNumber, logId, deptMap, sectionMap, contractorMap });
+            if (outcome.skip) continue;
 
-                // Resolve hierarchy IDs
-                const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
-                const sectionId = (departmentId && normalizedRow.section)
-                    ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`)
-                    : null;
-
-                const stationId = null;
-                const subSectionId = null;
-                const lineId = null;
-                const contractorId = normalizedRow.contractor
-                    ? (contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null)
-                    : null;
-
-                // Validate required fields (phoneNumber is now optional)
-                if (!normalizedRow.empId || !normalizedRow.idCard || !normalizedRow.fullName) {
-                    const isEssentiallyEmpty = !normalizedRow.empId && !normalizedRow.idCard && !normalizedRow.fullName;
-                    if (isEssentiallyEmpty) continue;
-
-                    const isHeaderRow = ["employeeid", "employee code", "employee id", "employee code", "emp code", "emp id"].includes(normalizedRow.empId?.toLowerCase());
-                    if (isHeaderRow) continue;
-
-                    if (normalizedRow.empId && (normalizedRow.empId.includes(' ') || normalizedRow.empId.length > 15)) {
-                        continue;
-                    }
-
-                    if (normalizedRow.phoneNumber && !/^\d{8,15}$/.test(normalizedRow.phoneNumber.replace(/\D/g, ''))) {
-                        continue;
-                    }
-
-                    const error = "Missing required fields: EmployeeID, CardNo, and Name are mandatory.";
-                    results.failed.push({ row: rowNumber, data: row, error });
-
-                    // Log to DB
-                    await executeQuery(
-                        "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
-                        [logId, rowNumber, JSON.stringify(row), "FAILED", error]
-                    );
-                    continue;
-                }
-
-                // Helper for date comparison
-                const safeDate = (val) => normalizeDate(val);
-
-                // Check if user already exists (needed for phone conflict resolution below)
-                let existingUser = null;
-                const [existing] = await executeQuery(
-                    "SELECT u.*, d.name as departmentName, s.name as sectionName, l.name as lineName, ss.name as subSectionName, st.name as stationName " +
-                    "FROM users u " +
-                    "LEFT JOIN departments d ON u.departmentId = d.id " +
-                    "LEFT JOIN sections s ON u.sectionId = s.id " +
-                    "LEFT JOIN [lines] l ON u.lineId = l.id " +
-                    "LEFT JOIN sub_sections ss ON u.subSectionId = ss.id " +
-                    "LEFT JOIN machines st ON u.stationId = st.id " +
-                    "WHERE u.userName = ?",
-                    [normalizedRow.empId.toLowerCase()]
-                );
-
-                if (existing && existing.length > 0) {
-                    existingUser = existing[0];
-                }
-
-                // Handle duplicate phone number gracefully instead of failing the row
-                if (normalizedRow.phoneNumber) {
-                    const [dupPhone] = await executeQuery(
-                        "SELECT id, userName FROM users WHERE phoneNumber = ? AND userName != ?",
-                        [normalizedRow.phoneNumber, normalizedRow.empId.toLowerCase()]
-                    );
-                    if (dupPhone && dupPhone.length > 0) {
-                        if (existingUser) {
-                            // Keep their existing phone number so the update doesn't hit the unique constraint
-                            normalizedRow.phoneNumber = existingUser.phoneNumber || null;
-                        } else {
-                            // New user: set null so insert succeeds (NULL is not subject to unique constraint)
-                            normalizedRow.phoneNumber = null;
-                        }
-                    }
-                }
-
-                // Prepare user data (Prioritize isEmployee for tracking)
-                const userData = {
-                    ...normalizedRow,
-                    departmentId,
-                    sectionId,
-                    lineId,
-                    subSectionId,
-                    stationId,
-                    contractorId,
-                    userName: normalizedRow.empId.toLowerCase(),
-                    password: normalizedRow.empId,
-                    role: "STUDENT",
-                    unit: "UNIT_1",
-                    isEmployee: true,
-                    isAdmin: false,
-                    isTrainer: false,
-                    email: normalizedRow.email || null,
-                    status: normalizedRow.status || "PRESENT",
-                    departments: departmentId ? [departmentId] : [],
-                    sections: sectionId ? [sectionId] : []
-                };
-
-                if (existingUser) {
-                    const changes = {};
-                    const fieldsToCompare = [
-                        { key: 'fullName', label: 'Name' },
-                        { key: 'idCard', label: 'Card No.' },
-                        { key: 'fatherHusbandName', label: 'Father/Husband Name' },
-                        { key: 'gender', label: 'Gender' },
-                        { key: 'departmentId', label: 'Department' },
-                        { key: 'sectionId', label: 'Section' },
-                        // Line, Sub-Section, and Station are EXCLUDED from updates as per requirement
-                        { key: 'mentor', label: 'Mentor' },
-                        { key: 'designation', label: 'Designation' },
-                        { key: 'dob', label: 'DOB' },
-                        { key: 'joiningDate', label: 'Joining Date' },
-                        { key: 'leavingDate', label: 'Date of Leaving' },
-                        { key: 'reasonOfLeaving', label: 'Reason of Leaving' },
-                        { key: 'contractorId', label: 'Contractor' },
-                        { key: 'education', label: 'Education' },
-                        { key: 'district', label: 'District' },
-                        { key: 'state', label: 'State' },
-                        { key: 'pin', label: 'PIN' },
-                        { key: 'busRoute', label: 'Bus Route' },
-                        { key: 'email', label: 'Email' },
-                        { key: 'phoneNumber', label: 'Mobile No.' },
-                        { key: 'currentLevel', label: 'Level' },
-                        { key: 'status', label: 'Status' },
-                    ];
-
-                    const updatedData = {};
-
-                    for (const field of fieldsToCompare) {
-                        const newVal = userData[field.key];
-                        const oldVal = existingUser[field.key];
-
-                        const isNewValEmpty = newVal === null || newVal === undefined || newVal.toString().trim() === "";
-
-                        // Leaving details: only clear when status is explicitly PRESENT in Excel and no leavingDate is set in Excel;
-                        // otherwise fall through to normal diff logic so new values can be set.
-                        if (['leavingDate', 'reasonOfLeaving'].includes(field.key)) {
-                            const explicitStatus = normalizedRow.rawStatus ? normalizeStatus(normalizedRow.rawStatus) : null;
-                            if (explicitStatus === "PRESENT" && !normalizedRow.leavingDate) {
-                                if (oldVal !== null && oldVal !== undefined && oldVal !== "") {
-                                    updatedData[field.key] = null;
-                                    changes[field.label] = { from: oldVal, to: "Cleared (Status Present)" };
-                                }
-                                continue; // Skip normal diff — clearing is done
-                            }
-                            // Status is not PRESENT (or leavingDate is set): fall through to isNewValEmpty + diff logic below
-                        }
-
-                        // Status: only update if the Excel cell was explicitly filled in or if we are forcing it to LEFT.
-                        if (field.key === 'status' && !normalizedRow.rawStatus && !normalizedRow.leavingDate) {
-                            continue;
-                        }
-
-                        // All other fields: skip if Excel cell is empty to prevent wiping existing data.
-                        if (isNewValEmpty) {
-                            continue;
-                        }
-
-                        let isDifferent = false;
-                        if (['dob', 'joiningDate', 'leavingDate'].includes(field.key)) {
-                            const d1 = safeDate(newVal);
-                            const d2 = safeDate(oldVal);
-                            if (d1 !== d2) isDifferent = true;
-                        } else {
-                            const s1 = newVal.toString().trim();
-                            const s2 = (oldVal !== null && oldVal !== undefined) ? oldVal.toString().trim() : "";
-                            if (s1 !== s2) isDifferent = true;
-                        }
-
-                        if (isDifferent) {
-                            updatedData[field.key] = userData[field.key];
-
-                            // Handle syncing string columns for hierarchy and contractor
-                            if (field.key === 'departmentId') {
-                                updatedData.department = normalizedRow.department;
-                                changes[field.label] = { from: existingUser.departmentName || "N/A", to: normalizedRow.department || "N/A" };
-                            } else if (field.key === 'sectionId') {
-                                updatedData.section = normalizedRow.section;
-                                changes[field.label] = { from: existingUser.sectionName || "N/A", to: normalizedRow.section || "N/A" };
-                            } else if (field.key === 'contractorId') {
-                                updatedData.contractorId = userData.contractorId;
-                                updatedData.contractor = normalizedRow.contractor || null;
-                                changes[field.label] = { from: existingUser.contractor || "N/A", to: normalizedRow.contractor || "N/A" };
-                            } else {
-                                changes[field.label] = { from: oldVal || "N/A", to: newVal || "N/A" };
-                            }
-                        }
-                    }
-
-                    // ALWAYS ensure departments and sections arrays are in sync with their IDs
-                    if (userData.departmentId) {
-                        updatedData.departments = JSON.stringify([userData.departmentId]);
-                    }
-                    if (userData.sectionId) {
-                        updatedData.sections = JSON.stringify([userData.sectionId]);
-                    }
-
-                    if (Object.keys(updatedData).length > 0) {
-                        const updateFields = Object.keys(updatedData).map(k => `${k} = ?`).join(', ');
-                        const values = [...Object.values(updatedData), existingUser.id];
-
-                        await executeQuery(`UPDATE users SET ${updateFields}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
-
-                        const status = Object.keys(changes).length > 0 ? "UPDATED" : "SUCCESS";
-                        results.success.push({
-                            row: rowNumber,
-                            userName: userData.userName,
-                            empId: userData.empId,
-                            status
-                        });
-                        if (status === "UPDATED") results.updatedCount++;
-
-                        await executeQuery(
-                            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId, changes) VALUES (?, ?, ?, ?, ?, ?)",
-                            [logId, rowNumber, JSON.stringify(row), status, existingUser.id, JSON.stringify(changes)]
-                        );
-
-                        // Always ensure department students list is synced for any processed operator
-                        // This helper now handles moving from one department to another correctly
-                        await syncDepartmentStudents(existingUser.id, userData.departmentId);
-                    } else {
-                        // This case should theoretically not happen now as departments is always synced if departmentId exists
-                        results.success.push({
-                            row: rowNumber,
-                            userName: userData.userName,
-                            empId: userData.empId,
-                            status: "SUCCESS"
-                        });
-                        await executeQuery("UPDATE users SET isDeleted = 0 WHERE id = ?", [existingUser.id]);
-                        await executeQuery(
-                            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
-                            [logId, rowNumber, JSON.stringify(row), "SUCCESS", existingUser.id]
-                        );
-                    }
-                    continue;
-                }
-
-                // Insert user
-                const newUser = await User.create(userData);
-
-                // Sync department students list for new user
-                if (departmentId) {
-                    await syncDepartmentStudents(newUser.id, departmentId);
-                }
-
-                results.success.push({
-                    row: rowNumber,
-                    userName: userData.userName,
-                    empId: userData.empId,
-                    status: "CREATED"
-                });
-
-                // Log to DB
-                await executeQuery(
-                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
-                    [logId, rowNumber, JSON.stringify(row), "CREATED", newUser.id]
-                );
-
-            } catch (error) {
-                const errorMsg = error.message || "Failed to import user";
-                results.failed.push({ row: rowNumber, data: row, error: errorMsg });
-
-                // Log to DB
-                await executeQuery(
-                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
-                    [logId, rowNumber, JSON.stringify(row), "FAILED", errorMsg]
-                );
+            if (outcome.status === "FAILED") {
+                results.failed.push({ row: rowNumber, data: row, error: outcome.error });
+            } else {
+                results.success.push({ row: rowNumber, userName: outcome.userName, empId: outcome.empId, status: outcome.status });
+                if (outcome.status === "UPDATED") results.updatedCount++;
             }
         }
 
@@ -615,6 +619,113 @@ export const importEmployees = async (req, res) => {
         console.error("Import employees error:", error);
         throw new ApiError(500, error.message || "Failed to import employees");
     }
+};
+
+/**
+ * Start a chunked employee import session. The client parses the Excel file itself and
+ * streams rows to /process-chunk afterwards so it can render live progress.
+ */
+export const startImportEmployees = async (req, res) => {
+    const { fileName, totalRows } = req.body;
+    if (!fileName || !totalRows) {
+        throw new ApiError(400, "fileName and totalRows are required");
+    }
+
+    const [logResult] = await executeQuery(
+        "INSERT INTO import_logs (fileName, importType, totalRows, importedBy) OUTPUT INSERTED.id VALUES (?, ?, ?, ?)",
+        [fileName, "OPERATOR", totalRows, req.user?.id || null]
+    );
+
+    res.json(new ApiResponse(200, { logId: logResult[0].id }, "Import session started"));
+};
+
+/**
+ * Process one chunk of rows for an in-progress chunked import session.
+ */
+export const processEmployeesChunk = async (req, res) => {
+    const { logId, rows, startIndex } = req.body;
+    if (!logId || !Array.isArray(rows) || rows.length === 0) {
+        throw new ApiError(400, "logId and a non-empty rows array are required");
+    }
+
+    const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
+    const [allSections] = await executeQuery("SELECT id, name, departmentId, category FROM sections WHERE isActive = 1");
+    const [allContractors] = await executeQuery("SELECT id, name FROM contractors WHERE status = 'active'");
+
+    const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
+
+    const sectionMap = new Map();
+    allSections.forEach(s => {
+        const name = s.name.toLowerCase().trim();
+        const deptId = s.departmentId;
+        const category = (s.category || "").toLowerCase().trim();
+        sectionMap.set(`${deptId}|${name}`, s.id);
+        if (category && category !== "not applicable") {
+            sectionMap.set(`${deptId}|${name} - ${category}`, s.id);
+        }
+    });
+
+    const contractorMap = new Map(allContractors.map(c => [c.name.toLowerCase().trim(), c.id]));
+
+    const results = [];
+    for (let i = 0; i < rows.length; i++) {
+        const rowNumber = (startIndex || 0) + i;
+        const outcome = await processSingleEmployeeRow({ row: rows[i], rowNumber, logId, deptMap, sectionMap, contractorMap });
+        if (outcome.skip) continue;
+        results.push(outcome);
+    }
+
+    const successCount = results.filter(r => r.status !== "FAILED").length;
+    const failedCount = results.filter(r => r.status === "FAILED").length;
+
+    res.json(new ApiResponse(200, { results, successCount, failedCount }, "Chunk processed"));
+};
+
+/**
+ * Finalize a chunked employee import session: aggregate counts from import_log_details,
+ * update the summary log row, and sync the hierarchy snapshot.
+ */
+export const finalizeImportEmployees = async (req, res) => {
+    const { logId } = req.body;
+    if (!logId) {
+        throw new ApiError(400, "logId is required");
+    }
+
+    const [counts] = await executeQuery(
+        "SELECT status, COUNT(*) as cnt FROM import_log_details WHERE logId = ? GROUP BY status",
+        [logId]
+    );
+
+    let successCount = 0, failCount = 0, updatedCount = 0;
+    counts.forEach(c => {
+        if (c.status === "FAILED") {
+            failCount = c.cnt;
+        } else {
+            successCount += c.cnt;
+            if (c.status === "UPDATED") updatedCount = c.cnt;
+        }
+    });
+
+    await executeQuery(
+        "UPDATE import_logs SET successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
+        [successCount, failCount, updatedCount, logId]
+    );
+
+    try {
+        await UserHierarchySnapshot.syncFromUsers();
+    } catch (syncErr) {
+        console.error("Snapshot sync failed after finalizeImportEmployees:", syncErr.message);
+    }
+
+    const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [logId]);
+
+    res.json(new ApiResponse(200, {
+        logId,
+        totalRows: log[0]?.totalRows || 0,
+        successCount,
+        failCount,
+        updatedCount,
+    }, "Import finalized"));
 };
 
 /**
@@ -917,14 +1028,14 @@ export const importDojoUsers = async (req, res) => {
                     throw new Error(`Candidate with Employee Code ${normalizedRow.empId} already exists.`);
                 }
 
-                // If phone number is already in use, clear it so creation still proceeds
-                if (normalizedRow.phoneNumber) {
-                    const [dupPhone] = await executeQuery(
-                        "SELECT id FROM users WHERE phoneNumber = ?",
-                        [normalizedRow.phoneNumber]
+                // If ID card is already in use, clear it so creation still proceeds
+                if (normalizedRow.idCard) {
+                    const [dupIdCard] = await executeQuery(
+                        "SELECT id FROM users WHERE idCard = ?",
+                        [normalizedRow.idCard]
                     );
-                    if (dupPhone && dupPhone.length > 0) {
-                        normalizedRow.phoneNumber = null;
+                    if (dupIdCard && dupIdCard.length > 0) {
+                        normalizedRow.idCard = null;
                     }
                 }
 

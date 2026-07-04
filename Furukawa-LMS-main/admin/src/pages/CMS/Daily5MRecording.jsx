@@ -648,7 +648,6 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         disabled={isLocked}
                     >
                         <option value="">Req Skill</option>
-                        <option value="Under Monitoring">Under Monitoring</option>
                         {(skillLevels || []).map((level, idx) => (
                             <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                         ))}
@@ -687,6 +686,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         disabled={isLocked}
                     >
                         <option value="">Act Skill</option>
+                        <option value="Under Monitoring">Under Monitoring</option>
                         {(skillLevels || []).map((level, idx) => (
                             <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                         ))}
@@ -2186,7 +2186,6 @@ const Daily5MRecording = () => {
                                                                 disabled={isLocked}
                                                             >
                                                                 <option value="">Req Skill</option>
-                                                                <option value="Under Monitoring">Under Monitoring</option>
                                                                 {skillLevels.map((level, idx) => (
                                                                     <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                                                                 ))}
@@ -2216,6 +2215,7 @@ const Daily5MRecording = () => {
                                                                 disabled={isLocked}
                                                             >
                                                                 <option value="">Act Skill</option>
+                                                                <option value="Under Monitoring">Under Monitoring</option>
                                                                 {skillLevels.map((level, idx) => (
                                                                     <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                                                                 ))}

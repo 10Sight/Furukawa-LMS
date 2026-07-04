@@ -759,26 +759,31 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
         return idx >= 0 ? idx : 0;
     })();
 
-    // Whitelist incoming evalData to only the student's current level; keys for any other
-    // level are dropped and the previously-saved values for those levels are preserved as-is.
-    // This stops a tampered/forged payload from planting fake "OK" data in a level the
-    // student hasn't reached yet (which could trigger an unearned auto-upgrade later).
+    // Levels are unlocked for editing, so a trainer may fill out any level's section
+    // (not just the student's current one) and save it as a draft or towards an upgrade.
     const incomingEvalData = parseJSON(evalData, {});
     const existingEvalData = parseJSON(existingSheet.evalData, {});
-    const mergedEvalData = { ...existingEvalData };
-    for (const key of Object.keys(incomingEvalData)) {
-        if (key.split('-')[0] === String(currentLevelIdx)) {
-            mergedEvalData[key] = incomingEvalData[key];
-        }
-    }
+    const mergedEvalData = { ...existingEvalData, ...incomingEvalData };
 
     const calculatedEfficiency = calculateUserEfficiency(mergedEvalData);
 
-    // A level upgrade only happens when every item in the student's CURRENT level is OK.
-    const hasNextLevel = currentLevelIdx + 1 < (activeConfig.levels?.length || 0);
-    const levelFullyOK = isLevelFullyOK(mergedEvalData, skillCertConfig, currentLevelIdx);
-    const nextLevelObj = hasNextLevel ? activeConfig.levels.find(l => l.order === currentLevelIdx + 1) : null;
-    const earnedLevelName = (levelFullyOK && nextLevelObj) ? nextLevelObj.name : 'L0';
+    // Earned level = the highest-order level whose section is fully OK, awarded as that
+    // level's own name. This lets a student skip straight to L3 if the L3 section is
+    // complete, even if L1/L2 were never (or not yet) filled in.
+    let earnedLevelName = 'L0';
+    const levelIndices = Object.keys(skillCertConfig.levels || {})
+        .map(Number)
+        .sort((a, b) => b - a); // highest order first
+
+    for (const sIdx of levelIndices) {
+        if (isLevelFullyOK(mergedEvalData, skillCertConfig, sIdx)) {
+            const lvlObj = activeConfig.levels.find(l => l.order === sIdx);
+            if (lvlObj) {
+                earnedLevelName = lvlObj.name;
+                break;
+            }
+        }
+    }
 
     const updatedBy = req.user.id;
     const evaluation = await SkillMatrixEvaluation.upsert({

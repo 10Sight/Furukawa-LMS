@@ -320,7 +320,16 @@ const HandoverSheetPage = () => {
         year: monitorYear,
     }, { skip: activeTab !== 'monitoring' });
 
-    const departments = deptsData?.data?.departments || [];
+    const departments = useMemo(() => {
+        const rawDepts = deptsData?.data?.departments || [];
+        const seen = new Set();
+        return rawDepts.filter(d => {
+            const id = String(d.id || d._id);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+    }, [deptsData]);
     const createSections = createSectionsData?.data || [];
     const dashSections = dashSectionsData?.data || [];
     const monitorSections = monitorSectionsData?.data || [];

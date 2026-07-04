@@ -563,10 +563,12 @@ const SkillMatrixCertificate = ({
     const handleSave = async (triggerEmail = false) => {
         if (!studentId || !selectedSheetId) return;
 
-        if (!isLevelComplete(currentLevelIdx)) {
-            const levelName = displayLevels[currentLevelIdx]?.name || `Level ${currentLevelIdx + 1}`;
-            toast.error(`Please complete all items in your current level (${levelName}) before saving.`);
-            return;
+        if (triggerEmail) {
+            const anyLevelComplete = displayLevels.some((_, idx) => isLevelComplete(idx));
+            if (!anyLevelComplete) {
+                toast.error("Please complete all items in at least one level before submitting.");
+                return;
+            }
         }
 
         try {
@@ -1085,24 +1087,23 @@ const SkillMatrixCertificate = ({
                                 const filledCount = items.filter((item, iIdx) => isItemFilled(sIdx, item, iIdx)).length;
                                 const levelDone = items.length > 0 && filledCount === items.length;
                                 const isCurrentLevelSection = sIdx === currentLevelIdx;
-                                const sectionEditable = isEditable && isCurrentLevelSection;
+                                const sectionEditable = isEditable;
 
                                 return (
-                                    <div key={sIdx} className={`border-b last:border-b-0 border-black ${isEditable && !isCurrentLevelSection ? 'bg-gray-50 opacity-70' : ''}`}>
+                                    <div key={sIdx} className={`border-b last:border-b-0 border-black ${isCurrentLevelSection ? 'bg-blue-50/40' : ''}`}>
                                         {/* Section Title */}
                                         <div className="flex border-b border-black bg-gray-50/50 p-2 items-center gap-2">
                                             <LevelIcon level={sIdx + 1} maxLevels={maxLevels} size={24} />
                                             <span className="font-bold text-sm">{sIdx + 1} : {levelContent.title}</span>
-                                            {items.length > 0 && isEditable && (
-                                                isCurrentLevelSection ? (
-                                                    <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print ${levelDone ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-                                                        {levelDone ? 'Complete' : `${filledCount}/${items.length} filled`}
-                                                    </span>
-                                                ) : (
-                                                    <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print bg-gray-200 text-gray-500">
-                                                        Locked — not current level
-                                                    </span>
-                                                )
+                                            {isCurrentLevelSection && (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full no-print bg-blue-100 text-blue-700">
+                                                    Current Level
+                                                </span>
+                                            )}
+                                            {items.length > 0 && (
+                                                <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print ${levelDone ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                    {levelDone ? 'Complete' : `${filledCount}/${items.length} filled`}
+                                                </span>
                                             )}
                                         </div>
 

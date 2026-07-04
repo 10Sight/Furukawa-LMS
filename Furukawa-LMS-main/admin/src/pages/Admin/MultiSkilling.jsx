@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     Select,
@@ -54,6 +55,10 @@ const VALID_MULTI_SKILLING_TABS = [
 ];
 
 const MultiSkilling = () => {
+
+    const authUser = useSelector(state => state.auth.user);
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
+    const canAccessAll = isAdmin;
 
     const [searchParams, setSearchParams] = useSearchParams();
 
@@ -185,9 +190,65 @@ const MultiSkilling = () => {
             toast.error(error?.response?.data?.message || "Failed to create plan.");
         }
     };
-    const departments = deptsData?.data?.departments || [];
+    const departments = useMemo(() => {
+        const rawDepts = deptsData?.data?.departments || [];
+        const seen = new Set();
+        return rawDepts.filter(d => {
+            const id = String(d.id || d._id);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+    }, [deptsData]);
     const sections = sectionsData?.data || [];
     const students = studentsData?.data?.users || [];
+
+    // ── Permission-filtered department/section lists ────────────────────────
+    const assignableDepartments = useMemo(() => {
+        const allDepts = departments || [];
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allDepts;
+        return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
+    }, [departments, authUser, canAccessAll]);
+
+    const assignableSections = useMemo(() => {
+        const allSections = sections || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [sections, authUser, canAccessAll]);
+
+    const assignableCreateSections = useMemo(() => {
+        const allSections = createSections || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [createSections, authUser, canAccessAll]);
+
+    const isRestricted = !canAccessAll && authUser && (
+        (authUser.departments?.length > 0) || authUser.departmentId ||
+        (authUser.sections?.length > 0) || authUser.sectionId
+    );
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !dept) {
+            setDept(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+        }
+    }, [isRestricted, assignableDepartments, dept]);
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (dept && assignableSections.length === 1 && !section) {
+            setSection(String(assignableSections[0].id || assignableSections[0]._id));
+        }
+    }, [isRestricted, dept, assignableSections, section]);
 
     // Skill Evaluation Operator Finder State
     const [evalDepartment, setEvalDepartment] = useState("");
@@ -207,6 +268,15 @@ const MultiSkilling = () => {
     const { data: evalSectionsData } = useGetSectionsByDepartmentQuery(evalDepartment, { skip: !evalDepartment });
     const { data: evalLinesData } = useGetLinesBySectionQuery(evalSection, { skip: !evalSection });
     const { data: evalSubSectionsData } = useGetSubSectionsByLineQuery(evalLine, { skip: !evalLine });
+
+    const assignableEvalSections = useMemo(() => {
+        const allSections = evalSectionsData?.data || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [evalSectionsData, authUser, canAccessAll]);
 
     const { data: evalUsersData, isFetching: isEvalUsersFetching } = useGetAllUsersQuery({
         departmentId: evalDepartment || undefined,
@@ -288,7 +358,7 @@ const MultiSkilling = () => {
                                             <SelectValue placeholder="Select Department" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {departments.map((d) => (
+                                            {assignableDepartments.map((d) => (
                                                 <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -306,7 +376,7 @@ const MultiSkilling = () => {
                                             <SelectValue placeholder="Select Section" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {sections.map((s) => (
+                                            {assignableSections.map((s) => (
                                                 <SelectItem key={s.id} value={String(s.id)}>{s.name} {s.category ? `(${s.category})` : ""}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -462,7 +532,7 @@ const MultiSkilling = () => {
                                 }}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="Select Department" /></SelectTrigger>
                                     <SelectContent>
-                                        {departments.map((d) => (
+                                        {assignableDepartments.map((d) => (
                                             <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -479,7 +549,7 @@ const MultiSkilling = () => {
                                 }} disabled={!evalDepartment}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="All Sections" /></SelectTrigger>
                                     <SelectContent>
-                                        {evalSectionsData?.data?.map((s, idx) => (
+                                        {assignableEvalSections.map((s, idx) => (
                                             <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -622,7 +692,7 @@ const MultiSkilling = () => {
                                     <SelectValue placeholder="Select Department" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {departments.map((d) => (
+                                    {assignableDepartments.map((d) => (
                                         <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -639,7 +709,7 @@ const MultiSkilling = () => {
                                     <SelectValue placeholder="Select Section" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {createSections.map((s) => (
+                                    {assignableCreateSections.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>{s.name} {s.category ? `(${s.category})` : ""}</SelectItem>
                                     ))}
                                 </SelectContent>

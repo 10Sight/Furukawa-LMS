@@ -1609,6 +1609,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   }
 
   let statusParamAdded = false;
+  let statusParamIndex = -1;
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
@@ -1620,6 +1621,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     whereClauses.push("u.status = ?");
     params.push(status);
     statusParamAdded = true;
+    statusParamIndex = params.length - 1;
   } else if (req.query.includeLeft !== "true") {
     whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
   }
@@ -1686,7 +1688,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     !c.includes("al.")
   );
   const countsParams = statusParamAdded
-    ? params.slice(0, -1)
+    ? [...params.slice(0, statusParamIndex), ...params.slice(statusParamIndex + 1)]
     : [...params];
   const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 

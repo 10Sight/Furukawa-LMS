@@ -394,7 +394,7 @@ export function HomeLayout() {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 transition-all duration-300 ${collapsed ? "ml-16" : "ml-64"
+        className={`flex-1 min-w-0 transition-all duration-300 ${collapsed ? "ml-16" : "ml-64"
           }`}
       >
         {/* Header */}

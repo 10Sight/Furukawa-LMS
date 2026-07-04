@@ -369,7 +369,7 @@ export function StudentLayout() {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 transition-all duration-300 ${isMobile
+        className={`flex-1 min-w-0 transition-all duration-300 ${isMobile
           ? "ml-0"
           : collapsed
             ? "ml-16"

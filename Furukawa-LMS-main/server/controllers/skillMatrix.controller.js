@@ -895,11 +895,17 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
 
                             if (machineIds.length > 0) {
                                 const studentIdStr = String(studentId);
+                                // Match the entries JSON structurally via OPENJSON rather than a raw
+                                // LIKE text scan, so this reliably finds the row whether userId was
+                                // serialized as a JSON number or a JSON string, and doesn't accidentally
+                                // match a different user whose id happens to be a substring (e.g. "12"
+                                // inside "123").
                                 const [matchingMatrices] = await executeQuery(
-                                    `SELECT id, entries FROM skill_matrices 
-                                     WHERE entries LIKE '%"userId":' + ? + '%' 
-                                        OR entries LIKE '%"userId":"' + ? + '"%'`,
-                                    [studentIdStr, studentIdStr]
+                                    `SELECT DISTINCT sm.id, sm.entries
+                                     FROM (SELECT id, entries FROM skill_matrices WHERE ISJSON(entries) = 1) sm
+                                     CROSS APPLY OPENJSON(sm.entries) WITH (userId NVARCHAR(50) '$.userId') je
+                                     WHERE je.userId = ?`,
+                                    [studentIdStr]
                                 );
 
                                 for (const matrix of matchingMatrices) {

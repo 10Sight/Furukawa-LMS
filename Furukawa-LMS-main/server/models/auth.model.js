@@ -27,6 +27,23 @@ const applyHierarchyCascade = (obj) => {
     if (!obj.targetSubSectionId) obj.targetStationId = null;
 };
 
+const getEntityName = async (table, id) => {
+    if (!id) return null;
+    const [rows] = await executeQuery(`SELECT name FROM ${table} WHERE id = ?`, [id]);
+    return rows.length > 0 ? rows[0].name : null;
+};
+
+// Keeps the legacy string columns (department, section, line, sub_section, stationNo) in
+// sync with their relational ID columns so consumers that still read the string columns
+// don't see stale/obsolete values.
+const resolveHierarchyNames = async (obj) => {
+    obj.department = await getEntityName('departments', obj.departmentId);
+    obj.section = await getEntityName('[sections]', obj.sectionId);
+    obj.line = await getEntityName('[lines]', obj.lineId);
+    obj.sub_section = await getEntityName('sub_sections', obj.subSectionId);
+    obj.stationNo = await getEntityName('machines', obj.stationId);
+};
+
 class User {
     constructor(data) {
         this.id = data.id;
@@ -590,6 +607,44 @@ class User {
                     UPDATE users SET stations = CONCAT('[', stationId, ']')
                     WHERE stationId IS NOT NULL AND (stations IS NULL OR stations = '[]' OR stations = '');
                 `);
+
+                // 5. Sync legacy string columns (department, section, line, sub_section, stationNo)
+                // from their resolved ID columns, and clear them out when the ID is NULL, so
+                // consumers that still read the string columns never see stale/obsolete values.
+                await executeQuery(`
+                    UPDATE u SET u.department = d.name
+                    FROM users u JOIN departments d ON u.departmentId = d.id
+                    WHERE u.departmentId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET department = NULL WHERE departmentId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.section = s.name
+                    FROM users u JOIN [sections] s ON u.sectionId = s.id
+                    WHERE u.sectionId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET section = NULL WHERE sectionId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.line = l.name
+                    FROM users u JOIN [lines] l ON u.lineId = l.id
+                    WHERE u.lineId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET line = NULL WHERE lineId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.sub_section = ss.name
+                    FROM users u JOIN sub_sections ss ON u.subSectionId = ss.id
+                    WHERE u.subSectionId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET sub_section = NULL WHERE subSectionId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.stationNo = m.name
+                    FROM users u JOIN machines m ON u.stationId = m.id
+                    WHERE u.stationId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET stationNo = NULL WHERE stationId IS NULL`);
             } catch (backfillErr) {
                 console.error("Error during hierarchy reference ID backfill migration:", backfillErr);
             }
@@ -656,11 +711,12 @@ class User {
         }
 
         applyHierarchyCascade(dataToInsert);
+        await resolveHierarchyNames(dataToInsert);
 
         const values = fields.map(field => {
             let val = dataToInsert[field];
             if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt', 'shiftSchedule'].includes(field)) {
-                return JSON.stringify(val || (field === 'avatar' ? {} : (field === 'shiftSchedule' ? {} : [])));
+                return JSON.stringify(val || (['avatar', 'shiftSchedule', 'currentSkill', 'skillEffeciency'].includes(field) ? {} : []));
             }
             if (val === undefined || val === "") return null;
             return val;
@@ -979,6 +1035,7 @@ class User {
         }
 
         applyHierarchyCascade(this);
+        await resolveHierarchyNames(this);
 
         // Only update fields that are defined on the instance
         const definedFields = fields.filter(field => this[field] !== undefined);

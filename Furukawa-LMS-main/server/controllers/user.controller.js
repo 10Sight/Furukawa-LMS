@@ -1001,6 +1001,38 @@ export const updateUser = asyncHandler(async (req, res) => {
         } else {
           updates.push("department = NULL");
         }
+      } else if (f === "sectionId") {
+        updates.push("sectionId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [sec] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [data[f]]);
+          if (sec.length) { updates.push("section = ?"); values.push(sec[0].name); }
+        } else {
+          updates.push("section = NULL");
+        }
+      } else if (f === "lineId") {
+        updates.push("lineId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [ln] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [data[f]]);
+          if (ln.length) { updates.push("line = ?"); values.push(ln[0].name); }
+        } else {
+          updates.push("line = NULL");
+        }
+      } else if (f === "subSectionId") {
+        updates.push("subSectionId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [ss] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [data[f]]);
+          if (ss.length) { updates.push("sub_section = ?"); values.push(ss[0].name); }
+        } else {
+          updates.push("sub_section = NULL");
+        }
+      } else if (f === "stationId") {
+        updates.push("stationId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [st] = await executeQuery("SELECT name FROM machines WHERE id = ?", [data[f]]);
+          if (st.length) { updates.push("stationNo = ?"); values.push(st[0].name); }
+        } else {
+          updates.push("stationNo = NULL");
+        }
       } else if (f === "departments") {
         updates.push("departments = ?");
         values.push(JSON.stringify(parseArray(data[f])));

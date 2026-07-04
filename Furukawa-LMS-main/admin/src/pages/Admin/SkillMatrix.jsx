@@ -280,7 +280,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const { data: evalSubSectionsData } = useGetSubSectionsByLineQuery(evalLine, { skip: !evalLine });
 
     // Fetch users for evaluation search based on evaluation hierarchy
-    const { data: evalUsersData, isFetching: isEvalUsersFetching } = useGetAllUsersQuery({
+    const { data: evalUsersData, isFetching: isEvalUsersFetching, refetch: refetchEvalUsers } = useGetAllUsersQuery({
         departmentId: evalDepartment || undefined,
         sectionId: evalSection || undefined,
         lineId: evalLine || undefined,
@@ -402,7 +402,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const isMachinesLoading = isDeptMachinesLoading || isSectMachinesLoading || isLineMachinesLoading || isSubSectionMachinesLoading;
 
     // Fetch users for matrix based on hierarchy
-    const { data: usersData } = useGetAllUsersQuery({
+    const { data: usersData, refetch: refetchDeptUsers } = useGetAllUsersQuery({
         departmentId: selectedDepartment,
         sectionId: selectedSection,
         lineId: selectedLine,
@@ -2337,6 +2337,15 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         setSelectedSheetId(null);
                                         setIsEvalReadOnly(false);
                                         fetchEvaluationSheets(selectedOperatorForEval);
+                                    }}
+                                    onSaved={() => {
+                                        // Each query is conditionally skipped depending on which tab/filters
+                                        // are active, and RTK Query's refetch() throws synchronously if the
+                                        // query was never started - guard each call independently so one
+                                        // skipped query doesn't stop the others from refreshing.
+                                        [refetchMatrix, refetchDeptUsers, refetchEvalUsers].forEach(fn => {
+                                            try { fn(); } catch (e) { /* query not started yet, nothing to refresh */ }
+                                        });
                                     }}
                                 />
                             </div>

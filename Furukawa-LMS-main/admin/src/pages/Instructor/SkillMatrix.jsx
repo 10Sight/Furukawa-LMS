@@ -46,7 +46,7 @@ const InstructorSkillMatrix = () => {
     // --- Data Fetching ---
 
     // 1. Departments for Dropdown
-    const { data: departmentsData, isLoading: isDeptLoading } = useGetMyDepartmentsQuery();
+    const { data: departmentsData, isLoading: isDeptLoading, refetch: refetchDepartments } = useGetMyDepartmentsQuery();
 
     // 2. Lines for Dropdown (Dependent on Department)
     const { data: linesData, isLoading: isLinesLoading } = useGetLinesByDepartmentQuery(selectedDepartment, {
@@ -1206,6 +1206,11 @@ const InstructorSkillMatrix = () => {
                                         filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.empId || ""
                                     }
                                     departmentId={evalDepartment || selectedDepartment}
+                                    onSaved={() => {
+                                        [refetchDepartments, refetchMatrix].forEach(fn => {
+                                            try { fn(); } catch (e) { /* query not started yet, nothing to refresh */ }
+                                        });
+                                    }}
                                 />
                             </div>
                         ) : !evalDepartment ? (

@@ -208,6 +208,7 @@ const SkillMatrixCertificate = ({
     subSectionId,
     initialSheetId,
     onBackToList,
+    onSaved,
     readOnly = false
 }) => {
     // State
@@ -594,6 +595,10 @@ const SkillMatrixCertificate = ({
             if (listResp.data.success) {
                 setSheets(listResp.data.data || []);
             }
+            // Let the parent screen (Skill Matrix sheet, Student Detail, etc.) know the
+            // operator's level/skill data may have changed so it can refetch its own cache
+            // instead of showing stale data until a manual reload.
+            onSaved?.(response.data?.data);
         } catch (error) {
             console.error("Error saving evaluation:", error);
             toast.error("Failed to save evaluation");

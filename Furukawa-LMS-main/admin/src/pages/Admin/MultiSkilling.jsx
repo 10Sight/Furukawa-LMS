@@ -357,22 +357,19 @@ const MultiSkilling = () => {
         includeEvaluationInfo: "true",
         search: debouncedEvalSearchText || undefined,
         excludeCounts: "true",
-        limit: 1000
+        page: evalOperatorsPage,
+        limit: evalOperatorsPerPage,
+        sortBy: "fullName",
+        order: "asc"
     }, { skip: !evalDepartment });
 
     const filteredEvalUsers = useMemo(() => {
-        const users = evalUsersData?.data?.users || [];
-        return [...users].sort((a, b) =>
-            (a.fullName || a.name || "").localeCompare(b.fullName || b.name || "", undefined, { sensitivity: 'base' })
-        );
+        return evalUsersData?.data?.users || [];
     }, [evalUsersData]);
 
-    const evalOperatorsTotalPages = Math.max(1, Math.ceil(filteredEvalUsers.length / evalOperatorsPerPage));
+    const evalOperatorsTotalPages = evalUsersData?.data?.totalPages || 1;
 
-    const paginatedEvalUsers = useMemo(() => {
-        const start = (evalOperatorsPage - 1) * evalOperatorsPerPage;
-        return filteredEvalUsers.slice(start, start + evalOperatorsPerPage);
-    }, [filteredEvalUsers, evalOperatorsPage]);
+    const paginatedEvalUsers = filteredEvalUsers;
 
     useEffect(() => {
         setEvalOperatorsPage(1);

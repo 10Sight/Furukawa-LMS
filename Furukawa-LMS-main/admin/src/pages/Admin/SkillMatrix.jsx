@@ -290,26 +290,23 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         includeEvaluationInfo: "true",
         search: debouncedEvalSearchText || undefined,
         excludeCounts: "true",
-        limit: 1000
+        page: evalOperatorsPage,
+        limit: evalOperatorsPerPage,
+        sortBy: "fullName",
+        order: "asc"
     }, { skip: !evalDepartment });
 
     const filteredEvalUsers = React.useMemo(() => {
-        const users = evalUsersData?.data?.users || [];
-        return [...users].sort((a, b) =>
-            (a.fullName || a.name || "").localeCompare(b.fullName || b.name || "", undefined, { sensitivity: 'base' })
-        );
+        return evalUsersData?.data?.users || [];
     }, [evalUsersData]);
 
-    const evalOperatorsTotalPages = Math.max(1, Math.ceil(filteredEvalUsers.length / evalOperatorsPerPage));
+    const evalOperatorsTotalPages = evalUsersData?.data?.totalPages || 1;
 
-    const paginatedEvalUsers = React.useMemo(() => {
-        const start = (evalOperatorsPage - 1) * evalOperatorsPerPage;
-        return filteredEvalUsers.slice(start, start + evalOperatorsPerPage);
-    }, [filteredEvalUsers, evalOperatorsPage]);
+    const paginatedEvalUsers = filteredEvalUsers;
 
     useEffect(() => {
         setEvalOperatorsPage(1);
-    }, [evalDepartment, evalSection, evalLine, evalSubSection, evalSearchText]);
+    }, [evalDepartment, evalSection, evalLine, evalSubSection, debouncedEvalSearchText]);
 
     useEffect(() => {
         if (evalOperatorsPage > evalOperatorsTotalPages) setEvalOperatorsPage(evalOperatorsTotalPages);
@@ -805,20 +802,37 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [deleteSkillMatrix, { isLoading: isDeletingMatrix }] = useDeleteSkillMatrixMutation();
 
     const assignableDepartments = React.useMemo(() => {
-        const allDepts = departmentsData?.data?.departments || [];
+        const rawDepts = departmentsData?.data?.departments || [];
+        const seen = new Set();
+        const allDepts = rawDepts.filter(d => {
+            const id = String(d.id || d._id);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+
         const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
         if (user?.departmentId) rawAssigned.push(user.departmentId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id.id || id._id || id)).filter(Boolean);
         if (!user || isAdmin || assignedIds.length === 0) return allDepts;
         return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
     }, [departmentsData, user, isAdmin]);
 
     const filterSections = React.useCallback((sections) => {
+        const rawSections = sections || [];
+        const seen = new Set();
+        const uniqueSections = rawSections.filter(s => {
+            const id = String(s.id || s._id);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+
         const rawAssigned = Array.isArray(user?.sections) ? [...user.sections] : [];
         if (user?.sectionId) rawAssigned.push(user.sectionId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
-        if (!user || isAdmin || assignedIds.length === 0) return sections || [];
-        return (sections || []).filter(s => assignedIds.includes(String(s.id || s._id)));
+        const assignedIds = rawAssigned.map(id => String(id.id || id._id || id)).filter(Boolean);
+        if (!user || isAdmin || assignedIds.length === 0) return uniqueSections;
+        return uniqueSections.filter(s => assignedIds.includes(String(s.id || s._id)));
     }, [user, isAdmin]);
 
     const isRestricted = !isAdmin && user && (

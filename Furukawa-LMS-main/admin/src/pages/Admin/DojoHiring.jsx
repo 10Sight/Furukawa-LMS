@@ -569,7 +569,74 @@ const DojoHiring = () => {
         { label: "Today's Hiring", value: tempUsersData?.data?.todayJoined || 0, icon: IconCalendar, color: "emerald" },
         { label: "Male Candidates", value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
         { label: "Female Candidates", value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
+        { label: "Total Handover", value: tempUsersData?.data?.handoverCount || 0, icon: IconCircleCheck, color: "teal" },
     ];
+
+    const getColorProps = (color) => {
+        switch (color) {
+            case "rose":
+                return {
+                    iconBgColor: "bg-rose-100",
+                    iconColor: "text-rose-600",
+                    gradientFrom: "from-rose-50",
+                    gradientTo: "to-rose-100",
+                    borderColor: "border-rose-200",
+                    textColor: "text-rose-800",
+                    valueColor: "text-rose-900"
+                };
+            case "emerald":
+                return {
+                    iconBgColor: "bg-emerald-100",
+                    iconColor: "text-emerald-600",
+                    gradientFrom: "from-emerald-50",
+                    gradientTo: "to-emerald-100",
+                    borderColor: "border-emerald-200",
+                    textColor: "text-emerald-800",
+                    valueColor: "text-emerald-900"
+                };
+            case "indigo":
+                return {
+                    iconBgColor: "bg-indigo-100",
+                    iconColor: "text-indigo-600",
+                    gradientFrom: "from-indigo-50",
+                    gradientTo: "to-indigo-100",
+                    borderColor: "border-indigo-200",
+                    textColor: "text-indigo-800",
+                    valueColor: "text-indigo-900"
+                };
+            case "pink":
+                return {
+                    iconBgColor: "bg-pink-100",
+                    iconColor: "text-pink-600",
+                    gradientFrom: "from-pink-50",
+                    gradientTo: "to-pink-100",
+                    borderColor: "border-pink-200",
+                    textColor: "text-pink-800",
+                    valueColor: "text-pink-900"
+                };
+            case "teal":
+                return {
+                    iconBgColor: "bg-teal-100",
+                    iconColor: "text-teal-600",
+                    gradientFrom: "from-teal-50",
+                    gradientTo: "to-teal-100",
+                    borderColor: "border-teal-200",
+                    textColor: "text-teal-800",
+                    valueColor: "text-teal-900"
+                };
+            case "blue":
+            default:
+                return {
+                    iconBgColor: "bg-blue-100",
+                    iconColor: "text-blue-600",
+                    gradientFrom: "from-blue-50",
+                    gradientTo: "to-blue-100",
+                    borderColor: "border-blue-200",
+                    textColor: "text-blue-800",
+                    valueColor: "text-blue-900"
+                };
+        }
+    };
 
     const getStatusBadge = (status) => {
         const normalized = normalizeStatus(status);
@@ -689,14 +756,14 @@ const DojoHiring = () => {
             </div>
 
             {/* Stats Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 {stats.map((stat, idx) => (
-                    <StatCard 
+                    <StatCard
                         key={idx}
                         title={stat.label}
                         value={stat.value}
                         icon={stat.icon}
-                        color={stat.color}
+                        {...getColorProps(stat.color)}
                     />
                 ))}
             </div>

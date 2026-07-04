@@ -2193,6 +2193,21 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     WHERE isTemporary = 1 AND (isDeleted = 0 OR isDeleted IS NULL)
   `);
 
+  const [handoverData] = await executeQuery(`
+    SELECT COUNT(DISTINCT u.id) as handoverCount
+    FROM users u
+    WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+      AND (u.status != 'LEFT' OR u.status IS NULL)
+      AND EXISTS (
+          SELECT 1
+          FROM handover_sheets hs
+          CROSS APPLY OPENJSON(hs.entries) as entry
+          WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+            AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+      )
+  `);
+  const handoverCount = handoverData[0]?.handoverCount || 0;
+
   const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${whereSQL}`, params);
   const [users] = await executeQuery(`
     SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments
@@ -2213,6 +2228,7 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     todayJoined: statsData[0].todayJoined,
     maleCount: statsData[0].maleCount,
     femaleCount: statsData[0].femaleCount,
+    handoverCount,
   }, "Temporary users fetched successfully"));
 });
 

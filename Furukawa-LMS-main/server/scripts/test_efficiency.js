@@ -6,25 +6,19 @@ async function main() {
         SELECT 
             id,
             fullName,
-            subSectionId,
-            subSections
+            role,
+            status,
+            isDeleted,
+            subSectionId
         FROM users
-        WHERE (isDeleted = 0 OR isDeleted IS NULL)
-          AND role IN ('STUDENT', 'CUSTOM')
-          AND (status IS NULL OR status != 'LEFT')
+        WHERE id IN (18649, 19134, 19167, 19174, 19179, 19201, 19207, 19208, 19211)
         `;
 
-        const [users] = await executeQuery(sql);
-        console.log("Total users:", users.length);
-
-        const nullSingularWithPlural = users.filter(u => u.subSectionId === null && u.subSections && u.subSections !== '[]' && u.subSections !== '""');
-        console.log("Users with NULL subSectionId but populated subSections array:", nullSingularWithPlural.length);
-
-        if (nullSingularWithPlural.length > 0) {
-            nullSingularWithPlural.slice(0, 5).forEach(u => {
-                console.log(`User: ${u.fullName} (ID: ${u.id}) | subSectionId: ${u.subSectionId} | subSections: ${u.subSections}`);
-            });
-        }
+        const [rows] = await executeQuery(sql);
+        console.log("Details for the 9 users:");
+        rows.forEach(r => {
+            console.log(`User: ${r.fullName} (ID: ${r.id}) | role: ${r.role} | status: ${r.status} | isDeleted: ${r.isDeleted} | subSectionId: ${r.subSectionId}`);
+        });
     } catch (err) {
         console.error(err);
     }

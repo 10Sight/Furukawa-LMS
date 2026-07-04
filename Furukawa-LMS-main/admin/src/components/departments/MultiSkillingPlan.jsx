@@ -327,6 +327,8 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
         rows.forEach(row => {
             if (row.userId) {
                 newTableData[row.userId] = {
+                    userName: row.userName || "",
+                    cardNo: row.cardNo || "",
                     shift: row.shift,
                     modelLine: row.modelLine || "",
                     station: row.station || "",

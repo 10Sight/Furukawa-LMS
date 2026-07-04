@@ -128,13 +128,14 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
-    const [isLoadingPlan, setIsLoadingPlan] = useState(false);
+    const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
     // Reset state when department/section/year changes
     useEffect(() => {
         setHasLoaded(false);
         setRows([]);
         setRemovedUserIds(new Set());
+        setIsLoadingPlan(true);
     }, [departmentId, sectionId, year]);
 
     // Initialize rows when both students and plan data are ready

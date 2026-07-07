@@ -871,7 +871,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     React.useEffect(() => {
         if (!isRestricted || !evalDepartment) return;
         const secs = filterSections(evalSectionsData?.data);
-        if (secs.length === 1 && !evalSection)
+        if (secs.length > 0 && !evalSection)
             setEvalSection(String(secs[0].id || secs[0]._id));
     }, [isRestricted, evalDepartment, evalSectionsData, evalSection]);
 

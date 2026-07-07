@@ -6,6 +6,18 @@ import { ApiError } from "../utils/ApiError.js";
 import bcrypt from "bcryptjs";
 import User from "../models/auth.model.js";
 import fs from "fs";
+import CourseLevelConfig from "../models/courseLevelConfig.model.js";
+import { SkillMatrixConfig } from "../models/skillMatrixConfig.model.js";
+import SkillMatrixEvaluation from "../models/skillMatrixEvaluation.model.js";
+import Section from "../models/section.model.js";
+import Line from "../models/line.model.js";
+import SubSection from "../models/subSection.model.js";
+import {
+    DEFAULT_SKILL_CONFIG,
+    getSpeedCellItemIndex,
+    syncStudentSkillProgress,
+    getPeriodFromDate,
+} from "../utils/skillMatrix.util.js";
 
 /**
  * Parse date string in DD-MMM-YY or DD-MMM-YYYY format robustly and timezone-independently
@@ -193,10 +205,113 @@ const normalizeStatus = (val) => {
 };
 
 /**
+ * Bulk-backfills a Skill Matrix Check Sheet from an import row's Level + Target/Actual Second
+ * columns, reusing the same efficiency/level engine the manual Skill Matrix Certificate save flow
+ * uses (skillMatrix.util.js). No-ops (returns null) when the level is unrecognized or the speed
+ * values are invalid — the employee row itself has already been imported successfully by then.
+ *
+ * Items in levels below the current one are bulk-marked "OK" (a backfill for operators already
+ * recorded as having reached this level), not a fresh per-item trainer assessment.
+ */
+const applySkillMatrixFromImportRow = async ({ userId, subSectionId, departmentId, levelStr, targetSec, actualSec, updatedBy }) => {
+    if (!userId || !levelStr) return null;
+
+    const targetNum = parseFloat(targetSec);
+    const actualNum = parseFloat(actualSec);
+    if (isNaN(targetNum) || isNaN(actualNum) || actualNum <= 0) return null;
+
+    const activeConfig = await CourseLevelConfig.getActiveConfig();
+    const currentLevelIndex = (activeConfig.levels || []).findIndex(
+        l => l.name?.toUpperCase() === levelStr.toUpperCase()
+    );
+    if (currentLevelIndex === -1) return null;
+
+    const certConfig = await SkillMatrixConfig.findByDepartmentId(departmentId ? String(departmentId) : 'GLOBAL');
+    const skillCertConfig = certConfig?.config || DEFAULT_SKILL_CONFIG;
+    const levelConfig = skillCertConfig.levels?.[currentLevelIndex];
+    if (!levelConfig?.items?.length) return null;
+
+    const speedItemIdx = getSpeedCellItemIndex(currentLevelIndex, levelConfig.items);
+    if (speedItemIdx === null) return null;
+
+    const calculatedEff = Math.round((targetNum / actualNum) * 100);
+    const minEff = activeConfig.levels[currentLevelIndex]?.minEfficiency;
+    const meetsStandard = (minEff === undefined || minEff === null || minEff === "")
+        ? true
+        : calculatedEff >= Number(minEff);
+
+    const evalData = {};
+    for (let lvl = 0; lvl < currentLevelIndex; lvl++) {
+        const items = skillCertConfig.levels?.[lvl]?.items || [];
+        items.forEach((_, iIdx) => {
+            evalData[`${lvl}-${iIdx}`] = { standard: "OK" };
+        });
+    }
+    evalData[`${currentLevelIndex}-${speedItemIdx}`] = {
+        actualSec: String(actualNum),
+        targetSec: String(targetNum),
+        okVal: String(calculatedEff),
+        ngVal: String(calculatedEff),
+        standard: meetsStandard ? "OK" : "NG",
+    };
+
+    const earnedLevelName = meetsStandard
+        ? (activeConfig.levels[currentLevelIndex]?.name || levelStr)
+        : (currentLevelIndex > 0 ? (activeConfig.levels[currentLevelIndex - 1]?.name || null) : null);
+
+    // Deactivate prior sheets and create a fresh active one with the next sheetIndex —
+    // mirrors the "create new sheet" flow in skillMatrix.controller.js.
+    await executeQuery("UPDATE skill_matrix_evaluations SET isActive = 0 WHERE studentId = ?", [userId]);
+
+    const [indexRows] = await executeQuery(
+        "SELECT MAX(sheetIndex) as maxIndex FROM skill_matrix_evaluations WHERE studentId = ?",
+        [userId]
+    );
+    const nextIndex = (indexRows[0]?.maxIndex || 0) + 1;
+
+    const evaluation = await SkillMatrixEvaluation.upsert({
+        studentId: userId,
+        departmentId: departmentId ? String(departmentId) : 'GLOBAL',
+        headerData: {},
+        docData: {},
+        evalData,
+        opinion: "",
+        updatedBy: updatedBy || null,
+        sheetIndex: nextIndex,
+        period: getPeriodFromDate(),
+        isActive: 1,
+        earnedLevel: earnedLevelName || 'L0',
+        efficiency: calculatedEff,
+    });
+
+    try {
+        await syncStudentSkillProgress({
+            studentId: userId,
+            subSectionId,
+            calculatedEfficiency: calculatedEff,
+            earnedLevelName,
+            activeConfig,
+        });
+    } catch (syncErr) {
+        console.error(`[applySkillMatrixFromImportRow] Failed to sync user stats for ${userId}:`, syncErr);
+    }
+
+    return evaluation;
+};
+
+/**
  * Process a single employee row: validates, resolves hierarchy IDs, creates/updates the user,
  * and writes the outcome to import_log_details. Shared by the single-shot and chunked import endpoints.
+ *
+ * When resolveFullHierarchy is true (the /employees-full flow), Line/Sub-Section/Station are also
+ * resolved and persisted, and a Skill Matrix Check Sheet is auto-created/updated when the row
+ * carries Target Second/Actual Second values. The standard /employees flow leaves this flag off
+ * and behaves exactly as before — Line/Sub-Section/Station remain unassigned on import.
  */
-const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectionMap, contractorMap }) => {
+const processSingleEmployeeRow = async ({
+    row, rowNumber, logId, deptMap, sectionMap, contractorMap,
+    resolveFullHierarchy = false, lineMap, subSectionMap, stationMap, updatedBy,
+}) => {
     const leavingDateVal = normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"]));
     const normalizedRow = {
         empId: getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])?.toString().trim(),
@@ -226,6 +341,8 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
         contractor: getRowVal(row, ["Contractor"])?.toString().trim() || null,
         rawStatus: getRowVal(row, ["Status"])?.toString().trim() || null,
         status: leavingDateVal ? "LEFT" : normalizeStatus(getRowVal(row, ["Status"])),
+        targetSec: getRowVal(row, ["Target Second", "TargetSecond", "Target Sec"])?.toString().trim(),
+        actualSec: getRowVal(row, ["Actual Second", "ActualSecond", "Actual Sec"])?.toString().trim(),
     };
 
     // Resolve hierarchy IDs
@@ -234,9 +351,23 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
         ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`)
         : null;
 
-    const stationId = null;
-    const subSectionId = null;
-    const lineId = null;
+    // Line/Sub-Section/Station are only resolved for the "full hierarchy" import flow — the
+    // standard import intentionally leaves these unassigned (see processSingleEmployeeRow docblock).
+    let lineId = null;
+    let subSectionId = null;
+    let stationId = null;
+    if (resolveFullHierarchy) {
+        lineId = (sectionId && normalizedRow.line)
+            ? (lineMap?.get(`${sectionId}|${normalizedRow.line.toLowerCase().trim()}`) || null)
+            : null;
+        subSectionId = (lineId && normalizedRow.sub_section)
+            ? (subSectionMap?.get(`${lineId}|${normalizedRow.sub_section.toLowerCase().trim()}`) || null)
+            : null;
+        stationId = (subSectionId && normalizedRow.stationNo)
+            ? (stationMap?.get(`${subSectionId}|${normalizedRow.stationNo.toLowerCase().trim()}`) || null)
+            : null;
+    }
+
     const contractorId = normalizedRow.contractor
         ? (contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null)
         : null;
@@ -304,9 +435,75 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
             }
         }
 
+        // Auto-creates/updates a Skill Matrix Check Sheet for this row's operator when the
+        // /employees-full flow supplied Target Second/Actual Second. No-op for the standard import.
+        const maybeApplySkillMatrix = async (userId) => {
+            if (!resolveFullHierarchy || !normalizedRow.targetSec || !normalizedRow.actualSec) return;
+            try {
+                await applySkillMatrixFromImportRow({
+                    userId,
+                    subSectionId,
+                    departmentId,
+                    levelStr: normalizedRow.currentLevel,
+                    targetSec: normalizedRow.targetSec,
+                    actualSec: normalizedRow.actualSec,
+                    updatedBy,
+                });
+            } catch (smErr) {
+                console.error(`Failed to auto-create skill matrix sheet for row ${rowNumber}:`, smErr);
+            }
+        };
+
+        // Setting departmentId/sectionId/lineId/subSectionId/stationId on the user row does NOT
+        // by itself make the operator show up on sections/lines/sub_sections/machines — those
+        // are reciprocal lists (sections.users, lines.users, sub_sections.users, and the separate
+        // machine_assignments junction table for stations) that only get recomputed when
+        // SubSection/Line/Section.syncUserList() run, exactly as the manual "assign student" flow
+        // in user.controller.js already does. Reuse that same mechanism here for both import flows.
+        const syncHierarchyLists = async (userId) => {
+            try {
+                const oldSectionId = existingUser?.sectionId || null;
+                const oldLineId = existingUser?.lineId || null;
+                const oldSubSectionId = existingUser?.subSectionId || null;
+                const oldStationId = existingUser?.stationId || null;
+
+                if (stationId !== oldStationId) {
+                    if (oldStationId) {
+                        await executeQuery(
+                            "DELETE FROM machine_assignments WHERE user_id = ? AND machine_id = ?",
+                            [userId, oldStationId]
+                        );
+                    }
+                    if (stationId) {
+                        const [existingAssignment] = await executeQuery(
+                            "SELECT id FROM machine_assignments WHERE user_id = ? AND machine_id = ?",
+                            [userId, stationId]
+                        );
+                        if (existingAssignment.length === 0) {
+                            await executeQuery(
+                                "INSERT INTO machine_assignments (user_id, machine_id, assigned_by) VALUES (?, ?, ?)",
+                                [userId, stationId, updatedBy || null]
+                            );
+                        }
+                    }
+                }
+
+                const affectedSubSectionIds = new Set([subSectionId, oldSubSectionId].filter(Boolean));
+                const affectedLineIds = new Set([lineId, oldLineId].filter(Boolean));
+                const affectedSectionIds = new Set([sectionId, oldSectionId].filter(Boolean));
+
+                for (const subSecId of affectedSubSectionIds) await SubSection.syncUserList(subSecId);
+                for (const lId of affectedLineIds) await Line.syncUserList(lId);
+                for (const secId of affectedSectionIds) await Section.syncUserList(secId);
+            } catch (syncErr) {
+                console.error(`Failed to sync hierarchy user lists for row ${rowNumber}:`, syncErr);
+            }
+        };
+
         // Prepare user data (Prioritize isEmployee for tracking)
-        // Line, Sub-Section, and Station are never assigned on import — cleared here so
-        // User.create() below doesn't persist the raw text values scraped from Excel.
+        // Line, Sub-Section, and Station are never assigned by the standard import — cleared here
+        // so User.create() below doesn't persist the raw text values scraped from Excel. The
+        // /employees-full flow (resolveFullHierarchy) is the only path that populates them.
         const userData = {
             ...normalizedRow,
             departmentId,
@@ -314,12 +511,12 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
             lineId,
             subSectionId,
             stationId,
-            line: null,
-            sub_section: null,
-            stationNo: null,
-            lines: [],
-            subSections: [],
-            stations: [],
+            line: resolveFullHierarchy ? (normalizedRow.line || null) : null,
+            sub_section: resolveFullHierarchy ? (normalizedRow.sub_section || null) : null,
+            stationNo: resolveFullHierarchy ? (normalizedRow.stationNo || null) : null,
+            lines: lineId ? [lineId] : [],
+            subSections: subSectionId ? [subSectionId] : [],
+            stations: stationId ? [stationId] : [],
             contractorId,
             userName: normalizedRow.empId.toLowerCase(),
             password: normalizedRow.empId,
@@ -343,7 +540,12 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
                 { key: 'gender', label: 'Gender' },
                 { key: 'departmentId', label: 'Department' },
                 { key: 'sectionId', label: 'Section' },
-                // Line, Sub-Section, and Station are EXCLUDED from updates as per requirement
+                // Line, Sub-Section, and Station are only updated by the /employees-full flow
+                ...(resolveFullHierarchy ? [
+                    { key: 'lineId', label: 'Line' },
+                    { key: 'subSectionId', label: 'Sub Section' },
+                    { key: 'stationId', label: 'Station' },
+                ] : []),
                 { key: 'mentor', label: 'Mentor' },
                 { key: 'designation', label: 'Designation' },
                 { key: 'dob', label: 'DOB' },
@@ -415,6 +617,15 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
                     } else if (field.key === 'sectionId') {
                         updatedData.section = normalizedRow.section;
                         changes[field.label] = { from: existingUser.sectionName || "N/A", to: normalizedRow.section || "N/A" };
+                    } else if (field.key === 'lineId') {
+                        updatedData.line = normalizedRow.line || null;
+                        changes[field.label] = { from: existingUser.lineName || "N/A", to: normalizedRow.line || "N/A" };
+                    } else if (field.key === 'subSectionId') {
+                        updatedData.sub_section = normalizedRow.sub_section || null;
+                        changes[field.label] = { from: existingUser.subSectionName || "N/A", to: normalizedRow.sub_section || "N/A" };
+                    } else if (field.key === 'stationId') {
+                        updatedData.stationNo = normalizedRow.stationNo || null;
+                        changes[field.label] = { from: existingUser.stationName || "N/A", to: normalizedRow.stationNo || "N/A" };
                     } else if (field.key === 'contractorId') {
                         updatedData.contractorId = userData.contractorId;
                         updatedData.contractor = normalizedRow.contractor || null;
@@ -431,6 +642,11 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
             }
             if (userData.sectionId) {
                 updatedData.sections = JSON.stringify([userData.sectionId]);
+            }
+            if (resolveFullHierarchy) {
+                if (userData.lineId) updatedData.lines = JSON.stringify([userData.lineId]);
+                if (userData.subSectionId) updatedData.subSections = JSON.stringify([userData.subSectionId]);
+                if (userData.stationId) updatedData.stations = JSON.stringify([userData.stationId]);
             }
 
             if (Object.keys(updatedData).length > 0) {
@@ -449,6 +665,8 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
                 // Always ensure department students list is synced for any processed operator
                 // This helper now handles moving from one department to another correctly
                 await syncDepartmentStudents(existingUser.id, userData.departmentId);
+                await syncHierarchyLists(existingUser.id);
+                await maybeApplySkillMatrix(existingUser.id);
 
                 return { status, rowNumber, userName: userData.userName, empId: normalizedRow.empId };
             } else {
@@ -458,6 +676,8 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
                     "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
                     [logId, rowNumber, JSON.stringify(row), "SUCCESS", existingUser.id]
                 );
+                await syncHierarchyLists(existingUser.id);
+                await maybeApplySkillMatrix(existingUser.id);
                 return { status: "SUCCESS", rowNumber, userName: userData.userName, empId: normalizedRow.empId };
             }
         }
@@ -475,6 +695,8 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
             "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
             [logId, rowNumber, JSON.stringify(row), "CREATED", newUser.id]
         );
+        await syncHierarchyLists(newUser.id);
+        await maybeApplySkillMatrix(newUser.id);
 
         return { status: "CREATED", rowNumber, userName: userData.userName, empId: normalizedRow.empId };
     } catch (error) {
@@ -488,6 +710,45 @@ const processSingleEmployeeRow = async ({ row, rowNumber, logId, deptMap, sectio
 
         return { status: "FAILED", rowNumber, error: errorMsg };
     }
+};
+
+/**
+ * Pre-fetches hierarchy lookup maps used to resolve Excel text values to IDs. Line/Sub-Section/
+ * Station maps are only built when resolveFullHierarchy is true — the standard import never
+ * needs them. Shared by both the standard and /employees-full single-shot and chunked flows.
+ */
+const buildImportHierarchyMaps = async (resolveFullHierarchy = false) => {
+    const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
+    const [allSections] = await executeQuery("SELECT id, name, departmentId, category FROM sections WHERE isActive = 1");
+    const [allContractors] = await executeQuery("SELECT id, name FROM contractors WHERE status = 'active'");
+
+    const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
+
+    const sectionMap = new Map();
+    allSections.forEach(s => {
+        const name = s.name.toLowerCase().trim();
+        const deptId = s.departmentId;
+        const category = (s.category || "").toLowerCase().trim();
+        sectionMap.set(`${deptId}|${name}`, s.id);
+        if (category && category !== "not applicable") {
+            sectionMap.set(`${deptId}|${name} - ${category}`, s.id);
+        }
+    });
+
+    const contractorMap = new Map(allContractors.map(c => [c.name.toLowerCase().trim(), c.id]));
+
+    let lineMap, subSectionMap, stationMap;
+    if (resolveFullHierarchy) {
+        const [allLines] = await executeQuery("SELECT id, name, sectionId FROM [lines] WHERE isActive = 1");
+        const [allSubSections] = await executeQuery("SELECT id, name, lineId FROM sub_sections WHERE isActive = 1");
+        const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
+
+        lineMap = new Map(allLines.map(l => [`${l.sectionId}|${l.name.toLowerCase().trim()}`, l.id]));
+        subSectionMap = new Map(allSubSections.map(ss => [`${ss.lineId}|${ss.name.toLowerCase().trim()}`, ss.id]));
+        stationMap = new Map(allStations.map(st => [`${st.subSectionId}|${st.name.toLowerCase().trim()}`, st.id]));
+    }
+
+    return { deptMap, sectionMap, contractorMap, lineMap, subSectionMap, stationMap };
 };
 
 /**
@@ -545,24 +806,7 @@ export const importEmployees = async (req, res) => {
         const headerRowIndex = hRowIndex; // For rowNumber calculation compatibility
 
         // Fetch all hierarchy mappings for lookup (Pre-fetch for matching as explained to user)
-        const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
-        const [allSections] = await executeQuery("SELECT id, name, departmentId, category FROM sections WHERE isActive = 1");
-        const [allContractors] = await executeQuery("SELECT id, name FROM contractors WHERE status = 'active'");
-
-        const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
-
-        const sectionMap = new Map();
-        allSections.forEach(s => {
-            const name = s.name.toLowerCase().trim();
-            const deptId = s.departmentId;
-            const category = (s.category || "").toLowerCase().trim();
-            sectionMap.set(`${deptId}|${name}`, s.id);
-            if (category && category !== "not applicable") {
-                sectionMap.set(`${deptId}|${name} - ${category}`, s.id);
-            }
-        });
-
-        const contractorMap = new Map(allContractors.map(c => [c.name.toLowerCase().trim(), c.id]));
+        const { deptMap, sectionMap, contractorMap } = await buildImportHierarchyMaps(false);
 
         const results = {
             success: [],
@@ -648,24 +892,7 @@ export const processEmployeesChunk = async (req, res) => {
         throw new ApiError(400, "logId and a non-empty rows array are required");
     }
 
-    const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
-    const [allSections] = await executeQuery("SELECT id, name, departmentId, category FROM sections WHERE isActive = 1");
-    const [allContractors] = await executeQuery("SELECT id, name FROM contractors WHERE status = 'active'");
-
-    const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
-
-    const sectionMap = new Map();
-    allSections.forEach(s => {
-        const name = s.name.toLowerCase().trim();
-        const deptId = s.departmentId;
-        const category = (s.category || "").toLowerCase().trim();
-        sectionMap.set(`${deptId}|${name}`, s.id);
-        if (category && category !== "not applicable") {
-            sectionMap.set(`${deptId}|${name} - ${category}`, s.id);
-        }
-    });
-
-    const contractorMap = new Map(allContractors.map(c => [c.name.toLowerCase().trim(), c.id]));
+    const { deptMap, sectionMap, contractorMap } = await buildImportHierarchyMaps(false);
 
     const results = [];
     for (let i = 0; i < rows.length; i++) {
@@ -715,6 +942,207 @@ export const finalizeImportEmployees = async (req, res) => {
         await UserHierarchySnapshot.syncFromUsers();
     } catch (syncErr) {
         console.error("Snapshot sync failed after finalizeImportEmployees:", syncErr.message);
+    }
+
+    const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [logId]);
+
+    res.json(new ApiResponse(200, {
+        logId,
+        totalRows: log[0]?.totalRows || 0,
+        successCount,
+        failCount,
+        updatedCount,
+    }, "Import finalized"));
+};
+
+/**
+ * Import employees from Excel file, resolving their FULL hierarchy (Department, Section, Line,
+ * Sub-Section, Station) and auto-creating a Skill Matrix Check Sheet when a row carries
+ * Target Second/Actual Second. This is a separate opt-in flow — /employees (above) is unchanged
+ * and still leaves Line/Sub-Section/Station unassigned.
+ * Expected columns: everything importEmployees expects, plus "Target Second" and "Actual Second".
+ */
+export const importEmployeesFull = async (req, res) => {
+    try {
+        if (!req.file) {
+            throw new ApiError(400, "No file uploaded");
+        }
+
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+        let hRowIndex = -1;
+
+        for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+            const row = allRows[i];
+            if (row && Array.isArray(row) && row.some(cell => {
+                if (!cell) return false;
+                const c = cell.toString().trim().toLowerCase();
+                return c === "employeeid" || c === "employee code" || c === "employee id";
+            })) {
+                hRowIndex = i;
+                break;
+            }
+        }
+
+        if (hRowIndex === -1) {
+            hRowIndex = 0;
+        }
+
+        const headers = allRows[hRowIndex].map(h => h?.toString().trim() || "");
+        const rawData = allRows.slice(hRowIndex + 1);
+
+        const data = rawData.map(r => {
+            const obj = {};
+            headers.forEach((h, idx) => {
+                const key = h || `__EMPTY_${idx}`;
+                obj[key] = r[idx];
+            });
+            return obj;
+        });
+
+        if (!data || data.length === 0) {
+            throw new ApiError(400, "No data found in Excel file");
+        }
+
+        const { deptMap, sectionMap, contractorMap, lineMap, subSectionMap, stationMap } = await buildImportHierarchyMaps(true);
+
+        const results = {
+            success: [],
+            failed: [],
+            total: data.length,
+            updatedCount: 0
+        };
+
+        const [logResult] = await executeQuery(
+            "INSERT INTO import_logs (fileName, importType, totalRows, importedBy) OUTPUT INSERTED.id VALUES (?, ?, ?, ?)",
+            [req.file.originalname, "OPERATOR", data.length, req.user?.id || null]
+        );
+        const logId = logResult[0].id;
+
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const rowNumber = hRowIndex + i + 2;
+
+            const outcome = await processSingleEmployeeRow({
+                row, rowNumber, logId, deptMap, sectionMap, contractorMap,
+                resolveFullHierarchy: true, lineMap, subSectionMap, stationMap,
+                updatedBy: req.user?.id || null,
+            });
+            if (outcome.skip) continue;
+
+            if (outcome.status === "FAILED") {
+                results.failed.push({ row: rowNumber, data: row, error: outcome.error });
+            } else {
+                results.success.push({ row: rowNumber, userName: outcome.userName, empId: outcome.empId, status: outcome.status });
+                if (outcome.status === "UPDATED") results.updatedCount++;
+            }
+        }
+
+        await executeQuery(
+            "UPDATE import_logs SET successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
+            [results.success.length, results.failed.length, results.updatedCount, logId]
+        );
+
+        try {
+            await UserHierarchySnapshot.syncFromUsers();
+        } catch (syncErr) {
+            console.error("Snapshot sync failed after importEmployeesFull:", syncErr.message);
+        }
+
+        res.json(
+            new ApiResponse(
+                200,
+                results,
+                `Import completed: ${results.success.length} succeeded, ${results.failed.length} failed`
+            )
+        );
+    } catch (error) {
+        console.error("Import employees (full) error:", error);
+        throw new ApiError(500, error.message || "Failed to import employees");
+    }
+};
+
+/**
+ * Start a chunked /employees-full import session — mirrors startImportEmployees.
+ */
+export const startImportEmployeesFull = async (req, res) => {
+    const { fileName, totalRows } = req.body;
+    if (!fileName || !totalRows) {
+        throw new ApiError(400, "fileName and totalRows are required");
+    }
+
+    const [logResult] = await executeQuery(
+        "INSERT INTO import_logs (fileName, importType, totalRows, importedBy) OUTPUT INSERTED.id VALUES (?, ?, ?, ?)",
+        [fileName, "OPERATOR", totalRows, req.user?.id || null]
+    );
+
+    res.json(new ApiResponse(200, { logId: logResult[0].id }, "Import session started"));
+};
+
+/**
+ * Process one chunk of rows for an in-progress /employees-full chunked import session.
+ */
+export const processEmployeesChunkFull = async (req, res) => {
+    const { logId, rows, startIndex } = req.body;
+    if (!logId || !Array.isArray(rows) || rows.length === 0) {
+        throw new ApiError(400, "logId and a non-empty rows array are required");
+    }
+
+    const { deptMap, sectionMap, contractorMap, lineMap, subSectionMap, stationMap } = await buildImportHierarchyMaps(true);
+
+    const results = [];
+    for (let i = 0; i < rows.length; i++) {
+        const rowNumber = (startIndex || 0) + i;
+        const outcome = await processSingleEmployeeRow({
+            row: rows[i], rowNumber, logId, deptMap, sectionMap, contractorMap,
+            resolveFullHierarchy: true, lineMap, subSectionMap, stationMap,
+            updatedBy: req.user?.id || null,
+        });
+        if (outcome.skip) continue;
+        results.push(outcome);
+    }
+
+    const successCount = results.filter(r => r.status !== "FAILED").length;
+    const failedCount = results.filter(r => r.status === "FAILED").length;
+
+    res.json(new ApiResponse(200, { results, successCount, failedCount }, "Chunk processed"));
+};
+
+/**
+ * Finalize a chunked /employees-full import session — mirrors finalizeImportEmployees.
+ */
+export const finalizeImportEmployeesFull = async (req, res) => {
+    const { logId } = req.body;
+    if (!logId) {
+        throw new ApiError(400, "logId is required");
+    }
+
+    const [counts] = await executeQuery(
+        "SELECT status, COUNT(*) as cnt FROM import_log_details WHERE logId = ? GROUP BY status",
+        [logId]
+    );
+
+    let successCount = 0, failCount = 0, updatedCount = 0;
+    counts.forEach(c => {
+        if (c.status === "FAILED") {
+            failCount = c.cnt;
+        } else {
+            successCount += c.cnt;
+            if (c.status === "UPDATED") updatedCount = c.cnt;
+        }
+    });
+
+    await executeQuery(
+        "UPDATE import_logs SET successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
+        [successCount, failCount, updatedCount, logId]
+    );
+
+    try {
+        await UserHierarchySnapshot.syncFromUsers();
+    } catch (syncErr) {
+        console.error("Snapshot sync failed after finalizeImportEmployeesFull:", syncErr.message);
     }
 
     const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [logId]);
@@ -877,6 +1305,70 @@ export const downloadImportTemplate = async (req, res) => {
         res.send(buffer);
     } catch (error) {
         console.error("Download template error:", error);
+        throw new ApiError(500, "Failed to generate template");
+    }
+};
+
+/**
+ * Download the /employees-full import template — same columns as the standard template plus
+ * "Target Second" and "Actual Second" for auto-creating a Skill Matrix Check Sheet.
+ */
+export const downloadImportTemplateFull = async (req, res) => {
+    try {
+        const templateData = [
+            {
+                "Employee Code": "AS000233",
+                "Card No.": "00C0233",
+                "Name": "SUBHASH SINGH",
+                "Father / Husband Name": "RAM SHARAN",
+                "Gender": "M",
+                "Department": "C&C - Indirect",
+                "Section": "Assembly - Direct",
+                "Line": "AIRBAG",
+                "Sub Section": "YHB FL 1",
+                "Station No.": "LEADER",
+                "Mentor": "",
+                "Designation": "Operator",
+                "DOB": "1990-11-23",
+                "D.O.J.": "2013-03-01",
+                "Education": "10th",
+                "Distt": "REVARI",
+                "State": "Haryana",
+                "PIN": "123101",
+                "Bus Route": "Route 1",
+                "E-Mail ID": "subhash@example.com",
+                "Mobile No": "9876543210",
+                "Lavel": "L1",
+                "Target Second": 10,
+                "Actual Second": 12,
+                "Date of Leaving": "",
+                "Reason of Leaving": "",
+                "Contractor": "",
+                "Status": "PRESENT",
+            },
+        ];
+
+        const worksheet = XLSX.utils.json_to_sheet(templateData);
+        const widths = Object.keys(templateData[0]).map(key => ({ wch: Math.max(key.length, 15) }));
+        worksheet["!cols"] = widths;
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Employees");
+
+        const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+        res.setHeader(
+            "Content-Disposition",
+            "attachment; filename=operator_import_full_template.xlsx"
+        );
+        res.setHeader(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+
+        res.send(buffer);
+    } catch (error) {
+        console.error("Download template (full) error:", error);
         throw new ApiError(500, "Failed to generate template");
     }
 };

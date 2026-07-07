@@ -63,6 +63,103 @@ const applyHierarchyCascade = (obj) => {
   if (!obj.targetSubSectionId) obj.targetStationId = null;
 };
 
+// Given a users-table row (singular *Id columns + JSON array columns), resolves every
+// sub-section/line/section whose cached `users` list needs re-syncing after that user's
+// assignment changes (e.g. on delete), including sub-sections reached only via a station.
+const collectHierarchySyncTargets = async (userRow) => {
+  const affectedSubSectionIds = new Set();
+  const affectedLineIds = new Set();
+  const affectedSectionIds = new Set();
+
+  if (!userRow) return { affectedSubSectionIds, affectedLineIds, affectedSectionIds };
+
+  const toIntArray = (val) => parseArray(val).map(id => parseInt(id)).filter(id => !isNaN(id));
+
+  if (userRow.subSectionId) affectedSubSectionIds.add(parseInt(userRow.subSectionId));
+  toIntArray(userRow.subSections).forEach(id => affectedSubSectionIds.add(id));
+  if (userRow.lineId) affectedLineIds.add(parseInt(userRow.lineId));
+  toIntArray(userRow.lines).forEach(id => affectedLineIds.add(id));
+  if (userRow.sectionId) affectedSectionIds.add(parseInt(userRow.sectionId));
+  toIntArray(userRow.sections).forEach(id => affectedSectionIds.add(id));
+
+  const stationIds = toIntArray(userRow.stations);
+  if (stationIds.length > 0) {
+    const [machines] = await executeQuery(
+      `SELECT DISTINCT subSectionId FROM machines WHERE id IN (${stationIds.join(',')})`
+    );
+    machines.forEach(m => { if (m.subSectionId) affectedSubSectionIds.add(m.subSectionId); });
+  }
+
+  return { affectedSubSectionIds, affectedLineIds, affectedSectionIds };
+};
+
+const syncHierarchyUserLists = async (subSectionIds, lineIds, sectionIds) => {
+  try {
+    const SubSection = (await import("../models/subSection.model.js")).default;
+    const Line = (await import("../models/line.model.js")).default;
+    const Section = (await import("../models/section.model.js")).default;
+
+    for (const subSecId of subSectionIds) await SubSection.syncUserList(subSecId);
+    for (const lineId of lineIds) await Line.syncUserList(lineId);
+    for (const sectionId of sectionIds) await Section.syncUserList(sectionId);
+  } catch (error) {
+    console.error(`Failed to sync hierarchy user lists: ${error.message}`);
+  }
+};
+
+// Merges hierarchy sync targets across a batch of removed/deactivated users, then syncs once.
+const syncHierarchyForRows = async (userRows) => {
+  const allSubSectionIds = new Set();
+  const allLineIds = new Set();
+  const allSectionIds = new Set();
+
+  for (const row of userRows || []) {
+    const { affectedSubSectionIds, affectedLineIds, affectedSectionIds } = await collectHierarchySyncTargets(row);
+    affectedSubSectionIds.forEach(id => allSubSectionIds.add(id));
+    affectedLineIds.forEach(id => allLineIds.add(id));
+    affectedSectionIds.forEach(id => allSectionIds.add(id));
+  }
+
+  await syncHierarchyUserLists(allSubSectionIds, allLineIds, allSectionIds);
+};
+
+// Strips the given user ids out of every department's `students`/`instructor` JSON arrays.
+// Called on both soft- and hard-delete so a "deleted" user disappears from department
+// membership immediately, the same way it already drops out of sections/lines/sub_sections.
+const removeUsersFromDepartmentAssignments = async (userIds) => {
+  if (!userIds || userIds.length === 0) return;
+  const idSet = new Set(userIds.map(String));
+
+  try {
+    const [departments] = await executeQuery("SELECT id, students, instructor FROM departments");
+    for (const dept of departments) {
+      let students = [];
+      try { students = JSON.parse(dept.students || "[]"); } catch (e) { students = []; }
+      if (!Array.isArray(students)) students = [];
+
+      let instructors = [];
+      try {
+        const parsed = typeof dept.instructor === 'string' ? JSON.parse(dept.instructor) : dept.instructor;
+        instructors = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+      } catch (e) {
+        instructors = dept.instructor ? [dept.instructor] : [];
+      }
+
+      const cleanedStudents = students.filter(id => !idSet.has(String(id)));
+      const cleanedInstructors = instructors.filter(id => !idSet.has(String(id)));
+
+      if (cleanedStudents.length !== students.length || cleanedInstructors.length !== instructors.length) {
+        await executeQuery(
+          "UPDATE departments SET students = ?, instructor = ? WHERE id = ?",
+          [JSON.stringify(cleanedStudents), JSON.stringify(cleanedInstructors), dept.id]
+        );
+      }
+    }
+  } catch (error) {
+    console.error(`Failed to remove users from department assignments: ${error.message}`);
+  }
+};
+
 const handleInstructorAssignments = async (userId, departmentIds) => {
   const [departments] = await executeQuery("SELECT * FROM departments");
   const userIdStr = String(userId);
@@ -1257,25 +1354,34 @@ export const deleteUser = asyncHandler(async (req, res) => {
   }
 
   if (req.user.role === "SUPERADMIN" || req.user.role === "ADMIN") {
-    // Before permanent delete, get department to cleanup
-    const [user] = await executeQuery("SELECT departmentId FROM users WHERE id = ?", [userId]);
-    if (user.length && user[0].departmentId) {
-      const deptId = user[0].departmentId;
-      const [dept] = await executeQuery("SELECT students FROM departments WHERE id = ?", [deptId]);
-      if (dept.length) {
-        let students = [];
-        try { students = JSON.parse(dept[0].students || "[]"); } catch (e) { }
-        if (Array.isArray(students)) {
-          students = students.filter(id => String(id) !== String(userId));
-          await executeQuery("UPDATE departments SET students = ? WHERE id = ?", [JSON.stringify(students), deptId]);
-        }
-      }
-    }
+    // Before permanent delete, get hierarchy assignments to cleanup
+    const [user] = await executeQuery(
+      "SELECT departmentId, sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id = ?",
+      [userId]
+    );
+
+    const { affectedSubSectionIds, affectedLineIds, affectedSectionIds } = await collectHierarchySyncTargets(user[0]);
+
+    // machine_assignments has no FK to users, so it doesn't cascade on delete - clean it up explicitly
+    await executeQuery("DELETE FROM machine_assignments WHERE user_id = ?", [userId]);
     await executeQuery("DELETE FROM users WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_PERMANENT", { userId });
+
+    await removeUsersFromDepartmentAssignments([userId]);
+    await syncHierarchyUserLists(affectedSubSectionIds, affectedLineIds, affectedSectionIds);
   } else {
+    const [user] = await executeQuery(
+      "SELECT sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id = ?",
+      [userId]
+    );
+    const { affectedSubSectionIds, affectedLineIds, affectedSectionIds } = await collectHierarchySyncTargets(user[0]);
+
     await executeQuery("UPDATE users SET isDeleted = 1 WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_SOFT", { userId });
+
+    // A soft-deleted user must drop out of department/section/line/sub-section membership too
+    await removeUsersFromDepartmentAssignments([userId]);
+    await syncHierarchyUserLists(affectedSubSectionIds, affectedLineIds, affectedSectionIds);
   }
 
   try {
@@ -2067,8 +2173,14 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
       }
 
       const phs = matchedIds.map(() => "?").join(",");
+      const [rowsToDelete] = await executeQuery(
+        `SELECT sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id IN (${phs})`,
+        matchedIds
+      );
       await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${phs})`, matchedIds);
       await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+      await removeUsersFromDepartmentAssignments(matchedIds);
+      await syncHierarchyForRows(rowsToDelete);
       return res.json(new ApiResponse(200, null, "All matching users deleted"));
     }
 
@@ -2097,46 +2209,32 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
     }
 
     const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : "";
+    const [rowsToDelete] = await executeQuery(
+      `SELECT id, sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users ${whereSQL}`,
+      params
+    );
     await executeQuery(`UPDATE users SET isDeleted = 1 ${whereSQL}`, params);
 
     await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+    await removeUsersFromDepartmentAssignments(rowsToDelete.map(r => r.id));
+    await syncHierarchyForRows(rowsToDelete);
     return res.json(new ApiResponse(200, null, "All matching users deleted"));
   }
 
   if (!ids?.length) throw new ApiError("No IDs provided", 400);
 
-  // Cleanup from departments students list
-  try {
-    const placeholders = ids.map(() => "?").join(",");
-    const [usersWithDepts] = await executeQuery(`SELECT id, departmentId FROM users WHERE id IN (${placeholders}) AND departmentId IS NOT NULL`, ids);
-
-    // Group by department to minimize updates
-    const deptMap = {};
-    usersWithDepts.forEach(u => {
-      if (!deptMap[u.departmentId]) deptMap[u.departmentId] = [];
-      deptMap[u.departmentId].push(String(u.id));
-    });
-
-    for (const [deptId, userIdsToRemove] of Object.entries(deptMap)) {
-      const [dept] = await executeQuery("SELECT students FROM departments WHERE id = ?", [deptId]);
-      if (dept.length) {
-        let students = [];
-        try { students = JSON.parse(dept[0].students || "[]"); } catch (e) { }
-        if (Array.isArray(students)) {
-          const updated = students.filter(id => !userIdsToRemove.includes(String(id)));
-          await executeQuery("UPDATE departments SET students = ? WHERE id = ?", [JSON.stringify(updated), deptId]);
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Bulk delete department cleanup error:", err);
-  }
+  const [rowsToDelete] = await executeQuery(
+    `SELECT sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id IN (${ids.map(() => "?").join(",")})`,
+    ids
+  );
 
   // Generate the placeholders for the IN clause
   const placeholders = ids.map(() => "?").join(",");
   await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${placeholders})`, ids);
 
   await logAudit(req.user.id, "BULK_DELETE_USERS_LIST", { count: ids.length });
+  await removeUsersFromDepartmentAssignments(ids);
+  await syncHierarchyForRows(rowsToDelete);
   res.json(new ApiResponse(200, null, "Selected users deleted"));
 });
 

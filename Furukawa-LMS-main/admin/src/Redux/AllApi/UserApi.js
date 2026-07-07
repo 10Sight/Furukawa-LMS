@@ -184,6 +184,39 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User', 'ImportLog'],
         }),
+
+        // Full-hierarchy import: also resolves Line/Sub-Section/Station and auto-creates a
+        // Skill Matrix Check Sheet when the row carries Target Second/Actual Second.
+        importEmployeesFull: builder.mutation({
+            query: (formData) => ({
+                url: "/api/import/employees-full",
+                method: "POST",
+                data: formData,
+            }),
+            invalidatesTags: ['User', 'ImportLog'],
+        }),
+        startImportEmployeesFull: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees-full/start",
+                method: "POST",
+                data,
+            }),
+        }),
+        processEmployeesChunkFull: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees-full/process-chunk",
+                method: "POST",
+                data,
+            }),
+        }),
+        finalizeImportEmployeesFull: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees-full/finalize",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ['User', 'ImportLog'],
+        }),
         importDojoCandidates: builder.mutation({
             query: (formData) => ({
                 url: "/api/import/dojo-candidates",
@@ -219,6 +252,26 @@ export const userApi = createApi({
                 if (result.error) return { error: result.error };
 
                 // Convert Blob to Base64 string to make it serializable for Redux
+                const blob = result.data;
+                const base64 = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+
+                return { data: { fileData: base64 } };
+            },
+        }),
+        getImportTemplateFull: builder.query({
+            queryFn: async (arg, api, extraOptions, baseQuery) => {
+                const result = await baseQuery({
+                    url: "/api/import/employees-full/template",
+                    method: "GET",
+                    responseHandler: (response) => response.data,
+                });
+
+                if (result.error) return { error: result.error };
+
                 const blob = result.data;
                 const base64 = await new Promise((resolve) => {
                     const reader = new FileReader();
@@ -303,8 +356,13 @@ export const {
     useStartImportEmployeesMutation,
     useProcessEmployeesChunkMutation,
     useFinalizeImportEmployeesMutation,
+    useImportEmployeesFullMutation,
+    useStartImportEmployeesFullMutation,
+    useProcessEmployeesChunkFullMutation,
+    useFinalizeImportEmployeesFullMutation,
     useImportDojoCandidatesMutation,
     useLazyGetImportTemplateQuery,
+    useLazyGetImportTemplateFullQuery,
     useLazyGetDojoImportTemplateQuery,
     useGetImportLogsQuery,
     useGetImportLogDetailsQuery,

@@ -21,8 +21,12 @@ import {
   useStartImportEmployeesMutation,
   useProcessEmployeesChunkMutation,
   useFinalizeImportEmployeesMutation,
+  useStartImportEmployeesFullMutation,
+  useProcessEmployeesChunkFullMutation,
+  useFinalizeImportEmployeesFullMutation,
   useLazyExportStudentsQuery,
   useLazyGetImportTemplateQuery,
+  useLazyGetImportTemplateFullQuery,
   useGetImportLogsQuery,
   useGetImportLogDetailsQuery,
 } from "@/Redux/AllApi/UserApi";
@@ -191,6 +195,9 @@ const Students = () => {
   const [isBulkShiftSubmitting, setIsBulkShiftSubmitting] = useState(false);
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  // "standard" = /employees (Dept + Section only); "full" = /employees-full (also resolves
+  // Line/Sub-Section/Station and auto-creates a Skill Matrix Check Sheet from Target/Actual Second)
+  const [importMode, setImportMode] = useState("standard");
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({
     total: 0,
@@ -409,7 +416,11 @@ const Students = () => {
   const [startImportEmployees] = useStartImportEmployeesMutation();
   const [processEmployeesChunk] = useProcessEmployeesChunkMutation();
   const [finalizeImportEmployees] = useFinalizeImportEmployeesMutation();
+  const [startImportEmployeesFull] = useStartImportEmployeesFullMutation();
+  const [processEmployeesChunkFull] = useProcessEmployeesChunkFullMutation();
+  const [finalizeImportEmployeesFull] = useFinalizeImportEmployeesFullMutation();
   const [triggerGetTemplate] = useLazyGetImportTemplateQuery();
+  const [triggerGetTemplateFull] = useLazyGetImportTemplateFullQuery();
   const [triggerGetAllStudents] = useLazyGetAllStudentsQuery();
   const { data: importLogsData, isLoading: isLoadingLogs } = useGetImportLogsQuery();
   const importLogs = importLogsData?.data || [];
@@ -1073,19 +1084,25 @@ const Students = () => {
       showToast("error", errorMessage);
     }
   };
-  const handleImportClick = () => {
+  const handleImportClick = (mode = "standard") => {
+    setImportMode(mode);
     setIsImportDialogOpen(true);
   };
 
   const handleDownloadTemplate = async () => {
     try {
       const toastId = toast.loading("Downloading template...");
-      const result = await triggerGetTemplate().unwrap();
+      const result = importMode === "full"
+        ? await triggerGetTemplateFull().unwrap()
+        : await triggerGetTemplate().unwrap();
 
       // Use the base64 string directly as the href
       const link = document.createElement("a");
       link.href = result.fileData;
-      link.setAttribute("download", "operator_import_template.xlsx");
+      link.setAttribute(
+        "download",
+        importMode === "full" ? "operator_import_full_template.xlsx" : "operator_import_template.xlsx"
+      );
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1171,8 +1188,13 @@ const Students = () => {
     });
     setIsImporting(true);
 
+    const isFull = importMode === "full";
+    const startImport = isFull ? startImportEmployeesFull : startImportEmployees;
+    const processChunk = isFull ? processEmployeesChunkFull : processEmployeesChunk;
+    const finalizeImport = isFull ? finalizeImportEmployeesFull : finalizeImportEmployees;
+
     try {
-      const startResult = await startImportEmployees({
+      const startResult = await startImport({
         fileName: file.name,
         totalRows: rows.length,
       }).unwrap();
@@ -1186,7 +1208,7 @@ const Students = () => {
         const chunkRows = rows.slice(i, i + CHUNK_SIZE);
         const startIndex = headerRowIndex + i + 2; // Excel row number of the first row in this chunk
 
-        const chunkResult = await processEmployeesChunk({ logId, rows: chunkRows, startIndex }).unwrap();
+        const chunkResult = await processChunk({ logId, rows: chunkRows, startIndex }).unwrap();
         const { results: chunkDetails = [], successCount = 0, failedCount = 0 } = chunkResult.data || {};
 
         current += chunkRows.length;
@@ -1200,7 +1222,7 @@ const Students = () => {
         setImportProgress((prev) => ({ ...prev, current, success, failed, errors: [...errors] }));
       }
 
-      await finalizeImportEmployees({ logId }).unwrap();
+      await finalizeImport({ logId }).unwrap();
       setImportProgress((prev) => ({ ...prev, done: true }));
       refetch();
     } catch (error) {
@@ -1967,11 +1989,22 @@ const Students = () => {
               {hasPermission("user:import_excel") && (
                 <Button
                   variant="outline"
-                  onClick={handleImportClick}
+                  onClick={() => handleImportClick("standard")}
                   className="bg-green-600 hover:bg-green-700 text-white shadow-sm border-green-700"
                 >
                   <IconUpload className="h-4 w-4 mr-2" />
                   Import Operators
+                </Button>
+              )}
+
+              {hasPermission("user:import_excel") && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleImportClick("full")}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm border-emerald-800"
+                >
+                  <IconUpload className="h-4 w-4 mr-2" />
+                  Import Full Hierarchy
                 </Button>
               )}
 
@@ -2731,10 +2764,12 @@ const Students = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconUpload className="h-5 w-5" />
-              Import Employees
+              {importMode === "full" ? "Import Employees — Full Hierarchy" : "Import Employees"}
             </DialogTitle>
             <DialogDescription>
-              Upload an Excel file to add employees in bulk.
+              {importMode === "full"
+                ? "Upload an Excel file to add employees in bulk, including their Line/Sub-Section/Station assignment and an auto-generated Skill Matrix Check Sheet."
+                : "Upload an Excel file to add employees in bulk."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2774,10 +2809,28 @@ const Students = () => {
                   <span>- Line</span>
                   <span>- Sub Section</span>
                   <span>- Station No.</span>
+                  {importMode === "full" && (
+                    <>
+                      <span>- Target Second</span>
+                      <span>- Actual Second</span>
+                    </>
+                  )}
                 </div>
                 <p className="text-xs text-blue-600 italic">
                   * Required fields
                 </p>
+                {importMode === "full" ? (
+                  <p className="text-xs text-blue-700">
+                    This mode also assigns Line/Sub-Section/Station (the standard import leaves them
+                    unassigned), and auto-creates a Skill Matrix Check Sheet when a row has both
+                    Target Second and Actual Second filled in.
+                  </p>
+                ) : (
+                  <p className="text-xs text-blue-700">
+                    Line, Sub Section, and Station No. are not assigned by this import — use
+                    "Import Full Hierarchy" if you need those assigned automatically.
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-3">

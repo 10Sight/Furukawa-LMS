@@ -12,7 +12,12 @@ import {
     downloadDojoImportTemplate,
     startImportEmployees,
     processEmployeesChunk,
-    finalizeImportEmployees
+    finalizeImportEmployees,
+    importEmployeesFull,
+    downloadImportTemplateFull,
+    startImportEmployeesFull,
+    processEmployeesChunkFull,
+    finalizeImportEmployeesFull
 } from "../controllers/import.controller.js";
 
 const router = express.Router();
@@ -50,6 +55,15 @@ router.post("/employees/finalize", verifyJWT, finalizeImportEmployees);
 
 // Download import template
 router.get("/employees/template", verifyJWT, downloadImportTemplate);
+
+// Import employees with full hierarchy resolution (Department, Section, Line, Sub-Section,
+// Station) plus Level validation and Skill Matrix Check Sheet auto-creation. Separate opt-in
+// flow — /employees above is unchanged.
+router.post("/employees-full", verifyJWT, upload.single("file"), importEmployeesFull);
+router.post("/employees-full/start", verifyJWT, startImportEmployeesFull);
+router.post("/employees-full/process-chunk", verifyJWT, processEmployeesChunkFull);
+router.post("/employees-full/finalize", verifyJWT, finalizeImportEmployeesFull);
+router.get("/employees-full/template", verifyJWT, downloadImportTemplateFull);
 
 // Import instructors
 router.post("/instructors", verifyJWT, upload.single("file"), importInstructors);

@@ -419,6 +419,7 @@ const sendExcel = async (res, filename, columns, rows) => {
     res.status(200).send(Buffer.from(buffer));
 };
 
+// Helper for PDF
 const sendPDF = (res, filename, title, columns, rows) => {
     const doc = new PDFDocument({ size: 'A4', margin: 36 });
     res.setHeader('Content-Type', 'application/pdf');
@@ -443,6 +444,7 @@ const sendPDF = (res, filename, title, columns, rows) => {
     doc.end();
 };
 
+// Export Exam History Stats
 export const exportExamHistoryStats = asyncHandler(async (req, res) => {
     const { format = 'excel' } = req.query;
     // Re-implement logic here or refactor to reuse. For simplicity, duplicating query build logic.
@@ -491,6 +493,7 @@ export const exportExamHistoryStats = asyncHandler(async (req, res) => {
     return sendExcel(res, filename, columns, rows);
 });
 
+// Get Audit Stats
 export const getAuditStats = asyncHandler(async (req, res) => {
     const { groupBy = 'month', userId, startDate, endDate, year } = req.query;
     let whereClauses = [];
@@ -521,6 +524,7 @@ export const getAuditStats = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, { labels, series }, 'Audit stats fetched'));
 });
 
+// Export Audit Stats
 export const exportAuditStats = asyncHandler(async (req, res) => {
     const { format = 'excel' } = req.query;
     const { groupBy = 'month', userId, startDate, endDate, year } = req.query;
@@ -716,6 +720,7 @@ export const getDatabaseMetrics = asyncHandler(async (req, res) => {
     }
 });
 
+// Get System Alerts
 export const getSystemAlerts = asyncHandler(async (req, res) => {
     try {
         const alerts = [];
@@ -757,6 +762,7 @@ export const getSystemPerformanceHistory = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, [], "Not implemented in SQL migration yet"));
 });
 
+// Get Comprehensive Analytics
 export const getComprehensiveAnalytics = asyncHandler(async (req, res) => {
     const { startDate, endDate } = req.query;
     let params = [];
@@ -777,6 +783,7 @@ export const getComprehensiveAnalytics = asyncHandler(async (req, res) => {
     }, "Comprehensive analytics fetched"));
 });
 
+// Generate Custom Report
 export const generateCustomReport = asyncHandler(async (req, res) => {
     const { reportType, startDate, endDate, format = 'json' } = req.body;
 
@@ -815,6 +822,7 @@ export const generateCustomReport = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, data, "Custom report generated"));
 });
 
+// Get Department Quiz Stats
 export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
     // Get Pass/Fail counts for quizzes grouped by department or section (if departmentId is provided)
     const { startDate, endDate, departmentId } = req.query;
@@ -865,8 +873,7 @@ export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, rows, "Quiz statistics fetched successfully"));
 });
 
-
-
+// Export Analytics Data
 export const exportAnalyticsData = asyncHandler(async (req, res) => {
     const { type, format = 'excel', startDate, endDate } = req.body;
 

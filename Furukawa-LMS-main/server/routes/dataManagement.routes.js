@@ -16,9 +16,9 @@ import upload from "../middleware/upload.js";
 
 const router = Router();
 
-// All data management routes require authentication and superadmin access
+// All data management routes require authentication and admin/superadmin access
 router.use(verifyJWT);
-router.use(authorizeRoles("SUPERADMIN"));
+router.use(authorizeRoles("SUPERADMIN", "ADMIN"));
 
 // === DATABASE BACKUP ROUTES ===
 

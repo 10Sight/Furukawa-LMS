@@ -18,6 +18,38 @@ const parseMultiParam = (value) => {
         });
 };
 
+
+const getDesignationShutterExclusionSql = (alias = "u") => `
+    AND NOT EXISTS (
+        SELECT 1
+        FROM designation_shutters ds
+        WHERE ds.designation IS NOT NULL
+          AND LTRIM(RTRIM(CAST(ds.designation AS NVARCHAR(255)))) != ''
+          AND UPPER(LTRIM(RTRIM(CAST(ds.designation AS NVARCHAR(255)))))
+            = UPPER(LTRIM(RTRIM(CAST(${alias}.designation AS NVARCHAR(255)))))
+    )
+`;
+
+const getSnapshotEmployeeExistsSql = (alias = "u") => `
+    AND EXISTS (
+        SELECT 1
+        FROM user_hierarchy_snapshots elig_uhs
+        WHERE elig_uhs.employeeid IS NOT NULL
+          AND LTRIM(RTRIM(CAST(elig_uhs.employeeid AS NVARCHAR(100)))) != ''
+          AND UPPER(LTRIM(RTRIM(CAST(elig_uhs.employeeid AS NVARCHAR(100)))))
+            = UPPER(LTRIM(RTRIM(CAST(${alias}.empId AS NVARCHAR(100)))))
+    )
+`;
+
+const getEligibleUserSql = (alias = "u") => `
+    AND ISNULL(${alias}.isDeleted, 0) = 0
+    AND ISNULL(${alias}.isTemporary, 0) = 0
+    AND ${alias}.empId IS NOT NULL
+    AND LTRIM(RTRIM(CAST(${alias}.empId AS NVARCHAR(100)))) != ''
+    ${getDesignationShutterExclusionSql(alias)}
+    ${getSnapshotEmployeeExistsSql(alias)}
+`;
+
 export const getDashboardStats = asyncHandler(async (req, res) => {
     const {
         department,
@@ -269,12 +301,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
             `;
             const totalParams = [];
             // Attrition denominator me sirf permanent/non-temporary employees count honge.
             // isTemporary = 1 employees attrition graph me include nahi honge.
-            // Shift selected ho to selected shift ke users hi count honge.
-            totalSql = addUserShiftFilter(totalSql, totalParams, "u");
+            // IMPORTANT: Attrition graph par shift filter apply nahi hoga,
+            // kyunki left employees ka users.shift NULL/blank ho sakta hai.
+            // Department/Section/Line + Date filters apply rahenge.
 
             const [totalRows] = await executeQuery(totalSql, totalParams);
             attritionHeadcountTotal = Number(totalRows?.[0]?.total || 0);
@@ -290,7 +325,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             FROM (
                 SELECT
                     u.empId,
-                    u.shift,
                     ${leaveDateSql} AS leaving_date
                 FROM users u
                 WHERE ISNULL(u.isDeleted, 0) = 0
@@ -301,10 +335,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
         `;
 
         const attrParams = [];
-        attrSql = addUserShiftFilter(attrSql, attrParams, "u");
+        // IMPORTANT: Attrition leftCount me shift filter intentionally skip kiya gaya hai.
+        // Left employees ke records me users.shift NULL/blank hone ki wajah se data miss ho raha tha.
         attrSql += `
             ) parsed
             WHERE parsed.leaving_date IS NOT NULL
@@ -375,6 +412,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
               AND ISNULL(u.isTemporary, 0) = 0
                   ${hierCondition}
+                  ${getEligibleUserSql("u")}
             `;
             const gateParams = [];
             attendanceGateSql = addShiftFilter(attendanceGateSql, gateParams, "al");
@@ -748,9 +786,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     END) AS selectedShiftEmployees
                 FROM selectedDates d
                 INNER JOIN user_hierarchy_snapshots uhs ON 1 = 1
+                INNER JOIN users u
+                    ON UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
                 WHERE ISNULL(ISJSON(CAST(uhs.schedule_shift AS NVARCHAR(MAX))), 0) = 1
                   AND uhs.employeeid IS NOT NULL
                   AND LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))) != ''
+                  ${getEligibleUserSql("u")}
                   ${scheduleHierCondition}
                 GROUP BY d.fullDate
             `;
@@ -857,6 +899,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             AND u.empId IS NOT NULL
             AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
             ${userHierCondition}
+            ${getDesignationShutterExclusionSql("u")}
+            ${getSnapshotEmployeeExistsSql("u")}
         `;
         const snapshotParams = userHierParams;
         // Current/Total Headcount users table se aata hai, isliye shift filter apply nahi hoga.
@@ -877,12 +921,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 CONVERT(VARCHAR, al.[date], 23) AS fullDate,
                 DAY(al.[date]) AS dayNum,
                 -- Manpower present count rule:
-                -- Match user's verification SQL exactly for Present count:
-                -- attendance_logs + users + user_hierarchy_snapshots + status Present.
-                -- No employee exclusion here, including isTemporary, so 22-06-2026 count matches DB query.
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN al.payCode END) AS mappedPresentCount,
+                -- Match final dashboard eligibility logic:
+                -- attendance_logs.payCode = users.empId, employee exists in user_hierarchy_snapshots,
+                -- users.isTemporary = 0, not deleted, and designation is not shuttered/off.
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN al.payCode END) AS mappedPresentCount,
                 CAST(0 AS INT) AS unmappedPresentCount,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN al.payCode END) AS totalPresentCount,
+                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN al.payCode END) AS totalPresentCount,
                 COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absentCount,
                 COUNT(DISTINCT al.payCode) AS totalCount
             FROM attendance_logs al
@@ -896,6 +940,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
               AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
               ${hierCondition}
+              ${getEligibleUserSql("u")}
         `;
         const attParams = [];
         attSql = addShiftFilter(attSql, attParams, "al");
@@ -917,7 +962,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 CONVERT(VARCHAR, unm.[date], 23) AS fullDate,
                 COUNT(DISTINCT unm.payCode) AS unmappedCount
             FROM attendance_unmapped_logs unm
-            WHERE UPPER(LTRIM(RTRIM(unm.status))) = 'PRESENT'
+            WHERE UPPER(LTRIM(RTRIM(unm.status))) IN ('P','PRESENT')
               AND CONVERT(DATE, unm.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, unm.[date]) <= '${sqlEndDate}'
         `;
@@ -972,6 +1017,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     try {
         // Attrition graph users.leavingDate se calculate hoga.
         // IMPORTANT: sirf isTemporary = 0 employees count honge. isTemporary = 1 employees skip honge.
+        // Shift filter attrition graph par apply nahi hoga, so left employees with NULL/blank shift are included.
         attritionData = await buildDailyAttritionDataFromUsers();
     } catch (e) {
         console.warn("[DASHBOARD] Attrition daily query failed:", e.message);
@@ -999,6 +1045,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
               AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
               AND ISNULL(u.isTemporary, 0) = 0
               ${hierCondition}
+              ${getDesignationShutterExclusionSql("u")}
+              ${getSnapshotEmployeeExistsSql("u")}
         `;
         const absParams = [];
         absSql = addShiftFilter(absSql, absParams, "al");
@@ -1148,11 +1196,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             alias,
         });
 
-        // Dashboard user/master headcount excludes only temporary employees.
-        // No designation_shutters or other employee-exclusion filter is applied.
-        sqlText += `
-            AND ISNULL(${alias}.isTemporary, 0) = 0
-        `;
+        // Common dashboard employee eligibility:
+        // users.empId must be valid, isTemporary = 0, not deleted,
+        // designation must not be shuttered/off, and employee must exist in user_hierarchy_snapshots.
+        sqlText += getEligibleUserSql(alias);
 
         return sqlText;
     }
@@ -1202,7 +1249,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
           AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND ISNULL(u.isTemporary, 0) = 0
-          AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) = 'PRESENT'
+          AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) IN ('P','PRESENT')
     `;
 
     // IMPORTANT SHIFT/ALL FIX:
@@ -1624,16 +1671,16 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 params.push(...lineNames, ...lineNames);
             }
 
+            sqlText += getEligibleUserSql(alias);
+
             return sqlText;
         };
 
         try {
-            // EDUCATION ATTENDANCE FIX:
-            // Education graph attendance count must match direct DB logic:
-            // attendance_logs + users, grouped by users.education, COUNT(DISTINCT u.empId).
-            // Temporary/contractor employees are included here because education graph is expected
-            // to count the same employees as the attendance upload.
-            // PRESENT status is used so ALL shift does not include rows where shift/status is Absent.
+            // Education graph attendance count follows the same common dashboard eligibility:
+            // attendance_logs.payCode = users.empId, snapshot verified, isTemporary = 0,
+            // not deleted, and designation is not shuttered/off.
+            // PRESENT/P status is used so ALL shift does not include absent rows.
             let attendanceSql = `
                 SELECT
                     ${columnSql} AS rawName,
@@ -1647,7 +1694,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
                   AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
-                  AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) = 'PRESENT'
+                  AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) IN ('P','PRESENT')
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
             `;
@@ -1945,6 +1992,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 nextSql = addShiftFilter(nextSql, params, "al");
             }
 
+            nextSql += getEligibleUserSql("u");
+
             return nextSql;
         };
 
@@ -1978,7 +2027,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
               AND NULLIF(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))), '') IS NOT NULL
               AND CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
               AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
-              AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) = 'PRESENT'
+              AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) IN ('P','PRESENT')
         `;
         const contractorPresentParams = [];
         contractorPresentSql = applyContractorCommonFilters(contractorPresentSql, contractorPresentParams, { applyAttendanceShift: true });
@@ -2091,7 +2140,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     attendanceDateAvailable: true,
                     shift: selectedShiftValue || "ALL",
                     attendanceLogic:
-                        "Contractor graph: Total Headcount comes from users.contractor and does not change on shift selection. Actual Present comes from attendance_logs joined with users.empId = attendance_logs.payCode, and only this blue bar is affected by attendance_logs.shift filter. Department/section/line/state/district filters still apply.",
+                        "All dashboard graphs use common eligibility: attendance_logs.payCode = users.empId, users.isTemporary = 0, user not deleted, designation not shuttered/off, and employee exists in user_hierarchy_snapshots. Shift filter affects attendance/present bars where applicable. Attrition graph ignores shift filter and uses users.leavingDate.",
                 },
                 debug: {
                     requiredStartDate: sqlStartDate,
@@ -2249,7 +2298,7 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS fullDate,
             DAY(al.[date]) AS dayNum,
-            COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN al.payCode END) AS present,
+            COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN al.payCode END) AS present,
             COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absent,
             COUNT(DISTINCT al.payCode) AS total
         FROM attendance_logs al
@@ -2263,6 +2312,7 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         WHERE CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
           AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
           ${hierCondition}
+          ${getEligibleUserSql("u")}
     `;
 
     const params = [];
@@ -2582,7 +2632,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         let attendanceSql = `
             SELECT
                 ${bucketCaseSQL} AS bucket,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(attendanceStatus))) = 'PRESENT' THEN 1 ELSE 0 END) AS presentCount,
+                SUM(CASE WHEN UPPER(LTRIM(RTRIM(attendanceStatus))) IN ('P','PRESENT') THEN 1 ELSE 0 END) AS presentCount,
                 SUM(CASE WHEN UPPER(LTRIM(RTRIM(attendanceStatus))) IN ('ABSENT', 'LEAVE', 'HALF DAY') THEN 1 ELSE 0 END) AS absentCount
             FROM (
                 SELECT
@@ -2604,6 +2654,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND ${joinDateSQL} IS NOT NULL
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
         `;
 
         const attendanceParams = [sqlStartDate, sqlEndDate];
@@ -2626,7 +2678,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         if (hasCustomTenureRange) {
             let customAttendanceSql = `
                 SELECT
-                    SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) = 'PRESENT' THEN 1 ELSE 0 END) AS presentCount,
+                    SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN 1 ELSE 0 END) AS presentCount,
                     SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT', 'LEAVE', 'HALF DAY') THEN 1 ELSE 0 END) AS absentCount
                 FROM attendance_logs al
                 INNER JOIN users u
@@ -2644,6 +2696,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${joinDateSQL} IS NOT NULL
                   AND DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, al.[date])) BETWEEN ? AND ?
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
             `;
 
             const customAttendanceParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
@@ -2679,12 +2733,15 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${joinDateSQL} <= ?
                   AND (${leaveDateSQL} IS NULL OR ${leaveDateSQL} >= ?)
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
         `;
 
         const masterTenureParams = [sqlEndDate, sqlEndDate, sqlStartDate];
         // IMPORTANT:
         // Users Total / master tenure bar par shift filter apply nahi hoga.
-        // Shift filter sirf attendance/absenteeism/attrition values par apply hoga.
+        // Shift filter sirf attendance/absenteeism values par apply hoga.
+        // Attrition tenure bhi shift ignore karega, kyunki left employees ka shift NULL/blank ho sakta hai.
         masterTenureSql += `
             ) parsed
             WHERE tenureDays IS NOT NULL
@@ -2715,6 +2772,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND (${leaveDateSQL} IS NULL OR ${leaveDateSQL} >= ?)
                   AND DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?)) BETWEEN ? AND ?
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
             `;
             const customMasterParams = [sqlEndDate, sqlStartDate, sqlEndDate, customFromDays, customToDays];
             // IMPORTANT:
@@ -2749,10 +2808,13 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${leaveDateSQL} >= ?
                   AND ${leaveDateSQL} <= ?
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
         `;
 
         const attritionParams = [sqlStartDate, sqlEndDate];
-        attritionSql = addShiftFilterOnUser(attritionSql, attritionParams);
+        // IMPORTANT: Tenure attrition par shift filter intentionally apply nahi hoga.
+        // Left employees ke users.shift NULL/blank hone se attrition count miss ho raha tha.
         attritionSql += `
             ) parsed
             WHERE tenureDays IS NOT NULL
@@ -2784,10 +2846,12 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${leaveDateSQL} <= ?
                   AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
                   ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+                  ${getSnapshotEmployeeExistsSql("u")}
             `;
 
             const customAttritionParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
-            customAttritionSql = addShiftFilterOnUser(customAttritionSql, customAttritionParams);
+            // IMPORTANT: Custom tenure attrition par bhi shift filter apply nahi hoga.
             const [rows] = await executeQuery(customAttritionSql, customAttritionParams);
             attrition.CUSTOM = Number(rows?.[0]?.leftCount || 0);
         }
@@ -2829,7 +2893,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     masterLogic:
                         "Grey/dark yellow Users Total bar users table ka total active employee count hai. Shift filter ka effect is bar par nahi padega; baaki hierarchy/date filters apply rahenge.",
                     attritionLogic:
-                        "Attrition users.leavingDate se calculate hoga. Sirf isTemporary = 0 employees count honge. Tenure attrition me joiningDate valid hona mandatory hai; blank joiningDate wale tenure graph me skip honge. Shift filter users.shift par lagega.",
+                        "Attrition users.leavingDate se calculate hoga. Sirf isTemporary = 0 employees count honge. Tenure attrition me joiningDate valid hona mandatory hai; blank joiningDate wale tenure graph me skip honge. Shift filter attrition par apply nahi hoga, so NULL/blank shift left employees included rahenge.",
                     matchingLogic:
                         "attendance_logs.payCode = users.empId and joiningDate se tenure bucket calculate hota hai.",
                     customTenureFrom: hasCustomTenureRange ? customFromDays : null,

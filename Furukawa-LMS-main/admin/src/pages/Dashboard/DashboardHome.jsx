@@ -1119,6 +1119,7 @@ const GraphFilterBar = ({
     filter,
     setFilter,
     departments,
+    showShift = true,
     showTenure = false,
     tenureBucket = "ALL",
     setTenureBucket,
@@ -1336,20 +1337,24 @@ const GraphFilterBar = ({
                 widthClass="w-[170px]"
             />
 
-            <div className="h-4 w-px bg-slate-300" />
+            {showShift && (
+                <>
+                    <div className="h-4 w-px bg-slate-300" />
 
-            <Select value={filter.shift || "ALL"} onValueChange={(val) => handleFilterChange("shift", val)}>
-                <SelectTrigger className="w-[110px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 shadow-none px-2 text-xs font-semibold">
-                    <SelectValue placeholder="All Shifts" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="ALL">All Shifts</SelectItem>
-                    <SelectItem value="A">Shift A</SelectItem>
-                    <SelectItem value="B">Shift B</SelectItem>
-                    <SelectItem value="C">Shift C</SelectItem>
-                    <SelectItem value="G">General Shift</SelectItem>
-                </SelectContent>
-            </Select>
+                    <Select value={filter.shift || "ALL"} onValueChange={(val) => handleFilterChange("shift", val)}>
+                        <SelectTrigger className="w-[110px] h-8 bg-transparent border-none text-slate-700 focus:ring-0 shadow-none px-2 text-xs font-semibold">
+                            <SelectValue placeholder="All Shifts" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="ALL">All Shifts</SelectItem>
+                            <SelectItem value="A">Shift A</SelectItem>
+                            <SelectItem value="B">Shift B</SelectItem>
+                            <SelectItem value="C">Shift C</SelectItem>
+                            <SelectItem value="G">General Shift</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </>
+            )}
 
             <div className="h-4 w-px bg-slate-300" />
 
@@ -2015,6 +2020,7 @@ const FullWidthToggleChartCard = ({
     departments,
     valueMode = "number",
     onValueModeChange,
+    showShiftFilter = true,
 }) => {
     const isEmpty = !data || data.length === 0;
     const valueSuffix = valueMode === "percentage" ? "%" : suffix;
@@ -2041,6 +2047,7 @@ const FullWidthToggleChartCard = ({
                             filter={filter}
                             setFilter={setFilter}
                             departments={departments}
+                            showShift={showShiftFilter}
                         />
 
                         <ChartTypeToggle value={chartType} onChange={onChartTypeChange} />
@@ -2865,7 +2872,7 @@ const DashboardHome = () => {
         data: attritionStats,
         isLoading: attritionLoading,
         isFetching: attritionFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(attritionFilter, {}));
+    } = useGetDashboardStatsQuery(getQueryParams(attritionFilter, { shift: "ALL" }));
 
     const {
         data: absenteeismStats,
@@ -3302,6 +3309,7 @@ const DashboardHome = () => {
                 departments={departments}
                 valueMode={graphValueModes.attrition}
                 onValueModeChange={(value) => setGraphValueMode("attrition", value)}
+                showShiftFilter={false}
             />
 
             <FullWidthToggleChartCard

@@ -317,11 +317,20 @@ export const getAllDepartments = asyncHandler(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 1000);
     const offset = (page - 1) * limit;
     const search = req.query.search || "";
+    const status = req.query.status || "";
     let whereSql = "WHERE 1=1";
     let params = [];
     if (search) {
         whereSql += " AND name LIKE ?";
         params.push(`%${search}%`);
+    }
+    if (status === "HAS_INSTRUCTOR") {
+        whereSql += " AND instructor IS NOT NULL";
+    } else if (status === "NO_INSTRUCTOR") {
+        whereSql += " AND instructor IS NULL";
+    } else if (["UPCOMING", "ONGOING", "COMPLETED", "CANCELLED"].includes(status)) {
+        whereSql += " AND status = ?";
+        params.push(status);
     }
     if (!req.query.includeDeleted || (req.user.role !== "SUPERADMIN" && !req.user.isAdmin && !req.user.isEmployee)) {
         whereSql += " AND (isDeleted IS NULL OR isDeleted = 0)";
@@ -1051,7 +1060,11 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
 
     const sectionId = req.query.sectionId || null;
     const date = req.query.date || null;
-    let sheet = await HandoverSheet.findSpecific(departmentId, sectionId, date);
+    const shift = req.query.shift || null;
+    const sheetId = req.query.sheetId || null;
+    let sheet = sheetId
+        ? await HandoverSheet.findById(sheetId)
+        : await HandoverSheet.findSpecific(departmentId, sectionId, date, shift);
 
     // Compute eligible users for autocomplete on every request when date is present
     let eligibleUsers = [];
@@ -1225,9 +1238,11 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
     const departmentId = await resolveDepartmentId(req.params.id);
     if (!departmentId) throw new ApiError("Invalid Department ID", 400);
 
-    const { date, entries, signatures, metadata, sectionId, isSubmitted, remark } = req.body;
+    const { date, entries, signatures, metadata, sectionId, shift, isSubmitted, remark, sheetId } = req.body;
 
-    let sheet = await HandoverSheet.findSpecific(departmentId, sectionId || null, date);
+    let sheet = sheetId
+        ? await HandoverSheet.findById(sheetId)
+        : await HandoverSheet.findSpecific(departmentId, sectionId || null, date, shift || null);
 
     // Permission check for approvals
     const userPermissions = req.user?.customRole?.permissions || [];
@@ -1305,6 +1320,7 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
 
     if (sheet) {
         sheet.date = date;
+        sheet.shift = shift || sheet.shift || null;
         sheet.entries = entries;
         sheet.signatures = signatures;
         sheet.metadata = metadata;
@@ -1315,6 +1331,7 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
         sheet = await HandoverSheet.create({
             departmentId,
             sectionId: sectionId || null,
+            shift: shift || null,
             date,
             entries,
             signatures,
@@ -1464,12 +1481,13 @@ export const sendHandoverPDF = asyncHandler(async (req, res) => {
 });
 
 export const getHandoverSheetsMonitoring = asyncHandler(async (req, res) => {
-    const { departmentId, sectionId, month, year } = req.query;
+    const { departmentId, sectionId, month, year, shift } = req.query;
 
     const filterDeptId = normalizeParam(departmentId);
     const filterSectionId = normalizeParam(sectionId);
     const filterMonth = normalizeParam(month);
     const filterYear = normalizeParam(year);
+    const filterShift = normalizeParam(shift);
 
     const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
     const hasHandoverBypass = req.user?.customRole?.permissions?.includes('dojo:handover_sheet');
@@ -1498,6 +1516,11 @@ export const getHandoverSheetsMonitoring = asyncHandler(async (req, res) => {
         params.push(filterSectionId);
     }
 
+    if (filterShift) {
+        conditions.push("hs.shift = ?");
+        params.push(filterShift);
+    }
+
     if (filterMonth) {
         conditions.push("MONTH(hs.date) = ?");
         params.push(parseInt(filterMonth));
@@ -1515,6 +1538,7 @@ export const getHandoverSheetsMonitoring = asyncHandler(async (req, res) => {
             hs.id,
             hs.departmentId,
             hs.sectionId,
+            hs.shift,
             hs.date,
             hs.isSubmitted,
             hs.submittedAt,
@@ -1547,6 +1571,19 @@ export const deleteHandoverSheet = asyncHandler(async (req, res) => {
     await executeQuery("DELETE FROM handover_sheets WHERE id = ?", [id]);
 
     return res.status(200).json(new ApiResponse(200, null, "Handover sheet deleted successfully"));
+});
+
+export const bulkDeleteHandoverSheets = asyncHandler(async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("No handover sheet IDs provided", 400);
+
+    const validIds = ids.map(Number).filter(id => !isNaN(id));
+    if (validIds.length === 0) throw new ApiError("No valid handover sheet IDs provided", 400);
+
+    const placeholders = validIds.map(() => '?').join(',');
+    await executeQuery(`DELETE FROM handover_sheets WHERE id IN (${placeholders})`, validIds);
+
+    return res.status(200).json(new ApiResponse(200, { deletedCount: validIds.length }, "Handover sheets deleted successfully"));
 });
 
 export const getStudentHandoverHistory = asyncHandler(async (req, res) => {

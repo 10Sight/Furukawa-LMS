@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     Select,
@@ -18,7 +20,8 @@ import {
     IconArrowLeft,
     IconEye,
     IconCalendarTime,
-    IconCalendar
+    IconCalendar,
+    IconLoader
 } from "@tabler/icons-react";
 import MultiSkillingPlan from '@/components/departments/MultiSkillingPlan';
 
@@ -26,7 +29,7 @@ import MultiSkillingPlan from '@/components/departments/MultiSkillingPlan';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
 import OnJobTraining from './OnJobTraining';
@@ -39,13 +42,50 @@ import SkillMatrix from './SkillMatrix';
 import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
 import { useGetSubSectionsByLineQuery } from '@/Redux/AllApi/SubSectionApi';
 import { useGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
+import { useDeleteEvaluationSheetMutation } from '@/Redux/AllApi/SkillMatrixApi';
+import { Edit2, Trash2 } from "lucide-react";
+
+const VALID_MULTI_SKILLING_TABS = [
+    "planCalendar",
+    "ojt",
+    "testPaper",
+    "daily5m",
+    "cycle10",
+    "threeDay",
+    "evaluation",
+    "skillMatrix",
+];
 
 const MultiSkilling = () => {
 
+    const authUser = useSelector(state => state.auth.user);
+    const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
+    const canAccessAll = isAdmin;
 
+    const [searchParams, setSearchParams] = useSearchParams();
 
-    // Active Tab State (defaults to 'planCalendar')
-    const [activeTab, setActiveTab] = useState("planCalendar");
+    // Active Tab State (defaults to 'planCalendar', restored from ?tab= in URL)
+    const [activeTab, setActiveTab] = useState(() => {
+        const tabFromUrl = searchParams.get('tab');
+        return VALID_MULTI_SKILLING_TABS.includes(tabFromUrl) ? tabFromUrl : "planCalendar";
+    });
+
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', tab);
+            return next;
+        }, { replace: true });
+    };
+
+    // Keep activeTab in sync with the URL (e.g. browser back/forward, deep links)
+    useEffect(() => {
+        const tabFromUrl = searchParams.get('tab');
+        if (VALID_MULTI_SKILLING_TABS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+            setActiveTab(tabFromUrl);
+        }
+    }, [searchParams]);
 
     // Plan Calander Hierarchy Selections
     const [dept, setDept] = useState("");
@@ -152,9 +192,65 @@ const MultiSkilling = () => {
             toast.error(error?.response?.data?.message || "Failed to create plan.");
         }
     };
-    const departments = deptsData?.data?.departments || [];
+    const departments = useMemo(() => {
+        const rawDepts = deptsData?.data?.departments || [];
+        const seen = new Set();
+        return rawDepts.filter(d => {
+            const id = String(d.id || d._id);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+    }, [deptsData]);
     const sections = sectionsData?.data || [];
     const students = studentsData?.data?.users || [];
+
+    // ── Permission-filtered department/section lists ────────────────────────
+    const assignableDepartments = useMemo(() => {
+        const allDepts = departments || [];
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allDepts;
+        return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
+    }, [departments, authUser, canAccessAll]);
+
+    const assignableSections = useMemo(() => {
+        const allSections = sections || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [sections, authUser, canAccessAll]);
+
+    const assignableCreateSections = useMemo(() => {
+        const allSections = createSections || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [createSections, authUser, canAccessAll]);
+
+    const isRestricted = !canAccessAll && authUser && (
+        (authUser.departments?.length > 0) || authUser.departmentId ||
+        (authUser.sections?.length > 0) || authUser.sectionId
+    );
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (assignableDepartments.length === 1 && !dept) {
+            setDept(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+        }
+    }, [isRestricted, assignableDepartments, dept]);
+
+    useEffect(() => {
+        if (!isRestricted) return;
+        if (dept && assignableSections.length === 1 && !section) {
+            setSection(String(assignableSections[0].id || assignableSections[0]._id));
+        }
+    }, [isRestricted, dept, assignableSections, section]);
 
     // Skill Evaluation Operator Finder State
     const [evalDepartment, setEvalDepartment] = useState("");
@@ -162,33 +258,126 @@ const MultiSkilling = () => {
     const [evalLine, setEvalLine] = useState("");
     const [evalSubSection, setEvalSubSection] = useState("");
     const [evalSearchText, setEvalSearchText] = useState("");
+    const [debouncedEvalSearchText, setDebouncedEvalSearchText] = useState("");
     const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
+    const [evaluationSheets, setEvaluationSheets] = useState([]);
+    const [selectedSheetId, setSelectedSheetId] = useState(null);
+    const [isEvalReadOnly, setIsEvalReadOnly] = useState(false);
+    const [isSheetsLoading, setIsSheetsLoading] = useState(false);
+    const [deleteConfirmSheetId, setDeleteConfirmSheetId] = useState(null);
+    const [evalOperatorsPage, setEvalOperatorsPage] = useState(1);
+    const evalOperatorsPerPage = 30;
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedEvalSearchText(evalSearchText), 500);
+        return () => clearTimeout(timer);
+    }, [evalSearchText]);
+
+    const [deleteEvaluationSheet] = useDeleteEvaluationSheetMutation();
+
+    const hasEvalPermission = (perm) => {
+        if (!authUser) return false;
+        if (authUser.role === 'SUPERADMIN' || authUser.role === 'ADMIN') return true;
+        const customPerms = authUser.customRole?.permissions || [];
+        const roleDefaults = {
+            INSTRUCTOR: ['evaluation:manage', 'evaluation:create', 'evaluation:read', 'evaluation:update', 'evaluation:delete'],
+        };
+        const defaultPerms = roleDefaults[authUser.role] || [];
+        return [...defaultPerms, ...customPerms].includes(perm) || [...defaultPerms, ...customPerms].includes('evaluation:manage');
+    };
+
+    const canEditEval = hasEvalPermission('evaluation:update');
+    const canDeleteEval = hasEvalPermission('evaluation:delete');
+
+    const fetchEvaluationSheets = async (studentId) => {
+        if (!studentId) return;
+        try {
+            setIsSheetsLoading(true);
+            const response = await axiosInstance.get(`/api/skill-matrix/evaluation/${studentId}/sheets`);
+            if (response.data.success) {
+                setEvaluationSheets(response.data.data || []);
+            }
+        } catch (error) {
+            console.error("Failed to fetch evaluation sheets list:", error);
+        } finally {
+            setIsSheetsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (selectedOperatorForEval) {
+            fetchEvaluationSheets(selectedOperatorForEval);
+            setSelectedSheetId(null);
+        } else {
+            setEvaluationSheets([]);
+            setSelectedSheetId(null);
+        }
+    }, [selectedOperatorForEval]);
+
+    const handleCreateNewSheetFromList = async () => {
+        if (!selectedOperatorForEval) return;
+        try {
+            const response = await axiosInstance.post(`/api/skill-matrix/evaluation/${selectedOperatorForEval}/sheet/create`, {
+                departmentId: evalDepartment
+            });
+            if (response.data.success && response.data.data) {
+                const newSheet = response.data.data;
+                toast.success(`Sheet ${newSheet.sheetIndex} (${newSheet.period}) created successfully!`);
+                setIsEvalReadOnly(false);
+                setSelectedSheetId(newSheet.id);
+                fetchEvaluationSheets(selectedOperatorForEval);
+            }
+        } catch (error) {
+            console.error("Failed to create new sheet:", error);
+            toast.error("Failed to create new evaluation sheet");
+        }
+    };
 
     // Queries for Skill Evaluation Operator Finder
     const { data: evalSectionsData } = useGetSectionsByDepartmentQuery(evalDepartment, { skip: !evalDepartment });
     const { data: evalLinesData } = useGetLinesBySectionQuery(evalSection, { skip: !evalSection });
     const { data: evalSubSectionsData } = useGetSubSectionsByLineQuery(evalLine, { skip: !evalLine });
 
-    const { data: evalUsersData } = useGetAllUsersQuery({
+    const assignableEvalSections = useMemo(() => {
+        const allSections = evalSectionsData?.data || [];
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
+        return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
+    }, [evalSectionsData, authUser, canAccessAll]);
+
+    const { data: evalUsersData, isFetching: isEvalUsersFetching, refetch: refetchEvalUsers } = useGetAllUsersQuery({
         departmentId: evalDepartment || undefined,
         sectionId: evalSection || undefined,
         lineId: evalLine || undefined,
         subSectionId: evalSubSection || undefined,
         role: "STUDENT,CUSTOM",
         includeTemporary: "true",
-        limit: 1000
+        includeEvaluationInfo: "true",
+        search: debouncedEvalSearchText || undefined,
+        excludeCounts: "true",
+        page: evalOperatorsPage,
+        limit: evalOperatorsPerPage,
+        sortBy: "fullName",
+        order: "asc"
     }, { skip: !evalDepartment });
 
-    // Client-side filter for searched operators list
     const filteredEvalUsers = useMemo(() => {
-        const users = evalUsersData?.data?.users || [];
-        if (!evalSearchText.trim()) return users;
-        const searchLower = evalSearchText.toLowerCase();
-        return users.filter(u =>
-            (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-            (u.cardNo || "").toLowerCase().includes(searchLower)
-        );
-    }, [evalUsersData, evalSearchText]);
+        return evalUsersData?.data?.users || [];
+    }, [evalUsersData]);
+
+    const evalOperatorsTotalPages = evalUsersData?.data?.totalPages || 1;
+
+    const paginatedEvalUsers = filteredEvalUsers;
+
+    useEffect(() => {
+        setEvalOperatorsPage(1);
+    }, [evalDepartment, evalSection, evalLine, evalSubSection, debouncedEvalSearchText]);
+
+    useEffect(() => {
+        if (evalOperatorsPage > evalOperatorsTotalPages) setEvalOperatorsPage(evalOperatorsTotalPages);
+    }, [evalOperatorsTotalPages, evalOperatorsPage]);
 
     return (
         <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
@@ -206,7 +395,7 @@ const MultiSkilling = () => {
             </div>
 
             {/* Tabbed Navigation Menu */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
                 <TabsList className="no-print mb-6 flex flex-wrap gap-2 w-fit bg-slate-100 p-1.5 rounded-xl shadow-sm border border-slate-200">
                     <TabsTrigger value="planCalendar" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">Plan Calander</TabsTrigger>
                     <TabsTrigger value="ojt" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">OJT</TabsTrigger>
@@ -254,7 +443,7 @@ const MultiSkilling = () => {
                                             <SelectValue placeholder="Select Department" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {departments.map((d) => (
+                                            {assignableDepartments.map((d) => (
                                                 <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -272,7 +461,7 @@ const MultiSkilling = () => {
                                             <SelectValue placeholder="Select Section" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {sections.map((s) => (
+                                            {assignableSections.map((s) => (
                                                 <SelectItem key={s.id} value={String(s.id)}>{s.name} {s.category ? `(${s.category})` : ""}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -411,7 +600,7 @@ const MultiSkilling = () => {
                                 <h2 className="text-lg font-bold text-slate-800">Operator Evaluation Finder</h2>
                                 <p className="text-xs text-slate-500 font-medium">Filter and select an operator to view/edit their skill certificate</p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => setActiveTab("planCalendar")} className="border-slate-200">
+                            <Button variant="outline" size="sm" onClick={() => handleTabChange("planCalendar")} className="border-slate-200">
                                 Back to Plan Calander
                             </Button>
                         </div>
@@ -428,7 +617,7 @@ const MultiSkilling = () => {
                                 }}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="Select Department" /></SelectTrigger>
                                     <SelectContent>
-                                        {departments.map((d) => (
+                                        {assignableDepartments.map((d) => (
                                             <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -445,7 +634,7 @@ const MultiSkilling = () => {
                                 }} disabled={!evalDepartment}>
                                     <SelectTrigger className="h-9"><SelectValue placeholder="All Sections" /></SelectTrigger>
                                     <SelectContent>
-                                        {evalSectionsData?.data?.map((s, idx) => (
+                                        {assignableEvalSections.map((s, idx) => (
                                             <SelectItem key={`${s.id || s._id}-${idx}`} value={String(s.id || s._id)}>{s.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -498,51 +687,240 @@ const MultiSkilling = () => {
                             </div>
                         </div>
 
-                        <div className="flex flex-col gap-1 pt-2 border-t">
-                            <Label className="text-[10px] uppercase font-bold text-amber-600 font-semibold tracking-wider">Select Operator to Evaluate</Label>
-                            <Select
-                                value={selectedOperatorForEval || ""}
-                                onValueChange={setSelectedOperatorForEval}
-                                disabled={!evalDepartment || filteredEvalUsers.length === 0}
-                            >
-                                <SelectTrigger className="h-9">
-                                    <SelectValue placeholder={
-                                        !evalDepartment
-                                            ? "Please select a department first"
-                                            : filteredEvalUsers.length === 0
-                                                ? "No operators found matching the criteria"
-                                                : "Select an operator"
-                                    } />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {filteredEvalUsers.map(u => (
-                                        <SelectItem key={u._id || u.id} value={u._id || u.id}>
-                                            {u.fullName || u.name} {u.cardNo ? `(${u.cardNo})` : ""}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
                     </div>
 
                     {selectedOperatorForEval ? (
-                        <div className="bg-white border rounded-xl p-4 shadow-sm">
-                            <SkillMatrixCertificate
-                                studentId={selectedOperatorForEval}
-                                studentName={
-                                    filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.fullName ||
-                                    filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.name || ""
-                                }
-                                employeeCode={
-                                    filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.cardNo ||
-                                    filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.empId || ""
-                                }
-                                departmentId={evalDepartment}
-                            />
-                        </div>
-                    ) : (
+                        selectedSheetId ? (
+                            <div className="bg-white border rounded-xl p-4 shadow-sm">
+                                <SkillMatrixCertificate
+                                    studentId={selectedOperatorForEval}
+                                    studentName={
+                                        filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.fullName ||
+                                        filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.name || ""
+                                    }
+                                    employeeCode={
+                                        filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.cardNo ||
+                                        filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.empId || ""
+                                    }
+                                    departmentId={evalDepartment}
+                                    subSectionId={evalSubSection}
+                                    initialSheetId={selectedSheetId}
+                                    readOnly={isEvalReadOnly}
+                                    onBackToList={() => {
+                                        setSelectedSheetId(null);
+                                        setIsEvalReadOnly(false);
+                                        fetchEvaluationSheets(selectedOperatorForEval);
+                                    }}
+                                    onSaved={() => {
+                                        try { refetchEvalUsers(); } catch (e) { /* query not started yet, nothing to refresh */ }
+                                    }}
+                                />
+                            </div>
+                        ) : (
+                            <div className="bg-white border rounded-xl p-6 shadow-sm space-y-4">
+                                <div className="flex justify-between items-center border-b pb-3">
+                                    <div>
+                                        <h3 className="text-base font-bold text-slate-800">
+                                            Evaluation Sheets for {
+                                                filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.fullName ||
+                                                filteredEvalUsers.find(e => String(e._id || e.id) === String(selectedOperatorForEval))?.name
+                                            }
+                                        </h3>
+                                        <p className="text-xs text-slate-500">
+                                            Select a sheet row to view details, or create a new evaluation sheet.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setSelectedOperatorForEval(null)}
+                                            className="text-xs font-semibold border-slate-200"
+                                        >
+                                            Back to Operators
+                                        </Button>
+                                        <Button
+                                            onClick={handleCreateNewSheetFromList}
+                                            className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs"
+                                        >
+                                            + Create New Sheet
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {isSheetsLoading ? (
+                                    <div className="flex justify-center py-8">
+                                        <IconLoader className="animate-spin h-6 w-6 text-amber-500" />
+                                    </div>
+                                ) : evaluationSheets.length === 0 ? (
+                                    <div className="text-center py-10 text-slate-400 italic">
+                                        No evaluation sheets created yet. Click "+ Create New Sheet" to begin.
+                                    </div>
+                                ) : (
+                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-slate-50 text-[11px] uppercase font-bold text-slate-600">
+                                                <tr>
+                                                    <th className="p-3 border-b text-left">Sheet #</th>
+                                                    <th className="p-3 border-b text-left">Period</th>
+                                                    <th className="p-3 border-b text-left">Level Earned</th>
+                                                    <th className="p-3 border-b text-left">Efficiency</th>
+                                                    <th className="p-3 border-b text-left">Status</th>
+                                                    <th className="p-3 border-b text-left">Created Date</th>
+                                                    <th className="p-3 border-b text-center">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {evaluationSheets.map((sheet, idx) => (
+                                                    <tr
+                                                        key={sheet.id || idx}
+                                                        className="hover:bg-slate-50/80 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                        onClick={() => { setIsEvalReadOnly(true); setSelectedSheetId(sheet.id); }}
+                                                    >
+                                                        <td className="p-3 font-bold">Sheet {sheet.sheetIndex}</td>
+                                                        <td className="p-3">{sheet.period}</td>
+                                                        <td className="p-3 font-bold text-amber-600">{sheet.earnedLevel || 'L0'}</td>
+                                                        <td className="p-3 font-semibold">{sheet.efficiency ? `${sheet.efficiency}%` : '0%'}</td>
+                                                        <td className="p-3">
+                                                            {sheet.isActive ? (
+                                                                <span className="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded-full">Active</span>
+                                                            ) : (
+                                                                <span className="bg-slate-100 text-slate-800 text-[10px] font-bold px-2 py-0.5 rounded-full">Previous</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-3">{new Date(sheet.createdAt).toLocaleDateString('en-GB')}</td>
+                                                        <td className="p-3" onClick={e => e.stopPropagation()}>
+                                                            <div className="flex gap-1 justify-center flex-wrap">
+                                                                {canEditEval && (
+                                                                    <Button
+                                                                        size="xs"
+                                                                        variant="outline"
+                                                                        className="h-7 text-xs font-semibold px-2 gap-1 border-amber-400 text-amber-600 hover:bg-amber-50"
+                                                                        title="Edit"
+                                                                        onClick={() => { setIsEvalReadOnly(false); setSelectedSheetId(sheet.id); }}
+                                                                    >
+                                                                        <Edit2 className="h-3 w-3" /> Edit
+                                                                    </Button>
+                                                                )}
+                                                                {canDeleteEval && (
+                                                                    <Button
+                                                                        size="xs"
+                                                                        variant="outline"
+                                                                        className="h-7 text-xs font-semibold px-2 gap-1 border-red-400 text-red-600 hover:bg-red-50"
+                                                                        title="Delete"
+                                                                        onClick={() => setDeleteConfirmSheetId(sheet.id)}
+                                                                    >
+                                                                        <Trash2 className="h-3 w-3" /> Delete
+                                                                    </Button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    ) : !evalDepartment ? (
                         <div className="text-center py-10 text-slate-500 border-2 border-dashed rounded-xl bg-slate-50">
                             No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                        </div>
+                    ) : (
+                        <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                            <table className="w-full text-sm">
+                                <thead className="bg-slate-50 text-[11px] uppercase font-bold text-slate-600">
+                                    <tr>
+                                        <th className="p-3 border-b text-left">Operator Name</th>
+                                        <th className="p-3 border-b text-left">Emp ID</th>
+                                        <th className="p-3 border-b text-left">Last Evaluation Date</th>
+                                        <th className="p-3 border-b text-left">Current Level</th>
+                                        <th className="p-3 border-b text-left">Primary Station (Sub-Section)</th>
+                                        <th className="p-3 border-b text-left">Current Sheet (Year)</th>
+                                        <th className="p-3 border-b text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {isEvalUsersFetching ? (
+                                        <tr>
+                                            <td colSpan={7} className="text-center py-10">
+                                                <IconLoader className="animate-spin h-6 w-6 mx-auto text-slate-400" />
+                                            </td>
+                                        </tr>
+                                    ) : paginatedEvalUsers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="text-center py-10 text-slate-400 italic">
+                                                No operators found matching the criteria.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginatedEvalUsers.map(u => {
+                                            const stationLabel = [u.primaryStationName, u.subSectionName].filter(Boolean).join(' (') + (u.subSectionName ? ')' : '');
+                                            const evalYear = u.lastEvalDate
+                                                ? new Date(u.lastEvalDate).getFullYear()
+                                                : (u.lastEvalPeriod ? u.lastEvalPeriod.split('-')[0] : null);
+                                            return (
+                                                <tr
+                                                    key={u._id || u.id}
+                                                    className="hover:bg-slate-50/80 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                    onClick={() => setSelectedOperatorForEval(u._id || u.id)}
+                                                >
+                                                    <td className="p-3 font-bold">{u.fullName || u.name}</td>
+                                                    <td className="p-3">{u.empId || u.cardNo || "-"}</td>
+                                                    <td className="p-3">
+                                                        {u.lastEvalDate ? new Date(u.lastEvalDate).toLocaleDateString('en-GB') : "No Evaluation"}
+                                                    </td>
+                                                    <td className="p-3 font-semibold text-amber-600">{u.primaryLevel || u.currentLevel || "-"}</td>
+                                                    <td className="p-3">{stationLabel || "-"}</td>
+                                                    <td className="p-3">
+                                                        {u.lastEvalSheetIndex ? `Sheet ${u.lastEvalSheetIndex}${evalYear ? ` (${evalYear})` : ""}` : "-"}
+                                                    </td>
+                                                    <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                                        <Button
+                                                            size="xs"
+                                                            className="h-7 text-xs font-semibold px-3 bg-amber-500 hover:bg-amber-600 text-white"
+                                                            onClick={() => setSelectedOperatorForEval(u._id || u.id)}
+                                                        >
+                                                            Evaluate
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                            {filteredEvalUsers.length > 0 && (
+                                <div className="flex justify-between items-center px-3 py-2 border-t bg-slate-50 text-xs">
+                                    <span className="text-slate-500">
+                                        Showing {(evalOperatorsPage - 1) * evalOperatorsPerPage + 1}
+                                        {"-"}{Math.min(evalOperatorsPage * evalOperatorsPerPage, filteredEvalUsers.length)} of {filteredEvalUsers.length} operators
+                                    </span>
+                                    <div className="flex gap-2 items-center">
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3 border-slate-200"
+                                            disabled={evalOperatorsPage <= 1}
+                                            onClick={() => setEvalOperatorsPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <span className="font-semibold text-slate-600">
+                                            Page {evalOperatorsPage} of {evalOperatorsTotalPages}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3 border-slate-200"
+                                            disabled={evalOperatorsPage >= evalOperatorsTotalPages}
+                                            onClick={() => setEvalOperatorsPage(p => Math.min(evalOperatorsTotalPages, p + 1))}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </TabsContent>
@@ -557,7 +935,7 @@ const MultiSkilling = () => {
                             setEvalLine(lineId);
                             setEvalSubSection(subSectId);
                             setSelectedOperatorForEval(operatorId);
-                            setActiveTab("evaluation");
+                            handleTabChange("evaluation");
                         }}
                     />
                 </TabsContent>
@@ -582,7 +960,7 @@ const MultiSkilling = () => {
                                     <SelectValue placeholder="Select Department" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {departments.map((d) => (
+                                    {assignableDepartments.map((d) => (
                                         <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -599,7 +977,7 @@ const MultiSkilling = () => {
                                     <SelectValue placeholder="Select Section" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {createSections.map((s) => (
+                                    {assignableCreateSections.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>{s.name} {s.category ? `(${s.category})` : ""}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -632,6 +1010,36 @@ const MultiSkilling = () => {
                             Create
                         </Button>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Evaluation Sheet Confirm Dialog */}
+            <Dialog open={!!deleteConfirmSheetId} onOpenChange={(open) => { if (!open) setDeleteConfirmSheetId(null); }}>
+                <DialogContent className="bg-white rounded-xl shadow-lg border border-slate-200">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold text-slate-800">Delete Evaluation Sheet</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-slate-600">
+                        Are you sure you want to permanently delete this evaluation sheet? If it was the active sheet, the previous sheet (if any) will become active and the operator's level and efficiency will be updated accordingly.
+                    </p>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteConfirmSheetId(null)} className="border-slate-200">Cancel</Button>
+                        <Button
+                            variant="destructive"
+                            onClick={async () => {
+                                try {
+                                    await deleteEvaluationSheet(deleteConfirmSheetId).unwrap();
+                                    toast.success("Evaluation sheet deleted successfully");
+                                    setDeleteConfirmSheetId(null);
+                                    if (selectedOperatorForEval) fetchEvaluationSheets(selectedOperatorForEval);
+                                } catch (err) {
+                                    toast.error(err?.data?.message || "Failed to delete evaluation sheet");
+                                }
+                            }}
+                        >
+                            Delete
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

@@ -48,6 +48,7 @@ const EditModulePage = lazy(() => import("./pages/Admin/EditModulePage"));
 const AddCourse = lazy(() => import("./pages/Admin/AddCourse"));
 const Departments = lazy(() => import("./pages/Admin/Departments"));
 const Students = lazy(() => import("./pages/Admin/Students"));
+const StudentComparison = lazy(() => import("./pages/Admin/StudentComparison"));
 const DepartmentDetail = lazy(() => import("./pages/Admin/DepartmentDetail"));
 const LineDetail = lazy(() => import("./pages/Admin/LineDetail"));
 const SubSectionDetail = lazy(() => import("./pages/Admin/SubSectionDetail"));
@@ -94,6 +95,7 @@ const MultiSkilling = lazy(() => import("./pages/Admin/MultiSkilling"));
 const DojoHiring = lazy(() => import("./pages/Admin/DojoHiring"));
 const DojoCandidateDetail = lazy(() => import("./pages/Admin/DojoCandidateDetail"));
 const OnJobTraining = lazy(() => import("./pages/Admin/OnJobTraining"));
+const OJTShareView = lazy(() => import("./pages/Public/OJTShareView"));
 const Contractors = lazy(() => import("./pages/Admin/Contractors"));
 const ContractorDetail = lazy(() => import("./pages/Admin/ContractorDetail"));
 const DesignationsPage = lazy(() => import("./pages/Admin/DesignationsPage"));
@@ -147,6 +149,8 @@ const StudentCertificates = lazy(() => import("./pages/Student/Certificates.jsx"
 const ResourcePreview = lazy(() => import("./pages/Student/ResourcePreview.jsx"));
 const StudentOnJobTraining = lazy(() => import("./pages/Student/OnJobTraining.jsx"));
 const StudentFeedback = lazy(() => import("./pages/Student/Feedback.jsx"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const AccessDenied = lazy(() => import("./pages/AccessDenied"));
 
 const RoleRedirect = () => {
   const { user } = useSelector((state) => state.auth);
@@ -186,7 +190,8 @@ const App = () => {
             }
           />
 
-
+          {/* Public, no-login read-only OJT share link */}
+          <Route path="/ojt/share/:token" element={<OJTShareView />} />
 
           {/* Landing Page as default authenticated route */}
           <Route
@@ -243,6 +248,7 @@ const App = () => {
             <Route path="departments" element={<Departments pageName="Departments" />} />
             <Route path="employees" element={<Students pageName="Employees" />} />
             <Route path="employees/import-logs" element={<OperatorImportLogs />} />
+            <Route path="employees/comparison" element={<StudentComparison />} />
             <Route path="employees/:studentId" element={<StudentDetail />} />
             <Route path="departments/:departmentId" element={<DepartmentDetail pageName="Department Detail" />} />
             <Route path="departments/:departmentId/lines/:lineId" element={<LineDetail />} />
@@ -405,6 +411,7 @@ const App = () => {
             <Route path="trainers/:id" element={<InstructorDetail />} />
             <Route path="employees" element={<Students pageName="Employees" />} />
             <Route path="employees/import-logs" element={<OperatorImportLogs />} />
+            <Route path="employees/comparison" element={<StudentComparison />} />
             <Route path="employees/:studentId" element={<StudentDetail />} />
             <Route path="soft-deleted-users" element={<SoftDeletedUsersManagement />} />
             <Route path="roles-permissions" element={<RolesPermissions />} />
@@ -488,8 +495,10 @@ const App = () => {
             <Route path="departments/:departmentId/lines/:lineId/sub-sections/:subSectionId" element={<SubSectionDetail />} />
             <Route path="departments/:departmentId/lines/:lineId/sub-sections/:subSectionId/machines/:machineId" element={<MachineDetail />} />
             <Route path="employees" element={<Students pageName="Trainees" />} />
+            <Route path="employees/comparison" element={<StudentComparison />} />
             <Route path="employees/:studentId" element={<StudentDetail />} />
             <Route path="trainees" element={<Students pageName="Trainees" />} />
+            <Route path="trainees/comparison" element={<StudentComparison />} />
             <Route path="trainees/:studentId" element={<StudentDetail />} />
             <Route path="trainers/:id" element={<InstructorDetail />} />
             <Route path="dojo-hiring/:studentId" element={<DojoCandidateDetail />} />
@@ -521,6 +530,10 @@ const App = () => {
             <Route path="designations" element={<DesignationsPage />} />
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
           </Route>
+
+          {/* Fallback routes */}
+          <Route path="/access-denied" element={<AccessDenied />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
     </Router>

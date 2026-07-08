@@ -7,10 +7,10 @@ export const userApi = createApi({
     tagTypes: ['User', 'ImportLog'],
     endpoints: (builder) => ({
         getAllUsers: builder.query({
-            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", isStaff = "", excludeCustomRoles = "", excludeTrainers = "", excludeAdmins = "", departmentId = "", sectionId = "", lineId = "", subSectionId = "", stationId = "", passedQuizOnly = "", includeTemporary = "", dojoHandoverPassedOnly = "", designation = "" } = {}) => ({
+            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", isStaff = "", excludeCustomRoles = "", excludeTrainers = "", excludeAdmins = "", departmentId = "", sectionId = "", lineId = "", subSectionId = "", stationId = "", passedQuizOnly = "", includeTemporary = "", dojoHandoverPassedOnly = "", designation = "", includeEvaluationInfo = "", excludeCounts = "" } = {}) => ({
                 url: "/api/users",
                 method: "GET",
-                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, isStaff, excludeCustomRoles, excludeTrainers, excludeAdmins, departmentId, sectionId, lineId, subSectionId, stationId, passedQuizOnly, includeTemporary, dojoHandoverPassedOnly, designation }
+                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, isStaff, excludeCustomRoles, excludeTrainers, excludeAdmins, departmentId, sectionId, lineId, subSectionId, stationId, passedQuizOnly, includeTemporary, dojoHandoverPassedOnly, designation, includeEvaluationInfo, excludeCounts }
             }),
             providesTags: ['User'],
         }),
@@ -162,6 +162,61 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User', 'ImportLog'],
         }),
+        startImportEmployees: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees/start",
+                method: "POST",
+                data,
+            }),
+        }),
+        processEmployeesChunk: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees/process-chunk",
+                method: "POST",
+                data,
+            }),
+        }),
+        finalizeImportEmployees: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees/finalize",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ['User', 'ImportLog'],
+        }),
+
+        // Full-hierarchy import: also resolves Line/Sub-Section/Station and auto-creates a
+        // Skill Matrix Check Sheet when the row carries Target Second/Actual Second.
+        importEmployeesFull: builder.mutation({
+            query: (formData) => ({
+                url: "/api/import/employees-full",
+                method: "POST",
+                data: formData,
+            }),
+            invalidatesTags: ['User', 'ImportLog'],
+        }),
+        startImportEmployeesFull: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees-full/start",
+                method: "POST",
+                data,
+            }),
+        }),
+        processEmployeesChunkFull: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees-full/process-chunk",
+                method: "POST",
+                data,
+            }),
+        }),
+        finalizeImportEmployeesFull: builder.mutation({
+            query: (data) => ({
+                url: "/api/import/employees-full/finalize",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ['User', 'ImportLog'],
+        }),
         importDojoCandidates: builder.mutation({
             query: (formData) => ({
                 url: "/api/import/dojo-candidates",
@@ -197,6 +252,26 @@ export const userApi = createApi({
                 if (result.error) return { error: result.error };
 
                 // Convert Blob to Base64 string to make it serializable for Redux
+                const blob = result.data;
+                const base64 = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+
+                return { data: { fileData: base64 } };
+            },
+        }),
+        getImportTemplateFull: builder.query({
+            queryFn: async (arg, api, extraOptions, baseQuery) => {
+                const result = await baseQuery({
+                    url: "/api/import/employees-full/template",
+                    method: "GET",
+                    responseHandler: (response) => response.data,
+                });
+
+                if (result.error) return { error: result.error };
+
                 const blob = result.data;
                 const base64 = await new Promise((resolve) => {
                     const reader = new FileReader();
@@ -278,8 +353,16 @@ export const {
     useRestoreUserMutation,
     useLazyExportStudentsQuery,
     useImportEmployeesMutation,
+    useStartImportEmployeesMutation,
+    useProcessEmployeesChunkMutation,
+    useFinalizeImportEmployeesMutation,
+    useImportEmployeesFullMutation,
+    useStartImportEmployeesFullMutation,
+    useProcessEmployeesChunkFullMutation,
+    useFinalizeImportEmployeesFullMutation,
     useImportDojoCandidatesMutation,
     useLazyGetImportTemplateQuery,
+    useLazyGetImportTemplateFullQuery,
     useLazyGetDojoImportTemplateQuery,
     useGetImportLogsQuery,
     useGetImportLogDetailsQuery,

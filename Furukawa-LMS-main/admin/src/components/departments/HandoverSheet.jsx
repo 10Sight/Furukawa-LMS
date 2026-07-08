@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Loader2, Save } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { IconSettings, IconHistory, IconPlus, IconTrash } from "@tabler/icons-react";
 import { format } from "date-fns";
 import UserAutocomplete from '../common/UserAutocomplete';
@@ -116,15 +117,15 @@ const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, classNam
     );
 };
 
-const HandoverSheet = ({ departmentId, sectionId = null, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false, date: propDate, setDate: propSetDate }) => {
+const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: propShift = null, viewOnly = false, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false, date: propDate, setDate: propSetDate }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const hasHandoverBypass = authUser?.customRole?.permissions?.includes('dojo:handover_sheet');
     const canAccessAll = isAdmin || hasHandoverBypass;
 
-    const canManage = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:manage');
-    const canApprove = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:approve');
-    const canEditLayout = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_layout');
+    const canManage = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:manage')) && !viewOnly;
+    const canApprove = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:approve')) && !viewOnly;
+    const canEditLayout = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_layout')) && !viewOnly;
     const canEditSaved = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_saved');
 
     const [loading, setLoading] = useState(true);
@@ -160,7 +161,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
     const [editRemark, setEditRemark] = useState("");
     const [pendingSubmitValue, setPendingSubmitValue] = useState(false);
 
-    const isEditable = isNewSheet || canEditSaved;
+    const isEditable = !viewOnly && (isNewSheet || canEditSaved);
 
     // Layout Config State
     const [tableConfig, setTableConfig] = useState(null);
@@ -255,7 +256,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                 // Fetch layout config
                 await fetchConfig();
 
-                const response = await axiosInstance.get(`/api/departments/${departmentId}/handover-sheet?sectionId=${sectionId || ""}&date=${date}`);
+                const sheetIdParam = sheetId ? `&sheetId=${sheetId}` : "";
+                const shiftParam = propShift ? `&shift=${encodeURIComponent(propShift)}` : "";
+                const response = await axiosInstance.get(`/api/departments/${departmentId}/handover-sheet?sectionId=${sectionId || ""}&date=${date}${sheetIdParam}${shiftParam}`);
                 const data = response.data?.data;
 
                 if (data && !data.isNew) {
@@ -327,7 +330,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
         };
 
         fetchData();
-    }, [departmentId, sectionId, date, departmentName, sectionName]);
+    }, [departmentId, sectionId, date, departmentName, sectionName, sheetId, propShift]);
 
     const handleEntryChange = (index, field, value) => {
         const newEntries = [...entries];
@@ -482,8 +485,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
 
         try {
             const response = await axiosInstance.post(`/api/departments/${departmentId}/handover-sheet`, {
+                sheetId: sheetId || null,
                 departmentId,
                 sectionId: sectionId || null,
+                shift: propShift || null,
                 date,
                 entries,
                 signatures: updatedSignatures,
@@ -728,7 +733,14 @@ const HandoverSheet = ({ departmentId, sectionId = null, students = [], departme
                                         value={date}
                                         onChange={(e) => setDate(e.target.value)}
                                         className="w-40 h-8"
+                                        disabled={viewOnly}
+                                        min={isNewSheet ? new Date().toISOString().split('T')[0] : undefined}
                                     />
+                                    {propShift && (
+                                        <Badge variant="outline" className="text-xs font-semibold border-blue-300 text-blue-700 bg-blue-50">
+                                            Shift {propShift}
+                                        </Badge>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-2 justify-end no-print">
                                     {isSubmitted && (

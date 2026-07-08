@@ -1,9 +1,13 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getObservanceByStudent, createOrUpdateObservance } from "../controllers/operatorObservance.controller.js";
+import { getObservanceByStudent, createOrUpdateObservance, getObservanceSummary } from "../controllers/operatorObservance.controller.js";
 
 const router = Router();
+
+// Must be declared before "/:studentId" so "summary" isn't captured as a studentId param.
+router.route("/summary/list")
+    .get(verifyJWT, authorizeRoles("ADMIN", "INSTRUCTOR", "SUPERADMIN", "operator_observance:read", "operator_observance:manage"), getObservanceSummary);
 
 router.route("/:studentId")
     .get(verifyJWT, authorizeRoles("ADMIN", "INSTRUCTOR", "SUPERADMIN", "operator_observance:read", "operator_observance:manage"), getObservanceByStudent)

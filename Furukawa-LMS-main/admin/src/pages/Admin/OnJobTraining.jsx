@@ -32,13 +32,14 @@ import {
     IconX,
     IconLoader,
     IconEdit,
-    IconTrash
+    IconTrash,
+    IconCopy
 } from "@tabler/icons-react";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
-import { useGetAllOnJobTrainingsQuery, useDeleteOnJobTrainingMutation } from "@/Redux/AllApi/OnJobTrainingApi";
+import { useGetAllOnJobTrainingsQuery, useDeleteOnJobTrainingMutation, useGetServerLanIpQuery } from "@/Redux/AllApi/OnJobTrainingApi";
 import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
 
@@ -101,6 +102,26 @@ const OnJobTraining = () => {
     });
 
     const [deleteOjt, { isLoading: isDeleting }] = useDeleteOnJobTrainingMutation();
+    const { data: lanIpData } = useGetServerLanIpQuery();
+
+    const handleCopyLink = async (ojt) => {
+        if (!ojt.shareToken) {
+            toast.error("Share link is not available for this record");
+            return;
+        }
+        // Use the server's actual LAN IP (auto-detected, not window.location.origin) so the
+        // link still works when opened from another PC — "localhost" would only resolve on this machine.
+        const lanIp = lanIpData?.data?.lanIp;
+        const port = window.location.port ? `:${window.location.port}` : "";
+        const origin = lanIp ? `${window.location.protocol}//${lanIp}${port}` : window.location.origin;
+        const link = `${origin}/ojt/share/${ojt.shareToken}`;
+        try {
+            await navigator.clipboard.writeText(link);
+            toast.success("Link copied to clipboard");
+        } catch {
+            toast.error("Failed to copy link");
+        }
+    };
 
     const handleDelete = async (id) => {
         if (window.confirm("Are you sure you want to delete this OJT record?")) {
@@ -391,6 +412,18 @@ const OnJobTraining = () => {
                                                 </TableCell>
                                                 <TableCell className="text-right pr-6">
                                                     <div className="flex justify-end gap-2">
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleCopyLink(ojt);
+                                                            }}
+                                                            className="border-slate-200 text-slate-700 hover:text-slate-800 hover:bg-slate-50 rounded-lg shadow-sm flex items-center gap-1.5 h-8 px-2.5"
+                                                            title="Copy shareable link"
+                                                        >
+                                                            <IconCopy className="h-3.5 w-3.5" /> Copy Link
+                                                        </Button>
                                                         {hasPermission("on_job_training:update") && (
                                                             <Button
                                                                 variant="outline"
@@ -451,7 +484,13 @@ const OnJobTraining = () => {
             <CreateOJTDialog
                 open={createDialogOpen}
                 onOpenChange={setCreateDialogOpen}
-                onSuccess={() => { refetch(); }}
+                onSuccess={(newOjt) => {
+                    refetch();
+                    if (newOjt) {
+                        setSelectedOjt(newOjt);
+                        setIsReadOnly(false);
+                    }
+                }}
                 initialDepartmentId={queryDepartmentId || (isRestricted ? selectedDepartment : "")}
                 initialSectionId={querySectionId || (isRestricted ? selectedSection : "")}
                 initialLineId={queryLineId}

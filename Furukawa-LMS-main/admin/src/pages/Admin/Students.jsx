@@ -1,5 +1,6 @@
 // src/pages/Admin/Students.jsx
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSelector } from "react-redux";
 import axiosInstance from "@/Helper/axiosInstance";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@/Redux/AllApi/InstructorApi";
 import { format } from "date-fns";
 import ExcelJS from 'exceljs'
+import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { useUserRegisterMutation } from "@/Redux/AllApi/AuthApi";
 import {
@@ -16,9 +18,15 @@ import {
   useDeleteUserMutation,
   useBulkDeleteUsersMutation,
   useBulkUpdateShiftScheduleMutation,
-  useImportEmployeesMutation,
+  useStartImportEmployeesMutation,
+  useProcessEmployeesChunkMutation,
+  useFinalizeImportEmployeesMutation,
+  useStartImportEmployeesFullMutation,
+  useProcessEmployeesChunkFullMutation,
+  useFinalizeImportEmployeesFullMutation,
   useLazyExportStudentsQuery,
   useLazyGetImportTemplateQuery,
+  useLazyGetImportTemplateFullQuery,
   useGetImportLogsQuery,
   useGetImportLogDetailsQuery,
 } from "@/Redux/AllApi/UserApi";
@@ -81,6 +89,9 @@ import {
   IconUserX,
   IconUserMinus,
   IconCalendar,
+  IconCheck,
+  IconClock,
+  IconArrowsLeftRight,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -134,6 +145,13 @@ const safeDateToISO = (dateValue) => {
   return dateToInputFormat(dateValue);
 };
 
+const formatDuration = (totalSeconds) => {
+  const seconds = Math.max(0, Math.round(totalSeconds || 0));
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+};
+
 const Students = () => {
   const currentUser = useSelector((state) => state.auth.user);
 
@@ -145,12 +163,16 @@ const Students = () => {
       const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
       const isAdminLayout = ['admin', 'superadmin'].includes(layout);
       if (!isAdminLayout) return true;
-      // Admin-layout custom users are restricted if they have explicitly assigned departments
+      // Admin-layout custom users are restricted if they have explicitly assigned departments or sections
       const allowedDepts = [...new Set([
         currentUser.departmentId ? String(currentUser.departmentId) : null,
         ...(Array.isArray(currentUser.departments) ? currentUser.departments.map(String) : [])
       ])].filter(Boolean);
-      return allowedDepts.length > 0;
+      const allowedSections = [...new Set([
+        currentUser.sectionId ? String(currentUser.sectionId) : null,
+        ...(Array.isArray(currentUser.sections) ? currentUser.sections.map(String) : [])
+      ])].filter(Boolean);
+      return allowedDepts.length > 0 || allowedSections.length > 0;
     }
     return false;
   }, [currentUser]);
@@ -161,7 +183,6 @@ const Students = () => {
   };
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const navigate = useNavigate();
   const location = useLocation();
@@ -174,6 +195,20 @@ const Students = () => {
   const [isBulkShiftSubmitting, setIsBulkShiftSubmitting] = useState(false);
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  // "standard" = /employees (Dept + Section only); "full" = /employees-full (also resolves
+  // Line/Sub-Section/Station and auto-creates a Skill Matrix Check Sheet from Target/Actual Second)
+  const [importMode, setImportMode] = useState("standard");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({
+    total: 0,
+    current: 0,
+    success: 0,
+    failed: 0,
+    timeElapsed: 0,
+    timeLeft: 0,
+    errors: [],
+    done: false,
+  });
   const [isShiftDialogOpen, setIsShiftDialogOpen] = useState(false);
   const [shiftStudent, setShiftStudent] = useState(null);
   const [shiftScheduleDraft, setShiftScheduleDraft] = useState({});
@@ -252,14 +287,36 @@ const Students = () => {
     }
   };
 
-  // Debounce search term to prevent excessive API calls
+  // Tick the elapsed/remaining time while an import is running
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      setCurrentPage(1); // Reset to first page when searching
-    }, 500);
+    if (!isImporting || importProgress.done) return;
+    const interval = setInterval(() => {
+      setImportProgress((prev) => {
+        const timeElapsed = prev.timeElapsed + 1;
+        const timeLeft = prev.current > 0
+          ? Math.round((timeElapsed / prev.current) * (prev.total - prev.current))
+          : 0;
+        return { ...prev, timeElapsed, timeLeft };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isImporting, importProgress.done]);
 
-    return () => clearTimeout(timer);
+  // Warn before the user navigates away mid-import
+  useEffect(() => {
+    if (!isImporting) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isImporting]);
+
+  // SearchInput already debounces internally before calling setSearchTerm,
+  // so just reset to the first page whenever the (already-debounced) term changes.
+  useEffect(() => {
+    setCurrentPage(1);
   }, [searchTerm]);
 
 
@@ -310,8 +367,8 @@ const Students = () => {
   } = useGetAllStudentsQuery(
     {
       page: currentPage,
-      limit: 10,
-      search: debouncedSearchTerm || "",
+      limit: 30,
+      search: searchTerm || "",
       status: filters.status,
       unit: filters.unit,
       departmentId: filters.departmentId,
@@ -323,7 +380,7 @@ const Students = () => {
       dateTo: filters.dateTo,
       shift: filters.shift,
       date: filters.date,
-      includeLeft: "true",
+      includeLeft: (activeTab === "assigned" || activeTab === "unassigned") ? "false" : "true",
       designation: filters.designation,
       assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
       assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
@@ -356,8 +413,14 @@ const Students = () => {
   const [bulkDeleteUsers] = useBulkDeleteUsersMutation();
   const [bulkUpdateShiftSchedule] = useBulkUpdateShiftScheduleMutation();
   const [assignStudent] = useAddStudentToDepartmentMutation();
-  const [importEmployees] = useImportEmployeesMutation();
+  const [startImportEmployees] = useStartImportEmployeesMutation();
+  const [processEmployeesChunk] = useProcessEmployeesChunkMutation();
+  const [finalizeImportEmployees] = useFinalizeImportEmployeesMutation();
+  const [startImportEmployeesFull] = useStartImportEmployeesFullMutation();
+  const [processEmployeesChunkFull] = useProcessEmployeesChunkFullMutation();
+  const [finalizeImportEmployeesFull] = useFinalizeImportEmployeesFullMutation();
   const [triggerGetTemplate] = useLazyGetImportTemplateQuery();
+  const [triggerGetTemplateFull] = useLazyGetImportTemplateFullQuery();
   const [triggerGetAllStudents] = useLazyGetAllStudentsQuery();
   const { data: importLogsData, isLoading: isLoadingLogs } = useGetImportLogsQuery();
   const importLogs = importLogsData?.data || [];
@@ -391,6 +454,47 @@ const Students = () => {
   const totalPages = studentsData?.data?.totalPages || 1;
   const departments = departmentsData?.data?.departments || [];
 
+  // Centered pagination with ellipses (e.g. 1, 2, 3 ... 245, 246, 247)
+  const [goToPageInput, setGoToPageInput] = useState("");
+
+  const getPageNumbers = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    let last;
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    range.forEach((i) => {
+      if (last) {
+        if (i - last === 2) {
+          rangeWithDots.push(last + 1);
+        } else if (i - last !== 1) {
+          rangeWithDots.push("...");
+        }
+      }
+      rangeWithDots.push(i);
+      last = i;
+    });
+
+    return rangeWithDots;
+  };
+
+  const handleGoToPage = (e) => {
+    e.preventDefault();
+    const pageNum = parseInt(goToPageInput, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum);
+      setGoToPageInput("");
+    } else {
+      showToast("error", `Enter a page number between 1 and ${totalPages}`);
+    }
+  };
+
   const availableDepartments = useMemo(() => {
     if (currentUser?.role === 'CUSTOM') {
       let allowedDepts = [];
@@ -402,24 +506,39 @@ const Students = () => {
       if (allowedDepts.length > 0) {
         return departments.filter(d => allowedDepts.includes(String(d._id || d.id)));
       }
-      // No assigned departments: admin-layout sees all, non-admin layout sees none
-      const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
-      return ['admin', 'superadmin'].includes(layout) ? departments : [];
+      // No assigned departments: fall back to all departments
+      return departments;
     }
     return departments;
   }, [departments, currentUser]);
+
+  const allowedSectionsList = useMemo(() => {
+    if (!currentUser) return [];
+    let allowed = [];
+    if (currentUser.sectionId) allowed.push(String(currentUser.sectionId));
+    const sectList = Array.isArray(currentUser.sections) ? currentUser.sections : [];
+    sectList.forEach(s => allowed.push(String(s)));
+    return [...new Set(allowed)].filter(Boolean);
+  }, [currentUser]);
+
+  const availableSections = useMemo(() => {
+    const rawSections = filterSections;
+    if (currentUser?.role === 'CUSTOM' && allowedSectionsList.length > 0) {
+      return rawSections.filter(s => allowedSectionsList.includes(String(s.id || s._id)));
+    }
+    return rawSections;
+  }, [filterSections, currentUser, allowedSectionsList]);
 
   // Pre-populate filters for restricted users once departments load
   useEffect(() => {
     if (!isRestrictedUser || !availableDepartments.length) return;
     setFilters(prev => {
       if (prev.departmentId !== "") return prev;
-      const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
-      const sectId = currentUser?.sectionId ? String(currentUser.sectionId) : "";
-      if (!deptId && !sectId) return prev;
-      return { ...prev, departmentId: deptId, sectionId: sectId };
+      const deptIdsStr = availableDepartments.map(d => String(d._id || d.id)).join(",");
+      const sectIdsStr = allowedSectionsList.length > 0 ? allowedSectionsList.join(",") : "";
+      return { ...prev, departmentId: deptIdsStr, sectionId: sectIdsStr };
     });
-  }, [isRestrictedUser, availableDepartments, currentUser]);
+  }, [isRestrictedUser, availableDepartments, allowedSectionsList]);
 
   // Filter options for reusable components
   const statusOptions = [
@@ -484,6 +603,35 @@ const Students = () => {
   const filteredStudents = useMemo(() => {
     return students;
   }, [students]);
+
+  // Lazily render rows as the user scrolls, instead of mounting the whole page at once
+  const [visibleCount, setVisibleCount] = useState(10);
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    setVisibleCount(10);
+  }, [currentPage, filters, searchTerm, activeTab]);
+
+  useEffect(() => {
+    if (visibleCount >= filteredStudents.length) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 10, filteredStudents.length));
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleCount, filteredStudents.length]);
+
+  const visibleStudents = useMemo(
+    () => filteredStudents.slice(0, visibleCount),
+    [filteredStudents, visibleCount]
+  );
 
   // Toast helpers to prevent spam
   const showToast = useCallback(
@@ -583,9 +731,7 @@ const Students = () => {
     if (!formData.userName?.trim()) {
       errors.userName = "Username is required";
     }
-    if (!formData.phoneNumber?.trim()) {
-      errors.phoneNumber = "Phone number is required";
-    }
+    // Phone number is optional
     if (!formData.password?.trim()) {
       errors.password = "Password is required";
     }
@@ -633,7 +779,7 @@ const Students = () => {
         email: formData.email.trim().toLowerCase(),
         phoneNumber: formData.phoneNumber.trim(),
         password: formData.password.trim(),
-        role: "STUDENT",
+        role: selectedStudent?.role === "CUSTOM" ? "CUSTOM" : "STUDENT",
         isEmployee: true,
         unit: formData.unit,
         empId: formData.empId?.trim() || null,
@@ -686,12 +832,28 @@ const Students = () => {
   };
 
   const handleEditStudent = async () => {
+    // Reset previous errors
+    setFormErrors({});
+    const errors = {};
+
     if (
       !formData.fullName?.trim() ||
-      !formData.userName?.trim() ||
-      !formData.phoneNumber?.trim()
+      !formData.userName?.trim()
     ) {
       showToast("error", "Basic fields are required");
+      return;
+    }
+
+    // Validate email format if provided
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (formData.email?.trim() && !emailRegex.test(formData.email.trim())) {
+      errors.email = "Please enter a valid email address";
+    }
+
+    // If there are validation errors, show them and return
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showToast("error", "Please fix the form errors before submitting");
       return;
     }
 
@@ -705,7 +867,7 @@ const Students = () => {
         userName: updateData.userName.trim().toLowerCase(),
         email: updateData.email.trim().toLowerCase(),
         phoneNumber: updateData.phoneNumber.trim(),
-        role: "STUDENT",
+        role: selectedStudent?.role === "CUSTOM" ? "CUSTOM" : "STUDENT",
         isEmployee: true,
         empId: updateData.empId?.trim() || null,
         idCard: updateData.idCard?.trim() || null,
@@ -809,7 +971,7 @@ const Students = () => {
         ? {
             isAllSelected: true,
             filters: {
-              search: debouncedSearchTerm,
+              search: searchTerm,
               status: filters.status,
               unit: filters.unit,
               departmentId: filters.departmentId,
@@ -857,7 +1019,7 @@ const Students = () => {
         ? {
             isAllSelected: true,
             filters: {
-              search: debouncedSearchTerm,
+              search: searchTerm,
               status: filters.status,
               unit: filters.unit,
               departmentId: filters.departmentId,
@@ -922,19 +1084,25 @@ const Students = () => {
       showToast("error", errorMessage);
     }
   };
-  const handleImportClick = () => {
+  const handleImportClick = (mode = "standard") => {
+    setImportMode(mode);
     setIsImportDialogOpen(true);
   };
 
   const handleDownloadTemplate = async () => {
     try {
       const toastId = toast.loading("Downloading template...");
-      const result = await triggerGetTemplate().unwrap();
+      const result = importMode === "full"
+        ? await triggerGetTemplateFull().unwrap()
+        : await triggerGetTemplate().unwrap();
 
       // Use the base64 string directly as the href
       const link = document.createElement("a");
       link.href = result.fileData;
-      link.setAttribute("download", "operator_import_template.xlsx");
+      link.setAttribute(
+        "download",
+        importMode === "full" ? "operator_import_full_template.xlsx" : "operator_import_template.xlsx"
+      );
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -963,32 +1131,119 @@ const Students = () => {
       return;
     }
 
-    const toastId = toast.loading("Importing employees...");
+    // Parse the workbook client-side, using the same header-row detection the backend used to do
+    let rows, headerRowIndex;
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+
+      headerRowIndex = -1;
+      for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+        const row = allRows[i];
+        if (row && Array.isArray(row) && row.some((cell) => {
+          if (!cell) return false;
+          const c = cell.toString().trim().toLowerCase();
+          return c === "employeeid" || c === "employee code" || c === "employee id";
+        })) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+      if (headerRowIndex === -1) headerRowIndex = 0;
+
+      const headers = allRows[headerRowIndex].map((h) => h?.toString().trim() || "");
+      const rawData = allRows.slice(headerRowIndex + 1);
+      rows = rawData
+        .map((r) => {
+          const obj = {};
+          headers.forEach((h, idx) => {
+            obj[h || `__EMPTY_${idx}`] = r[idx];
+          });
+          return obj;
+        })
+        .filter((r) => Object.values(r).some((v) => v !== null && v !== undefined && v.toString().trim() !== ""));
+
+      if (rows.length === 0) {
+        showToast("error", "No data found in the Excel file");
+        return;
+      }
+    } catch (error) {
+      console.error("Excel parse error:", error);
+      showToast("error", "Failed to read the Excel file");
+      return;
+    }
+
+    setIsImportDialogOpen(false);
+    setImportProgress({
+      total: rows.length,
+      current: 0,
+      success: 0,
+      failed: 0,
+      timeElapsed: 0,
+      timeLeft: 0,
+      errors: [],
+      done: false,
+    });
+    setIsImporting(true);
+
+    const isFull = importMode === "full";
+    const startImport = isFull ? startImportEmployeesFull : startImportEmployees;
+    const processChunk = isFull ? processEmployeesChunkFull : processEmployeesChunk;
+    const finalizeImport = isFull ? finalizeImportEmployeesFull : finalizeImportEmployees;
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      const startResult = await startImport({
+        fileName: file.name,
+        totalRows: rows.length,
+      }).unwrap();
+      const logId = startResult.data.logId;
 
-      const result = await importEmployees(formData).unwrap();
+      const CHUNK_SIZE = 25;
+      let current = 0, success = 0, failed = 0;
+      const errors = [];
 
-      const successCount = result.data.success?.length || 0;
-      const failedCount = result.data.failed?.length || 0;
+      for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+        const chunkRows = rows.slice(i, i + CHUNK_SIZE);
+        const startIndex = headerRowIndex + i + 2; // Excel row number of the first row in this chunk
 
-      if (failedCount > 0) {
-        showToast("warning", `Imported ${successCount} employees. ${failedCount} failed.`);
-        console.warn("Failed imports:", result.data.failed);
-      } else {
-        showToast("success", `Successfully imported ${successCount} employees!`);
-        setIsImportDialogOpen(false);
+        const chunkResult = await processChunk({ logId, rows: chunkRows, startIndex }).unwrap();
+        const { results: chunkDetails = [], successCount = 0, failedCount = 0 } = chunkResult.data || {};
+
+        current += chunkRows.length;
+        success += successCount;
+        failed += failedCount;
+
+        chunkDetails
+          .filter((r) => r.status === "FAILED")
+          .forEach((r) => errors.push(`Row ${r.rowNumber}: ${r.error}`));
+
+        setImportProgress((prev) => ({ ...prev, current, success, failed, errors: [...errors] }));
       }
 
-      toast.dismiss(toastId);
+      await finalizeImport({ logId }).unwrap();
+      setImportProgress((prev) => ({ ...prev, done: true }));
       refetch();
     } catch (error) {
       console.error("Import error:", error);
-      toast.dismiss(toastId);
-      showToast("error", error?.data?.message || "Failed to import employees");
+      const message = error?.data?.message || error?.message || "Failed to import employees";
+      setImportProgress((prev) => ({ ...prev, done: true, errors: [...prev.errors, `Import stopped: ${message}`] }));
     }
+  };
+
+  const closeImportOverlay = () => {
+    setIsImporting(false);
+    setImportProgress({
+      total: 0,
+      current: 0,
+      success: 0,
+      failed: 0,
+      timeElapsed: 0,
+      timeLeft: 0,
+      errors: [],
+      done: false,
+    });
   };
 
   const handleExportExcel = async () => {
@@ -1004,7 +1259,7 @@ const Students = () => {
         const result = await triggerGetAllStudents({
           page,
           limit: PAGE_SIZE,
-          search: debouncedSearchTerm || "",
+          search: searchTerm || "",
           status: filters.status,
           unit: filters.unit,
           departmentId: filters.departmentId,
@@ -1016,7 +1271,7 @@ const Students = () => {
           dateTo: filters.dateTo,
           shift: filters.shift,
           date: filters.date,
-          includeLeft: "true",
+          includeLeft: (activeTab === "assigned" || activeTab === "unassigned") ? "false" : "true",
           designation: filters.designation,
           assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
           assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
@@ -1205,6 +1460,7 @@ const Students = () => {
       shift: student.shift || "",
     });
 
+    setFormErrors({});
     setIsEditDialogOpen(true);
   };
 
@@ -1357,10 +1613,10 @@ const Students = () => {
 
   const clearFilters = () => {
     const defaultDeptId = isRestrictedUser && availableDepartments.length > 0
-      ? String(availableDepartments[0]._id || availableDepartments[0].id)
+      ? availableDepartments.map(d => String(d._id || d.id)).join(",")
       : "";
-    const defaultSectId = isRestrictedUser && currentUser?.sectionId
-      ? String(currentUser.sectionId)
+    const defaultSectId = isRestrictedUser && allowedSectionsList.length > 0
+      ? allowedSectionsList.join(",")
       : "";
     setFilters({
       status: "",
@@ -1460,6 +1716,94 @@ const Students = () => {
   const todayKey   = format(new Date(), "yyyy-MM-dd");
 
   return (
+    <>
+    {isImporting && createPortal(
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
+          <div className="flex flex-col items-center gap-3 text-center">
+            {!importProgress.done ? (
+              <div className="h-12 w-12 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" />
+            ) : (
+              <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+                <IconCheck className="h-7 w-7 text-green-600" />
+              </div>
+            )}
+            <h3 className="text-lg font-bold text-slate-900">
+              {importProgress.done ? "Import Complete" : "Importing Trainees..."}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {importProgress.done
+                ? "Review the summary below and close when ready."
+                : "Please keep this tab open until the import finishes."}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-all duration-300 ease-out"
+                style={{
+                  width: `${importProgress.total > 0 ? Math.min(100, (importProgress.current / importProgress.total) * 100) : 0}%`,
+                }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground text-right">
+              Processed: {importProgress.current} / {importProgress.total}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+              <div className="text-xs text-green-700 font-medium">Succeeded</div>
+              <div className="text-xl font-bold text-green-900">{importProgress.success}</div>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <div className="text-xs text-red-700 font-medium">Failed</div>
+              <div className="text-xl font-bold text-red-900">{importProgress.failed}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2">
+              <IconClock className="h-4 w-4 text-slate-500" />
+              <div>
+                <div className="text-xs text-slate-600 font-medium">Time Elapsed</div>
+                <div className="text-sm font-bold text-slate-900">{formatDuration(importProgress.timeElapsed)}</div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2">
+              <IconClock className="h-4 w-4 text-slate-500" />
+              <div>
+                <div className="text-xs text-slate-600 font-medium">Est. Time Left</div>
+                <div className="text-sm font-bold text-slate-900">
+                  {importProgress.done ? "--" : formatDuration(importProgress.timeLeft)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {importProgress.errors.length > 0 && (
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <IconAlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                Skipped / Failed Rows ({importProgress.errors.length})
+              </h4>
+              <div className="max-h-32 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 space-y-1">
+                {importProgress.errors.map((err, idx) => (
+                  <div key={idx} className="text-xs text-red-700 font-mono break-words">
+                    {err}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {importProgress.done && (
+            <Button onClick={closeImportOverlay} className="w-full">
+              Done
+            </Button>
+          )}
+        </div>
+      </div>,
+      document.body
+    )}
     <Tabs defaultValue="operators" className="w-full space-y-6">
       <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
         <TabsTrigger value="operators" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
@@ -1547,45 +1891,151 @@ const Students = () => {
 
       {/* Tabs for filtering */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <TabsList className="grid grid-cols-4 w-full sm:w-auto">
-            <TabsTrigger value="all" onClick={() => clearFilters()}>
-              All
-            </TabsTrigger>
-            <TabsTrigger
-              value="active"
-              onClick={() => {
-                clearFilters();
-                setFilters(prev => ({ ...prev, status: "Present" }));
-                setActiveTab("active");
-              }}
-            >
-              Present
-            </TabsTrigger>
-            <TabsTrigger
-              value="assigned"
-              onClick={() => {
-                clearFilters();
-                setActiveTab("assigned");
-                setCurrentPage(1);
-              }}
-            >
-              Assigned
-            </TabsTrigger>
-            <TabsTrigger
-              value="unassigned"
-              onClick={() => {
-                clearFilters();
-                setActiveTab("unassigned");
-                setCurrentPage(1);
-              }}
-            >
-              Unassigned
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <TabsList className="grid grid-cols-5 w-full sm:w-auto">
+              {/* All */}
+              <TabsTrigger value="all" onClick={() => clearFilters()}>
+                All
+              </TabsTrigger>
+              {/* Present */}
+              <TabsTrigger
+                value="active"
+                onClick={() => {
+                  clearFilters();
+                  setFilters(prev => ({ ...prev, status: "Present" }));
+                  setActiveTab("active");
+                }}
+              >
+                Present
+              </TabsTrigger>
+              {/* Left Operators  */}
+              <TabsTrigger
+                value="left"
+                onClick={() => {
+                  clearFilters();
+                  setFilters(prev => ({ ...prev, status: "LEFT" }));
+                  setActiveTab("left");
+                  setCurrentPage(1);
+                }}
+              >
+                Left Operators
+              </TabsTrigger>
+              {/* Assigned */}
+              <TabsTrigger
+                value="assigned"
+                onClick={() => {
+                  clearFilters();
+                  setActiveTab("assigned");
+                  setCurrentPage(1);
+                }}
+              >
+                Assigned
+              </TabsTrigger>
+              {/* Unassigned */}
+              <TabsTrigger
+                value="unassigned"
+                onClick={() => {
+                  clearFilters();
+                  setActiveTab("unassigned");
+                  setCurrentPage(1);
+                }}
+              >
+                Unassigned
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowFilters(!showFilters)}
+                className={`${showFilters ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" : ""} h-9`}
+              >
+                <IconFilter className="h-4 w-4 mr-2" />
+                Filters
+              </Button>
+
+              {/* Hidden file input */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".xlsx,.xls"
+                className="hidden"
+              />
+
+              <Button
+                variant="outline"
+                onClick={handleExportExcel}
+                className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+              >
+                <IconDownload className="h-4 w-4 mr-2" />
+                Export Excel
+              </Button>
+
+              {hasPermission("user:import_logs") && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    navigate(`import-logs`);
+                  }}
+                  className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
+                >
+                  <IconHistory className="h-4 w-4 mr-2" />
+                  Import Logs
+                </Button>
+              )}
+
+              {hasPermission("user:import_excel") && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleImportClick("standard")}
+                  className="bg-green-600 hover:bg-green-700 text-white shadow-sm border-green-700"
+                >
+                  <IconUpload className="h-4 w-4 mr-2" />
+                  Import Operators
+                </Button>
+              )}
+
+              {hasPermission("user:import_excel") && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleImportClick("full")}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm border-emerald-800"
+                >
+                  <IconUpload className="h-4 w-4 mr-2" />
+                  Import Full Hierarchy
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                onClick={() => navigate(`comparison`)}
+                className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+              >
+                <IconArrowsLeftRight className="h-4 w-4 mr-2" />
+                Comparison
+              </Button>
+
+              <Button
+                onClick={() => {
+                  resetForm();
+                  if (isRestrictedUser && availableDepartments.length === 1) {
+                    const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
+                    setFormData(prev => ({ ...prev, departments: [deptId] }));
+                  }
+                  setIsAddDialogOpen(true);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+              >
+                <IconPlus className="h-4 w-4 mr-2" />
+                Add Operator
+              </Button>
+            </div>
+          </div>
 
           {(activeTab === "assigned" || activeTab === "unassigned") && (
-            <div className="flex flex-wrap gap-2 mt-3 w-full sm:w-auto">
+            <div className="flex flex-wrap gap-2">
               {[
                 { key: "department", label: "Department" },
                 { key: "section", label: "Section" },
@@ -1610,74 +2060,6 @@ const Students = () => {
               ))}
             </div>
           )}
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className={`${showFilters ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" : ""} h-9`}
-            >
-              <IconFilter className="h-4 w-4 mr-2" />
-              Filters
-            </Button>
-
-            {/* Hidden file input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".xlsx,.xls"
-              className="hidden"
-            />
-
-            <Button
-              variant="outline"
-              onClick={handleExportExcel}
-              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-            >
-              <IconDownload className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
-
-            {hasPermission("user:import_logs") && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  navigate(`import-logs`);
-                }}
-                className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
-              >
-                <IconHistory className="h-4 w-4 mr-2" />
-                Import Logs
-              </Button>
-            )}
-
-            {hasPermission("user:import_excel") && (
-              <Button
-                variant="outline"
-                onClick={handleImportClick}
-                className="bg-green-600 hover:bg-green-700 text-white shadow-sm border-green-700"
-              >
-                <IconUpload className="h-4 w-4 mr-2" />
-                Import Operators
-              </Button>
-            )}
-
-            <Button
-              onClick={() => {
-                resetForm();
-                if (isRestrictedUser && availableDepartments.length === 1) {
-                  const deptId = String(availableDepartments[0]._id || availableDepartments[0].id);
-                  setFormData(prev => ({ ...prev, departments: [deptId] }));
-                }
-                setIsAddDialogOpen(true);
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-            >
-              <IconPlus className="h-4 w-4 mr-2" />
-              Add Operator
-            </Button>
-          </div>
         </div>
       </Tabs>
 
@@ -1730,14 +2112,14 @@ const Students = () => {
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Section</label>
               <MultiSelectFilter
                 placeholder="All Sections"
-                options={filterSections.map(s => ({ id: String(s.id), name: s.name }))}
+                options={availableSections.map(s => ({ id: String(s.id), name: s.name }))}
                 selectedValues={filters.sectionId ? filters.sectionId.split(",").filter(Boolean) : []}
                 onChange={(vals) => setFilters({
                   ...filters,
                   sectionId: vals.join(","),
                   lineId: "", subSectionId: "", stationId: ""
                 })}
-                disabled={!filters.departmentId || (isRestrictedUser && !!currentUser?.sectionId)}
+                disabled={!filters.departmentId || (isRestrictedUser && availableSections.length <= 1)}
               />
             </div>
 
@@ -2049,7 +2431,7 @@ const Students = () => {
             </TableHeader>
             <TableBody>
               {filteredStudents.length > 0 ? (
-                filteredStudents.map((student) => (
+                visibleStudents.map((student) => (
                   <TableRow
                     key={student._id}
                     className="group hover:bg-muted/30 cursor-pointer"
@@ -2271,7 +2653,18 @@ const Students = () => {
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
+              ) : null}
+              {filteredStudents.length > 0 && visibleCount < filteredStudents.length && (
+                <TableRow ref={sentinelRef}>
+                  <TableCell colSpan={10} className="text-center py-4">
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <IconLoader className="h-4 w-4 animate-spin" />
+                      Loading more...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+              {filteredStudents.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={10} className="text-center py-10">
                     <div className="flex flex-col items-center space-y-3">
@@ -2304,12 +2697,12 @@ const Students = () => {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col items-center gap-3">
           <p className="text-sm text-muted-foreground">
             Showing {filteredStudents.length} of{" "}
             {studentsData?.data?.totalUsers || 0} employees
           </p>
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap items-center justify-center gap-1">
             <Button
               variant="outline"
               size="sm"
@@ -2318,9 +2711,26 @@ const Students = () => {
             >
               Previous
             </Button>
-            <div className="flex items-center justify-center px-4 text-sm">
-              Page {currentPage} of {totalPages}
-            </div>
+            {getPageNumbers().map((page, idx) =>
+              page === "..." ? (
+                <span
+                  key={`dots-${idx}`}
+                  className="px-2 text-sm text-muted-foreground select-none"
+                >
+                  ...
+                </span>
+              ) : (
+                <Button
+                  key={page}
+                  variant={page === currentPage ? "default" : "outline"}
+                  size="sm"
+                  className="w-9 px-0"
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </Button>
+              )
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -2330,6 +2740,21 @@ const Students = () => {
               Next
             </Button>
           </div>
+          <form onSubmit={handleGoToPage} className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Go to page</span>
+            <Input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={goToPageInput}
+              onChange={(e) => setGoToPageInput(e.target.value)}
+              className="h-8 w-20"
+              placeholder={String(currentPage)}
+            />
+            <Button type="submit" variant="outline" size="sm">
+              Go
+            </Button>
+          </form>
         </div>
       )}
 
@@ -2339,10 +2764,12 @@ const Students = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconUpload className="h-5 w-5" />
-              Import Employees
+              {importMode === "full" ? "Import Employees — Full Hierarchy" : "Import Employees"}
             </DialogTitle>
             <DialogDescription>
-              Upload an Excel file to add employees in bulk.
+              {importMode === "full"
+                ? "Upload an Excel file to add employees in bulk, including their Line/Sub-Section/Station assignment and an auto-generated Skill Matrix Check Sheet."
+                : "Upload an Excel file to add employees in bulk."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2382,10 +2809,28 @@ const Students = () => {
                   <span>- Line</span>
                   <span>- Sub Section</span>
                   <span>- Station No.</span>
+                  {importMode === "full" && (
+                    <>
+                      <span>- Target Second</span>
+                      <span>- Actual Second</span>
+                    </>
+                  )}
                 </div>
                 <p className="text-xs text-blue-600 italic">
                   * Required fields
                 </p>
+                {importMode === "full" ? (
+                  <p className="text-xs text-blue-700">
+                    This mode also assigns Line/Sub-Section/Station (the standard import leaves them
+                    unassigned), and auto-creates a Skill Matrix Check Sheet when a row has both
+                    Target Second and Actual Second filled in.
+                  </p>
+                ) : (
+                  <p className="text-xs text-blue-700">
+                    Line, Sub Section, and Station No. are not assigned by this import — use
+                    "Import Full Hierarchy" if you need those assigned automatically.
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-3">
@@ -2729,7 +3174,7 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="phoneNumber">Mobile No *</Label>
+              <Label htmlFor="phoneNumber">Mobile No</Label>
               <Input
                 id="phoneNumber"
                 name="phoneNumber"
@@ -3200,7 +3645,7 @@ const Students = () => {
 
             {/* Contact Details */}
             <div className="grid gap-2">
-              <Label htmlFor="edit-email">Email *</Label>
+              <Label htmlFor="edit-email">Email</Label>
               <Input
                 id="edit-email"
                 name="email"
@@ -3208,18 +3653,22 @@ const Students = () => {
                 value={formData.email}
                 onChange={handleInputChange}
                 placeholder="email@example.com"
+                className={formErrors.email ? "border-red-500" : ""}
               />
+              {formErrors.email && <p className="text-xs text-red-600">{formErrors.email}</p>}
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="edit-phoneNumber">Mobile No *</Label>
+              <Label htmlFor="edit-phoneNumber">Mobile No</Label>
               <Input
                 id="edit-phoneNumber"
                 name="phoneNumber"
                 value={formData.phoneNumber}
                 onChange={handleInputChange}
                 placeholder="10 digit number"
+                className={formErrors.phoneNumber ? "border-red-500" : ""}
               />
+              {formErrors.phoneNumber && <p className="text-xs text-red-600">{formErrors.phoneNumber}</p>}
             </div>
 
             {/* Address Details */}
@@ -3669,6 +4118,7 @@ const Students = () => {
         <StudentLevelManager />
       </TabsContent>
     </Tabs>
+    </>
   );
 };
 

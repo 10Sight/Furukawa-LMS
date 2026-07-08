@@ -39,6 +39,127 @@ const parseArray = (val) => {
 
 // --- Helpers ---
 
+// Cascades NULLs down the section -> line -> subSection -> station hierarchy (and the
+// mirrored target* chain used for temporary users) on a plain object carrying those keys.
+// Must run against the *effective* post-update state (i.e. after merging in any existing
+// values for fields the caller isn't touching), not against a raw partial request body,
+// otherwise a patch that only sends the parent field won't cascade to its children.
+const applyHierarchyCascade = (obj) => {
+  if (!obj.sectionId) {
+    obj.lineId = null;
+    if (Array.isArray(obj.lines)) obj.lines.length = 0;
+  }
+  if (!obj.lineId) {
+    obj.subSectionId = null;
+    if (Array.isArray(obj.subSections)) obj.subSections.length = 0;
+  }
+  if (!obj.subSectionId) {
+    obj.stationId = null;
+    if (Array.isArray(obj.stations)) obj.stations.length = 0;
+  }
+
+  if (!obj.targetSectionId) obj.targetLineId = null;
+  if (!obj.targetLineId) obj.targetSubSectionId = null;
+  if (!obj.targetSubSectionId) obj.targetStationId = null;
+};
+
+// Given a users-table row (singular *Id columns + JSON array columns), resolves every
+// sub-section/line/section whose cached `users` list needs re-syncing after that user's
+// assignment changes (e.g. on delete), including sub-sections reached only via a station.
+const collectHierarchySyncTargets = async (userRow) => {
+  const affectedSubSectionIds = new Set();
+  const affectedLineIds = new Set();
+  const affectedSectionIds = new Set();
+
+  if (!userRow) return { affectedSubSectionIds, affectedLineIds, affectedSectionIds };
+
+  const toIntArray = (val) => parseArray(val).map(id => parseInt(id)).filter(id => !isNaN(id));
+
+  if (userRow.subSectionId) affectedSubSectionIds.add(parseInt(userRow.subSectionId));
+  toIntArray(userRow.subSections).forEach(id => affectedSubSectionIds.add(id));
+  if (userRow.lineId) affectedLineIds.add(parseInt(userRow.lineId));
+  toIntArray(userRow.lines).forEach(id => affectedLineIds.add(id));
+  if (userRow.sectionId) affectedSectionIds.add(parseInt(userRow.sectionId));
+  toIntArray(userRow.sections).forEach(id => affectedSectionIds.add(id));
+
+  const stationIds = toIntArray(userRow.stations);
+  if (stationIds.length > 0) {
+    const [machines] = await executeQuery(
+      `SELECT DISTINCT subSectionId FROM machines WHERE id IN (${stationIds.join(',')})`
+    );
+    machines.forEach(m => { if (m.subSectionId) affectedSubSectionIds.add(m.subSectionId); });
+  }
+
+  return { affectedSubSectionIds, affectedLineIds, affectedSectionIds };
+};
+
+const syncHierarchyUserLists = async (subSectionIds, lineIds, sectionIds) => {
+  try {
+    const SubSection = (await import("../models/subSection.model.js")).default;
+    const Line = (await import("../models/line.model.js")).default;
+    const Section = (await import("../models/section.model.js")).default;
+
+    for (const subSecId of subSectionIds) await SubSection.syncUserList(subSecId);
+    for (const lineId of lineIds) await Line.syncUserList(lineId);
+    for (const sectionId of sectionIds) await Section.syncUserList(sectionId);
+  } catch (error) {
+    console.error(`Failed to sync hierarchy user lists: ${error.message}`);
+  }
+};
+
+// Merges hierarchy sync targets across a batch of removed/deactivated users, then syncs once.
+const syncHierarchyForRows = async (userRows) => {
+  const allSubSectionIds = new Set();
+  const allLineIds = new Set();
+  const allSectionIds = new Set();
+
+  for (const row of userRows || []) {
+    const { affectedSubSectionIds, affectedLineIds, affectedSectionIds } = await collectHierarchySyncTargets(row);
+    affectedSubSectionIds.forEach(id => allSubSectionIds.add(id));
+    affectedLineIds.forEach(id => allLineIds.add(id));
+    affectedSectionIds.forEach(id => allSectionIds.add(id));
+  }
+
+  await syncHierarchyUserLists(allSubSectionIds, allLineIds, allSectionIds);
+};
+
+// Strips the given user ids out of every department's `students`/`instructor` JSON arrays.
+// Called on both soft- and hard-delete so a "deleted" user disappears from department
+// membership immediately, the same way it already drops out of sections/lines/sub_sections.
+const removeUsersFromDepartmentAssignments = async (userIds) => {
+  if (!userIds || userIds.length === 0) return;
+  const idSet = new Set(userIds.map(String));
+
+  try {
+    const [departments] = await executeQuery("SELECT id, students, instructor FROM departments");
+    for (const dept of departments) {
+      let students = [];
+      try { students = JSON.parse(dept.students || "[]"); } catch (e) { students = []; }
+      if (!Array.isArray(students)) students = [];
+
+      let instructors = [];
+      try {
+        const parsed = typeof dept.instructor === 'string' ? JSON.parse(dept.instructor) : dept.instructor;
+        instructors = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+      } catch (e) {
+        instructors = dept.instructor ? [dept.instructor] : [];
+      }
+
+      const cleanedStudents = students.filter(id => !idSet.has(String(id)));
+      const cleanedInstructors = instructors.filter(id => !idSet.has(String(id)));
+
+      if (cleanedStudents.length !== students.length || cleanedInstructors.length !== instructors.length) {
+        await executeQuery(
+          "UPDATE departments SET students = ?, instructor = ? WHERE id = ?",
+          [JSON.stringify(cleanedStudents), JSON.stringify(cleanedInstructors), dept.id]
+        );
+      }
+    }
+  } catch (error) {
+    console.error(`Failed to remove users from department assignments: ${error.message}`);
+  }
+};
+
 const handleInstructorAssignments = async (userId, departmentIds) => {
   const [departments] = await executeQuery("SELECT * FROM departments");
   const userIdStr = String(userId);
@@ -181,6 +302,8 @@ export const formatUser = (u) => {
     contractor: u.contractorName || u.contractor || "",
     avatar: parseJSON(u.avatar),
     assignments,
+    departments: parseJSON(u.departments, []),
+    stations: parseJSON(u.stations, []),
     sections: parseJSON(u.sections, []),
     lines: parseJSON(u.lines, []),
     subSections: parseJSON(u.subSections, []),
@@ -477,35 +600,55 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     ) mq` : "";
   const marksSelectSQL = includeHandoverMarks ? ", mq.score as quizScore, mq.quizQuestions as quizQuestions" : "";
 
+  const includeEvaluationInfo = req.query.includeEvaluationInfo === "true";
+  const evalJoinSQL = includeEvaluationInfo ? `
+    OUTER APPLY (
+      SELECT TOP 1 sme.updatedAt as lastEvalDate, sme.sheetIndex as lastEvalSheetIndex, sme.period as lastEvalPeriod
+      FROM skill_matrix_evaluations sme
+      WHERE sme.studentId = u.id
+      ORDER BY sme.sheetIndex DESC, sme.createdAt DESC
+    ) eval_res` : "";
+  const evalSelectSQL = includeEvaluationInfo ? ", eval_res.lastEvalDate, eval_res.lastEvalSheetIndex, eval_res.lastEvalPeriod" : "";
+
   // --- NEW: Calculate Present/Absent counts for the cards ---
-  // Create a version of where clauses that omits the specific status filter
-  const countsWhereClauses = whereClauses.filter(c =>
-    !c.includes("al.logStatus") &&
-    !c.includes("al.presentDaysCount") &&
-    !c.includes("(al.userId IS NULL")
-  );
-  const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
+  const excludeCounts = req.query.excludeCounts === "true";
+  let presentCount = 0;
+  let absentCount = 0;
+  let leftCount = 0;
+  let presentEfficiency = 0;
+  let overallEfficiency = 0;
+  let systemEfficiency = 0;
 
-  const [countsData] = await executeQuery(`
-    SELECT 
-      SUM(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as presentCount,
-      SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as absentCount,
-      SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
-      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
-      AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
-      AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
-    FROM users u 
-    ${getHierarchyJoinSQL} 
-    ${attendanceJoinSQL}
-    ${countsWhereSQL}
-  `, [...attendanceParams, ...params]); // We use the same params as the filters built so far
+  if (!excludeCounts) {
+    // Create a version of where clauses that omits the specific status filter
+    const countsWhereClauses = whereClauses.filter(c =>
+      !c.includes("al.logStatus") &&
+      !c.includes("al.presentDaysCount") &&
+      !c.includes("(al.userId IS NULL")
+    );
+    const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
-  const presentCount = countsData[0]?.presentCount || 0;
-  const absentCount = countsData[0]?.absentCount || 0;
-  const leftCount = countsData[0]?.leftCount || 0;
-  const presentEfficiency = countsData[0]?.presentEfficiency || 0;
-  const overallEfficiency = countsData[0]?.overallEfficiency || 0;
-  const systemEfficiency = countsData[0]?.systemEfficiency || 0;
+    const [countsData] = await executeQuery(`
+      SELECT 
+        SUM(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as presentCount,
+        SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as absentCount,
+        SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
+        AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
+        AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
+        AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
+      FROM users u 
+      ${getHierarchyJoinSQL} 
+      ${attendanceJoinSQL}
+      ${countsWhereSQL}
+    `, [...attendanceParams, ...params]); // We use the same params as the filters built so far
+
+    presentCount = countsData[0]?.presentCount || 0;
+    absentCount = countsData[0]?.absentCount || 0;
+    leftCount = countsData[0]?.leftCount || 0;
+    presentEfficiency = countsData[0]?.presentEfficiency || 0;
+    overallEfficiency = countsData[0]?.overallEfficiency || 0;
+    systemEfficiency = countsData[0]?.systemEfficiency || 0;
+  }
   // ----------------------------------------------------------
 
   const [cnt] = await executeQuery(`
@@ -516,6 +659,19 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   `, [...attendanceParams, ...params]);
   const totalUsers = cnt[0].total;
 
+  // Sorting
+  const sortBy = req.query.sortBy || "createdAt";
+  const order = req.query.order || "desc";
+  const allowedSortFields = {
+    createdAt: "u.createdAt",
+    fullName: "u.fullName",
+    userName: "u.userName",
+    empId: "u.empId",
+    id: "u.id"
+  };
+  const sortColumn = allowedSortFields[sortBy] || "u.createdAt";
+  const sortOrder = order.toLowerCase() === "asc" ? "ASC" : "DESC";
+
   const [users] = await executeQuery(`
     SELECT u.*,
            d.id as actualDeptId, d.deptName, d.deptInstructor,
@@ -523,14 +679,15 @@ export const getAllUsers = asyncHandler(async (req, res) => {
            cr.name as customRoleName,
            al.logShift,
            al.logStatus,
-           al.logDate${marksSelectSQL}
+           al.logDate${marksSelectSQL}${evalSelectSQL}
     FROM users u
     ${getHierarchyJoinSQL}
     LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
     ${attendanceJoinSQL}
     ${marksJoinSQL}
+    ${evalJoinSQL}
     ${whereSQL}
-    ORDER BY u.createdAt DESC
+    ORDER BY ${sortColumn} ${sortOrder}, u.id ${sortOrder}
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...attendanceParams, ...params, offset, limit]);
 
@@ -602,12 +759,12 @@ export const createUser = asyncHandler(async (req, res) => {
   // Duplicate Check
   let dupQuery = "SELECT id FROM users WHERE userName = ?";
   let dupParams = [data.userName.toLowerCase()];
-  if (data.phoneNumber) {
-    dupQuery += " OR phoneNumber = ?";
-    dupParams.push(data.phoneNumber);
+  if (data.idCard) {
+    dupQuery += " OR idCard = ?";
+    dupParams.push(data.idCard);
   }
   const [dupes] = await executeQuery(dupQuery, dupParams);
-  if (dupes.length > 0) throw new ApiError("Username or Phone number already in use", 400);
+  if (dupes.length > 0) throw new ApiError("Username or ID Card already in use", 400);
 
   const bcrypt = (await import("bcryptjs")).default;
   const hashedPassword = await bcrypt.hash(data.password, 10);
@@ -634,6 +791,12 @@ export const createUser = asyncHandler(async (req, res) => {
   if (subSections.length > 0 && !data.subSectionId) {
     data.subSectionId = parseInt(subSections[0]);
   }
+
+  // Enforce hierarchy: a NULL parent forces its children to NULL too. Aliasing the array
+  // consts onto `data` lets the cascade clear them in place, which also keeps the later
+  // machine_assignments/hierarchy-sync loops (which read `stations`/`lines`/`subSections`
+  // directly) consistent with the cleared IDs.
+  applyHierarchyCascade(Object.assign(data, { lines, subSections, stations }));
 
   // Sync department name
   let departmentName = data.department;
@@ -808,7 +971,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
     "contractor", "contractorId", "expectedHandover",
-    "customRoleId", "currentLevel", "isTemporary",
+    "customRoleId", "currentLevel", "currentSkill", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "departments", "stations", "sections", "lines", "subSections", "shiftSchedule"
   ];
@@ -822,20 +985,23 @@ export const updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  // If station is being updated, sync currentLevel with the skill level for that station's sub-section
+  // If station is being updated, sync currentLevel with the skill level for that station's sub-section.
+  // Never drop an existing currentLevel to null just because the new sub-section has no recorded
+  // skill yet (e.g. a Mentor with currentLevel L3 being assigned their first station) — preserve it
+  // and seed currentSkill for the new sub-section so the two stay consistent going forward.
   if (data.stationId && data.stationId !== oldUser.stationId) {
-    let currentSkill = oldUser.currentSkill || {};
-    if (typeof currentSkill === 'string') {
-      try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
-    }
-    // Set currentLevel to the level associated with the new station's sub-section
+    const currentSkillMap = parseJSON(oldUser.currentSkill, {});
     const [machRows] = await executeQuery("SELECT subSectionId FROM machines WHERE id = ?", [data.stationId]);
-    if (machRows.length > 0) {
-      const subSecId = machRows[0].subSectionId;
-      data.currentLevel = (subSecId && currentSkill[subSecId]) || null;
+    const subSecId = machRows.length > 0 ? machRows[0].subSectionId : null;
+    if (subSecId && currentSkillMap[subSecId]) {
+      data.currentLevel = currentSkillMap[subSecId];
+    } else if (oldUser.currentLevel) {
+      data.currentLevel = oldUser.currentLevel;
+      if (subSecId) currentSkillMap[subSecId] = oldUser.currentLevel;
     } else {
       data.currentLevel = null;
     }
+    data.currentSkill = currentSkillMap;
   }
 
   // Auto-set leavingDate if status is changed to LEFT and no date is provided
@@ -879,6 +1045,50 @@ export const updateUser = asyncHandler(async (req, res) => {
     if (data.stationId !== undefined) { data.targetStationId = data.stationId; data.stationId = null; }
   }
 
+  // Enforce hierarchy cascade: if a parent level ends up NULL, its children must be NULL too.
+  // This is a partial-update (PATCH) endpoint, so `data` may omit fields entirely — cascade
+  // against the *effective* post-update state (falling back to oldUser for anything `data`
+  // doesn't touch), then write back only what the cascade actually changed so it's picked up
+  // by the fieldsToUpdate loop below.
+  const effective = {
+    sectionId: data.sectionId !== undefined ? data.sectionId : oldUser.sectionId,
+    lineId: data.lineId !== undefined ? data.lineId : oldUser.lineId,
+    subSectionId: data.subSectionId !== undefined ? data.subSectionId : oldUser.subSectionId,
+    stationId: data.stationId !== undefined ? data.stationId : oldUser.stationId,
+    lines: data.lines !== undefined ? parseArray(data.lines) : parseArray(oldUser.lines),
+    subSections: data.subSections !== undefined ? parseArray(data.subSections) : parseArray(oldUser.subSections),
+    stations: data.stations !== undefined ? parseArray(data.stations) : parseArray(oldUser.stations),
+    targetSectionId: data.targetSectionId !== undefined ? data.targetSectionId : oldUser.targetSectionId,
+    targetLineId: data.targetLineId !== undefined ? data.targetLineId : oldUser.targetLineId,
+    targetSubSectionId: data.targetSubSectionId !== undefined ? data.targetSubSectionId : oldUser.targetSubSectionId,
+    targetStationId: data.targetStationId !== undefined ? data.targetStationId : oldUser.targetStationId,
+  };
+  const before = { ...effective, lines: [...effective.lines], subSections: [...effective.subSections], stations: [...effective.stations] };
+  applyHierarchyCascade(effective);
+
+  if (effective.lineId !== before.lineId) { data.lineId = effective.lineId; data.lines = effective.lines; }
+  if (effective.subSectionId !== before.subSectionId) { data.subSectionId = effective.subSectionId; data.subSections = effective.subSections; }
+  if (effective.stationId !== before.stationId) { data.stationId = effective.stationId; data.stations = effective.stations; }
+  if (effective.targetLineId !== before.targetLineId) data.targetLineId = effective.targetLineId;
+  if (effective.targetSubSectionId !== before.targetSubSectionId) data.targetSubSectionId = effective.targetSubSectionId;
+  if (effective.targetStationId !== before.targetStationId) data.targetStationId = effective.targetStationId;
+
+  // If the admin is directly editing currentLevel (not via the station-change sync above, which
+  // already keeps currentSkill in step), mirror the new level into currentSkill for whichever
+  // sub-section is currently active — same resolution formatUser uses (subSectionId, else
+  // targetSubSectionId for temporary users) — so a manual level bump doesn't drift out of sync
+  // with the per-station skill map. Users with no active sub-section (e.g. Mentors) have nothing
+  // to write into, so currentLevel alone remains the source of truth for them.
+  const stationChanged = data.stationId && data.stationId !== oldUser.stationId;
+  if (!stationChanged && data.currentLevel !== undefined && data.currentLevel && data.currentLevel !== oldUser.currentLevel) {
+    const activeSubSecId = effective.subSectionId || effective.targetSubSectionId;
+    if (activeSubSecId) {
+      const currentSkillMap = data.currentSkill !== undefined ? parseJSON(data.currentSkill, {}) : parseJSON(oldUser.currentSkill, {});
+      currentSkillMap[activeSubSecId] = data.currentLevel;
+      data.currentSkill = currentSkillMap;
+    }
+  }
+
   for (const f of fieldsToUpdate) {
     if (data[f] !== undefined) {
       if (f === "userName") {
@@ -886,11 +1096,23 @@ export const updateUser = asyncHandler(async (req, res) => {
         if (ex.length) throw new ApiError("Username already in use", 400);
         updates.push("userName = ?"); values.push(data[f].toLowerCase());
       } else if (f === "phoneNumber" && data[f]) {
-        const [ex] = await executeQuery("SELECT id FROM users WHERE phoneNumber = ? AND id != ?", [data[f], userId]);
-        if (ex.length) throw new ApiError("Phone number already in use", 400);
         updates.push("phoneNumber = ?"); values.push(data[f]);
       } else if (f === "phoneNumber" && !data[f]) {
         updates.push("phoneNumber = NULL");
+      } else if (f === "idCard" && data[f]) {
+        const [ex] = await executeQuery("SELECT id FROM users WHERE idCard = ? AND id != ?", [data[f], userId]);
+        if (ex.length) throw new ApiError("ID Card already in use", 400);
+        updates.push("idCard = ?"); values.push(data[f]);
+      } else if (f === "idCard" && !data[f]) {
+        updates.push("idCard = NULL");
+      } else if (f === "email") {
+        const emailVal = (data[f] && data[f].trim()) ? data[f].trim().toLowerCase() : null;
+        if (emailVal) {
+          updates.push("email = ?");
+          values.push(emailVal);
+        } else {
+          updates.push("email = NULL");
+        }
       } else if (f === "departmentId") {
         updates.push("departmentId = ?"); values.push(data[f] || null);
         if (data[f]) {
@@ -898,6 +1120,38 @@ export const updateUser = asyncHandler(async (req, res) => {
           if (dept.length) { updates.push("department = ?"); values.push(dept[0].name); }
         } else {
           updates.push("department = NULL");
+        }
+      } else if (f === "sectionId") {
+        updates.push("sectionId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [sec] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [data[f]]);
+          if (sec.length) { updates.push("section = ?"); values.push(sec[0].name); }
+        } else {
+          updates.push("section = NULL");
+        }
+      } else if (f === "lineId") {
+        updates.push("lineId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [ln] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [data[f]]);
+          if (ln.length) { updates.push("line = ?"); values.push(ln[0].name); }
+        } else {
+          updates.push("line = NULL");
+        }
+      } else if (f === "subSectionId") {
+        updates.push("subSectionId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [ss] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [data[f]]);
+          if (ss.length) { updates.push("sub_section = ?"); values.push(ss[0].name); }
+        } else {
+          updates.push("sub_section = NULL");
+        }
+      } else if (f === "stationId") {
+        updates.push("stationId = ?"); values.push(data[f] || null);
+        if (data[f]) {
+          const [st] = await executeQuery("SELECT name FROM machines WHERE id = ?", [data[f]]);
+          if (st.length) { updates.push("stationNo = ?"); values.push(st[0].name); }
+        } else {
+          updates.push("stationNo = NULL");
         }
       } else if (f === "departments") {
         updates.push("departments = ?");
@@ -917,6 +1171,9 @@ export const updateUser = asyncHandler(async (req, res) => {
       } else if (f === "shiftSchedule") {
         updates.push("shiftSchedule = ?");
         values.push(JSON.stringify(typeof data[f] === 'object' && data[f] !== null ? data[f] : {}));
+      } else if (f === "currentSkill") {
+        updates.push("currentSkill = ?");
+        values.push(JSON.stringify(parseJSON(data[f], {})));
       } else {
         updates.push(`${f} = ?`);
         values.push(['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f) ? (data[f] ? 1 : 0) : (data[f] === undefined ? null : data[f]));
@@ -1097,25 +1354,34 @@ export const deleteUser = asyncHandler(async (req, res) => {
   }
 
   if (req.user.role === "SUPERADMIN" || req.user.role === "ADMIN") {
-    // Before permanent delete, get department to cleanup
-    const [user] = await executeQuery("SELECT departmentId FROM users WHERE id = ?", [userId]);
-    if (user.length && user[0].departmentId) {
-      const deptId = user[0].departmentId;
-      const [dept] = await executeQuery("SELECT students FROM departments WHERE id = ?", [deptId]);
-      if (dept.length) {
-        let students = [];
-        try { students = JSON.parse(dept[0].students || "[]"); } catch (e) { }
-        if (Array.isArray(students)) {
-          students = students.filter(id => String(id) !== String(userId));
-          await executeQuery("UPDATE departments SET students = ? WHERE id = ?", [JSON.stringify(students), deptId]);
-        }
-      }
-    }
+    // Before permanent delete, get hierarchy assignments to cleanup
+    const [user] = await executeQuery(
+      "SELECT departmentId, sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id = ?",
+      [userId]
+    );
+
+    const { affectedSubSectionIds, affectedLineIds, affectedSectionIds } = await collectHierarchySyncTargets(user[0]);
+
+    // machine_assignments has no FK to users, so it doesn't cascade on delete - clean it up explicitly
+    await executeQuery("DELETE FROM machine_assignments WHERE user_id = ?", [userId]);
     await executeQuery("DELETE FROM users WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_PERMANENT", { userId });
+
+    await removeUsersFromDepartmentAssignments([userId]);
+    await syncHierarchyUserLists(affectedSubSectionIds, affectedLineIds, affectedSectionIds);
   } else {
+    const [user] = await executeQuery(
+      "SELECT sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id = ?",
+      [userId]
+    );
+    const { affectedSubSectionIds, affectedLineIds, affectedSectionIds } = await collectHierarchySyncTargets(user[0]);
+
     await executeQuery("UPDATE users SET isDeleted = 1 WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_SOFT", { userId });
+
+    // A soft-deleted user must drop out of department/section/line/sub-section membership too
+    await removeUsersFromDepartmentAssignments([userId]);
+    await syncHierarchyUserLists(affectedSubSectionIds, affectedLineIds, affectedSectionIds);
   }
 
   try {
@@ -1136,11 +1402,6 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
   const [rows] = await executeQuery("SELECT id, phoneNumber FROM users WHERE id = ?", [userId]);
   if (rows.length === 0) throw new ApiError("User not found", 404);
-
-  if (phoneNumber && phoneNumber !== rows[0].phoneNumber) {
-    const [exist] = await executeQuery("SELECT id FROM users WHERE phoneNumber = ? AND id != ?", [phoneNumber, userId]);
-    if (exist.length > 0) throw new ApiError("Phone number already in use", 400);
-  }
 
   let updates = ["updatedAt = GETDATE()"];
   let values = [];
@@ -1454,6 +1715,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   }
 
   let statusParamAdded = false;
+  let statusParamIndex = -1;
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
@@ -1465,6 +1727,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     whereClauses.push("u.status = ?");
     params.push(status);
     statusParamAdded = true;
+    statusParamIndex = params.length - 1;
   } else if (req.query.includeLeft !== "true") {
     whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
   }
@@ -1531,7 +1794,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     !c.includes("al.")
   );
   const countsParams = statusParamAdded
-    ? params.slice(0, -1)
+    ? [...params.slice(0, statusParamIndex), ...params.slice(statusParamIndex + 1)]
     : [...params];
   const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
@@ -1910,8 +2173,14 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
       }
 
       const phs = matchedIds.map(() => "?").join(",");
+      const [rowsToDelete] = await executeQuery(
+        `SELECT sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id IN (${phs})`,
+        matchedIds
+      );
       await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${phs})`, matchedIds);
       await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+      await removeUsersFromDepartmentAssignments(matchedIds);
+      await syncHierarchyForRows(rowsToDelete);
       return res.json(new ApiResponse(200, null, "All matching users deleted"));
     }
 
@@ -1940,46 +2209,32 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
     }
 
     const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : "";
+    const [rowsToDelete] = await executeQuery(
+      `SELECT id, sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users ${whereSQL}`,
+      params
+    );
     await executeQuery(`UPDATE users SET isDeleted = 1 ${whereSQL}`, params);
 
     await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+    await removeUsersFromDepartmentAssignments(rowsToDelete.map(r => r.id));
+    await syncHierarchyForRows(rowsToDelete);
     return res.json(new ApiResponse(200, null, "All matching users deleted"));
   }
 
   if (!ids?.length) throw new ApiError("No IDs provided", 400);
 
-  // Cleanup from departments students list
-  try {
-    const placeholders = ids.map(() => "?").join(",");
-    const [usersWithDepts] = await executeQuery(`SELECT id, departmentId FROM users WHERE id IN (${placeholders}) AND departmentId IS NOT NULL`, ids);
-
-    // Group by department to minimize updates
-    const deptMap = {};
-    usersWithDepts.forEach(u => {
-      if (!deptMap[u.departmentId]) deptMap[u.departmentId] = [];
-      deptMap[u.departmentId].push(String(u.id));
-    });
-
-    for (const [deptId, userIdsToRemove] of Object.entries(deptMap)) {
-      const [dept] = await executeQuery("SELECT students FROM departments WHERE id = ?", [deptId]);
-      if (dept.length) {
-        let students = [];
-        try { students = JSON.parse(dept[0].students || "[]"); } catch (e) { }
-        if (Array.isArray(students)) {
-          const updated = students.filter(id => !userIdsToRemove.includes(String(id)));
-          await executeQuery("UPDATE departments SET students = ? WHERE id = ?", [JSON.stringify(updated), deptId]);
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Bulk delete department cleanup error:", err);
-  }
+  const [rowsToDelete] = await executeQuery(
+    `SELECT sectionId, lineId, subSectionId, sections, lines, subSections, stations FROM users WHERE id IN (${ids.map(() => "?").join(",")})`,
+    ids
+  );
 
   // Generate the placeholders for the IN clause
   const placeholders = ids.map(() => "?").join(",");
   await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${placeholders})`, ids);
 
   await logAudit(req.user.id, "BULK_DELETE_USERS_LIST", { count: ids.length });
+  await removeUsersFromDepartmentAssignments(ids);
+  await syncHierarchyForRows(rowsToDelete);
   res.json(new ApiResponse(200, null, "Selected users deleted"));
 });
 
@@ -2036,6 +2291,21 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     WHERE isTemporary = 1 AND (isDeleted = 0 OR isDeleted IS NULL)
   `);
 
+  const [handoverData] = await executeQuery(`
+    SELECT COUNT(DISTINCT u.id) as handoverCount
+    FROM users u
+    WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+      AND (u.status != 'LEFT' OR u.status IS NULL)
+      AND EXISTS (
+          SELECT 1
+          FROM handover_sheets hs
+          CROSS APPLY OPENJSON(hs.entries) as entry
+          WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+            AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+      )
+  `);
+  const handoverCount = handoverData[0]?.handoverCount || 0;
+
   const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${whereSQL}`, params);
   const [users] = await executeQuery(`
     SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments
@@ -2056,6 +2326,7 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     todayJoined: statsData[0].todayJoined,
     maleCount: statsData[0].maleCount,
     femaleCount: statsData[0].femaleCount,
+    handoverCount,
   }, "Temporary users fetched successfully"));
 });
 

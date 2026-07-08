@@ -63,6 +63,18 @@ class SkillMatrix {
                     ALTER TABLE skill_matrices DROP CONSTRAINT uq_skill_matrix_dept_line;
                 END
             `);
+            // Existing data may contain duplicate (department, line, month) combinations;
+            // keep only the most recently updated row for each combination so the unique
+            // constraint below can be created.
+            await executeQuery(`
+                WITH CTE AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (PARTITION BY department, line, month ORDER BY updatedAt DESC, id DESC) as rn
+                    FROM skill_matrices
+                )
+                DELETE FROM skill_matrices
+                WHERE id IN (SELECT id FROM CTE WHERE rn > 1);
+            `);
             await executeQuery(`
                 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_dept_line_month')
                 BEGIN

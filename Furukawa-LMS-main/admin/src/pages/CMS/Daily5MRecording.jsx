@@ -548,6 +548,8 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
         if (isCheckField && initialFormData[`rec_${recIndex}_${field}`] && !canEditSubmitted5M) return true;
         return false;
     };
+    // Retroactive Inspection fields follow the same editability rules as Containment Action fields
+    const isRetroLocked = isFieldLocked();
 
     return (
         <>
@@ -684,6 +686,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         disabled={isLocked}
                     >
                         <option value="">Act Skill</option>
+                        <option value="Under Monitoring">Under Monitoring</option>
                         {(skillLevels || []).map((level, idx) => (
                             <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                         ))}
@@ -719,18 +722,18 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                 </td>
 
                 {/* Retro Parameters (First of 5) */}
-                <td className="border border-black p-0.5 text-center font-bold bg-gray-50"><AutoResizeTextarea className="text-center font-bold bg-transparent" value={formData[`rec_${recIndex}_Param_${params[0]}`] !== undefined ? formData[`rec_${recIndex}_Param_${params[0]}`] : params[0]} onChange={(e) => handleInputChange(recIndex, `Param_${params[0]}`, e.target.value)} disabled={isLocked} /></td>
-                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_F`, e.target.value)} disabled={isLocked} /></td>
-                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_R`, e.target.value)} disabled={isLocked} /></td>
-                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_F`, e.target.value)} disabled={isLocked} /></td>
-                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_R`, e.target.value)} disabled={isLocked} /></td>
+                <td className="border border-black p-0.5 text-center font-bold bg-gray-50"><AutoResizeTextarea className="text-center font-bold bg-transparent" value={formData[`rec_${recIndex}_Param_${params[0]}`] !== undefined ? formData[`rec_${recIndex}_Param_${params[0]}`] : params[0]} onChange={(e) => handleInputChange(recIndex, `Param_${params[0]}`, e.target.value)} disabled={isRetroLocked} /></td>
+                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_F`, e.target.value)} disabled={isRetroLocked} /></td>
+                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${params[0]}_R`, e.target.value)} disabled={isRetroLocked} /></td>
+                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_F`, e.target.value)} disabled={isRetroLocked} /></td>
+                <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${params[0]}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${params[0]}_R`, e.target.value)} disabled={isRetroLocked} /></td>
                 <td rowSpan="2" className="border border-black p-0.5 text-center align-middle">
                     <div className="flex flex-col h-full items-center justify-center gap-1">
                         <select
                             className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                             value={formData[`rec_${recIndex}_Retro_Status_Top`] !== undefined ? formData[`rec_${recIndex}_Retro_Status_Top`] : "OK"}
                             onChange={(e) => handleInputChange(recIndex, 'Retro_Status_Top', e.target.value)}
-                            disabled={isLocked}
+                            disabled={isRetroLocked}
                         >
                             <option value="OK">OK</option>
                             <option value="Rework">Rework</option>
@@ -888,25 +891,25 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
             {/* Remaining sub-rows for parameters */}
             {params.slice(1).map(p => (
                 <tr key={p} className="hover:bg-slate-50">
-                    <td className="border border-black p-0.5 text-center font-bold bg-gray-50"><AutoResizeTextarea className="text-center font-bold bg-transparent" value={formData[`rec_${recIndex}_Param_${p}`] !== undefined ? formData[`rec_${recIndex}_Param_${p}`] : p} onChange={(e) => handleInputChange(recIndex, `Param_${p}`, e.target.value)} /></td>
+                    <td className="border border-black p-0.5 text-center font-bold bg-gray-50"><AutoResizeTextarea className="text-center font-bold bg-transparent" value={formData[`rec_${recIndex}_Param_${p}`] !== undefined ? formData[`rec_${recIndex}_Param_${p}`] : p} onChange={(e) => handleInputChange(recIndex, `Param_${p}`, e.target.value)} disabled={isRetroLocked} /></td>
                     {p === 'Visual' ? (
                         <>
                             <td className="border border-black p-0.5 text-center text-[16px] bg-gray-50 font-bold">Total Qty</td>
-                            <td className="border border-black py-0.5 px-0"><input type="text" className="w-full text-center bg-transparent h-7 text-[16px]" value={formData[`rec_${recIndex}_Retro_${p}_TQ`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_TQ`, e.target.value)} /></td>
+                            <td className="border border-black py-0.5 px-0"><input type="text" className="w-full text-center bg-transparent h-7 text-[16px]" value={formData[`rec_${recIndex}_Retro_${p}_TQ`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_TQ`, e.target.value)} disabled={isRetroLocked} /></td>
                             <td className="border border-black p-0.5 text-center text-[16px] bg-gray-50 font-bold">NG Qty</td>
-                            <td className="border border-black py-0.5 px-0"><input type="text" className="w-full text-center bg-transparent h-7 text-[16px]" value={formData[`rec_${recIndex}_Retro_${p}_NG`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_NG`, e.target.value)} /></td>
+                            <td className="border border-black py-0.5 px-0"><input type="text" className="w-full text-center bg-transparent h-7 text-[16px]" value={formData[`rec_${recIndex}_Retro_${p}_NG`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_NG`, e.target.value)} disabled={isRetroLocked} /></td>
                         </>
                     ) : p === 'Length' ? (
                         <>
-                            <td colSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_F`, e.target.value)} /></td>
-                            <td colSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${p}_F`, e.target.value)} /></td>
+                            <td colSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_F`, e.target.value)} disabled={isRetroLocked} /></td>
+                            <td colSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${p}_F`, e.target.value)} disabled={isRetroLocked} /></td>
                         </>
                     ) : (
                         <>
-                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_F`, e.target.value)} /></td>
-                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${p}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_R`, e.target.value)} /></td>
-                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${p}_F`, e.target.value)} /></td>
-                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${p}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${p}_R`, e.target.value)} /></td>
+                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_F`, e.target.value)} disabled={isRetroLocked} /></td>
+                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Retro_${p}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Retro_${p}_R`, e.target.value)} disabled={isRetroLocked} /></td>
+                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${p}_F`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${p}_F`, e.target.value)} disabled={isRetroLocked} /></td>
+                            <td className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Result_${p}_R`] || ""} onChange={(e) => handleInputChange(recIndex, `Result_${p}_R`, e.target.value)} disabled={isRetroLocked} /></td>
                         </>
                     )}
 
@@ -916,6 +919,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                                 className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                 value={formData[`rec_${recIndex}_Retro_Status_${p}`] || "OK"}
                                 onChange={(e) => handleInputChange(recIndex, `Retro_Status_${p}`, e.target.value)}
+                                disabled={isRetroLocked}
                             >
                                 <option value="OK">OK</option>
                                 <option value="Rework">Rework</option>
@@ -2083,6 +2087,7 @@ const Daily5MRecording = () => {
                                             const rowStatus = formData[`rec_${recIndex}_RowStatus`];
                                             const isRowInitiallyFilled = checkIsRowFilled(initialFormData, recIndex);
                                             const isLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || ((!!rowStatus || isRowInitiallyFilled) && !canEditSubmitted5M);
+                                            const isRetroLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M);
                                             return (
                                                 <>
                                                     {/* Row 1 of Record */}
@@ -2210,6 +2215,7 @@ const Daily5MRecording = () => {
                                                                 disabled={isLocked}
                                                             >
                                                                 <option value="">Act Skill</option>
+                                                                <option value="Under Monitoring">Under Monitoring</option>
                                                                 {skillLevels.map((level, idx) => (
                                                                     <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
                                                                 ))}
@@ -2249,16 +2255,16 @@ const Daily5MRecording = () => {
                                                         </td>
 
                                                         {/* Retro Row 1 */}
-                                                        <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro1_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro1_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro1_Visual', e.target.value)} disabled={isLocked} /></td>
-                                                        <td colSpan="2" className="border border-black py-0.5 px-0 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full" value={formData[`rec_${recIndex}_Retro1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_Retro1_VisualSOP`] : "Visual as per SOP"} onChange={(e) => handleInputChange(recIndex, 'Retro1_VisualSOP', e.target.value)} disabled={isLocked} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro1_NA`] !== undefined ? formData[`rec_${recIndex}_Retro1_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro1_NA', e.target.value)} disabled={isLocked} /></td>
+                                                        <td className="border border-black p-0.5 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro1_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro1_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro1_Visual', e.target.value)} disabled={isRetroLocked} /></td>
+                                                        <td colSpan="2" className="border border-black py-0.5 px-0 text-center"><AutoResizeTextarea className="text-center bg-transparent w-full" value={formData[`rec_${recIndex}_Retro1_VisualSOP`] !== undefined ? formData[`rec_${recIndex}_Retro1_VisualSOP`] : "Visual as per SOP"} onChange={(e) => handleInputChange(recIndex, 'Retro1_VisualSOP', e.target.value)} disabled={isRetroLocked} /></td>
+                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro1_NA`] !== undefined ? formData[`rec_${recIndex}_Retro1_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro1_NA', e.target.value)} disabled={isRetroLocked} /></td>
                                                         <td rowSpan="3" className="border border-black p-0.5 text-center align-middle">
                                                             <div className="flex flex-col h-full items-center justify-center gap-1">
                                                                 <select
                                                                     className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
                                                                     value={formData[`rec_${recIndex}_Retro_Status`] !== undefined ? formData[`rec_${recIndex}_Retro_Status`] : "OK"}
                                                                     onChange={(e) => handleInputChange(recIndex, 'Retro_Status', e.target.value)}
-                                                                    disabled={isLocked}
+                                                                    disabled={isRetroLocked}
                                                                 >
                                                                     <option value="OK">OK</option>
                                                                     <option value="Rework">Rework</option>
@@ -2425,9 +2431,9 @@ const Daily5MRecording = () => {
                                                     {/* Row 2 of Record */}
                                                     <tr className="hover:bg-slate-50">
                                                         {/* Retro Row 2 */}
-                                                        <td className="border border-black py-0.5 px-0 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro2_Dim`] !== undefined ? formData[`rec_${recIndex}_Retro2_Dim`] : "Dimension"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Dim', e.target.value)} disabled={isLocked} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-[16px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_Retro2_Desc`] !== undefined ? formData[`rec_${recIndex}_Retro2_Desc`] : "Dim as per Dim board\n(if change at F/A process)"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Desc', e.target.value)} disabled={isLocked} /></td>
-                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro2_NA`] !== undefined ? formData[`rec_${recIndex}_Retro2_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro2_NA', e.target.value)} disabled={isLocked} /></td>
+                                                        <td className="border border-black py-0.5 px-0 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro2_Dim`] !== undefined ? formData[`rec_${recIndex}_Retro2_Dim`] : "Dimension"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Dim', e.target.value)} disabled={isRetroLocked} /></td>
+                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-[16px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_Retro2_Desc`] !== undefined ? formData[`rec_${recIndex}_Retro2_Desc`] : "Dim as per Dim board\n(if change at F/A process)"} onChange={(e) => handleInputChange(recIndex, 'Retro2_Desc', e.target.value)} disabled={isRetroLocked} /></td>
+                                                        <td colSpan="2" className="border border-black p-0.5 text-center text-gray-400"><AutoResizeTextarea className="text-center text-gray-400 bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro2_NA`] !== undefined ? formData[`rec_${recIndex}_Retro2_NA`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro2_NA', e.target.value)} disabled={isRetroLocked} /></td>
 
                                                         {/* FP Row 2 */}
                                                         <td rowSpan="2" className="border border-black p-0.5 text-center text-[8px] leading-tight"><AutoResizeTextarea className="text-center text-[16px] bg-transparent w-full" value={formData[`rec_${recIndex}_FP2_Desc`] !== undefined ? formData[`rec_${recIndex}_FP2_Desc`] : "Dim as per Dim board(If F/A)"} onChange={(e) => handleInputChange(recIndex, 'FP2_Desc', e.target.value)} disabled={isLocked} /></td>
@@ -2445,11 +2451,11 @@ const Daily5MRecording = () => {
                                                     {/* Row 3 of Record */}
                                                     <tr className="hover:bg-slate-50">
                                                         {/* Retro Row 3 */}
-                                                        <td className="border border-black py-0.5 px-0 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro3_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro3_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro3_Visual', e.target.value)} disabled={isLocked} /></td>
+                                                        <td className="border border-black py-0.5 px-0 text-center font-semibold"><AutoResizeTextarea className="text-center font-semibold bg-transparent" value={formData[`rec_${recIndex}_Retro3_Visual`] !== undefined ? formData[`rec_${recIndex}_Retro3_Visual`] : "Visual"} onChange={(e) => handleInputChange(recIndex, 'Retro3_Visual', e.target.value)} disabled={isRetroLocked} /></td>
                                                         <td className="border border-black p-0.5 text-center text-[16px]">Total Qty</td>
-                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_TQ`] !== undefined ? formData[`rec_${recIndex}_Retro3_TQ`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_TQ', e.target.value)} disabled={isLocked} /></td>
+                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_TQ`] !== undefined ? formData[`rec_${recIndex}_Retro3_TQ`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_TQ', e.target.value)} disabled={isRetroLocked} /></td>
                                                         <td className="border border-black p-0.5 text-center text-[16px]">NG Qty</td>
-                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_NG`] !== undefined ? formData[`rec_${recIndex}_Retro3_NG`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_NG', e.target.value)} disabled={isLocked} /></td>
+                                                        <td className="border border-black p-0.5 text-center text-blue-600"><AutoResizeTextarea className="text-center bg-transparent w-full text-blue-600" placeholder={"NA"} value={formData[`rec_${recIndex}_Retro3_NG`] !== undefined ? formData[`rec_${recIndex}_Retro3_NG`] : ""} onChange={(e) => handleInputChange(recIndex, 'Retro3_NG', e.target.value)} disabled={isRetroLocked} /></td>
 
                                                         {/* Cont Row 3 */}
                                                         <td colSpan="6" className="border border-black py-0.5 px-0">

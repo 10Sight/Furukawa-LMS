@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { exportToExcel } from "@/utils/exportHelper";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,7 +91,7 @@ const DEFAULT_SKILL_CONFIG = {
                 },
                 {
                     id: 3, text: "Whether his operation in charge is no more than 74%",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 },
                 {
                     id: 4, text: "The operation method is correct with the standard or not",
@@ -119,7 +120,7 @@ const DEFAULT_SKILL_CONFIG = {
                 },
                 {
                     id: 2, text: "Whether his operation in charge is at least 75%?",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 },
                 {
                     id: 3, text: "Whether he can report the abnormality (Andon) correctly?",
@@ -135,7 +136,7 @@ const DEFAULT_SKILL_CONFIG = {
             title: "Able to operation by himself (Speed & operation as the standard is OK)", items: [
                 {
                     id: 1, text: "Whether he can operate in the standard time?",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 },
                 {
                     id: 2, text: "Whether he understand the judgement method & the treatment of the abnormality?",
@@ -177,7 +178,7 @@ const DEFAULT_SKILL_CONFIG = {
                 },
                 {
                     id: 6, text: "Whether he can operate in the standard time?",
-                    method: "Measure the operation time"
+                    method: "Measure the operation time", isSpeedCell: true
                 }]
         }
 
@@ -207,6 +208,7 @@ const SkillMatrixCertificate = ({
     subSectionId,
     initialSheetId,
     onBackToList,
+    onSaved,
     readOnly = false
 }) => {
     // State
@@ -239,6 +241,14 @@ const SkillMatrixCertificate = ({
     const [traineeSuggestions, setTraineeSuggestions] = useState([]);
     const [showTraineeSuggestions, setShowTraineeSuggestions] = useState(false);
     const [isSearchingTrainee, setIsSearchingTrainee] = useState(false);
+    const traineeSearchTimeoutRef = useRef(null);
+
+    // Clear any pending debounced trainee search on unmount
+    useEffect(() => {
+        return () => {
+            if (traineeSearchTimeoutRef.current) clearTimeout(traineeSearchTimeoutRef.current);
+        };
+    }, []);
 
     // Multi-sheet State
     const [sheets, setSheets] = useState([]);
@@ -249,6 +259,8 @@ const SkillMatrixCertificate = ({
     const [currentSheetIndex, setCurrentSheetIndex] = useState(1);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [activeStandardTooltip, setActiveStandardTooltip] = useState(null);
+    const [studentCurrentLevel, setStudentCurrentLevel] = useState(null);
+    const [studentSkillMap, setStudentSkillMap] = useState({});
 
     useEffect(() => {
         if (activeStandardTooltip === null) return;
@@ -273,6 +285,16 @@ const SkillMatrixCertificate = ({
     const activeConfig = activeConfigData?.data;
     const displayLevels = activeConfig?.levels || [];
     const maxLevels = displayLevels.length;
+
+    // Resolve which level section is unlocked for editing: prefer the subSection-specific
+    // skill level, fall back to the student's global level, default to index 0 if unresolvable.
+    const resolvedLevelName = (subSectionId && studentSkillMap?.[subSectionId]) || studentCurrentLevel || 'L1';
+    const currentLevelIdx = (() => {
+        const match = displayLevels.findIndex(
+            l => l.name?.toUpperCase() === String(resolvedLevelName).toUpperCase()
+        );
+        return match >= 0 ? match : 0;
+    })();
 
     // Load configs
     useEffect(() => {
@@ -309,6 +331,8 @@ const SkillMatrixCertificate = ({
                         trainee: studentName || prev.trainee,
                         employeeNo: user.empId || employeeCode || prev.employeeNo
                     }));
+                    setStudentCurrentLevel(user.currentLevel || null);
+                    setStudentSkillMap(user.currentSkill || {});
                 } else {
                     setHeaderData(prev => ({
                         ...prev,
@@ -498,8 +522,56 @@ const SkillMatrixCertificate = ({
         }
     };
 
+    const getIsSpeedCell = (sIdx, item) => {
+        if (item.isSpeedCell !== undefined) return item.isSpeedCell;
+        // Fallback for configs saved before the explicit flag existed
+        return (
+            (sIdx === 0 && item.id === 3) ||
+            (sIdx === 1 && item.id === 2) ||
+            (sIdx === 2 && item.id === 1) ||
+            (sIdx === 3 && item.id === 6)
+        );
+    };
+
+    const isItemFilled = (sIdx, item, iIdx) => {
+        const data = evalData[`${sIdx}-${iIdx}`];
+        if (!data) return false;
+
+        if (getIsSpeedCell(sIdx, item)) {
+            const hasTimes = !!(data.actualSec && String(data.actualSec).trim() !== '') &&
+                !!(data.targetSec && String(data.targetSec).trim() !== '');
+            if (!hasTimes) return false;
+            if (data.standard === 'NG') {
+                return !!(data.reEducation && data.reEducation.trim() !== '');
+            }
+            return true;
+        }
+
+        const baseFilled = !!(data.standard && data.standard.trim() !== '');
+        if (!baseFilled) return false;
+        if (data.standard === 'NG') {
+            return !!(data.reEducation && data.reEducation.trim() !== '');
+        }
+        return true;
+    };
+
+    const isLevelComplete = (sIdx) => {
+        const items = skillConfig.levels?.[sIdx]?.items;
+        if (!items || items.length === 0) return false;
+        return items.every((item, iIdx) => isItemFilled(sIdx, item, iIdx));
+    };
+
     const handleSave = async (triggerEmail = false) => {
         if (!studentId || !selectedSheetId) return;
+
+        if (triggerEmail) {
+            const anyLevelComplete = displayLevels.some((_, idx) => isLevelComplete(idx));
+            if (!anyLevelComplete) {
+                toast.error("Please complete all items in at least one level before submitting.");
+                return;
+            }
+        }
+
         try {
             setSaving(true);
             const payload = {
@@ -510,7 +582,8 @@ const SkillMatrixCertificate = ({
                 evalData,
                 opinion,
                 sendEmail: triggerEmail,
-                period: currentPeriod
+                period: currentPeriod,
+                currentLevelIdx
             };
             const response = await axiosInstance.put(`/api/skill-matrix/evaluation/sheet/${selectedSheetId}/save`, payload);
             toast.success(triggerEmail ? "Evaluation saved and email sent successfully" : "Evaluation saved successfully");
@@ -522,6 +595,10 @@ const SkillMatrixCertificate = ({
             if (listResp.data.success) {
                 setSheets(listResp.data.data || []);
             }
+            // Let the parent screen (Skill Matrix sheet, Student Detail, etc.) know the
+            // operator's level/skill data may have changed so it can refetch its own cache
+            // instead of showing stale data until a manual reload.
+            onSaved?.(response.data?.data);
         } catch (error) {
             console.error("Error saving evaluation:", error);
             toast.error("Failed to save evaluation");
@@ -563,34 +640,39 @@ const SkillMatrixCertificate = ({
         }
     };
 
-    const handleTraineeChange = async (value) => {
+    const handleTraineeChange = (value) => {
         setHeaderData(prev => ({ ...prev, trainee: value }));
 
+        if (traineeSearchTimeoutRef.current) clearTimeout(traineeSearchTimeoutRef.current);
+
         if (!value.trim() || value.length < 2) {
+            setIsSearchingTrainee(false);
             setTraineeSuggestions([]);
             setShowTraineeSuggestions(false);
             return;
         }
 
-        try {
-            setIsSearchingTrainee(true);
-            const response = await axiosInstance.get('/api/users/students', {
-                params: {
-                    search: value,
-                    page: 1,
-                    limit: 10,
-                    includeTemporary: "true",
-                    ojtApprovedToday: "true"
-                }
-            });
-            const list = response.data?.data?.users || [];
-            setTraineeSuggestions(list);
-            setShowTraineeSuggestions(list.length > 0);
-        } catch (err) {
-            console.error("Failed to search trainees:", err);
-        } finally {
-            setIsSearchingTrainee(false);
-        }
+        setIsSearchingTrainee(true);
+        traineeSearchTimeoutRef.current = setTimeout(async () => {
+            try {
+                const response = await axiosInstance.get('/api/users/students', {
+                    params: {
+                        search: value,
+                        page: 1,
+                        limit: 10,
+                        includeTemporary: "true",
+                        ojtApprovedToday: "true"
+                    }
+                });
+                const list = response.data?.data?.users || [];
+                setTraineeSuggestions(list);
+                setShowTraineeSuggestions(list.length > 0);
+            } catch (err) {
+                console.error("Failed to search trainees:", err);
+            } finally {
+                setIsSearchingTrainee(false);
+            }
+        }, 500);
     };
 
     const handleSelectTrainee = (student) => {
@@ -609,12 +691,8 @@ const SkillMatrixCertificate = ({
             const existing = prev[itemKey] || {};
             const updated = { ...existing, [field]: value };
 
-            const isSpeedCell = (
-                (levelIdx === 0 && itemIdx === 2) ||
-                (levelIdx === 1 && itemIdx === 1) ||
-                (levelIdx === 2 && itemIdx === 0) ||
-                (levelIdx === 3 && itemIdx === 5)
-            );
+            const itemConfig = skillConfig.levels?.[levelIdx]?.items?.[itemIdx];
+            const isSpeedCell = itemConfig ? getIsSpeedCell(levelIdx, itemConfig) : false;
 
             if (isSpeedCell) {
                 const act = parseFloat(field === 'actualSec' ? value : updated.actualSec);
@@ -623,9 +701,15 @@ const SkillMatrixCertificate = ({
                     const calculatedEff = Math.round((tgt / act) * 100);
                     updated.okVal = String(calculatedEff);
                     updated.ngVal = String(calculatedEff);
+
+                    const minEff = displayLevels[levelIdx]?.minEfficiency;
+                    if (minEff !== undefined && minEff !== null && minEff !== '') {
+                        updated.standard = calculatedEff >= Number(minEff) ? 'OK' : 'NG';
+                    }
                 } else {
                     updated.okVal = '';
                     updated.ngVal = '';
+                    updated.standard = '';
                 }
             }
 
@@ -776,7 +860,8 @@ const SkillMatrixCertificate = ({
                                         disabled={!isEditable}
                                     />
                                     {isSearchingTrainee && (
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-gray-400">
+                                            <Loader2 className="h-3 w-3 animate-spin" />
                                             Searching...
                                         </div>
                                     )}
@@ -1004,12 +1089,27 @@ const SkillMatrixCertificate = ({
                                 const levelContent = skillConfig.levels?.[sIdx] || { title: section.description || section.name, items: [] };
                                 const items = levelContent.items || [];
 
+                                const filledCount = items.filter((item, iIdx) => isItemFilled(sIdx, item, iIdx)).length;
+                                const levelDone = items.length > 0 && filledCount === items.length;
+                                const isCurrentLevelSection = sIdx === currentLevelIdx;
+                                const sectionEditable = isEditable;
+
                                 return (
-                                    <div key={sIdx} className="border-b last:border-b-0 border-black">
+                                    <div key={sIdx} className={`border-b last:border-b-0 border-black ${isCurrentLevelSection ? 'bg-blue-50/40' : ''}`}>
                                         {/* Section Title */}
                                         <div className="flex border-b border-black bg-gray-50/50 p-2 items-center gap-2">
                                             <LevelIcon level={sIdx + 1} maxLevels={maxLevels} size={24} />
                                             <span className="font-bold text-sm">{sIdx + 1} : {levelContent.title}</span>
+                                            {isCurrentLevelSection && (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full no-print bg-blue-100 text-blue-700">
+                                                    Current Level
+                                                </span>
+                                            )}
+                                            {items.length > 0 && (
+                                                <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full no-print ${levelDone ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                    {levelDone ? 'Complete' : `${filledCount}/${items.length} filled`}
+                                                </span>
+                                            )}
                                         </div>
 
                                         {/* Table Header for this level */}
@@ -1042,16 +1142,26 @@ const SkillMatrixCertificate = ({
                                         {items.length > 0 ? items.map((item, iIdx) => {
                                             const itemKey = `${sIdx}-${iIdx}`;
                                             const currentData = evalData[itemKey] || {};
+                                            const isSpeedCell = getIsSpeedCell(sIdx, item);
                                             return (
                                                 <div key={iIdx} className="flex border-b border-black last:border-b-0">
                                                     <div className="w-[50px] p-2 border-r border-black text-center flex items-center justify-center">{item.id || iIdx + 1}</div>
                                                     <div className="flex-1 p-2 border-r border-black whitespace-pre-wrap">{item.text}</div>
-                                                    <div className="w-[250px] p-2 border-r border-black whitespace-pre-wrap">{item.method}</div>
+                                                    <div className="w-[250px] p-2 border-r border-black whitespace-pre-wrap">
+                                                        {item.method}
+                                                        {isSpeedCell &&
+                                                          displayLevels[sIdx]?.minEfficiency !== undefined &&
+                                                          displayLevels[sIdx]?.minEfficiency !== null &&
+                                                          displayLevels[sIdx]?.minEfficiency !== '' && (
+                                                            <div className="mt-1">
+                                                                <Badge variant="info" className="whitespace-nowrap">
+                                                                    Target Eff: {displayLevels[sIdx].minEfficiency}% - {displayLevels[sIdx].maxEfficiency}%
+                                                                </Badge>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <div className="w-[110px] p-2 border-r border-black flex items-center justify-center bg-white">
-                                                        {((sIdx === 0 && item.id === 3) ||
-                                                          (sIdx === 1 && item.id === 2) ||
-                                                          (sIdx === 2 && item.id === 1) ||
-                                                          (sIdx === 3 && item.id === 6)) ? (
+                                                        {isSpeedCell ? (
                                                             <div className="flex flex-col gap-1 w-full text-xs">
                                                                 <div className="flex flex-col">
                                                                     <span className="font-semibold text-gray-600 text-[10px]">Actual (Sec):</span>
@@ -1061,7 +1171,7 @@ const SkillMatrixCertificate = ({
                                                                         placeholder="..."
                                                                         value={currentData.actualSec || ''}
                                                                         onChange={e => handleEvalChange(sIdx, iIdx, 'actualSec', e.target.value)}
-                                                                        disabled={!isEditable}
+                                                                        disabled={!sectionEditable}
                                                                     />
                                                                 </div>
                                                                 <div className="flex flex-col">
@@ -1072,7 +1182,7 @@ const SkillMatrixCertificate = ({
                                                                         placeholder="..."
                                                                         value={currentData.targetSec || ''}
                                                                         onChange={e => handleEvalChange(sIdx, iIdx, 'targetSec', e.target.value)}
-                                                                        disabled={!isEditable}
+                                                                        disabled={!sectionEditable}
                                                                     />
                                                                 </div>
                                                             </div>
@@ -1083,28 +1193,23 @@ const SkillMatrixCertificate = ({
                                                                 placeholder="..."
                                                                 value={currentData.standardText || ''}
                                                                 onChange={e => handleEvalChange(sIdx, iIdx, 'standardText', e.target.value)}
-                                                                disabled={!isEditable}
+                                                                disabled={!sectionEditable}
                                                             />
                                                         )}
                                                     </div>
                                                     <div className="w-[120px] p-2 border-r border-black flex flex-col items-center justify-center gap-2 bg-white">
                                                         <select
-                                                            className="w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400"
+                                                            className={`w-full border border-gray-300 rounded p-1 outline-none text-xs bg-white text-black text-center font-semibold focus:border-gray-400 ${isSpeedCell ? 'cursor-not-allowed bg-gray-100 text-gray-500' : ''}`}
                                                             value={currentData.standard || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'standard', e.target.value)}
-                                                            disabled={!isEditable}
+                                                            disabled={!sectionEditable || isSpeedCell}
+                                                            title={isSpeedCell ? 'Auto-calculated from efficiency, cannot be changed manually' : undefined}
                                                         >
                                                             <option value="">Select</option>
                                                             <option value="OK">OK</option>
                                                             <option value="NG">NG</option>
                                                         </select>
                                                         {(() => {
-                                                            const isSpeedCell = (
-                                                                (sIdx === 0 && item.id === 3) ||
-                                                                (sIdx === 1 && item.id === 2) ||
-                                                                (sIdx === 2 && item.id === 1) ||
-                                                                (sIdx === 3 && item.id === 6)
-                                                            );
                                                             if (!isSpeedCell || !currentData.standard) return null;
                                                             const act = parseFloat(currentData.actualSec);
                                                             const tgt = parseFloat(currentData.targetSec);
@@ -1123,7 +1228,7 @@ const SkillMatrixCertificate = ({
                                                             rows={3}
                                                             value={currentData.reEducation || ''}
                                                             onChange={e => handleEvalChange(sIdx, iIdx, 'reEducation', e.target.value)}
-                                                            disabled={!isEditable}
+                                                            disabled={!sectionEditable}
                                                         ></textarea>
                                                     </div>
                                                 </div>

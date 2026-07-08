@@ -1,3 +1,6 @@
+import { executeQuery } from "../db/mssqlHelper.js";
+import User from "../models/auth.model.js";
+
 export const DEFAULT_SKILL_CONFIG = {
     headerDefaults: {
         processInCharge: '',
@@ -62,9 +65,176 @@ export const computeEarnedLevel = (evalData, _skillCertConfig, activeConfigLevel
     return null;
 };
 
+// Checks whether every item in a given level index has been evaluated as 'OK'.
+// Used to gate level-up decisions to "the whole level was passed", not just one speed item.
+export const isLevelFullyOK = (evalData, skillCertConfig, levelIdx) => {
+    if (!evalData || levelIdx === null || levelIdx === undefined) return false;
+    const items = skillCertConfig?.levels?.[levelIdx]?.items;
+    if (!items || items.length === 0) return false;
+    return items.every((_, iIdx) => evalData[`${levelIdx}-${iIdx}`]?.standard === 'OK');
+};
+
 export const getPeriodFromDate = (date = new Date()) => {
     const d = new Date(date);
     const year = d.getFullYear();
     const quarter = Math.floor(d.getMonth() / 3) + 1;
     return `${year}-Q${quarter}`;
+};
+
+// Locates the "speed cell" item within a level's items — the one item whose okVal/ngVal
+// carries the operator's measured efficiency. Mirrors admin/src/components/admin/SkillMatrixCertificate.jsx's
+// getIsSpeedCell: prefer an explicit `isSpeedCell` flag on the item, else fall back to the
+// legacy hardcoded (levelIdx -> item id) pairs baked into every default config.
+const LEGACY_SPEED_CELL_ITEM_ID_BY_LEVEL = { 0: 3, 1: 2, 2: 1, 3: 6 };
+
+export const getSpeedCellItemIndex = (levelIdx, items) => {
+    if (!items || items.length === 0) return null;
+
+    const explicitIdx = items.findIndex(it => it?.isSpeedCell === true);
+    if (explicitIdx !== -1) return explicitIdx;
+
+    const legacyId = LEGACY_SPEED_CELL_ITEM_ID_BY_LEVEL[levelIdx];
+    if (legacyId === undefined) return null;
+    const idx = items.findIndex(it => it?.id === legacyId);
+    return idx !== -1 ? idx : null;
+};
+
+/**
+ * Applies a computed efficiency + earned level to a student's record: updates
+ * currentEffeciency/skillEffeciency, upgrades currentLevel/currentSkill when the earned
+ * level outranks what's on file, mirrors the change into legacy skill_matrices entries, and
+ * fires the handover/max-level notification hooks. Shared by the manual Skill Matrix
+ * Certificate save flow and bulk imports so both paths apply identical business rules.
+ */
+export const syncStudentSkillProgress = async ({ studentId, subSectionId, calculatedEfficiency, earnedLevelName, activeConfig }) => {
+    const student = await User.findById(studentId);
+    if (!student) return { levelUpgraded: false };
+
+    student.currentEffeciency = calculatedEfficiency;
+    const targetSubSectionId = subSectionId || student.subSectionId || student.targetSubSectionId;
+
+    if (targetSubSectionId) {
+        const subSecKey = String(targetSubSectionId);
+        let skillEffMap = student.skillEffeciency || {};
+        if (typeof skillEffMap === 'string') {
+            try { skillEffMap = JSON.parse(skillEffMap); } catch (e) { skillEffMap = {}; }
+        }
+        skillEffMap[subSecKey] = calculatedEfficiency;
+        student.skillEffeciency = skillEffMap;
+    }
+
+    await student.save();
+
+    let levelUpgraded = false;
+    let newLevel = null;
+
+    if (!earnedLevelName || !activeConfig?.levels?.length) {
+        return { levelUpgraded, newLevel };
+    }
+
+    const currentGlobal = student.currentLevel || 'L0';
+    let skillMap = student.currentSkill || {};
+    if (typeof skillMap === 'string') {
+        try { skillMap = JSON.parse(skillMap); } catch (e) { skillMap = {}; }
+    }
+
+    const currentLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === currentGlobal.toUpperCase());
+    const currentLevelOrder = currentLevelObj ? currentLevelObj.order : -1;
+
+    const earnedLevelObj = activeConfig.levels.find(l => l.name.toUpperCase() === earnedLevelName.toUpperCase());
+    const earnedLevelOrder = earnedLevelObj ? earnedLevelObj.order : -1;
+
+    let skillMapChanged = false;
+
+    if (targetSubSectionId) {
+        const subSecKey = String(targetSubSectionId);
+        const currentSubSecSkill = skillMap[subSecKey] || 'L0';
+        const currentSubSecSkillObj = activeConfig.levels.find(l => l.name.toUpperCase() === currentSubSecSkill.toUpperCase());
+        const currentSubSecSkillOrder = currentSubSecSkillObj ? currentSubSecSkillObj.order : -1;
+
+        if (earnedLevelOrder > currentSubSecSkillOrder) {
+            skillMap[subSecKey] = earnedLevelName;
+            skillMapChanged = true;
+        }
+    }
+
+    const newGlobalOrder = Math.max(currentLevelOrder, earnedLevelOrder);
+    const newGlobalLevelObj = activeConfig.levels.find(l => l.order === newGlobalOrder);
+    const newGlobalLevelName = newGlobalLevelObj ? newGlobalLevelObj.name : earnedLevelName;
+
+    if (newGlobalOrder > currentLevelOrder) {
+        levelUpgraded = true;
+        newLevel = newGlobalLevelName;
+    }
+
+    if (levelUpgraded || skillMapChanged) {
+        await executeQuery(
+            "UPDATE users SET currentLevel = ?, currentSkill = ?, updatedAt = GETDATE() WHERE id = ?",
+            [newGlobalLevelName, JSON.stringify(skillMap), studentId]
+        );
+
+        if (levelUpgraded) {
+            const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("./handover.util.js");
+            await checkAndProcessHandover(studentId, newGlobalLevelName);
+            await checkAndProcessMaxLevelNotification(studentId, newGlobalLevelName);
+        }
+    }
+
+    if (skillMapChanged && targetSubSectionId) {
+        try {
+            const matrixLevelName = earnedLevelName.includes('-') ? earnedLevelName : earnedLevelName.replace('L', 'L-');
+
+            const [machinesInSubSec] = await executeQuery(
+                "SELECT id FROM machines WHERE subSectionId = ?",
+                [targetSubSectionId]
+            );
+            const machineIds = machinesInSubSec.map(m => String(m.id));
+
+            if (machineIds.length > 0) {
+                const studentIdStr = String(studentId);
+                const [matchingMatrices] = await executeQuery(
+                    `SELECT DISTINCT sm.id, sm.entries
+                     FROM (SELECT id, entries FROM skill_matrices WHERE ISJSON(entries) = 1) sm
+                     CROSS APPLY OPENJSON(sm.entries) WITH (userId NVARCHAR(50) '$.userId') je
+                     WHERE je.userId = ?`,
+                    [studentIdStr]
+                );
+
+                for (const matrix of matchingMatrices) {
+                    let entriesList = matrix.entries;
+                    try {
+                        entriesList = typeof entriesList === 'string' ? JSON.parse(entriesList) : (entriesList || []);
+                    } catch (e) {
+                        entriesList = [];
+                    }
+                    if (!Array.isArray(entriesList)) continue;
+
+                    let matrixChanged = false;
+                    for (const entry of entriesList) {
+                        const entryUserId = String(entry.userId || entry._id || "");
+                        if (entryUserId === studentIdStr && entry.stations && Array.isArray(entry.stations)) {
+                            for (const s of entry.stations) {
+                                const stationIdStr = String(s.machineId || s._id || "");
+                                if (machineIds.includes(stationIdStr) && s.curr !== matrixLevelName) {
+                                    s.curr = matrixLevelName;
+                                    matrixChanged = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (matrixChanged) {
+                        await executeQuery(
+                            "UPDATE skill_matrices SET entries = ?, updatedAt = GETDATE() WHERE id = ?",
+                            [JSON.stringify(entriesList), matrix.id]
+                        );
+                    }
+                }
+            }
+        } catch (syncErr) {
+            console.error("[syncStudentSkillProgress] Failed to auto-sync legacy skill matrices:", syncErr);
+        }
+    }
+
+    return { levelUpgraded, newLevel, skillMap };
 };

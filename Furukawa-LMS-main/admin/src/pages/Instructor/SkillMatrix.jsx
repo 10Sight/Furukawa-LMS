@@ -30,6 +30,8 @@ const InstructorSkillMatrix = () => {
     const [evalDepartment, setEvalDepartment] = useState("");
     const [evalLine, setEvalLine] = useState("");
     const [evalSearchText, setEvalSearchText] = useState("");
+    const [evalOperatorsPage, setEvalOperatorsPage] = useState(1);
+    const evalOperatorsPerPage = 30;
 
     // --- Saved Data Fetching ---
     const { data: savedMatrixData, refetch: refetchMatrix } = useGetSkillMatrixQuery({
@@ -44,7 +46,7 @@ const InstructorSkillMatrix = () => {
     // --- Data Fetching ---
 
     // 1. Departments for Dropdown
-    const { data: departmentsData, isLoading: isDeptLoading } = useGetMyDepartmentsQuery();
+    const { data: departmentsData, isLoading: isDeptLoading, refetch: refetchDepartments } = useGetMyDepartmentsQuery();
 
     // 2. Lines for Dropdown (Dependent on Department)
     const { data: linesData, isLoading: isLinesLoading } = useGetLinesByDepartmentQuery(selectedDepartment, {
@@ -145,7 +147,7 @@ const InstructorSkillMatrix = () => {
 
     const filteredEvalUsers = React.useMemo(() => {
         if (!evalDepartmentUsers) return [];
-        
+
         // Filter by evalLine if selected
         let users = evalDepartmentUsers;
         if (evalLine) {
@@ -153,13 +155,33 @@ const InstructorSkillMatrix = () => {
             // To be safe, we list department users and search them
         }
 
-        if (!evalSearchText.trim()) return users;
-        const searchLower = evalSearchText.toLowerCase();
-        return users.filter(u => 
-            (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-            (u.cardNo || "").toLowerCase().includes(searchLower)
+        if (evalSearchText.trim()) {
+            const searchLower = evalSearchText.toLowerCase();
+            users = users.filter(u =>
+                (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
+                (u.cardNo || "").toLowerCase().includes(searchLower)
+            );
+        }
+
+        return [...users].sort((a, b) =>
+            (a.fullName || a.name || "").localeCompare(b.fullName || b.name || "", undefined, { sensitivity: 'base' })
         );
     }, [evalDepartmentUsers, evalLine, evalSearchText]);
+
+    const evalOperatorsTotalPages = Math.max(1, Math.ceil(filteredEvalUsers.length / evalOperatorsPerPage));
+
+    const paginatedEvalUsers = React.useMemo(() => {
+        const start = (evalOperatorsPage - 1) * evalOperatorsPerPage;
+        return filteredEvalUsers.slice(start, start + evalOperatorsPerPage);
+    }, [filteredEvalUsers, evalOperatorsPage]);
+
+    useEffect(() => {
+        setEvalOperatorsPage(1);
+    }, [evalDepartment, evalLine, evalSearchText]);
+
+    useEffect(() => {
+        if (evalOperatorsPage > evalOperatorsTotalPages) setEvalOperatorsPage(evalOperatorsTotalPages);
+    }, [evalOperatorsTotalPages, evalOperatorsPage]);
 
     // Initialize Matrix on Line Selection (Merge Logic)
     useEffect(() => {
@@ -261,13 +283,6 @@ const InstructorSkillMatrix = () => {
     useEffect(() => {
         setSelectedOperatorForEval(null);
     }, [selectedDepartment, selectedLine]);
-
-    useEffect(() => {
-        const actualOps = matrixEntries.filter(e => !e.isManual);
-        if (actualOps.length > 0 && !selectedOperatorForEval) {
-            setSelectedOperatorForEval(actualOps[0]._id);
-        }
-    }, [matrixEntries, selectedOperatorForEval]);
 
     const handleSave = async () => {
         if (!selectedDepartment || !selectedLine) {
@@ -1166,40 +1181,23 @@ const InstructorSkillMatrix = () => {
                                 </div>
                             </div>
                             
-                            <div className="flex flex-col gap-1 pt-2 border-t">
-                                <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold text-blue-600">Select Operator to Evaluate</label>
-                                <Select 
-                                    value={selectedOperatorForEval || ""} 
-                                    onValueChange={setSelectedOperatorForEval}
-                                    disabled={!evalDepartment || filteredEvalUsers.length === 0}
-                                >
-                                    <SelectTrigger className="h-9">
-                                        <SelectValue placeholder={
-                                            !evalDepartment 
-                                                ? "Please select a department first" 
-                                                : filteredEvalUsers.length === 0 
-                                                    ? "No operators found matching the criteria" 
-                                                    : "Select an operator"
-                                        } />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {filteredEvalUsers.map(u => (
-                                            <SelectItem key={u._id} value={u._id}>
-                                                {u.fullName || u.name} {u.cardNo ? `(${u.cardNo})` : ""}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
                         </div>
 
                         {selectedOperatorForEval ? (
-                            <div className="bg-white border rounded p-4 shadow">
+                            <div className="bg-white border rounded p-4 shadow space-y-4">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setSelectedOperatorForEval(null)}
+                                    className="text-xs font-semibold"
+                                >
+                                    Back to Operators
+                                </Button>
                                 <SkillMatrixCertificate
                                     studentId={selectedOperatorForEval}
                                     studentName={
-                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.name || 
-                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.fullName || 
+                                        matrixEntries.find(e => e._id === selectedOperatorForEval)?.name ||
+                                        filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.fullName ||
                                         filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.name
                                     }
                                     employeeCode={
@@ -1208,11 +1206,92 @@ const InstructorSkillMatrix = () => {
                                         filteredEvalUsers.find(e => e._id === selectedOperatorForEval)?.empId || ""
                                     }
                                     departmentId={evalDepartment || selectedDepartment}
+                                    onSaved={() => {
+                                        [refetchDepartments, refetchMatrix].forEach(fn => {
+                                            try { fn(); } catch (e) { /* query not started yet, nothing to refresh */ }
+                                        });
+                                    }}
                                 />
                             </div>
-                        ) : (
+                        ) : !evalDepartment ? (
                             <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
-                                No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                                Please select a Department to view the list of operators.
+                            </div>
+                        ) : (
+                            <div className="bg-white border rounded overflow-hidden shadow">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                        <tr>
+                                            <th className="p-3 border-b text-left">Operator Name</th>
+                                            <th className="p-3 border-b text-left">Emp ID</th>
+                                            <th className="p-3 border-b text-left">Current Level</th>
+                                            <th className="p-3 border-b text-left">Type</th>
+                                            <th className="p-3 border-b text-center">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paginatedEvalUsers.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5} className="text-center py-10 text-gray-400 italic">
+                                                    No operators found matching the criteria.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            paginatedEvalUsers.map(u => (
+                                                <tr
+                                                    key={u._id}
+                                                    className="hover:bg-muted/30 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                    onClick={() => setSelectedOperatorForEval(u._id)}
+                                                >
+                                                    <td className="p-3 font-bold">{u.fullName || u.name}</td>
+                                                    <td className="p-3">{u.cardNo || u.empId || "-"}</td>
+                                                    <td className="p-3 font-semibold text-blue-600">{u.level || "-"}</td>
+                                                    <td className="p-3">{u.type || "-"}</td>
+                                                    <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                                        <Button
+                                                            size="xs"
+                                                            className="h-7 text-xs font-semibold px-3 bg-blue-600 hover:bg-blue-700 text-white"
+                                                            onClick={() => setSelectedOperatorForEval(u._id)}
+                                                        >
+                                                            Evaluate
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                                {filteredEvalUsers.length > 0 && (
+                                    <div className="flex justify-between items-center px-3 py-2 border-t bg-gray-50 text-xs">
+                                        <span className="text-gray-500">
+                                            Showing {(evalOperatorsPage - 1) * evalOperatorsPerPage + 1}
+                                            {"-"}{Math.min(evalOperatorsPage * evalOperatorsPerPage, filteredEvalUsers.length)} of {filteredEvalUsers.length} operators
+                                        </span>
+                                        <div className="flex gap-2 items-center">
+                                            <Button
+                                                variant="outline"
+                                                size="xs"
+                                                className="h-7 px-3"
+                                                disabled={evalOperatorsPage <= 1}
+                                                onClick={() => setEvalOperatorsPage(p => Math.max(1, p - 1))}
+                                            >
+                                                Previous
+                                            </Button>
+                                            <span className="font-semibold text-gray-600">
+                                                Page {evalOperatorsPage} of {evalOperatorsTotalPages}
+                                            </span>
+                                            <Button
+                                                variant="outline"
+                                                size="xs"
+                                                className="h-7 px-3"
+                                                disabled={evalOperatorsPage >= evalOperatorsTotalPages}
+                                                onClick={() => setEvalOperatorsPage(p => Math.min(evalOperatorsTotalPages, p + 1))}
+                                            >
+                                                Next
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </TabsContent>

@@ -254,7 +254,48 @@ const DojoHiring = () => {
     };
 
     const allUsers = tempUsersData?.data?.users || [];
+    const totalPages = tempUsersData?.data?.totalPages || 1;
     const isAllSelected = allUsers.length > 0 && selectedRows.size === allUsers.length;
+
+    const [goToPageInput, setGoToPageInput] = useState("");
+
+    const getPageNumbers = () => {
+        const delta = 2;
+        const range = [];
+        const rangeWithDots = [];
+        let last;
+
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+                range.push(i);
+            }
+        }
+
+        range.forEach((i) => {
+            if (last) {
+                if (i - last === 2) {
+                    rangeWithDots.push(last + 1);
+                } else if (i - last !== 1) {
+                    rangeWithDots.push("...");
+                }
+            }
+            rangeWithDots.push(i);
+            last = i;
+        });
+
+        return rangeWithDots;
+    };
+
+    const handleGoToPage = (e) => {
+        e.preventDefault();
+        const pageNum = parseInt(goToPageInput, 10);
+        if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+            setCurrentPage(pageNum);
+            setGoToPageInput("");
+        } else {
+            toast.error(`Enter a page number between 1 and ${totalPages}`);
+        }
+    };
 
     const toggleSelectAll = () => {
         if (isAllSelected) {
@@ -528,7 +569,74 @@ const DojoHiring = () => {
         { label: "Today's Hiring", value: tempUsersData?.data?.todayJoined || 0, icon: IconCalendar, color: "emerald" },
         { label: "Male Candidates", value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
         { label: "Female Candidates", value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
+        { label: "Total Handover", value: tempUsersData?.data?.handoverCount || 0, icon: IconCircleCheck, color: "teal" },
     ];
+
+    const getColorProps = (color) => {
+        switch (color) {
+            case "rose":
+                return {
+                    iconBgColor: "bg-rose-100",
+                    iconColor: "text-rose-600",
+                    gradientFrom: "from-rose-50",
+                    gradientTo: "to-rose-100",
+                    borderColor: "border-rose-200",
+                    textColor: "text-rose-800",
+                    valueColor: "text-rose-900"
+                };
+            case "emerald":
+                return {
+                    iconBgColor: "bg-emerald-100",
+                    iconColor: "text-emerald-600",
+                    gradientFrom: "from-emerald-50",
+                    gradientTo: "to-emerald-100",
+                    borderColor: "border-emerald-200",
+                    textColor: "text-emerald-800",
+                    valueColor: "text-emerald-900"
+                };
+            case "indigo":
+                return {
+                    iconBgColor: "bg-indigo-100",
+                    iconColor: "text-indigo-600",
+                    gradientFrom: "from-indigo-50",
+                    gradientTo: "to-indigo-100",
+                    borderColor: "border-indigo-200",
+                    textColor: "text-indigo-800",
+                    valueColor: "text-indigo-900"
+                };
+            case "pink":
+                return {
+                    iconBgColor: "bg-pink-100",
+                    iconColor: "text-pink-600",
+                    gradientFrom: "from-pink-50",
+                    gradientTo: "to-pink-100",
+                    borderColor: "border-pink-200",
+                    textColor: "text-pink-800",
+                    valueColor: "text-pink-900"
+                };
+            case "teal":
+                return {
+                    iconBgColor: "bg-teal-100",
+                    iconColor: "text-teal-600",
+                    gradientFrom: "from-teal-50",
+                    gradientTo: "to-teal-100",
+                    borderColor: "border-teal-200",
+                    textColor: "text-teal-800",
+                    valueColor: "text-teal-900"
+                };
+            case "blue":
+            default:
+                return {
+                    iconBgColor: "bg-blue-100",
+                    iconColor: "text-blue-600",
+                    gradientFrom: "from-blue-50",
+                    gradientTo: "to-blue-100",
+                    borderColor: "border-blue-200",
+                    textColor: "text-blue-800",
+                    valueColor: "text-blue-900"
+                };
+        }
+    };
 
     const getStatusBadge = (status) => {
         const normalized = normalizeStatus(status);
@@ -648,14 +756,14 @@ const DojoHiring = () => {
             </div>
 
             {/* Stats Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 {stats.map((stat, idx) => (
-                    <StatCard 
+                    <StatCard
                         key={idx}
                         title={stat.label}
                         value={stat.value}
                         icon={stat.icon}
-                        color={stat.color}
+                        {...getColorProps(stat.color)}
                     />
                 ))}
             </div>
@@ -853,7 +961,7 @@ const DojoHiring = () => {
                                                     )}
                                                 </TableCell>
                                                 <TableCell className="pr-6 text-right" onClick={(e) => e.stopPropagation()}>
-                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <div className="flex justify-end gap-1">
                                                         {canUpdate && (
                                                             <Button
                                                                 variant="ghost"
@@ -903,32 +1011,70 @@ const DojoHiring = () => {
                 </CardContent>
             </Card>
 
-            {/* Pagination Placeholder (similar to Students.jsx) */}
-            <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-400 text-sm font-medium">
-                    Showing <span className="text-slate-900 font-bold">{(currentPage - 1) * 10 + 1}</span> to <span className="text-slate-900 font-bold">{Math.min(currentPage * 10, tempUsersData?.data?.totalUsers || 0)}</span> of <span className="text-slate-900 font-bold">{tempUsersData?.data?.totalUsers || 0}</span> entries
-                </p>
-                <div className="flex gap-2">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        disabled={currentPage === 1}
-                        onClick={() => setCurrentPage(prev => prev - 1)}
-                        className="rounded-lg border-slate-200"
-                    >
-                        Previous
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        disabled={currentPage >= (tempUsersData?.data?.totalPages || 1)}
-                        onClick={() => setCurrentPage(prev => prev + 1)}
-                        className="rounded-lg border-slate-200"
-                    >
-                        Next
-                    </Button>
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div className="flex flex-col items-center gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                    <p className="text-sm text-slate-500 font-medium">
+                        Showing <span className="text-slate-900 font-bold">{allUsers.length}</span> of{" "}
+                        <span className="text-slate-900 font-bold">{tempUsersData?.data?.totalUsers || 0}</span> candidates
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(currentPage - 1)}
+                            className="rounded-lg border-slate-200"
+                        >
+                            Previous
+                        </Button>
+                        {getPageNumbers().map((page, idx) =>
+                            page === "..." ? (
+                                <span
+                                    key={`dots-${idx}`}
+                                    className="px-2 text-sm text-muted-foreground select-none"
+                                >
+                                    ...
+                                </span>
+                            ) : (
+                                <Button
+                                    key={page}
+                                    variant={page === currentPage ? "default" : "outline"}
+                                    size="sm"
+                                    className="w-9 px-0"
+                                    onClick={() => setCurrentPage(page)}
+                                >
+                                    {page}
+                                </Button>
+                            )
+                        )}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(currentPage + 1)}
+                            className="rounded-lg border-slate-200"
+                        >
+                            Next
+                        </Button>
+                    </div>
+                    <form onSubmit={handleGoToPage} className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Go to page</span>
+                        <Input
+                            type="number"
+                            min={1}
+                            max={totalPages}
+                            value={goToPageInput}
+                            onChange={(e) => setGoToPageInput(e.target.value)}
+                            className="h-8 w-20"
+                            placeholder={String(currentPage)}
+                        />
+                        <Button type="submit" variant="outline" size="sm">
+                            Go
+                        </Button>
+                    </form>
                 </div>
-            </div>
+            )}
         </TabsContent>
 
             <TabsContent value="testPaper" className="space-y-6">

@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import os from "os";
 import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiError } from "../utils/ApiError.js";
 import NotificationService from "../services/notification.service.js";
@@ -53,13 +55,14 @@ export const createOnJobTraining = async (req, res, next) => {
         }
 
         const ojtName = name || "Level-1 Practical Evaluation of On the Job Training";
+        const shareToken = crypto.randomUUID();
 
         const [insertRows] = await executeQuery(
-            `INSERT INTO on_job_trainings 
-            (student, name, department, section, line, subSection, machine, createdBy, updatedBy, entries, result, createdAt, updatedAt)
+            `INSERT INTO on_job_trainings
+            (shareToken, student, name, department, section, line, subSection, machine, createdBy, updatedBy, entries, result, createdAt, updatedAt)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
-            [userId, ojtName, departmentId, sectionId, lineId || null, subSectionId || null, machineId || null, req.user.id, req.user.id, JSON.stringify([]), "Pending"]
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+            [shareToken, userId, ojtName, departmentId, sectionId, lineId || null, subSectionId || null, machineId || null, req.user.id, req.user.id, JSON.stringify([]), "Pending"]
         );
 
         const insertedId = insertRows[0]?.id;
@@ -225,6 +228,90 @@ export const getOnJobTrainingById = async (req, res, next) => {
         ojt.approverName = ojt.approverName || null;
 
         delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName; 
+        delete ojt.machineName; delete ojt.machineDisplayName;
+        delete ojt.studentName; delete ojt.studentEmail; delete ojt.studentAvatar;
+
+        res.status(200).json({
+            success: true,
+            data: ojt
+        });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+
+/**
+ * @desc    Detect this server's LAN IPv4 address, so share links work from other
+ *          devices on the network instead of a "localhost" address only the host machine can reach.
+ * @route   GET /api/on-job-training/lan-ip
+ * @access  Private
+ */
+export const getServerLanIp = (req, res) => {
+    const interfaces = os.networkInterfaces();
+    let lanIp = null;
+
+    for (const ifaceList of Object.values(interfaces)) {
+        const match = ifaceList.find((iface) => iface.family === "IPv4" && !iface.internal);
+        if (match) {
+            lanIp = match.address;
+            break;
+        }
+    }
+
+    res.status(200).json({ success: true, data: { lanIp } });
+};
+
+/**
+ * @desc    Get a single On Job Training record by its public share token (read-only sharing)
+ * @route   GET /api/on-job-training/public/:token
+ * @access  Public
+ */
+export const getOnJobTrainingByShareToken = async (req, res, next) => {
+    try {
+        const { token } = req.params;
+
+        const [rows] = await executeQuery(`
+            SELECT ojt.*,
+                   d.name as deptName,
+                   s.name as sectionName,
+                   l.name as lineName,
+                   ss.name as subSectionName,
+                   m.name as machineName, m.name as machineDisplayName,
+                   u.fullName as studentName, u.email as studentEmail, u.avatar as studentAvatar,
+                   uc.fullName as creatorName,
+                   uu.fullName as approverName
+            FROM on_job_trainings ojt
+            LEFT JOIN departments d ON ojt.department = CAST(d.id AS NVARCHAR(50)) OR ojt.department = d.name
+            LEFT JOIN sections s ON ojt.section = CAST(s.id AS NVARCHAR(50)) OR ojt.section = s.name
+            LEFT JOIN [lines] l ON ojt.line = CAST(l.id AS NVARCHAR(50)) OR ojt.line = l.name
+            LEFT JOIN [sub_sections] ss ON ojt.subSection = CAST(ss.id AS NVARCHAR(50)) OR ojt.subSection = ss.name
+            LEFT JOIN machines m ON ojt.machine = CAST(m.id AS NVARCHAR(50)) OR ojt.machine = m.name
+            LEFT JOIN users u ON ojt.student = CAST(u.id AS NVARCHAR(50)) OR ojt.student = u.userName
+            LEFT JOIN users uc ON CAST(ojt.createdBy AS NVARCHAR(50)) = CAST(uc.id AS NVARCHAR(50)) OR ojt.createdBy = uc.userName
+            LEFT JOIN users uu ON CAST(ojt.updatedBy AS NVARCHAR(50)) = CAST(uu.id AS NVARCHAR(50)) OR ojt.updatedBy = uu.userName
+            WHERE ojt.shareToken = ?
+        `, [token]);
+
+        if (rows.length === 0) {
+            return next(new ApiError("Shared OJT link not found or expired", 404));
+        }
+
+        const ojt = rows[0];
+        ojt.entries = parseJSON(ojt.entries, []);
+        ojt.scoring = parseJSON(ojt.scoring, null);
+        ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
+        ojt.trainingLog = parseJSON(ojt.trainingLog, []);
+        ojt.department = { id: ojt.department, name: ojt.deptName };
+        ojt.section = ojt.section ? { id: ojt.section, name: ojt.sectionName } : null;
+        ojt.line = ojt.line ? { id: ojt.line, name: ojt.lineName } : null;
+        ojt.subSection = ojt.subSection ? { id: ojt.subSection, name: ojt.subSectionName } : null;
+        ojt.machine = ojt.machine ? { id: ojt.machine, name: ojt.machineName, machineName: ojt.machineDisplayName } : null;
+        ojt.student = ojt.student ? { id: ojt.student, fullName: ojt.studentName, email: ojt.studentEmail, avatar: ojt.studentAvatar } : null;
+        ojt.creatorName = ojt.creatorName || null;
+        ojt.approverName = ojt.approverName || null;
+
+        delete ojt.id; delete ojt._id; delete ojt.shareToken;
+        delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName;
         delete ojt.machineName; delete ojt.machineDisplayName;
         delete ojt.studentName; delete ojt.studentEmail; delete ojt.studentAvatar;
 

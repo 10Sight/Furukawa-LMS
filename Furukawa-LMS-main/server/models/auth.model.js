@@ -6,6 +6,44 @@ import crypto from "crypto";
 import ENV from "../configs/env.config.js";
 import { slugify } from "../utils/slugify.js";
 
+// Cascades NULLs down the section -> line -> subSection -> station hierarchy (and the
+// mirrored target* chain used for temporary users) on a plain object carrying those keys.
+const applyHierarchyCascade = (obj) => {
+    if (!obj.sectionId) {
+        obj.lineId = null;
+        obj.lines = [];
+    }
+    if (!obj.lineId) {
+        obj.subSectionId = null;
+        obj.subSections = [];
+    }
+    if (!obj.subSectionId) {
+        obj.stationId = null;
+        obj.stations = [];
+    }
+
+    if (!obj.targetSectionId) obj.targetLineId = null;
+    if (!obj.targetLineId) obj.targetSubSectionId = null;
+    if (!obj.targetSubSectionId) obj.targetStationId = null;
+};
+
+const getEntityName = async (table, id) => {
+    if (!id) return null;
+    const [rows] = await executeQuery(`SELECT name FROM ${table} WHERE id = ?`, [id]);
+    return rows.length > 0 ? rows[0].name : null;
+};
+
+// Keeps the legacy string columns (department, section, line, sub_section, stationNo) in
+// sync with their relational ID columns so consumers that still read the string columns
+// don't see stale/obsolete values.
+const resolveHierarchyNames = async (obj) => {
+    obj.department = await getEntityName('departments', obj.departmentId);
+    obj.section = await getEntityName('[sections]', obj.sectionId);
+    obj.line = await getEntityName('[lines]', obj.lineId);
+    obj.sub_section = await getEntityName('sub_sections', obj.subSectionId);
+    obj.stationNo = await getEntityName('machines', obj.stationId);
+};
+
 class User {
     constructor(data) {
         this.id = data.id;
@@ -233,7 +271,7 @@ class User {
                 console.error("Migration error for departmentId index:", err);
             }
 
-            // Ensure phoneNumber is nullable and has filtered index
+            // Ensure phoneNumber is nullable and has no unique constraint (duplicates are allowed)
             try {
                 // 1. Drop existing unique indexes/constraints on phoneNumber first
                 const [idxRows] = await executeQuery(`
@@ -273,14 +311,34 @@ class User {
 
                 // 2. Make column nullable
                 await executeQuery("ALTER TABLE users ALTER COLUMN phoneNumber NVARCHAR(50) NULL");
-
-                // 3. Create/Recreate filtered unique index
-                const [existsFiltered] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'UQ_users_phoneNumber_Filtered'");
-                if (existsFiltered.length === 0) {
-                    await executeQuery("CREATE UNIQUE INDEX UQ_users_phoneNumber_Filtered ON users(phoneNumber) WHERE phoneNumber IS NOT NULL");
-                }
             } catch (err) {
                 console.error("Migration error for phoneNumber:", err);
+            }
+
+            // Ensure idCard has a filtered unique index (duplicates are no longer allowed for phoneNumber's
+            // former role — idCard is now the unique identifier instead)
+            try {
+                // Existing data may contain duplicate idCard values; null out all but the
+                // most recently updated record for each duplicate so the unique index can be created
+                // without deleting any user records.
+                await executeQuery(`
+                    WITH CTE AS (
+                        SELECT id,
+                               ROW_NUMBER() OVER (PARTITION BY idCard ORDER BY updatedAt DESC, id DESC) as rn
+                        FROM users
+                        WHERE idCard IS NOT NULL
+                    )
+                    UPDATE users
+                    SET idCard = NULL
+                    WHERE id IN (SELECT id FROM CTE WHERE rn > 1);
+                `);
+
+                const [existsIdCardFiltered] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'UQ_users_idCard_Filtered'");
+                if (existsIdCardFiltered.length === 0) {
+                    await executeQuery("CREATE UNIQUE INDEX UQ_users_idCard_Filtered ON users(idCard) WHERE idCard IS NOT NULL");
+                }
+            } catch (err) {
+                console.error("Migration error for idCard unique index:", err);
             }
 
             // Ensure email is not unique
@@ -368,6 +426,229 @@ class User {
                 console.error("Error during currentSkill schema migration:", migrationErr);
             }
 
+            // One-time backfill: derive hierarchy reference IDs (departmentId, sectionId,
+            // lineId, subSectionId, stationId) for users that still have them NULL.
+            // Step 1 trusts the already-resolved IDs stored in the JSON array columns.
+            // Step 2 performs a self-healing walk-up (if a child ID is set, resolve parent IDs based on master associations).
+            // Step 3 falls back to matching raw text strings ignoring hyphens, spaces, and casing.
+            try {
+                // 1. Array ID check
+                await executeQuery(`
+                    UPDATE u SET u.departmentId = TRY_CAST(dep.value AS INT)
+                    FROM users u OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.departments) WHERE [key] = '0') dep
+                    WHERE u.departmentId IS NULL AND u.departments IS NOT NULL AND ISJSON(u.departments) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.sectionId = TRY_CAST(sec.value AS INT)
+                    FROM users u OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.sections) WHERE [key] = '0') sec
+                    WHERE u.sectionId IS NULL AND u.sections IS NOT NULL AND ISJSON(u.sections) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.lineId = TRY_CAST(ln.value AS INT)
+                    FROM users u OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.lines) WHERE [key] = '0') ln
+                    WHERE u.lineId IS NULL AND u.lines IS NOT NULL AND ISJSON(u.lines) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.subSectionId = TRY_CAST(ss.value AS INT)
+                    FROM users u OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.subSections) WHERE [key] = '0') ss
+                    WHERE u.subSectionId IS NULL AND u.subSections IS NOT NULL AND ISJSON(u.subSections) = 1
+                `);
+                await executeQuery(`
+                    UPDATE u SET u.stationId = TRY_CAST(st.value AS INT)
+                    FROM users u OUTER APPLY (SELECT TOP 1 value FROM OPENJSON(u.stations) WHERE [key] = '0') st
+                    WHERE u.stationId IS NULL AND u.stations IS NOT NULL AND ISJSON(u.stations) = 1
+                `);
+
+                // 2. Self-healing walk-ups from child references
+                // 2a. Walk up from stationId
+                await executeQuery(`
+                    UPDATE u SET 
+                        u.subSectionId = COALESCE(u.subSectionId, m.subSectionId),
+                        u.lineId = COALESCE(u.lineId, ss.lineId),
+                        u.sectionId = COALESCE(u.sectionId, l.sectionId),
+                        u.departmentId = COALESCE(u.departmentId, s.departmentId)
+                    FROM users u
+                    JOIN machines m ON u.stationId = m.id
+                    LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
+                    LEFT JOIN [lines] l ON ss.lineId = l.id
+                    LEFT JOIN [sections] s ON l.sectionId = s.id
+                    WHERE u.stationId IS NOT NULL
+                `);
+                // 2b. Walk up from subSectionId
+                await executeQuery(`
+                    UPDATE u SET 
+                        u.lineId = COALESCE(u.lineId, ss.lineId),
+                        u.sectionId = COALESCE(u.sectionId, l.sectionId),
+                        u.departmentId = COALESCE(u.departmentId, s.departmentId)
+                    FROM users u
+                    JOIN sub_sections ss ON u.subSectionId = ss.id
+                    LEFT JOIN [lines] l ON ss.lineId = l.id
+                    LEFT JOIN [sections] s ON l.sectionId = s.id
+                    WHERE u.subSectionId IS NOT NULL
+                `);
+                // 2c. Walk up from lineId
+                await executeQuery(`
+                    UPDATE u SET 
+                        u.sectionId = COALESCE(u.sectionId, l.sectionId),
+                        u.departmentId = COALESCE(u.departmentId, s.departmentId)
+                    FROM users u
+                    JOIN [lines] l ON u.lineId = l.id
+                    LEFT JOIN [sections] s ON l.sectionId = s.id
+                    WHERE u.lineId IS NOT NULL
+                `);
+                // 2d. Walk up from sectionId
+                await executeQuery(`
+                    UPDATE u SET 
+                        u.departmentId = COALESCE(u.departmentId, s.departmentId)
+                    FROM users u
+                    JOIN [sections] s ON u.sectionId = s.id
+                    WHERE u.sectionId IS NOT NULL
+                `);
+
+                // 3. Name-based resolution using normalized strings (ignoring spaces, hyphens, and case)
+                // 3a. Departments
+                await executeQuery(`
+                    UPDATE u SET u.departmentId = d.id
+                    FROM users u
+                    JOIN departments d ON 
+                        LOWER(REPLACE(REPLACE(REPLACE(u.department, ' ', ''), '-', ''), '_', '')) = 
+                        LOWER(REPLACE(REPLACE(REPLACE(d.name, ' ', ''), '-', ''), '_', ''))
+                    WHERE u.departmentId IS NULL AND u.department IS NOT NULL AND u.department != ''
+                `);
+                // 3b. Sections (uses departmentId scoping only if it was successfully resolved)
+                await executeQuery(`
+                    UPDATE u SET u.sectionId = s.id
+                    FROM users u
+                    JOIN [sections] s ON 
+                        LOWER(REPLACE(REPLACE(REPLACE(u.section, ' ', ''), '-', ''), '_', '')) = 
+                        LOWER(REPLACE(REPLACE(REPLACE(s.name, ' ', ''), '-', ''), '_', ''))
+                        AND (u.departmentId IS NULL OR s.departmentId = u.departmentId)
+                    WHERE u.sectionId IS NULL AND u.section IS NOT NULL AND u.section != ''
+                `);
+                // 3c. Lines (uses sectionId scoping only if it was successfully resolved)
+                await executeQuery(`
+                    UPDATE u SET u.lineId = l.id
+                    FROM users u
+                    JOIN [lines] l ON 
+                        LOWER(REPLACE(REPLACE(REPLACE(u.line, ' ', ''), '-', ''), '_', '')) = 
+                        LOWER(REPLACE(REPLACE(REPLACE(l.name, ' ', ''), '-', ''), '_', ''))
+                        AND (u.sectionId IS NULL OR l.sectionId = u.sectionId)
+                    WHERE u.lineId IS NULL AND u.line IS NOT NULL AND u.line != ''
+                `);
+                // 3d. SubSections (uses lineId scoping only if it was successfully resolved)
+                await executeQuery(`
+                    UPDATE u SET u.subSectionId = ss.id
+                    FROM users u
+                    JOIN sub_sections ss ON 
+                        LOWER(REPLACE(REPLACE(REPLACE(u.sub_section, ' ', ''), '-', ''), '_', '')) = 
+                        LOWER(REPLACE(REPLACE(REPLACE(ss.name, ' ', ''), '-', ''), '_', ''))
+                        AND (u.lineId IS NULL OR ss.lineId = u.lineId)
+                    WHERE u.subSectionId IS NULL AND u.sub_section IS NOT NULL AND u.sub_section != ''
+                `);
+                // 3e. Stations (uses subSectionId scoping only if it was successfully resolved)
+                await executeQuery(`
+                    UPDATE u SET u.stationId = m.id
+                    FROM users u
+                    JOIN machines m ON 
+                        LOWER(REPLACE(REPLACE(REPLACE(u.stationNo, ' ', ''), '-', ''), '_', '')) = 
+                        LOWER(REPLACE(REPLACE(REPLACE(m.name, ' ', ''), '-', ''), '_', ''))
+                        AND (u.subSectionId IS NULL OR m.subSectionId = u.subSectionId)
+                    WHERE u.stationId IS NULL AND u.stationNo IS NOT NULL AND u.stationNo != ''
+                `);
+
+                // 3f. Cascade NULLs down the hierarchy: if a parent is NULL, its children must be
+                // NULL too. Run as separate sequential statements rather than one UPDATE with CASE
+                // expressions -- SQL Server evaluates every SET expression in a single-table UPDATE
+                // against the pre-update row image, so a CASE checking a column set earlier in the
+                // same statement would still see its old value.
+                await executeQuery(`
+                    UPDATE users SET lineId = NULL, lines = '[]'
+                    WHERE sectionId IS NULL AND lineId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET subSectionId = NULL, subSections = '[]'
+                    WHERE lineId IS NULL AND subSectionId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET stationId = NULL, stations = '[]'
+                    WHERE subSectionId IS NULL AND stationId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET targetLineId = NULL
+                    WHERE targetSectionId IS NULL AND targetLineId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET targetSubSectionId = NULL
+                    WHERE targetLineId IS NULL AND targetSubSectionId IS NOT NULL
+                `);
+                await executeQuery(`
+                    UPDATE users SET targetStationId = NULL
+                    WHERE targetSubSectionId IS NULL AND targetStationId IS NOT NULL
+                `);
+
+                // 4. Sync Array Columns from ID Columns (Forward sync)
+                await executeQuery(`
+                    UPDATE users SET departments = CONCAT('[', departmentId, ']')
+                    WHERE departmentId IS NOT NULL AND (departments IS NULL OR departments = '[]' OR departments = '');
+                `);
+                await executeQuery(`
+                    UPDATE users SET sections = CONCAT('[', sectionId, ']')
+                    WHERE sectionId IS NOT NULL AND (sections IS NULL OR sections = '[]' OR sections = '');
+                `);
+                await executeQuery(`
+                    UPDATE users SET lines = CONCAT('[', lineId, ']')
+                    WHERE lineId IS NOT NULL AND (lines IS NULL OR lines = '[]' OR lines = '');
+                `);
+                await executeQuery(`
+                    UPDATE users SET subSections = CONCAT('[', subSectionId, ']')
+                    WHERE subSectionId IS NOT NULL AND (subSections IS NULL OR subSections = '[]' OR subSections = '');
+                `);
+                await executeQuery(`
+                    UPDATE users SET stations = CONCAT('[', stationId, ']')
+                    WHERE stationId IS NOT NULL AND (stations IS NULL OR stations = '[]' OR stations = '');
+                `);
+
+                // 5. Sync legacy string columns (department, section, line, sub_section, stationNo)
+                // from their resolved ID columns, and clear them out when the ID is NULL, so
+                // consumers that still read the string columns never see stale/obsolete values.
+                await executeQuery(`
+                    UPDATE u SET u.department = d.name
+                    FROM users u JOIN departments d ON u.departmentId = d.id
+                    WHERE u.departmentId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET department = NULL WHERE departmentId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.section = s.name
+                    FROM users u JOIN [sections] s ON u.sectionId = s.id
+                    WHERE u.sectionId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET section = NULL WHERE sectionId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.line = l.name
+                    FROM users u JOIN [lines] l ON u.lineId = l.id
+                    WHERE u.lineId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET line = NULL WHERE lineId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.sub_section = ss.name
+                    FROM users u JOIN sub_sections ss ON u.subSectionId = ss.id
+                    WHERE u.subSectionId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET sub_section = NULL WHERE subSectionId IS NULL`);
+
+                await executeQuery(`
+                    UPDATE u SET u.stationNo = m.name
+                    FROM users u JOIN machines m ON u.stationId = m.id
+                    WHERE u.stationId IS NOT NULL
+                `);
+                await executeQuery(`UPDATE users SET stationNo = NULL WHERE stationId IS NULL`);
+            } catch (backfillErr) {
+                console.error("Error during hierarchy reference ID backfill migration:", backfillErr);
+            }
+
             console.log("Users table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating users table in MSSQL:", error);
@@ -429,10 +710,13 @@ class User {
             dataToInsert.subSectionId = dataToInsert.subSectionId || parseInt(dataToInsert.subSections[0]);
         }
 
+        applyHierarchyCascade(dataToInsert);
+        await resolveHierarchyNames(dataToInsert);
+
         const values = fields.map(field => {
             let val = dataToInsert[field];
             if (['avatar', 'enrolledCourses', 'createdCourses', 'loginHistory', 'departments', 'stations', 'sections', 'lines', 'subSections', 'currentSkill', 'skillEffeciency', 'ojt', 'shiftSchedule'].includes(field)) {
-                return JSON.stringify(val || (field === 'avatar' ? {} : (field === 'shiftSchedule' ? {} : [])));
+                return JSON.stringify(val || (['avatar', 'shiftSchedule', 'currentSkill', 'skillEffeciency'].includes(field) ? {} : []));
             }
             if (val === undefined || val === "") return null;
             return val;
@@ -749,6 +1033,9 @@ class User {
         if (this.subSections && Array.isArray(this.subSections) && this.subSections.length > 0) {
             this.subSectionId = this.subSectionId || parseInt(this.subSections[0]);
         }
+
+        applyHierarchyCascade(this);
+        await resolveHierarchyNames(this);
 
         // Only update fields that are defined on the instance
         const definedFields = fields.filter(field => this[field] !== undefined);

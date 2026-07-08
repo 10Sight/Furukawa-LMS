@@ -191,11 +191,9 @@ const StudentDetail = () => {
     }, [progressList, submissions, attempts]);
 
     const handleRefreshAll = () => {
-        refetchStudent();
-        refetchProgress();
-        refetchSubmissions();
-        refetchAttempts();
-        refetchOjt();
+        [refetchStudent, refetchProgress, refetchSubmissions, refetchAttempts, refetchOjt].forEach(fn => {
+            try { fn(); } catch (e) { /* query not started yet, nothing to refresh */ }
+        });
         toast.success("Operator data refreshed successfully!");
     };
 
@@ -559,6 +557,7 @@ const StudentDetail = () => {
                         employeeCode={student?.userName || student?.empId || ""}
                         departmentId={typeof student.department === 'object' ? (student.department?._id || student.department?.id || "GLOBAL") : (student.department || "GLOBAL")}
                         subSectionId={student?.subSectionId || student?.targetSubSectionId}
+                        onSaved={handleRefreshAll}
                     />
                 </TabsContent>
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { formatPaperSubTitle } from "@/utils/formatters";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axiosInstance from "@/Helper/axiosInstance";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ import { useSelector } from "react-redux";
 const TakeQuiz = () => {
   const { quizId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [quiz, setQuiz] = useState(null);
@@ -347,6 +348,27 @@ const TakeQuiz = () => {
 
   const handleSubmit = async (autoSubmit = false) => {
     try {
+      if (!autoSubmit) {
+        const unansweredQuestions = [];
+        quiz.questions.forEach((q, index) => {
+          let isAnswered = false;
+          if (q.type === "matching") {
+            const matches = answers[index]?.matches || {};
+            isAnswered = (q.pairs || []).every(pair => matches[pair.leftText] && matches[pair.leftText].trim() !== "");
+          } else {
+            isAnswered = !!(answers[index]?.text && answers[index].text.trim() !== "");
+          }
+          if (!isAnswered) {
+            unansweredQuestions.push(index + 1);
+          }
+        });
+
+        if (unansweredQuestions.length > 0) {
+          alert(`Please attempt all questions before submitting the test paper.\nUnanswered questions: ${unansweredQuestions.join(", ")}`);
+          return;
+        }
+      }
+
       setSubmitting(true);
       setTimerActive(false);
 
@@ -443,6 +465,11 @@ const TakeQuiz = () => {
   const handleBackToCourse = () => {
     localStorage.removeItem(STORAGE_KEY);
     const base = "/" + (window.location.pathname.split('/')[1] || "student");
+
+    if (location.state?.from) {
+      navigate(location.state.from);
+      return;
+    }
 
     if (base === "/student") {
       if (!quiz?.course) {

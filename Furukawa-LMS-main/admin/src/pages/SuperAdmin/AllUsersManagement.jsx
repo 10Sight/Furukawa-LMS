@@ -345,49 +345,41 @@ const AllUsersManagement = () => {
 
   const handleOpenEditModal = (user) => {
     const rawDepts = typeof user.departments === 'string' ? JSON.parse(user.departments || "[]") : (user.departments || []);
-    const deptsFieldSet = user.departments !== undefined && user.departments !== null;
     const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length > 0
       ? rawDepts.map(String)
-      : (!deptsFieldSet && (user.departmentId || user.DepartmentId)) ? [String(user.departmentId || user.DepartmentId)]
-      : (!deptsFieldSet && user.department?._id) ? [String(user.department._id)]
+      : (user.departmentId || user.DepartmentId) ? [String(user.departmentId || user.DepartmentId)]
+      : user.department?._id ? [String(user.department._id)]
       : [];
 
     const rawStations = typeof user.stations === 'string' ? JSON.parse(user.stations || "[]") : (user.stations || []);
-    const stationsFieldSet = user.stations !== undefined && user.stations !== null;
     const resolvedStations = Array.isArray(rawStations) && rawStations.length > 0
       ? rawStations.map(String)
-      : (!stationsFieldSet && (user.stationId || user.StationId)) ? [String(user.stationId || user.StationId)]
+      : (user.stationId || user.StationId) ? [String(user.stationId || user.StationId)]
       : [];
 
     const rawSections = typeof user.sections === 'string' ? JSON.parse(user.sections || "[]") : (user.sections || []);
-    const sectionsFieldSet = user.sections !== undefined && user.sections !== null;
     const resolvedSections = Array.isArray(rawSections) && rawSections.length > 0
       ? rawSections.map(String)
-      : !sectionsFieldSet ? [...new Set([
+      : [...new Set([
           ...(user.sectionId ? [String(user.sectionId)] : []),
           ...(user.assignments || []).map(a => String(a.sectionId))
-        ])].filter(Boolean)
-      : [];
+        ])].filter(Boolean);
 
     const rawLines = typeof user.lines === 'string' ? JSON.parse(user.lines || "[]") : (user.lines || []);
-    const linesFieldSet = user.lines !== undefined && user.lines !== null;
     const resolvedLines = Array.isArray(rawLines) && rawLines.length > 0
       ? rawLines.map(String)
-      : !linesFieldSet ? [...new Set([
+      : [...new Set([
           ...(user.lineId ? [String(user.lineId)] : []),
           ...(user.assignments || []).map(a => String(a.lineId))
-        ])].filter(Boolean)
-      : [];
+        ])].filter(Boolean);
 
     const rawSubSections = typeof user.subSections === 'string' ? JSON.parse(user.subSections || "[]") : (user.subSections || []);
-    const subSectionsFieldSet = user.subSections !== undefined && user.subSections !== null;
     const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length > 0
       ? rawSubSections.map(String)
-      : !subSectionsFieldSet ? [...new Set([
+      : [...new Set([
           ...(user.subSectionId ? [String(user.subSectionId)] : []),
           ...(user.assignments || []).map(a => String(a.subSectionId))
-        ])].filter(Boolean)
-      : [];
+        ])].filter(Boolean);
 
     const resolvedShiftSchedule = typeof user.shiftSchedule === 'string'
       ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
@@ -556,10 +548,12 @@ const AllUsersManagement = () => {
   const getUserDeptNames = (user) => {
     const allDepartments = deptData?.data?.departments || [];
     const rawDepts = typeof user.departments === 'string'
-      ? JSON.parse(user.departments || "[]")
+      ? (() => { try { return JSON.parse(user.departments); } catch (e) { return []; } })()
       : (user.departments || []);
-    // departments: [] is authoritative — only fall back when field was never set
-    const departmentsFieldSet = user.departments !== undefined && user.departments !== null;
+    const assignments = typeof user.assignments === 'string'
+      ? (() => { try { return JSON.parse(user.assignments); } catch (e) { return []; } })()
+      : (user.assignments || []);
+
     if (Array.isArray(rawDepts) && rawDepts.length > 0 && allDepartments.length > 0) {
       const names = rawDepts.map(id => {
         const d = allDepartments.find(dept => String(getDeptId(dept)) === String(id));
@@ -567,26 +561,55 @@ const AllUsersManagement = () => {
       }).filter(Boolean);
       if (names.length > 0) return names;
     }
-    if (!departmentsFieldSet) {
-      if (Array.isArray(user.assignments) && user.assignments.length > 0) {
-        const names = [...new Set(user.assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
-        if (names.length > 0) return names;
-      }
-      if (user.deptName && user.deptName.toLowerCase() !== "none") return [user.deptName];
+
+    if (assignments.length > 0) {
+      const names = [...new Set(assignments.map(a => a.deptName).filter(n => n && n.toLowerCase() !== "none"))];
+      if (names.length > 0) return names;
     }
+
+    if (user.deptName && user.deptName.toLowerCase() !== "none") {
+      return [user.deptName];
+    }
+
     return [];
   };
 
   const getUserSectionNames = (user) => {
-    // sectionName is a denormalized field; only use it when sections is not explicitly set
-    const sectionsFieldSet = user.sections !== undefined && user.sections !== null;
-    if (!sectionsFieldSet) {
-      if (Array.isArray(user.assignments) && user.assignments.length > 0) {
-        const names = [...new Set(user.assignments.map(a => a.sectionName).filter(n => n && n.toLowerCase() !== "none"))];
+    const rawSections = typeof user.sections === 'string'
+      ? (() => { try { return JSON.parse(user.sections); } catch (e) { return []; } })()
+      : (user.sections || []);
+    const assignments = typeof user.assignments === 'string'
+      ? (() => { try { return JSON.parse(user.assignments); } catch (e) { return []; } })()
+      : (user.assignments || []);
+
+    if (Array.isArray(rawSections) && rawSections.length > 0) {
+      if (assignments.length > 0) {
+        const names = [...new Set(
+          assignments
+            .filter(a => rawSections.map(String).includes(String(a.sectionId)))
+            .map(a => a.sectionName)
+            .filter(n => n && n.toLowerCase() !== "none")
+        )];
         if (names.length > 0) return names;
       }
-      return (user.sectionName && user.sectionName.toLowerCase() !== "none") ? [user.sectionName] : [];
+      if (sectionData?.data && sectionData.data.length > 0) {
+        const names = rawSections.map(id => {
+          const s = sectionData.data.find(sec => String(sec.id) === String(id));
+          return s ? s.name : null;
+        }).filter(Boolean);
+        if (names.length > 0) return names;
+      }
     }
+
+    if (assignments.length > 0) {
+      const names = [...new Set(assignments.map(a => a.sectionName).filter(n => n && n.toLowerCase() !== "none"))];
+      if (names.length > 0) return names;
+    }
+
+    if (user.sectionName && user.sectionName.toLowerCase() !== "none") {
+      return [user.sectionName];
+    }
+
     return [];
   };
 

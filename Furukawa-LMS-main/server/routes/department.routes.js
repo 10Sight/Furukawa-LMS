@@ -40,7 +40,8 @@ import {
     sendHandoverPDF,
     getStudentHandoverHistory,
     getHandoverSheetsMonitoring,
-    deleteHandoverSheet
+    deleteHandoverSheet,
+    bulkDeleteHandoverSheets
 } from "../controllers/department.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
@@ -109,6 +110,7 @@ router.post("/cleanup/warnings/send", verifyJWT, authorizeRoles("isAdmin", "SUPE
 // Handover Sheet
 router.get("/handover-sheet/monitoring", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetsMonitoring);
 router.delete("/handover-sheet/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE]), deleteHandoverSheet);
+router.post("/handover-sheet/bulk-delete", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE]), bulkDeleteHandoverSheets);
 router.get("/:id/handover-sheet", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheet);
 router.post("/:id/handover-sheet", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE]), saveHandoverSheet);
 router.get("/handover-sheet/config/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetConfig);

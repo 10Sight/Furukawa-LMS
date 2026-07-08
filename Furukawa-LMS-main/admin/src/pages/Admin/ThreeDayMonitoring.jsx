@@ -51,11 +51,9 @@ const ThreeDayMonitoring = () => {
         const managePerm = permissions.includes('three_day:manage') || isAdmin;
         const editLayoutPerm = permissions.includes('three_day:edit_layout') || isAdmin;
 
-        const isSubject = authUser?.isEmployee ||
-            authUser?.role === 'STUDENT' ||
+        const isSubject = authUser?.role === 'STUDENT' ||
             (authUser?.role === 'CUSTOM' && authUser.customRole?.targetLayout === 'operator') ||
-            (authUser?.role === 'CUSTOM' && !editLayoutPerm && !managePerm && !isAdmin &&
-                authUser.customRole?.targetLayout !== 'admin' && authUser.customRole?.targetLayout !== 'trainer');
+            (authUser?.role !== 'CUSTOM' && authUser?.role !== 'ADMIN' && authUser?.role !== 'SUPERADMIN' && authUser?.role !== 'INSTRUCTOR' && authUser?.isEmployee);
 
         return {
             isEmployee: isSubject,

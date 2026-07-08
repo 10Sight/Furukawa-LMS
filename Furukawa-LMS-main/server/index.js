@@ -113,12 +113,17 @@ import EvaluationTestAttempt from "./models/evaluationTestAttempt.model.js";
 
 const app = express();
 const allowedOrigins = [
-    "http://192.168.90.19:5174"
+    "http://192.168.90.19:5174",
+    "https://192.168.90.19"
 ];
+// Matches localhost/127.0.0.1 and any private LAN address (10.x, 172.16-31.x, 192.168.x) on any port,
+// so the app is reachable from other devices on the same network (e.g. shared OJT links) without
+// having to hardcode every machine's IP.
+const LAN_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|192\.168(?:\.\d{1,3}){2})(?::\d+)?$/;
 const isAllowedOrigin = (origin) => {
     if (!origin) return true;
     if (allowedOrigins.includes(origin)) return true;
-    return /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+    return LAN_ORIGIN_REGEX.test(origin);
 };
 const server = createServer(app);
 const io = new Server(server, {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,7 @@ import {
   IconTrash
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { useSelector } from "react-redux";
@@ -35,9 +35,38 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import AdminQuizMonitoring from "./QuizMonitoring";
 import CertificateTemplates from "./CertificateTemplates";
 
+const VALID_TEST_PAPER_TABS = ["testPaper", "testMonitoring", "certificateTemplates"];
+
 const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, skillUpgradation: forceSkillUpgradation }) => {
   const navigate = useNavigate();
   const currentUser = useSelector((state) => state.auth.user);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Use a dedicated `testPaperTab` param (instead of `tab`) so this component's own
+  // internal tabs never collide with the parent page's `tab` param when embedded
+  // inside SkillMatrix / MultiSkilling / DojoHiring (which each already own `?tab=`).
+  const [activeTestPaperTab, setActiveTestPaperTab] = useState(() => {
+    const tabFromUrl = searchParams.get('testPaperTab');
+    return VALID_TEST_PAPER_TABS.includes(tabFromUrl) ? tabFromUrl : "testPaper";
+  });
+
+  const handleTestPaperTabChange = (tab) => {
+    setActiveTestPaperTab(tab);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('testPaperTab', tab);
+      return next;
+    }, { replace: true });
+  };
+
+  // Keep activeTestPaperTab in sync with the URL (e.g. browser back/forward, deep links)
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('testPaperTab');
+    if (VALID_TEST_PAPER_TABS.includes(tabFromUrl) && tabFromUrl !== activeTestPaperTab) {
+      setActiveTestPaperTab(tabFromUrl);
+    }
+  }, [searchParams]);
 
   const hasPermission = (permission) => {
     if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
@@ -59,27 +88,43 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     currentUser?.role === "ADMIN" ||
     hasPermission("test_paper:delete");
 
+  // Helper: normalise an ID that may be a primitive or an object with id/_id
+  const normalizeId = (v) => {
+    if (v && typeof v === 'object') return String(v.id || v._id || '');
+    return String(v);
+  };
+
+  const assignedDepartments = useMemo(() => {
+    const rawAssigned = Array.isArray(currentUser?.departments) ? [...currentUser.departments] : [];
+    if (currentUser?.departmentId) rawAssigned.push(currentUser.departmentId);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
+  }, [currentUser]);
+
+  // Custom/restricted role users don't always carry role === "CUSTOM" (e.g. operators/employees
+  // default to role "STUDENT" with a customRole attached) — detect by department restriction instead.
+  const isCustomRoleUser = !isAuthorizedToAccessAll && assignedDepartments.length > 0;
+
   const assignedSections = useMemo(() => {
     const rawAssigned = Array.isArray(currentUser?.sections) ? [...currentUser.sections] : [];
     if (currentUser?.sectionId) rawAssigned.push(currentUser.sectionId);
-    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
   }, [currentUser]);
 
   const assignedLines = useMemo(() => {
     const rawAssigned = Array.isArray(currentUser?.lines) ? [...currentUser.lines] : [];
     if (currentUser?.lineId) rawAssigned.push(currentUser.lineId);
-    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
   }, [currentUser]);
 
   const assignedSubSections = useMemo(() => {
     const rawAssigned = Array.isArray(currentUser?.subSections) ? [...currentUser.subSections] : [];
     if (currentUser?.subSectionId) rawAssigned.push(currentUser.subSectionId);
-    return [...new Set(rawAssigned.map(id => String(id)))].filter(Boolean);
+    return [...new Set(rawAssigned.map(normalizeId))].filter(Boolean);
   }, [currentUser]);
 
   const [selectedDepartment, setSelectedDepartment] = useState(() => {
-    if (!isAuthorizedToAccessAll && currentUser?.departmentId) {
-      return String(currentUser.departmentId);
+    if (!isAuthorizedToAccessAll && assignedDepartments.length === 1) {
+      return assignedDepartments[0];
     }
     return "ALL";
   });
@@ -111,7 +156,29 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Fetch Departments
   const { data: departmentsData, isLoading: departmentsLoading } = useGetAllDepartmentsQuery({ limit: 1000 });
-  const departments = departmentsData?.data?.departments || [];
+  const allDepartments = departmentsData?.data?.departments || [];
+
+  // Filter departments to only those assigned to the current user (if restricted)
+  const departments = useMemo(() => {
+    const list = (isAuthorizedToAccessAll || assignedDepartments.length === 0)
+      ? allDepartments
+      : allDepartments.filter(dept => assignedDepartments.includes(String(dept._id || dept.id)));
+
+    if (isCustomRoleUser) {
+      return [...list].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    }
+    return list;
+  }, [allDepartments, isAuthorizedToAccessAll, assignedDepartments, isCustomRoleUser]);
+
+  // Auto-select the first department for custom role users once departments load
+  useEffect(() => {
+    if (isCustomRoleUser && departments.length > 0) {
+      const isValid = departments.some(dept => String(dept._id || dept.id) === selectedDepartment);
+      if (!isValid) {
+        setSelectedDepartment(String(departments[0]._id || departments[0].id));
+      }
+    }
+  }, [isCustomRoleUser, departments, selectedDepartment]);
 
   // Fetch Sections based on selected Department
   const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(
@@ -218,6 +285,22 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   const quizzes = useMemo(() => {
     return rawQuizzes.filter(quiz => {
+      // 0a. Department restriction (local fallback for custom role users)
+      if (!isAuthorizedToAccessAll && assignedDepartments.length > 0) {
+        const quizDeptIds = (quiz.departmentId || []).map(String);
+        if (quizDeptIds.length > 0 && !quizDeptIds.some(id => assignedDepartments.includes(id))) {
+          return false;
+        }
+      }
+
+      // 0b. Section restriction (local fallback for custom role users)
+      if (!isAuthorizedToAccessAll && assignedSections.length > 0) {
+        const quizSectIds = (quiz.sectionId || []).map(String);
+        if (quizSectIds.length > 0 && !quizSectIds.some(id => assignedSections.includes(id))) {
+          return false;
+        }
+      }
+
       // 1. Line Filter
       if (selectedLine !== "ALL") {
         const quizLineIds = (quiz.lineId || []).map(String);
@@ -256,10 +339,14 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
       return true;
     });
-  }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType, isOjtApproved, currentUser]);
+  }, [rawQuizzes, selectedLine, selectedSubSection, selectedLevel, selectedTestType, isOjtApproved, currentUser, isAuthorizedToAccessAll, assignedDepartments, assignedSections]);
 
   const handleReset = () => {
-    setSelectedDepartment(!isAuthorizedToAccessAll && currentUser?.departmentId ? String(currentUser.departmentId) : "ALL");
+    if (isCustomRoleUser && departments.length > 0) {
+      setSelectedDepartment(String(departments[0]._id || departments[0].id));
+    } else {
+      setSelectedDepartment(!isAuthorizedToAccessAll && assignedDepartments.length === 1 ? assignedDepartments[0] : "ALL");
+    }
     setSelectedSection(!isAuthorizedToAccessAll && assignedSections.length === 1 ? assignedSections[0] : "ALL");
     setSelectedLine(!isAuthorizedToAccessAll && assignedLines.length === 1 ? assignedLines[0] : "ALL");
     setSelectedSubSection(!isAuthorizedToAccessAll && assignedSubSections.length === 1 ? assignedSubSections[0] : "ALL");
@@ -413,7 +500,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Standard Admin/Student UI
   return (
-    <Tabs defaultValue="testPaper" className="w-full space-y-6">
+    <Tabs value={activeTestPaperTab} onValueChange={handleTestPaperTabChange} className="w-full space-y-6">
       <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
         <TabsTrigger value="testPaper" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
           Test Paper
@@ -477,13 +564,15 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   setSelectedLine("ALL");
                   setSelectedSubSection("ALL");
                 }}
-                disabled={!isAuthorizedToAccessAll && !!currentUser?.departmentId}
+                disabled={!isAuthorizedToAccessAll && assignedDepartments.length === 1}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Departments</SelectItem>
+                  {!isCustomRoleUser && (isAuthorizedToAccessAll || assignedDepartments.length !== 1) && (
+                    <SelectItem value="ALL">All Departments</SelectItem>
+                  )}
                   {departments.map((dept) => (
                     <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
                       {dept.name}
@@ -502,7 +591,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   setSelectedLine("ALL");
                   setSelectedSubSection("ALL");
                 }}
-                disabled={(!isAuthorizedToAccessAll && assignedSections.length === 1) || selectedDepartment === "ALL"}
+                disabled={(!isAuthorizedToAccessAll && assignedSections.length === 1) || (selectedDepartment === "ALL" && assignedDepartments.length !== 1)}
               >
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={selectedDepartment === "ALL" ? "Select department first" : "Select Section"} />
@@ -777,7 +866,9 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                             onClick={() => {
                               const base = "/" + (window.location.pathname.split('/')[1] || "admin");
                               const quizPath = base === "/student" ? "quiz" : "take-test";
-                              navigate(`${base}/${quizPath}/${quiz._id}`);
+                              navigate(`${base}/${quizPath}/${quiz._id}`, {
+                                state: { from: window.location.pathname + window.location.search }
+                              });
                             }}
                             className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
                           >

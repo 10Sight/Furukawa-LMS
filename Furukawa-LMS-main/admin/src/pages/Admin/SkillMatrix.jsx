@@ -52,6 +52,18 @@ const normalizeLevel = (levelStr) => {
     return levelStr.replace('-', '');
 };
 
+const VALID_SKILL_MATRIX_TABS = [
+    "handoverSheet",
+    "sixteenDayMonitoring",
+    "skillUpgradation",
+    "ojt",
+    "testPaper",
+    "cycle10",
+    "evaluation",
+    "skillMatrix",
+    "observance",
+];
+
 const getLevelWeight = (levelStr) => {
     if (!levelStr) return 0;
     const match = levelStr.match(/\d+/);
@@ -84,7 +96,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const isEmbeddedView = isEmbedded === true || isEmbedded === "true";
     const componentRef = useRef();
     const tableRef = useRef(null);
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [isGeneratingImage, setIsGeneratingImage] = useState(false);
     const [selectedDepartment, setSelectedDepartment] = useState("");
     const [selectedSection, setSelectedSection] = useState("");
@@ -94,7 +106,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [selectedMonth, setSelectedMonth] = useState("");
     const [selectedLevel, setSelectedLevel] = useState("All");
     const [isMatrixOpen, setIsMatrixOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState(isEmbeddedView ? "skillMatrix" : "handoverSheet");
+    const [activeTab, setActiveTab] = useState(() => {
+        if (isEmbeddedView) return "skillMatrix";
+        const tabFromUrl = searchParams.get('tab');
+        return VALID_SKILL_MATRIX_TABS.includes(tabFromUrl) ? tabFromUrl : "handoverSheet";
+    });
+
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+        if (isEmbeddedView) return;
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', tab);
+            return next;
+        }, { replace: true });
+    };
     const [selectedOperatorForEval, setSelectedOperatorForEval] = useState(null);
     const [evaluationSheets, setEvaluationSheets] = useState([]);
     const [selectedSheetId, setSelectedSheetId] = useState(null);
@@ -167,6 +193,14 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [evalLine, setEvalLine] = useState("");
     const [evalSubSection, setEvalSubSection] = useState("");
     const [evalSearchText, setEvalSearchText] = useState("");
+    const [debouncedEvalSearchText, setDebouncedEvalSearchText] = useState("");
+    const [evalOperatorsPage, setEvalOperatorsPage] = useState(1);
+    const evalOperatorsPerPage = 30;
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedEvalSearchText(evalSearchText), 500);
+        return () => clearTimeout(timer);
+    }, [evalSearchText]);
 
     // Observance Finder State
     const [observanceDepartment, setObservanceDepartment] = useState("");
@@ -175,7 +209,16 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [observanceSubSection, setObservanceSubSection] = useState("");
     const [observanceStation, setObservanceStation] = useState("");
     const [observanceSearchText, setObservanceSearchText] = useState("");
+    const [debouncedObservanceSearchText, setDebouncedObservanceSearchText] = useState("");
     const [selectedOperatorForObservance, setSelectedOperatorForObservance] = useState(null);
+    const [observanceSummaryMap, setObservanceSummaryMap] = useState({});
+    const [observanceOperatorsPage, setObservanceOperatorsPage] = useState(1);
+    const observanceOperatorsPerPage = 30;
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedObservanceSearchText(observanceSearchText), 500);
+        return () => clearTimeout(timer);
+    }, [observanceSearchText]);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -237,26 +280,37 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const { data: evalSubSectionsData } = useGetSubSectionsByLineQuery(evalLine, { skip: !evalLine });
 
     // Fetch users for evaluation search based on evaluation hierarchy
-    const { data: evalUsersData } = useGetAllUsersQuery({
+    const { data: evalUsersData, isFetching: isEvalUsersFetching, refetch: refetchEvalUsers } = useGetAllUsersQuery({
         departmentId: evalDepartment || undefined,
         sectionId: evalSection || undefined,
         lineId: evalLine || undefined,
         subSectionId: evalSubSection || undefined,
         role: "STUDENT,CUSTOM",
         includeTemporary: "true",
-        limit: 1000
+        includeEvaluationInfo: "true",
+        search: debouncedEvalSearchText || undefined,
+        excludeCounts: "true",
+        page: evalOperatorsPage,
+        limit: evalOperatorsPerPage,
+        sortBy: "fullName",
+        order: "asc"
     }, { skip: !evalDepartment });
 
-    // Client-side filter for searched users
     const filteredEvalUsers = React.useMemo(() => {
-        const users = evalUsersData?.data?.users || [];
-        if (!evalSearchText.trim()) return users;
-        const searchLower = evalSearchText.toLowerCase();
-        return users.filter(u =>
-            (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-            (u.cardNo || u.empId || "").toLowerCase().includes(searchLower)
-        );
-    }, [evalUsersData, evalSearchText]);
+        return evalUsersData?.data?.users || [];
+    }, [evalUsersData]);
+
+    const evalOperatorsTotalPages = evalUsersData?.data?.totalPages || 1;
+
+    const paginatedEvalUsers = filteredEvalUsers;
+
+    useEffect(() => {
+        setEvalOperatorsPage(1);
+    }, [evalDepartment, evalSection, evalLine, evalSubSection, debouncedEvalSearchText]);
+
+    useEffect(() => {
+        if (evalOperatorsPage > evalOperatorsTotalPages) setEvalOperatorsPage(evalOperatorsTotalPages);
+    }, [evalOperatorsTotalPages, evalOperatorsPage]);
 
     // Observance Form Data
     const { data: observanceSectionsData } = useGetSectionsByDepartmentQuery(observanceDepartment, { skip: !observanceDepartment });
@@ -279,28 +333,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     }, [observanceDepartment, observanceSection, observanceLine, observanceSubSection, obsMachinesBySubSectionData, obsMachinesByLineData, obsMachinesBySectionData, obsMachinesByDepartmentData]);
 
     // Fetch users for observance search based on observance hierarchy
-    const { data: observanceUsersData } = useGetAllUsersQuery({
+    const { data: observanceUsersData, isFetching: isObservanceUsersFetching } = useGetAllUsersQuery({
         departmentId: observanceDepartment || undefined,
         sectionId: observanceSection || undefined,
         lineId: observanceLine || undefined,
         subSectionId: observanceSubSection || undefined,
         role: "STUDENT,CUSTOM",
         includeTemporary: "true",
+        search: debouncedObservanceSearchText || undefined,
+        excludeCounts: "true",
         limit: 1000
     }, { skip: !observanceDepartment });
 
-    // Client-side filter and station filtering for searched observance users
+    // Client-side station filtering for observance users (search is server-side)
     const filteredObservanceUsers = React.useMemo(() => {
         let users = observanceUsersData?.data?.users || [];
-
-        // Filter by search text
-        if (observanceSearchText.trim()) {
-            const searchLower = observanceSearchText.toLowerCase();
-            users = users.filter(u =>
-                (u.fullName || u.name || "").toLowerCase().includes(searchLower) ||
-                (u.cardNo || u.empId || "").toLowerCase().includes(searchLower)
-            );
-        }
 
         // Filter by selected station if selected
         if (observanceStation && observanceStation !== "All" && observanceStation !== "undefined") {
@@ -314,12 +361,45 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         }
 
         return users;
-    }, [observanceUsersData, observanceSearchText, observanceStation]);
+    }, [observanceUsersData, observanceStation]);
+
+    const observanceOperatorsTotalPages = Math.max(1, Math.ceil(filteredObservanceUsers.length / observanceOperatorsPerPage));
+
+    const paginatedObservanceUsers = React.useMemo(() => {
+        const start = (observanceOperatorsPage - 1) * observanceOperatorsPerPage;
+        return filteredObservanceUsers.slice(start, start + observanceOperatorsPerPage);
+    }, [filteredObservanceUsers, observanceOperatorsPage]);
+
+    useEffect(() => {
+        setObservanceOperatorsPage(1);
+    }, [observanceDepartment, observanceSection, observanceLine, observanceSubSection, observanceStation, observanceSearchText]);
+
+    useEffect(() => {
+        if (observanceOperatorsPage > observanceOperatorsTotalPages) setObservanceOperatorsPage(observanceOperatorsTotalPages);
+    }, [observanceOperatorsTotalPages, observanceOperatorsPage]);
+
+    // Fetch observance summary (last updated, status, current observance stage) for the visible operators
+    useEffect(() => {
+        const ids = paginatedObservanceUsers.map(u => u._id || u.id).filter(Boolean);
+        if (ids.length === 0) {
+            setObservanceSummaryMap({});
+            return;
+        }
+        let cancelled = false;
+        axiosInstance.get(`/api/operator-observance/summary/list`, { params: { studentIds: ids.join(",") } })
+            .then(res => {
+                if (!cancelled && res.data?.success) {
+                    setObservanceSummaryMap(res.data.data || {});
+                }
+            })
+            .catch(err => console.error("Failed to fetch observance summary:", err));
+        return () => { cancelled = true; };
+    }, [paginatedObservanceUsers]);
 
     const isMachinesLoading = isDeptMachinesLoading || isSectMachinesLoading || isLineMachinesLoading || isSubSectionMachinesLoading;
 
     // Fetch users for matrix based on hierarchy
-    const { data: usersData } = useGetAllUsersQuery({
+    const { data: usersData, refetch: refetchDeptUsers } = useGetAllUsersQuery({
         departmentId: selectedDepartment,
         sectionId: selectedSection,
         lineId: selectedLine,
@@ -388,6 +468,15 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         }
     }, [searchParams]);
 
+    // Keep activeTab in sync with the URL (e.g. browser back/forward, deep links)
+    useEffect(() => {
+        if (isEmbeddedView) return;
+        const tabFromUrl = searchParams.get('tab');
+        if (VALID_SKILL_MATRIX_TABS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+            setActiveTab(tabFromUrl);
+        }
+    }, [searchParams, isEmbeddedView]);
+
     useEffect(() => {
         if (selectedDepartment) {
             fetchDashboardConfig();
@@ -401,13 +490,6 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     useEffect(() => {
         setSelectedOperatorForObservance(null);
     }, [observanceDepartment, observanceSection, observanceLine, observanceSubSection, observanceStation]);
-
-    useEffect(() => {
-        const actualOps = matrixEntries.filter(e => !e.isManual);
-        if (actualOps.length > 0 && !selectedOperatorForEval) {
-            setSelectedOperatorForEval(actualOps[0]._id);
-        }
-    }, [matrixEntries, selectedOperatorForEval]);
 
     const fetchDashboardConfig = async () => {
         try {
@@ -720,20 +802,37 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const [deleteSkillMatrix, { isLoading: isDeletingMatrix }] = useDeleteSkillMatrixMutation();
 
     const assignableDepartments = React.useMemo(() => {
-        const allDepts = departmentsData?.data?.departments || [];
+        const rawDepts = departmentsData?.data?.departments || [];
+        const seen = new Set();
+        const allDepts = rawDepts.filter(d => {
+            const id = String(d.id || d._id);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+
         const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
         if (user?.departmentId) rawAssigned.push(user.departmentId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id.id || id._id || id)).filter(Boolean);
         if (!user || isAdmin || assignedIds.length === 0) return allDepts;
         return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
     }, [departmentsData, user, isAdmin]);
 
     const filterSections = React.useCallback((sections) => {
+        const rawSections = sections || [];
+        const seen = new Set();
+        const uniqueSections = rawSections.filter(s => {
+            const id = String(s.id || s._id);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+
         const rawAssigned = Array.isArray(user?.sections) ? [...user.sections] : [];
         if (user?.sectionId) rawAssigned.push(user.sectionId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
-        if (!user || isAdmin || assignedIds.length === 0) return sections || [];
-        return (sections || []).filter(s => assignedIds.includes(String(s.id || s._id)));
+        const assignedIds = rawAssigned.map(id => String(id.id || id._id || id)).filter(Boolean);
+        if (!user || isAdmin || assignedIds.length === 0) return uniqueSections;
+        return uniqueSections.filter(s => assignedIds.includes(String(s.id || s._id)));
     }, [user, isAdmin]);
 
     const isRestricted = !isAdmin && user && (
@@ -772,7 +871,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     React.useEffect(() => {
         if (!isRestricted || !evalDepartment) return;
         const secs = filterSections(evalSectionsData?.data);
-        if (secs.length === 1 && !evalSection)
+        if (secs.length > 0 && !evalSection)
             setEvalSection(String(secs[0].id || secs[0]._id));
     }, [isRestricted, evalDepartment, evalSectionsData, evalSection]);
 
@@ -1141,7 +1240,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 `}
             </style>
 
-            <ConditionalTabs isEmbedded={isEmbeddedView} activeTab={activeTab} setActiveTab={setActiveTab}>
+            <ConditionalTabs isEmbedded={isEmbeddedView} activeTab={activeTab} setActiveTab={handleTabChange}>
                 {!isEmbeddedView && (
                     <TabsList className="no-print mb-6 flex gap-2 w-fit bg-gray-100 p-1.5 rounded-lg shadow-sm border border-gray-200">
                         <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Handover Sheet</TabsTrigger>
@@ -1892,7 +1991,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                                 setEvalLine(selectedLine);
                                                                                 setEvalSubSection(selectedSubSection);
                                                                                 setSelectedOperatorForEval(entry._id);
-                                                                                setActiveTab("evaluation");
+                                                                                handleTabChange("evaluation");
                                                                             }
                                                                         }}
                                                                         className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full whitespace-normal break-words"
@@ -2141,7 +2240,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 <h2 className="text-lg font-bold text-gray-800">Operator Evaluation Finder</h2>
                                 <p className="text-xs text-gray-500">Filter and select an operator to view/edit their skill certificate</p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => setActiveTab("skillMatrix")}>
+                            <Button variant="outline" size="sm" onClick={() => handleTabChange("skillMatrix")}>
                                 Back to Matrix Grid
                             </Button>
                         </div>
@@ -2227,32 +2326,6 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 />
                             </div>
                         </div>
-
-                        <div className="flex flex-col gap-1 pt-2 border-t">
-                            <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold text-blue-600">Select Operator to Evaluate</label>
-                            <Select
-                                value={selectedOperatorForEval || ""}
-                                onValueChange={setSelectedOperatorForEval}
-                                disabled={!evalDepartment || filteredEvalUsers.length === 0}
-                            >
-                                <SelectTrigger className="h-9">
-                                    <SelectValue placeholder={
-                                        !evalDepartment
-                                            ? "Please select a department first"
-                                            : filteredEvalUsers.length === 0
-                                                ? "No operators found matching the criteria"
-                                                : "Select an operator"
-                                    } />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {filteredEvalUsers.map(u => (
-                                        <SelectItem key={u._id} value={u._id}>
-                                            {u.fullName || u.name} {(u.cardNo || u.empId) ? `(${u.cardNo || u.empId})` : ""}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
                     </div>
 
                     {selectedOperatorForEval ? (
@@ -2279,6 +2352,15 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         setIsEvalReadOnly(false);
                                         fetchEvaluationSheets(selectedOperatorForEval);
                                     }}
+                                    onSaved={() => {
+                                        // Each query is conditionally skipped depending on which tab/filters
+                                        // are active, and RTK Query's refetch() throws synchronously if the
+                                        // query was never started - guard each call independently so one
+                                        // skipped query doesn't stop the others from refreshing.
+                                        [refetchMatrix, refetchDeptUsers, refetchEvalUsers].forEach(fn => {
+                                            try { fn(); } catch (e) { /* query not started yet, nothing to refresh */ }
+                                        });
+                                    }}
                                 />
                             </div>
                         ) : (
@@ -2297,6 +2379,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         </p>
                                     </div>
                                     <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setSelectedOperatorForEval(null)}
+                                            className="text-xs font-semibold"
+                                        >
+                                            Back to Operators
+                                        </Button>
                                         <Button
                                             onClick={handleCreateNewSheetFromList}
                                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs"
@@ -2381,9 +2470,105 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 )}
                             </div>
                         )
-                    ) : (
+                    ) : !evalDepartment ? (
                         <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
-                            No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                            Please select a Department to view the list of operators.
+                        </div>
+                    ) : (
+                        <div className="bg-white border rounded overflow-hidden shadow">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                    <tr>
+                                        <th className="p-3 border-b text-left">Operator Name</th>
+                                        <th className="p-3 border-b text-left">Emp ID</th>
+                                        <th className="p-3 border-b text-left">Last Evaluation Date</th>
+                                        <th className="p-3 border-b text-left">Current Level</th>
+                                        <th className="p-3 border-b text-left">Primary Station (Sub-Section)</th>
+                                        <th className="p-3 border-b text-left">Current Sheet (Year)</th>
+                                        <th className="p-3 border-b text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {isEvalUsersFetching ? (
+                                        <tr>
+                                            <td colSpan={7} className="text-center py-10">
+                                                <IconLoader className="animate-spin h-6 w-6 mx-auto text-gray-400" />
+                                            </td>
+                                        </tr>
+                                    ) : paginatedEvalUsers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="text-center py-10 text-gray-400 italic">
+                                                No operators found matching the criteria.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginatedEvalUsers.map(u => {
+                                            const stationLabel = [u.primaryStationName, u.subSectionName].filter(Boolean).join(' (') + (u.subSectionName ? ')' : '');
+                                            const evalYear = u.lastEvalDate
+                                                ? new Date(u.lastEvalDate).getFullYear()
+                                                : (u.lastEvalPeriod ? u.lastEvalPeriod.split('-')[0] : null);
+                                            return (
+                                                <tr
+                                                    key={u._id}
+                                                    className="hover:bg-muted/30 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                    onClick={() => setSelectedOperatorForEval(u._id)}
+                                                >
+                                                    <td className="p-3 font-bold">{u.fullName || u.name}</td>
+                                                    <td className="p-3">{u.empId || u.cardNo || "-"}</td>
+                                                    <td className="p-3">
+                                                        {u.lastEvalDate ? new Date(u.lastEvalDate).toLocaleDateString('en-GB') : "No Evaluation"}
+                                                    </td>
+                                                    <td className="p-3 font-semibold text-blue-600">{u.primaryLevel || u.currentLevel || "-"}</td>
+                                                    <td className="p-3">{stationLabel || "-"}</td>
+                                                    <td className="p-3">
+                                                        {u.lastEvalSheetIndex ? `Sheet ${u.lastEvalSheetIndex}${evalYear ? ` (${evalYear})` : ""}` : "-"}
+                                                    </td>
+                                                    <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                                        <Button
+                                                            size="xs"
+                                                            className="h-7 text-xs font-semibold px-3 bg-blue-600 hover:bg-blue-700 text-white"
+                                                            onClick={() => setSelectedOperatorForEval(u._id)}
+                                                        >
+                                                            Evaluate
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                            {filteredEvalUsers.length > 0 && (
+                                <div className="flex justify-between items-center px-3 py-2 border-t bg-gray-50 text-xs">
+                                    <span className="text-gray-500">
+                                        Showing {(evalOperatorsPage - 1) * evalOperatorsPerPage + 1}
+                                        {"-"}{Math.min(evalOperatorsPage * evalOperatorsPerPage, filteredEvalUsers.length)} of {filteredEvalUsers.length} operators
+                                    </span>
+                                    <div className="flex gap-2 items-center">
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={evalOperatorsPage <= 1}
+                                            onClick={() => setEvalOperatorsPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <span className="font-semibold text-gray-600">
+                                            Page {evalOperatorsPage} of {evalOperatorsTotalPages}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={evalOperatorsPage >= evalOperatorsTotalPages}
+                                            onClick={() => setEvalOperatorsPage(p => Math.min(evalOperatorsTotalPages, p + 1))}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </ConditionalTabsContent>
@@ -2400,7 +2585,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 <h2 className="text-lg font-bold text-gray-800">Operator Observance Finder</h2>
                                 <p className="text-xs text-gray-500">Filter and select an operator to view/edit their observance sheet</p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => setActiveTab("skillMatrix")}>
+                            <Button variant="outline" size="sm" onClick={() => handleTabChange("skillMatrix")}>
                                 Back to Matrix Grid
                             </Button>
                         </div>
@@ -2493,7 +2678,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
+                        <div className="grid grid-cols-1 gap-4 pt-2 border-t">
                             <div className="flex flex-col gap-1">
                                 <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold">Search Operator</label>
                                 <Input
@@ -2507,37 +2692,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     disabled={!observanceDepartment}
                                 />
                             </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-gray-500 font-semibold text-blue-600">Select Operator to Observe</label>
-                                <Select
-                                    value={selectedOperatorForObservance || ""}
-                                    onValueChange={setSelectedOperatorForObservance}
-                                    disabled={!observanceDepartment || filteredObservanceUsers.length === 0}
-                                >
-                                    <SelectTrigger className="h-9">
-                                        <SelectValue placeholder={
-                                            !observanceDepartment
-                                                ? "Please select a department first"
-                                                : filteredObservanceUsers.length === 0
-                                                    ? "No operators found matching the criteria"
-                                                    : "Select an operator"
-                                        } />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {filteredObservanceUsers.map(u => (
-                                            <SelectItem key={u._id || u.id} value={u._id || u.id}>
-                                                {u.fullName || u.name} {u.cardNo || u.empId ? `(${u.cardNo || u.empId})` : ""}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
                         </div>
                     </div>
 
                     {selectedOperatorForObservance ? (
-                        <div className="bg-white border rounded p-4 shadow">
+                        <div className="bg-white border rounded p-4 shadow space-y-4">
+                            <div className="flex justify-end no-print">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs font-semibold"
+                                    onClick={() => setSelectedOperatorForObservance(null)}
+                                >
+                                    Back to Operator List
+                                </Button>
+                            </div>
                             <OperatorObservanceSheet
                                 studentId={selectedOperatorForObservance}
                                 studentName={
@@ -2550,9 +2719,116 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 }
                             />
                         </div>
-                    ) : (
+                    ) : !observanceDepartment ? (
                         <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
-                            No operator selected. Please select a Department and filter/search for an operator from the criteria above.
+                            Please select a Department to view the list of operators.
+                        </div>
+                    ) : (
+                        <div className="bg-white border rounded overflow-hidden shadow">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 text-[11px] uppercase font-bold text-gray-600">
+                                    <tr>
+                                        <th className="p-3 border-b text-left">Operator Name</th>
+                                        <th className="p-3 border-b text-left">Emp ID</th>
+                                        <th className="p-3 border-b text-left">Last Updated</th>
+                                        <th className="p-3 border-b text-left">Current Level</th>
+                                        <th className="p-3 border-b text-left">Station (Sub-Section)</th>
+                                        <th className="p-3 border-b text-left">Status</th>
+                                        <th className="p-3 border-b text-left">Currently Working On</th>
+                                        <th className="p-3 border-b text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {isObservanceUsersFetching ? (
+                                        <tr>
+                                            <td colSpan={8} className="text-center py-10">
+                                                <IconLoader className="animate-spin h-6 w-6 mx-auto text-gray-400" />
+                                            </td>
+                                        </tr>
+                                    ) : paginatedObservanceUsers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={8} className="text-center py-10 text-gray-400 italic">
+                                                No operators found matching the criteria.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginatedObservanceUsers.map(u => {
+                                            const uid = u._id || u.id;
+                                            const summary = observanceSummaryMap[uid];
+                                            const stationLabel = u.subSectionName
+                                                ? `${u.primaryStationName || u.stationName || "No Station"} (${u.subSectionName})`
+                                                : (u.primaryStationName || u.stationName || "-");
+                                            return (
+                                                <tr
+                                                    key={uid}
+                                                    className="hover:bg-muted/30 border-b text-xs transition-colors duration-150 cursor-pointer"
+                                                    onClick={() => setSelectedOperatorForObservance(uid)}
+                                                >
+                                                    <td className="p-3 font-bold">{u.fullName || u.name}</td>
+                                                    <td className="p-3">{u.empId || u.cardNo || "-"}</td>
+                                                    <td className="p-3">
+                                                        {summary?.updatedAt ? new Date(summary.updatedAt).toLocaleDateString('en-GB') : "Not Updated"}
+                                                    </td>
+                                                    <td className="p-3 font-semibold text-blue-600">{u.primaryLevel || u.currentLevel || "-"}</td>
+                                                    <td className="p-3">{stationLabel}</td>
+                                                    <td className="p-3">
+                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                                            summary?.status === 'Submitted'
+                                                                ? 'bg-green-100 text-green-800 border border-green-200'
+                                                                : summary
+                                                                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                                                                    : 'bg-gray-100 text-gray-500 border border-gray-200'
+                                                        }`}>
+                                                            {summary?.status || "Not Started"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3">{summary?.stageLabel || "Not Started"}</td>
+                                                    <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                                        <Button
+                                                            size="xs"
+                                                            className="h-7 text-xs font-semibold px-3 bg-blue-600 hover:bg-blue-700 text-white"
+                                                            onClick={() => setSelectedOperatorForObservance(uid)}
+                                                        >
+                                                            Observe
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                            {filteredObservanceUsers.length > 0 && (
+                                <div className="flex justify-between items-center px-3 py-2 border-t bg-gray-50 text-xs">
+                                    <span className="text-gray-500">
+                                        Showing {(observanceOperatorsPage - 1) * observanceOperatorsPerPage + 1}
+                                        {"-"}{Math.min(observanceOperatorsPage * observanceOperatorsPerPage, filteredObservanceUsers.length)} of {filteredObservanceUsers.length} operators
+                                    </span>
+                                    <div className="flex gap-2 items-center">
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={observanceOperatorsPage <= 1}
+                                            onClick={() => setObservanceOperatorsPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <span className="font-semibold text-gray-600">
+                                            Page {observanceOperatorsPage} of {observanceOperatorsTotalPages}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3"
+                                            disabled={observanceOperatorsPage >= observanceOperatorsTotalPages}
+                                            onClick={() => setObservanceOperatorsPage(p => Math.min(observanceOperatorsTotalPages, p + 1))}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </ConditionalTabsContent>

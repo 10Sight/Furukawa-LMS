@@ -5,6 +5,7 @@ class HandoverSheet {
         this.id = data.id;
         this.departmentId = data.departmentId;
         this.sectionId = data.sectionId;
+        this.shift = data.shift;
         this.date = data.date;
 
         // Array of entries: { studentId, marks, process, mentor, interview1, interview2 }
@@ -109,9 +110,25 @@ class HandoverSheet {
                 console.log("Added remarksHistory column to handover_sheets");
             } catch (e) { }
         }
+
+        // Migration: Add shift column if missing
+        try {
+            await executeQuery("SELECT TOP 1 shift FROM handover_sheets");
+        } catch (error) {
+            try {
+                await executeQuery("ALTER TABLE handover_sheets ADD shift NVARCHAR(10)");
+                console.log("Added shift column to handover_sheets");
+            } catch (e) { }
+        }
     }
 
-    static async findSpecific(departmentId, sectionId = null, date = null) {
+    static async findById(id) {
+        const [rows] = await executeQuery("SELECT * FROM handover_sheets WHERE id = ?", [id]);
+        if (rows.length === 0) return null;
+        return new HandoverSheet(rows[0]);
+    }
+
+    static async findSpecific(departmentId, sectionId = null, date = null, shift = null) {
         let query = "SELECT * FROM handover_sheets WHERE departmentId = ?";
         let params = [departmentId];
         if (sectionId) {
@@ -126,6 +143,13 @@ class HandoverSheet {
             params.push(date);
         }
 
+        if (shift) {
+            query += " AND shift = ?";
+            params.push(shift);
+        } else {
+            query += " AND shift IS NULL";
+        }
+
         const [rows] = await executeQuery(query, params);
         if (rows.length === 0) return null;
         return new HandoverSheet(rows[0]);
@@ -138,9 +162,9 @@ class HandoverSheet {
 
     static async create(data) {
         const query = `
-            INSERT INTO handover_sheets (departmentId, sectionId, date, entries, signatures, metadata, createdBy, isSubmitted, submittedAt, remarksHistory)
+            INSERT INTO handover_sheets (departmentId, sectionId, shift, date, entries, signatures, metadata, createdBy, isSubmitted, submittedAt, remarksHistory)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const entriesStr = JSON.stringify(data.entries || []);
         const signaturesStr = JSON.stringify(data.signatures || {});
@@ -150,6 +174,7 @@ class HandoverSheet {
         const [rows] = await executeQuery(query, [
             data.departmentId,
             data.sectionId || null,
+            data.shift || null,
             data.date,
             entriesStr,
             signaturesStr,
@@ -164,8 +189,8 @@ class HandoverSheet {
 
     async save() {
         const query = `
-            UPDATE handover_sheets 
-            SET date = ?, entries = ?, signatures = ?, metadata = ?, updatedBy = ?, updatedAt = GETDATE(), isSubmitted = ?, submittedAt = ?, remarksHistory = ?
+            UPDATE handover_sheets
+            SET date = ?, shift = ?, entries = ?, signatures = ?, metadata = ?, updatedBy = ?, updatedAt = GETDATE(), isSubmitted = ?, submittedAt = ?, remarksHistory = ?
             WHERE id = ?
         `;
         const entriesStr = JSON.stringify(this.entries);
@@ -177,6 +202,7 @@ class HandoverSheet {
 
         await executeQuery(query, [
             this.date,
+            this.shift || null,
             entriesStr,
             signaturesStr,
             metadataStr,

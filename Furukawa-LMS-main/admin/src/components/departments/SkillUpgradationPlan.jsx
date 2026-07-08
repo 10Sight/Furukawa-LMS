@@ -128,13 +128,14 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
-    const [isLoadingPlan, setIsLoadingPlan] = useState(false);
+    const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
     // Reset state when department/section/year changes
     useEffect(() => {
         setHasLoaded(false);
         setRows([]);
         setRemovedUserIds(new Set());
+        setIsLoadingPlan(true);
     }, [departmentId, sectionId, year]);
 
     // Initialize rows when both students and plan data are ready
@@ -342,6 +343,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         window.print();
     };
 
+    const stickyHeader = "sticky top-0 z-40 print:static";
+    const stickySubHeader = "sticky top-12 z-40 print:static";
+    const stickyFrozenHeader = "sticky top-0 z-50 print:static";
+    const stickyFrozenCell = "sticky z-30 bg-white group-hover:bg-slate-50 transition-colors print:static";
+
     return (
         <Card className="max-w-full overflow-hidden bg-white">
             <CardHeader className="pb-2">
@@ -370,7 +376,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
+            <CardContent className="w-full overflow-hidden">
                 {/* Sheet Metadata Header Block - Visible in screen & print */}
                 <div className="flex justify-between items-center w-full mb-4 pb-2 border-b border-slate-200 print:border-black">
                     <div>
@@ -404,44 +410,44 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     </div>
                 </div>
 
-                <div className="w-full overflow-x-auto rounded-lg border border-slate-300">
-                    <table className="w-full border-collapse border border-slate-300 text-sm table-auto">
+                <div className="w-full max-h-[70vh] overflow-auto border border-slate-200 rounded-lg">
+                    <table className="w-full min-w-[2600px] border-separate border-spacing-0 text-sm table-auto">
                         <thead className="bg-slate-100 text-slate-700">
                             {/* Group headers row */}
-                            <tr className="border-b border-slate-300">
-                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-center font-bold align-middle whitespace-nowrap">Sr. No</th>
-                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Associates Name</th>
-                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-center font-bold align-middle whitespace-nowrap">Card No</th>
-                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-center font-bold align-middle whitespace-nowrap">Shift</th>
-                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Model & Line</th>
-                                <th rowSpan="2" className="border-r border-slate-300 p-2 text-left font-bold align-middle whitespace-nowrap">Station</th>
-                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap">Jan-March</th>
-                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap">April-June</th>
-                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-green-50 text-green-800 whitespace-nowrap">July-Sep</th>
-                                <th colSpan="4" className="border-r border-slate-300 p-2 text-center font-bold bg-purple-50 text-purple-800 whitespace-nowrap">Oct-Dec</th>
-                                <th rowSpan="2" className="p-2 text-center font-bold align-middle no-print whitespace-nowrap">Action</th>
+                            <tr className="h-12 [&>th]:border-b [&>th]:border-slate-300">
+                                <th rowSpan="2" className={`${stickyFrozenHeader} left-0 w-[70px] min-w-[70px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Sr. No</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} left-[70px] w-[220px] min-w-[220px] border-r border-slate-300 bg-slate-100 p-2 text-center align-middle whitespace-nowrap`}>Associates Name</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} left-[290px] w-[120px] min-w-[120px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Card No</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} left-[410px] w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 text-center font-bold align-middle whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.45)]`}>Model & Line</th>
+                                <th rowSpan="2" className={`${stickyHeader} border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Station</th>
+                                <th rowSpan="2" className={`${stickyHeader} border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Shift</th>
+                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap`}>Jan-March</th>
+                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap`}>April-June</th>
+                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-green-50 text-green-800 whitespace-nowrap`}>July-Sep</th>
+                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-purple-50 text-purple-800 whitespace-nowrap`}>Oct-Dec</th>
+                                <th rowSpan="2" className={`${stickyHeader} border-r border-slate-300 bg-slate-100 p-2 text-left font-bold align-middle whitespace-nowrap`}>Action</th>
                             </tr>
-                            <tr className="bg-slate-50 border-b border-slate-300">
+                            <tr className="bg-slate-50 [&>th]:border-b [&>th]:border-slate-300">
                                 {/* Jan-March */}
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Status</th>
                                 {/* April-June */}
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Status</th>
                                 {/* July-Sep */}
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Status</th>
                                 {/* Oct-Dec */}
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Skill Level</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Plan)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Updation Date (Actual)</th>
-                                <th className="border-r border-slate-300 p-1 text-center text-xs font-semibold whitespace-nowrap">Status</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Status</th>
                             </tr>
                         </thead>
 
@@ -453,9 +459,9 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                     : subSections;
 
                                 return (
-                                    <tr key={rowId} className="hover:bg-slate-50/50 border-b border-slate-200 transition-colors">
-                                        <td className="border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap">{index + 1}</td>
-                                        <td className="border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap">
+                                    <tr key={rowId} className="group hover:bg-slate-50/50 transition-colors [&>td]:border-b [&>td]:border-slate-200">
+                                        <td className={`${stickyFrozenCell} left-0 w-[70px] min-w-[70px] border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap`}>{index + 1}</td>
+                                        <td className={`${stickyFrozenCell} left-[70px] w-[220px] min-w-[220px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap`}>
                                             <UserCellSelector
                                                 value={row.userName}
                                                 onChange={(userId, userName, lineName, subSectionName) => {
@@ -470,7 +476,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                 disabled={!canManage}
                                             />
                                         </td>
-                                        <td className="border-r border-slate-200 p-2 text-center font-mono text-slate-700 whitespace-nowrap">
+                                        <td className={`${stickyFrozenCell} left-[290px] w-[120px] min-w-[120px] border-r border-slate-200 p-2 text-center font-bold text-slate-800 whitespace-nowrap`}>
                                             <Input
                                                 value={row.cardNo || ""}
                                                 disabled={true}
@@ -479,26 +485,8 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                 readOnly
                                             />
                                         </td>
-                                        {/* Shift */}
-                                        <td className="border-r border-slate-200 p-1 text-center whitespace-nowrap">
-                                            <Select
-                                                value={row.shift || ""}
-                                                onValueChange={(val) => handleRowFieldChange(rowId, "shift", val)}
-                                                disabled={!canManage}
-                                            >
-                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
-                                                    <SelectValue placeholder="-" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="A">A</SelectItem>
-                                                    <SelectItem value="B">B</SelectItem>
-                                                    <SelectItem value="C">C</SelectItem>
-                                                    <SelectItem value="G">G</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </td>
                                         {/* Model & Line */}
-                                        <td className="border-r border-slate-200 p-1 whitespace-nowrap">
+                                        <td className={`${stickyFrozenCell} left-[410px] w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.35)]`}>
                                             <Select
                                                 value={row.modelLine || ""}
                                                 onValueChange={(val) => {
@@ -535,6 +523,24 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                             {ss.name}
                                                         </SelectItem>
                                                     ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+                                        {/* Shift */}
+                                        <td className="border-r border-slate-200 p-1 text-center whitespace-nowrap">
+                                            <Select
+                                                value={row.shift || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "shift", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="A">A</SelectItem>
+                                                    <SelectItem value="B">B</SelectItem>
+                                                    <SelectItem value="C">C</SelectItem>
+                                                    <SelectItem value="G">G</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </td>

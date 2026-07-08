@@ -112,7 +112,7 @@ const CreateOJTDialog = ({ open, onOpenChange, onSuccess, initialDepartmentId = 
 
         try {
             setIsSubmitting(true);
-            await createOJT({
+            const result = await createOJT({
                 departmentId,
                 sectionId,
                 lineId: lineId || null,
@@ -122,7 +122,7 @@ const CreateOJTDialog = ({ open, onOpenChange, onSuccess, initialDepartmentId = 
             }).unwrap();
 
             toast.success("OJT Session Created Successfully");
-            onSuccess?.();
+            onSuccess?.(result?.data);
             onOpenChange(false);
         } catch (error) {
             toast.error(error?.data?.message || "Failed to create OJT session");

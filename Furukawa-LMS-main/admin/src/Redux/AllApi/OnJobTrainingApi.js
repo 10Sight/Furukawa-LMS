@@ -20,6 +20,19 @@ export const onJobTrainingApi = createApi({
             }),
             providesTags: (result, error, id) => [{ type: "OnJobTraining", id }],
         }),
+        getPublicOnJobTraining: builder.query({
+            query: (token) => ({
+                url: `/api/on-job-training/public/${token}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, token) => [{ type: "OnJobTraining", id: `SHARE_${token}` }],
+        }),
+        getServerLanIp: builder.query({
+            query: () => ({
+                url: "/api/on-job-training/lan-ip",
+                method: "GET",
+            }),
+        }),
         getAllOnJobTrainings: builder.query({
             query: (params) => ({
                 url: "/api/on-job-training",
@@ -70,6 +83,8 @@ export const onJobTrainingApi = createApi({
 export const {
     useGetStudentOJTsQuery,
     useGetOnJobTrainingByIdQuery,
+    useGetPublicOnJobTrainingQuery,
+    useGetServerLanIpQuery,
     useGetAllOnJobTrainingsQuery,
     useCreateOnJobTrainingMutation,
     useUpdateOnJobTrainingMutation,

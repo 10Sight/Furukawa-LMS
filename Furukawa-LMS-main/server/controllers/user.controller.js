@@ -2277,25 +2277,78 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     params.push(today);
   }
 
+  const departmentId = normalizeParam(req.query.departmentId);
+  // Hierarchy join is only needed to resolve d.id, so skip it (and its per-row cost) unless
+  // a department filter is actually active.
+  const hierarchyJoinSQL = departmentId ? getHierarchyJoinSQL : "";
+
+  if (departmentId) {
+    whereClauses.push("d.id = ?");
+    params.push(departmentId);
+  }
+
+  if (req.query.startDate) {
+    whereClauses.push("u.joiningDate >= ?");
+    params.push(req.query.startDate);
+  }
+
+  if (req.query.endDate) {
+    whereClauses.push("u.joiningDate <= ?");
+    params.push(req.query.endDate);
+  }
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
-  // Fetch Stats — always global, never filtered by search/gender/today/status
+  // Fetch Stats — scoped by department/date range when provided, but never by
+  // search/gender/today/status, so the cards keep showing totals across every tab.
+  let statsWhereClauses = ["u.isTemporary = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let statsParams = [];
+  if (departmentId) {
+    statsWhereClauses.push("d.id = ?");
+    statsParams.push(departmentId);
+  }
+  if (req.query.startDate) {
+    statsWhereClauses.push("u.joiningDate >= ?");
+    statsParams.push(req.query.startDate);
+  }
+  if (req.query.endDate) {
+    statsWhereClauses.push("u.joiningDate <= ?");
+    statsParams.push(req.query.endDate);
+  }
+  const statsWhereSQL = `WHERE ${statsWhereClauses.join(' AND ')}`;
+
   const [statsData] = await executeQuery(`
     SELECT
-      SUM(CASE WHEN status != 'LEFT' OR status IS NULL THEN 1 ELSE 0 END) as total,
-      SUM(CASE WHEN status = 'LEFT' THEN 1 ELSE 0 END) as leftTotal,
-      SUM(CASE WHEN (status != 'LEFT' OR status IS NULL) AND CAST(createdAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
-      SUM(CASE WHEN (status != 'LEFT' OR status IS NULL) AND gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
-      SUM(CASE WHEN (status != 'LEFT' OR status IS NULL) AND gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
-    FROM users
-    WHERE isTemporary = 1 AND (isDeleted = 0 OR isDeleted IS NULL)
-  `);
+      SUM(CASE WHEN u.status != 'LEFT' OR u.status IS NULL THEN 1 ELSE 0 END) as total,
+      SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftTotal,
+      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND CAST(u.createdAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
+      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
+      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
+    FROM users u
+    ${hierarchyJoinSQL}
+    ${statsWhereSQL}
+  `, statsParams);
+
+  let handoverWhereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)", "(u.status != 'LEFT' OR u.status IS NULL)"];
+  let handoverParams = [];
+  if (departmentId) {
+    handoverWhereClauses.push("d.id = ?");
+    handoverParams.push(departmentId);
+  }
+  if (req.query.startDate) {
+    handoverWhereClauses.push("u.joiningDate >= ?");
+    handoverParams.push(req.query.startDate);
+  }
+  if (req.query.endDate) {
+    handoverWhereClauses.push("u.joiningDate <= ?");
+    handoverParams.push(req.query.endDate);
+  }
 
   const [handoverData] = await executeQuery(`
     SELECT COUNT(DISTINCT u.id) as handoverCount
     FROM users u
-    WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
-      AND (u.status != 'LEFT' OR u.status IS NULL)
+    ${hierarchyJoinSQL}
+    WHERE ${handoverWhereClauses.join(' AND ')}
       AND EXISTS (
           SELECT 1
           FROM handover_sheets hs
@@ -2303,10 +2356,10 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
           WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
             AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
       )
-  `);
+  `, handoverParams);
   const handoverCount = handoverData[0]?.handoverCount || 0;
 
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${whereSQL}`, params);
+  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${hierarchyJoinSQL} ${whereSQL}`, params);
   const [users] = await executeQuery(`
     SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments
     FROM users u

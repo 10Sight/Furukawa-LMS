@@ -124,6 +124,17 @@ const Departments = () => {
   // Get current user from Redux store
   const { user } = useSelector((state) => state.auth);
 
+  const hasPermission = (permission) => {
+    if (user?.role === "SUPERADMIN" || user?.role === "ADMIN") return true;
+    return user?.customRole?.permissions?.includes(permission);
+  };
+
+  const canRead = hasPermission("department:read");
+  const canCreate = hasPermission("department:create");
+  const canUpdate = hasPermission("department:update");
+  const canDelete = hasPermission("department:delete");
+  const canManageStudents = hasPermission("department:manage_students");
+
   // searchTerm is already debounced by SearchInput before it reaches us;
   // reset to page 1 whenever the effective search or status filter changes.
   useEffect(() => {
@@ -376,6 +387,7 @@ const Departments = () => {
   };
 
   const handleCreateDepartment = async () => {
+    if (!canCreate) return;
     try {
       if (!formData.name) {
         setFormErrors({ name: "Department name is required" });
@@ -400,6 +412,7 @@ const Departments = () => {
   };
 
   const handleUpdateDepartment = async () => {
+    if (!canUpdate) return;
     try {
       if (!formData.name) {
         setFormErrors({ name: "Department name is required" });
@@ -427,6 +440,7 @@ const Departments = () => {
   };
 
   const handleDeleteDepartment = async () => {
+    if (!canDelete) return;
     try {
       await deleteDepartment(selectedDepartment.id || selectedDepartment._id).unwrap();
       showToast("success", "Department deleted successfully");
@@ -438,6 +452,7 @@ const Departments = () => {
   };
 
   const handleAssignInstructor = async (instructorId) => {
+    if (!canUpdate) return;
     try {
       await assignInstructor({
         departmentId: selectedDepartment.id || selectedDepartment._id,
@@ -453,6 +468,7 @@ const Departments = () => {
 
   const handleRemoveInstructor = async (e) => {
     e.stopPropagation();
+    if (!canUpdate) return;
     try {
       await removeInstructor(selectedDepartment.id || selectedDepartment._id).unwrap();
       showToast("success", "Trainer removed successfully");
@@ -464,7 +480,7 @@ const Departments = () => {
   };
 
   const handleCancelDepartment = async () => {
-    if (!selectedDepartment) return;
+    if (!selectedDepartment || !canUpdate) return;
 
     try {
       setIsCancelingDepartment(true);
@@ -485,6 +501,7 @@ const Departments = () => {
   };
 
   const handleAddStudents = async () => {
+    if (!canManageStudents) return;
     // Safely extract valid IDs and filter out any undefined/nulls
     const validStudentIds = [...new Set(selectedStudents)].filter(Boolean);
 
@@ -511,6 +528,7 @@ const Departments = () => {
   };
 
   const handleRemoveStudent = async ({ departmentId, studentId, studentName }) => {
+    if (!canManageStudents) return;
     const isConfirmed = window.confirm(
       `Are you sure you want to remove ${studentName} from this department?`
     );
@@ -535,6 +553,7 @@ const Departments = () => {
   };
 
   const openEditDialog = (department) => {
+    if (!canUpdate) return;
     setSelectedDepartment(department);
     // Handle legacy course vs courses array - Normalize to strings
     const deptCourses = department.courses && department.courses.length > 0
@@ -560,16 +579,19 @@ const Departments = () => {
   };
 
   const openDeleteDialog = (department) => {
+    if (!canDelete) return;
     setSelectedDepartment(department);
     setIsDeleteDialogOpen(true);
   };
 
   const openAssignInstructorDialog = (department) => {
+    if (!canUpdate) return;
     setSelectedDepartment(department);
     setIsAssignInstructorDialogOpen(true);
   };
 
   const openManageStudentsDialog = (department) => {
+    if (!canManageStudents) return;
     setSelectedDepartment(department);
     setIsManageStudentsDialogOpen(true);
   };
@@ -785,6 +807,20 @@ const Departments = () => {
     );
   }
 
+  if (!canRead) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+        <div className="p-4 bg-red-50 rounded-full">
+          <IconX className="w-12 h-12 text-red-500" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900">Access Denied</h2>
+        <p className="text-slate-500 max-w-md">
+          You do not have permission to view the departments module. Please contact your administrator if you believe this is an error.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header with Stats */}
@@ -868,13 +904,15 @@ const Departments = () => {
             </TabsTrigger>
           </TabsList>
 
-          <Button
-            onClick={() => setIsAddDialogOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-          >
-            <IconPlus className="h-4 w-4 mr-2" />
-            Create Department
-          </Button>
+          {canCreate && (
+            <Button
+              onClick={() => setIsAddDialogOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+            >
+              <IconPlus className="h-4 w-4 mr-2" />
+              Create Department
+            </Button>
+          )}
         </div>
       </Tabs>
 
@@ -1015,26 +1053,28 @@ const Departments = () => {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {getInstructorInfo(department)}
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openAssignInstructorDialog(department);
-                                }}
-                                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <IconPencil className="h-3 w-3" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Assign trainer</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canUpdate && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openAssignInstructorDialog(department);
+                                  }}
+                                  className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <IconPencil className="h-3 w-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Assign trainer</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -1047,53 +1087,55 @@ const Departments = () => {
                           {getStudentCount(department)} operators
                         </Badge>
 
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                              }}
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <IconUserPlus className="h-3 w-3" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openManageStudentsDialog(department);
-                              }}
-                            >
-                              <IconUserPlus className="h-4 w-4 mr-2" />
-                              Manage Operators
-                            </DropdownMenuItem>
+                        {canManageStudents && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                }}
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <IconUserPlus className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openManageStudentsDialog(department);
+                                }}
+                              >
+                                <IconUserPlus className="h-4 w-4 mr-2" />
+                                Manage Operators
+                              </DropdownMenuItem>
 
-                            {department.students && department.students.length > 0 && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <div className="max-h-48 overflow-y-auto">
-                                  {department.students.slice(0, 5).map((student) => (
-                                    <DropdownMenuItem
-                                      key={student._id}
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        handleRemoveStudent({ departmentId: department._id, studentId: student._id, studentName: student.fullName });
-                                      }}
-                                      className="text-red-600 focus:text-red-600"
-                                    >
-                                      <IconTrash className="h-4 w-4 mr-2" />
-                                      Remove {student.fullName}
-                                    </DropdownMenuItem>
-                                  ))}
-                                </div>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                              {department.students && department.students.length > 0 && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <div className="max-h-48 overflow-y-auto">
+                                    {department.students.slice(0, 5).map((student) => (
+                                      <DropdownMenuItem
+                                        key={student._id}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          handleRemoveStudent({ departmentId: department._id, studentId: student._id, studentName: student.fullName });
+                                        }}
+                                        className="text-red-600 focus:text-red-600"
+                                      >
+                                        <IconTrash className="h-4 w-4 mr-2" />
+                                        Remove {student.fullName}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(department.status)}</TableCell>
@@ -1109,28 +1151,30 @@ const Departments = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditDialog(department);
-                                }}
-                                className="h-8 w-8 p-0"
-                              >
-                                <IconPencil className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Edit department</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canUpdate && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditDialog(department);
+                                  }}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <IconPencil className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Edit department</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
 
-                        {department.status !== 'CANCELLED' && (
+                        {canUpdate && department.status !== 'CANCELLED' && (
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1154,26 +1198,28 @@ const Departments = () => {
                           </TooltipProvider>
                         )}
 
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openDeleteDialog(department);
-                                }}
-                                className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
-                              >
-                                <IconTrash className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Delete department</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canDelete && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openDeleteDialog(department);
+                                  }}
+                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                >
+                                  <IconTrash className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Delete department</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

@@ -136,7 +136,10 @@ const DojoHiring = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [activeTab, setActiveTab] = useState("all");
     const [genderFilter, setGenderFilter] = useState("ALL");
-    
+    const [deptFilter, setDeptFilter] = useState("ALL");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+
     const [formData, setFormData] = useState({
         fullName: "", empId: "", idCard: "", fatherHusbandName: "", gender: "MALE",
         designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0],
@@ -149,7 +152,7 @@ const DojoHiring = () => {
     const location = useLocation();
     useEffect(() => {
         setCurrentPage(1);
-    }, [activeTab, searchTerm, genderFilter]);
+    }, [activeTab, searchTerm, genderFilter, deptFilter, startDate, endDate]);
 
     const getStatusParam = (tab) => tab === "left" ? "LEFT" : "ACTIVE";
 
@@ -160,6 +163,9 @@ const DojoHiring = () => {
         gender: genderFilter !== "ALL" ? genderFilter : "",
         today: activeTab === "today" ? "true" : "false",
         status: getStatusParam(activeTab),
+        departmentId: deptFilter !== "ALL" ? deptFilter : "",
+        startDate,
+        endDate,
     });
     const [dojoRegister, { isLoading: isCreating }] = useDojoRegisterMutation();
     const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation();
@@ -184,7 +190,7 @@ const DojoHiring = () => {
 
     useEffect(() => {
         setSelectedRows(new Set());
-    }, [currentPage, searchTerm, genderFilter, activeTab]);
+    }, [currentPage, searchTerm, genderFilter, activeTab, deptFilter, startDate, endDate]);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -412,6 +418,9 @@ const DojoHiring = () => {
                     gender: genderFilter !== "ALL" ? genderFilter : "",
                     today: activeTab === "today" ? "true" : "false",
                     status: getStatusParam(activeTab),
+                    departmentId: deptFilter !== "ALL" ? deptFilter : "",
+                    startDate,
+                    endDate,
                 }).unwrap();
 
                 const batch = result?.data?.users || [];
@@ -674,6 +683,17 @@ const DojoHiring = () => {
         { value: "FEMALE", label: "Female Only" },
     ];
 
+    const deptOptions = [
+        { value: "ALL", label: "All Departments" },
+        ...departments.map((d) => ({ value: String(d.id || d._id), label: d.name })),
+    ];
+
+    const hasDateRangeFilter = startDate || endDate;
+    const clearDateRange = () => {
+        setStartDate("");
+        setEndDate("");
+    };
+
     if (!canRead) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
@@ -786,13 +806,48 @@ const DojoHiring = () => {
                             </TabsList>
                         </Tabs>
 
-                        <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-                            <FilterSelect 
+                        <div className="flex flex-col sm:flex-row flex-wrap gap-3 w-full lg:w-auto lg:justify-end">
+                            <FilterSelect
+                                value={deptFilter}
+                                onValueChange={setDeptFilter}
+                                options={deptOptions}
+                                placeholder="Select Department"
+                                className="w-[180px]"
+                            />
+                            <FilterSelect
                                 value={genderFilter}
                                 onValueChange={setGenderFilter}
                                 options={genderOptions}
                                 placeholder="Select Gender"
                             />
+                            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 h-10">
+                                <Input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="h-8 w-[140px] border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                                    max={endDate || undefined}
+                                />
+                                <span className="text-slate-400 text-xs font-bold">to</span>
+                                <Input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    className="h-8 w-[140px] border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                                    min={startDate || undefined}
+                                />
+                                {hasDateRangeFilter && (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={clearDateRange}
+                                        className="h-6 w-6 p-0 text-slate-400 hover:text-slate-700"
+                                        title="Clear date range"
+                                    >
+                                        <IconX className="w-3.5 h-3.5" />
+                                    </Button>
+                                )}
+                            </div>
                             <SearchInput
                                 value={searchTerm}
                                 onChange={setSearchTerm}

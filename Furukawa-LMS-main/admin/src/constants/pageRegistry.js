@@ -255,6 +255,7 @@ export const PAGE_REGISTRY = [
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
     // { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
     { key: "learning", label: "Improvement Evidence", labelKey: "nav.learning", layout: "admin", link: "/admin/learning", icon: "IconBook" },
+    { key: "data-management", label: "Data Management", labelKey: "nav.dataManagement", layout: "admin", link: "/admin/data-management", icon: "IconDatabase" },
     // { key: "dojo-evaluation-test", label: "DOJO Evaluation Test", labelKey: "nav.evaluationTest", layout: "admin", link: "/admin/evaluation-test", icon: "IconClipboard" },
 
     // Dashboard-specific pages (often considered core Admin functions)
@@ -294,6 +295,7 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/take-test/", key: "test-paper" },
     { layout: "admin", prefix: "/admin/on-job-training", key: "on-job-training" },
     { layout: "admin", prefix: "/admin/settings", key: "settings" },
+    { layout: "admin", prefix: "/admin/data-management", key: "data-management" },
     { layout: "admin", Prefix: "/admin/evaluation-test", key: "dojo-evaluation-test" },
     { layout: "admin", prefix: "/admin/add-evaluation-test", key: "dojo-evaluation-test" },
     { layout: "admin", prefix: "/admin/edit-evaluation-test/", key: "dojo-evaluation-test" },

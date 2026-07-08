@@ -31,7 +31,11 @@ const Analytics = ({ pageName = "Recent Activity" }) => {
   const [triggerExportAuditStats, { isFetching: isExportingAudit }] = useLazyExportAuditStatsQuery();
   const { data: auditsData, isLoading: auditsLoading } = useGetAllAuditsQuery({
     page: 1,
+<<<<<<< HEAD
     limit: 900
+=======
+    limit: 200
+>>>>>>> efe0055cb403af5738a6c01338d42149748b4a06
   });
   const { data: studentsData } = useGetAllStudentsQuery();
   const { data: instructorsData } = useGetAllInstructorsQuery();

@@ -380,7 +380,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let totalSql = `
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
-<<<<<<< HEAD
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
@@ -395,20 +394,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             // IMPORTANT: Attrition graph par shift filter apply nahi hoga,
             // kyunki left employees ka users.shift NULL/blank ho sakta hai.
             // Department/Section/Line + Date filters apply rahenge.
-=======
-                INNER JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-                WHERE u.leavingDate IS NOT NULL
-                  AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
-                  AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
-                  AND ${leaveDateSql} IS NOT NULL
-                  ${attritionHierCondition}
-                  -- NOTE: Normal Attrition source = users.leavingDate.
-                  -- Only users.empId = user_hierarchy_snapshots.employeeid matching is mandatory for snapshot hierarchy filters.
-                  -- isTemporary/isDeleted/designation filters are intentionally not applied in attrition.
-            `;
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
 
             const [totalRows] = await executeQuery(totalSql, []);
             attritionHeadcountTotal = Number(totalRows?.[0]?.total || 0);
@@ -423,11 +408,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 COUNT(DISTINCT parsed.userId) AS leftCount
             FROM (
                 SELECT
-<<<<<<< HEAD
                     u.empId,
-=======
-                    u.id AS userId,
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
                     ${leaveDateSql} AS leaving_date
                 FROM users u
                 INNER JOIN user_hierarchy_snapshots uhs
@@ -436,7 +417,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 WHERE u.leavingDate IS NOT NULL
                   AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
-<<<<<<< HEAD
                   ${hierCondition}
                   ${getDesignationShutterExclusionSql("u")}
                   ${getSnapshotEmployeeExistsSql("u")}
@@ -445,25 +425,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         const attrParams = [];
         // IMPORTANT: Attrition leftCount me shift filter intentionally skip kiya gaya hai.
         // Left employees ke records me users.shift NULL/blank hone ki wajah se data miss ho raha tha.
-=======
-                  ${attritionHierCondition}
-                  -- NOTE: Normal Attrition me sirf leavingDate present employees count honge.
-                  -- isTemporary/isDeleted/designation/shift filters yahan apply nahi honge.
-        `;
-
-        const attrParams = [];
-
-        // IMPORTANT:
-        // Normal Attrition graph default me current date se previous 30 days show karega.
-        // Agar date range select ki gayi hai to selected date range show hogi.
-        // Isse frontend ka old scroll behavior same rahega.
-        attrSql += `
-                  AND ${leaveDateSql} >= ?
-                  AND ${leaveDateSql} <= ?
-        `;
-        attrParams.push(sqlStartDate, sqlEndDate);
-
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
         attrSql += `
             ) parsed
             WHERE parsed.leaving_date IS NOT NULL
@@ -919,7 +880,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                         THEN LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100))))
                     END) AS selectedShiftEmployees
                 FROM selectedDates d
-<<<<<<< HEAD
                 INNER JOIN user_hierarchy_snapshots uhs ON 1 = 1
                 INNER JOIN users u
                     ON UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
@@ -928,17 +888,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND uhs.employeeid IS NOT NULL
                   AND LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))) != ''
                   ${getEligibleUserSql("u")}
-=======
-                INNER JOIN users u ON 1 = 1
-                WHERE ISNULL(ISJSON(CAST(u.shiftSchedule AS NVARCHAR(MAX))), 0) = 1
-                  AND u.shiftSchedule IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.shiftSchedule AS NVARCHAR(MAX)))) != ''
-                  AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-                  AND ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  ${getDesignationShutterExclusionSql("u")}
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
                   ${scheduleHierCondition}
                 GROUP BY d.fullDate
             `;
@@ -1162,13 +1111,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     try {
         // Attrition graph users.leavingDate se calculate hoga.
-<<<<<<< HEAD
         // IMPORTANT: sirf isTemporary = 0 employees count honge. isTemporary = 1 employees skip honge.
         // Shift filter attrition graph par apply nahi hoga, so left employees with NULL/blank shift are included.
-=======
-        // isTemporary/isDeleted/designation/shift filters attrition graph par apply nahi honge.
-        // Department/Section/Line filters snapshot hierarchy se apply honge.
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
         attritionData = await buildDailyAttritionDataFromUsers();
     } catch (e) {
         console.warn("[DASHBOARD] Attrition daily query failed:", e.message);
@@ -3030,7 +2974,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                      = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
                 WHERE ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
-<<<<<<< HEAD
                   AND ${leaveDateSQL} >= ?
                   AND ${leaveDateSQL} <= ?
                   ${hierCondition}
@@ -3041,24 +2984,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         const attritionParams = [sqlStartDate, sqlEndDate];
         // IMPORTANT: Tenure attrition par shift filter intentionally apply nahi hoga.
         // Left employees ke users.shift NULL/blank hone se attrition count miss ho raha tha.
-=======
-                  ${attritionHierCondition}
-                  -- NOTE: Tenure Attrition source = users.leavingDate + users.joiningDate.
-                  -- isTemporary/isDeleted/designation/shift filters yahan apply nahi honge.
-        `;
-
-        const attritionParams = [];
-
-        // IMPORTANT:
-        // Tenure Attrition graph default me current date se previous 30 days ke left employees count karega.
-        // Agar date range select ki gayi hai to selected range ke left employees count honge.
-        attritionSql += `
-                  AND ${leaveDateSQL} >= ?
-                  AND ${leaveDateSQL} <= ?
-        `;
-        attritionParams.push(sqlStartDate, sqlEndDate);
-
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
         attritionSql += `
             ) parsed
             WHERE tenureDays IS NOT NULL
@@ -3083,7 +3008,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 WHERE ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
                   AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
-<<<<<<< HEAD
                   ${hierCondition}
                   ${getDesignationShutterExclusionSql("u")}
                   ${getSnapshotEmployeeExistsSql("u")}
@@ -3091,23 +3015,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
             const customAttritionParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
             // IMPORTANT: Custom tenure attrition par bhi shift filter apply nahi hoga.
-=======
-                  ${attritionHierCondition}
-                  -- NOTE: Custom Tenure Attrition me isTemporary/isDeleted/designation/shift filters apply nahi honge.
-            `;
-
-            const customAttritionParams = [customFromDays, customToDays];
-
-            // IMPORTANT:
-            // Custom Tenure Attrition bhi same date behavior follow karega:
-            // default previous 30 days, ya selected date range.
-            customAttritionSql += `
-                  AND ${leaveDateSQL} >= ?
-                  AND ${leaveDateSQL} <= ?
-            `;
-            customAttritionParams.push(sqlStartDate, sqlEndDate);
-
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
             const [rows] = await executeQuery(customAttritionSql, customAttritionParams);
             attrition.CUSTOM = Number(rows?.[0]?.leftCount || 0);
         }
@@ -3149,11 +3056,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     masterLogic:
                         "Grey/dark yellow Users Total bar users table ka total active employee count hai. Shift filter ka effect is bar par nahi padega; baaki hierarchy/date filters apply rahenge.",
                     attritionLogic:
-<<<<<<< HEAD
                         "Attrition users.leavingDate se calculate hoga. Sirf isTemporary = 0 employees count honge. Tenure attrition me joiningDate valid hona mandatory hai; blank joiningDate wale tenure graph me skip honge. Shift filter attrition par apply nahi hoga, so NULL/blank shift left employees included rahenge.",
-=======
-                        "Attrition users.leavingDate se calculate hoga. users.empId = user_hierarchy_snapshots.employeeid match mandatory hai taaki snapshot department/section/line unicode filters apply ho saken. isTemporary/isDeleted/designation/shift filters attrition par apply nahi honge. Tenure attrition me joiningDate valid hona mandatory hai.",
->>>>>>> 289577d777091fd2709c95e1cb5d4fdef8182b7d
                     matchingLogic:
                         "attendance_logs.payCode = users.empId and joiningDate se tenure bucket calculate hota hai.",
                     customTenureFrom: hasCustomTenureRange ? customFromDays : null,

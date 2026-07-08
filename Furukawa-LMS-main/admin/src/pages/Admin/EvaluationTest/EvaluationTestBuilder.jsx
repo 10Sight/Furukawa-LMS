@@ -5,9 +5,11 @@ import {
     useCreateEvaluationTestMutation,
     useUpdateEvaluationTestMutation
 } from "@/Redux/AllApi/EvaluationTestApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     IconArrowLeft,
     IconTrash,
@@ -90,11 +92,14 @@ const EvaluationTestBuilder = () => {
     const [contentStructure, setContentStructure] = useState(() => normalizeContentStructure(DEFAULT_STRUCTURE, "1. Taping operation"));
     const [isPrintMode, setIsPrintMode] = useState(isPrintModeUrl);
     const [educatorName, setEducatorName] = useState("");
+    const [departmentId, setDepartmentId] = useState("all");
 
     // RTK Query API Hooks
     const { data: fetchResponse, isLoading: isFetching } = useGetEvaluationTestByIdQuery(id, { skip: !isEditMode });
     const [createEvaluationTest, { isLoading: isCreating }] = useCreateEvaluationTestMutation();
     const [updateEvaluationTest, { isLoading: isUpdating }] = useUpdateEvaluationTestMutation();
+    const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
+    const departments = departmentsData?.data?.departments || [];
 
     // Populate data when in edit mode
     useEffect(() => {
@@ -104,6 +109,7 @@ const EvaluationTestBuilder = () => {
             setPerformDateCount(test.performDateCount || 4);
             setProcessType(test.processType || "Former process");
             setContentStructure(normalizeContentStructure(test.contentStructure || [], test.title));
+            setDepartmentId(test.departmentId ? String(test.departmentId) : "all");
         }
     }, [isEditMode, fetchResponse]);
 
@@ -407,7 +413,8 @@ const EvaluationTestBuilder = () => {
             title,
             performDateCount,
             processType,
-            contentStructure
+            contentStructure,
+            departmentId: departmentId !== "all" ? parseInt(departmentId, 10) : null
         };
 
         try {
@@ -795,6 +802,23 @@ const EvaluationTestBuilder = () => {
                                     className="border-gray-200 focus:ring-blue-100"
                                 />
                                 <p className="text-[10px] text-gray-400">Shown in the sheet header as 【Process Type】.</p>
+                            </div>
+
+                            {/* Department Field */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">Department</label>
+                                <Select value={departmentId} onValueChange={setDepartmentId}>
+                                    <SelectTrigger className="border-gray-200 focus:ring-blue-100">
+                                        <SelectValue placeholder="All Departments" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Departments</SelectItem>
+                                        {departments.map((d) => (
+                                            <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-400">Restrict this template to a specific department, or leave as All Departments.</p>
                             </div>
 
                             {/* Perform Date Columns Count Field */}

@@ -50,6 +50,16 @@ const DepartmentSectionManager = ({ departmentId }) => {
 
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 
+    const hasPermission = (permission) => {
+        if (user?.role === "SUPERADMIN" || user?.role === "ADMIN") return true;
+        return user?.customRole?.permissions?.includes(permission);
+    };
+
+    const canRead = hasPermission("section:read");
+    const canCreate = hasPermission("section:create");
+    const canUpdate = hasPermission("section:update");
+    const canDelete = hasPermission("section:delete");
+
     const rawAssigned = useMemo(() => {
         let sections = [];
         if (Array.isArray(user?.sections)) {
@@ -124,6 +134,10 @@ const DepartmentSectionManager = ({ departmentId }) => {
     };
 
     const handleCreateSection = async () => {
+        if (!canCreate) {
+            toast.error("You do not have permission to create sections");
+            return;
+        }
         if (!newSectionName.trim()) {
             toast.error("Section name is required");
             return;
@@ -153,6 +167,10 @@ const DepartmentSectionManager = ({ departmentId }) => {
     };
 
     const handleDeleteSection = async (sectionId) => {
+        if (!canDelete) {
+            toast.error("You do not have permission to delete sections");
+            return;
+        }
         if (!window.confirm("Are you sure you want to delete this section? This action will also delete all lines under it.")) {
             return;
         }
@@ -177,6 +195,10 @@ const DepartmentSectionManager = ({ departmentId }) => {
     };
 
     const saveEdit = async () => {
+        if (!canUpdate) {
+            toast.error("You do not have permission to update sections");
+            return;
+        }
         if (!editName.trim()) {
             toast.error("Section name cannot be empty");
             return;
@@ -223,10 +245,12 @@ const DepartmentSectionManager = ({ departmentId }) => {
                         </Select>
                     </div>
 
-                    <Button className="gap-2" onClick={() => setIsCreateDialogOpen(true)}>
-                        <IconPlus className="h-4 w-4" />
-                        Add Section
-                    </Button>
+                    {canCreate && (
+                        <Button className="gap-2" onClick={() => setIsCreateDialogOpen(true)}>
+                            <IconPlus className="h-4 w-4" />
+                            Add Section
+                        </Button>
+                    )}
 
                     <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                         <DialogContent className="sm:max-w-[425px] bg-white/95 backdrop-blur-sm border-white/20 shadow-xl">
@@ -426,7 +450,11 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 </div>
             </CardHeader>
             <CardContent>
-                {isLoading ? (
+                {!canRead ? (
+                    <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+                        Access Denied. You do not have permission to view sections.
+                    </div>
+                ) : isLoading ? (
                     <div className="flex justify-center p-8"><IconLoader className="animate-spin" /></div>
                 ) : error ? (
                     <div className="text-red-500 p-4">Error loading sections: {error.message}</div>
@@ -510,12 +538,16 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                     </TableCell>
                                                     <TableCell className="text-right px-6" onClick={(e) => e.stopPropagation()}>
                                                         <div className="flex items-center justify-end gap-1">
-                                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600 hover:bg-blue-50" onClick={() => startEditing(section)}>
-                                                                        <IconEdit className="h-4 w-4" />
-                                                                    </Button>
-                                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:bg-red-50" onClick={() => handleDeleteSection(sectionId)}>
-                                                                        {isDeleting ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconTrash className="h-4 w-4" />}
-                                                                    </Button>
+                                                                    {canUpdate && (
+                                                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600 hover:bg-blue-50" onClick={() => startEditing(section)}>
+                                                                            <IconEdit className="h-4 w-4" />
+                                                                        </Button>
+                                                                    )}
+                                                                    {canDelete && (
+                                                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:bg-red-50" onClick={() => handleDeleteSection(sectionId)}>
+                                                                            {isDeleting ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconTrash className="h-4 w-4" />}
+                                                                        </Button>
+                                                                    )}
                                                         </div>
                                                     </TableCell>
                                                 </TableRow>

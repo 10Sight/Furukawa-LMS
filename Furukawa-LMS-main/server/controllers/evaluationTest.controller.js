@@ -5,7 +5,7 @@ import EvaluationTest from "../models/evaluationTest.model.js";
 import EvaluationTestAttempt from "../models/evaluationTestAttempt.model.js";
 
 export const createEvaluationTest = asyncHandler(async (req, res) => {
-    const { title, performDateCount, processType, contentStructure } = req.body;
+    const { title, performDateCount, processType, contentStructure, departmentId } = req.body;
     const createdBy = req.user?.fullName || req.user?.userName || "Admin";
 
     if (!title) {
@@ -17,6 +17,9 @@ export const createEvaluationTest = asyncHandler(async (req, res) => {
         performDateCount: parseInt(performDateCount, 10) || 4,
         processType: processType || 'Former process',
         contentStructure: contentStructure || [],
+        departmentId: departmentId !== undefined && departmentId !== null && departmentId !== ''
+            ? parseInt(departmentId, 10)
+            : null,
         createdBy
     };
 
@@ -28,7 +31,13 @@ export const createEvaluationTest = asyncHandler(async (req, res) => {
 });
 
 export const getAllEvaluationTests = asyncHandler(async (req, res) => {
-    const tests = await EvaluationTest.findAll();
+    const { departmentId } = req.query;
+    const filters = {};
+    if (departmentId !== undefined && departmentId !== null && departmentId !== '') {
+        filters.departmentId = parseInt(departmentId, 10);
+    }
+
+    const tests = await EvaluationTest.findAll(filters);
     res.json(
         new ApiResponse(200, tests, "Evaluation tests fetched successfully")
     );
@@ -49,7 +58,7 @@ export const getEvaluationTestById = asyncHandler(async (req, res) => {
 
 export const updateEvaluationTest = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { title, performDateCount, processType, contentStructure } = req.body;
+    const { title, performDateCount, processType, contentStructure, departmentId } = req.body;
 
     const existingTest = await EvaluationTest.findById(id);
     if (!existingTest) {
@@ -61,6 +70,11 @@ export const updateEvaluationTest = asyncHandler(async (req, res) => {
     if (performDateCount !== undefined) updateData.performDateCount = parseInt(performDateCount, 10);
     if (processType !== undefined) updateData.processType = processType;
     if (contentStructure !== undefined) updateData.contentStructure = contentStructure;
+    if (departmentId !== undefined) {
+        updateData.departmentId = departmentId !== null && departmentId !== ''
+            ? parseInt(departmentId, 10)
+            : null;
+    }
 
     const updatedTest = await EvaluationTest.update(id, updateData);
 

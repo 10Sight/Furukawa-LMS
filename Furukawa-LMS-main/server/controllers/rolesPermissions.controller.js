@@ -49,6 +49,12 @@ const SYSTEM_PERMISSIONS = {
   DEPARTMENT_DELETE: "department:delete",
   DEPARTMENT_MANAGE_STUDENTS: "department:manage_students",
 
+  // Section Management
+  SECTION_CREATE: "section:create",
+  SECTION_READ: "section:read",
+  SECTION_UPDATE: "section:update",
+  SECTION_DELETE: "section:delete",
+
   // Quiz Management
   QUIZ_CREATE: "quiz:create",
   QUIZ_READ: "quiz:read",
@@ -294,6 +300,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.DEPARTMENT_READ,
       SYSTEM_PERMISSIONS.DEPARTMENT_UPDATE,
       SYSTEM_PERMISSIONS.DEPARTMENT_MANAGE_STUDENTS,
+      // Section Management
+      SYSTEM_PERMISSIONS.SECTION_READ,
       // Assessment Management
       SYSTEM_PERMISSIONS.QUIZ_CREATE,
       SYSTEM_PERMISSIONS.QUIZ_READ,
@@ -444,6 +452,12 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DEPARTMENT_UPDATE, name: "Update Departments", description: "Edit department information" },
         { id: SYSTEM_PERMISSIONS.DEPARTMENT_DELETE, name: "Delete Departments", description: "Delete student departments" },
         { id: SYSTEM_PERMISSIONS.DEPARTMENT_MANAGE_STUDENTS, name: "Manage Students", description: "Add/remove students from departments" }
+      ],
+      "Section Management": [
+        { id: SYSTEM_PERMISSIONS.SECTION_CREATE, name: "Create Sections", description: "Create new sections within a department" },
+        { id: SYSTEM_PERMISSIONS.SECTION_READ, name: "View Sections", description: "View section information and their lines" },
+        { id: SYSTEM_PERMISSIONS.SECTION_UPDATE, name: "Update Sections", description: "Edit section information" },
+        { id: SYSTEM_PERMISSIONS.SECTION_DELETE, name: "Delete Sections", description: "Delete sections and their lines" }
       ],
       "Assessment Management": [
         { id: SYSTEM_PERMISSIONS.QUIZ_CREATE, name: "Create Quizzes", description: "Create new quizzes and tests" },

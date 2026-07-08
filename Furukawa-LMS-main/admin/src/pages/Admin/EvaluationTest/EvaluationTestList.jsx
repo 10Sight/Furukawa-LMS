@@ -1,13 +1,15 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { 
-    useGetEvaluationTestsQuery, 
-    useDeleteEvaluationTestMutation 
+import {
+    useGetEvaluationTestsQuery,
+    useDeleteEvaluationTestMutation
 } from "@/Redux/AllApi/EvaluationTestApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
     Table, 
     TableHeader, 
@@ -40,6 +42,7 @@ const EvaluationTestList = () => {
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState("");
     const [deleteId, setDeleteId] = useState(null);
+    const [selectedDepartment, setSelectedDepartment] = useState("all");
 
     // Permission checking
     const currentUser = useSelector((state) => state.auth.user);
@@ -50,8 +53,12 @@ const EvaluationTestList = () => {
     const canCreate = hasPermission("dojo_evaluation_test:create");
 
     // RTK Query hooks
-    const { data: response, isLoading, isError, refetch } = useGetEvaluationTestsQuery();
+    const { data: response, isLoading, isError, refetch } = useGetEvaluationTestsQuery(
+        selectedDepartment !== "all" ? { departmentId: selectedDepartment } : undefined
+    );
     const [deleteEvaluationTest, { isLoading: isDeleting }] = useDeleteEvaluationTestMutation();
+    const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
+    const departments = departmentsData?.data?.departments || [];
 
     const testPapers = response?.data || [];
 
@@ -118,15 +125,28 @@ const EvaluationTestList = () => {
                                 <CardTitle className="text-lg font-semibold text-gray-800">Test Papers List</CardTitle>
                                 <CardDescription>View, edit, print, or delete practical DOJO evaluation templates.</CardDescription>
                             </div>
-                            <div className="relative w-full md:w-80">
-                                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
-                                <Input 
-                                    type="text"
-                                    placeholder="Search by test paper title..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 pr-4 py-2 border border-gray-200 focus:ring-2 focus:ring-blue-100 rounded-lg text-sm transition-all"
-                                />
+                            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                                <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+                                    <SelectTrigger className="w-full sm:w-52 h-9 text-xs border-gray-200 rounded-lg">
+                                        <SelectValue placeholder="All Departments" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Departments</SelectItem>
+                                        {departments.map((d) => (
+                                            <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <div className="relative w-full md:w-80">
+                                    <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+                                    <Input
+                                        type="text"
+                                        placeholder="Search by test paper title..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="pl-9 pr-4 py-2 border border-gray-200 focus:ring-2 focus:ring-blue-100 rounded-lg text-sm transition-all"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </CardHeader>
@@ -168,6 +188,7 @@ const EvaluationTestList = () => {
                                             <TableHead className="w-12 text-center text-xs font-semibold text-gray-600 uppercase">S.No</TableHead>
                                             <TableHead className="text-xs font-semibold text-gray-600 uppercase">Test Paper Main Title</TableHead>
                                             <TableHead className="text-center text-xs font-semibold text-gray-600 uppercase">Perform Date Columns</TableHead>
+                                            <TableHead className="text-xs font-semibold text-gray-600 uppercase">Department</TableHead>
                                             <TableHead className="text-xs font-semibold text-gray-600 uppercase">Created By</TableHead>
                                             <TableHead className="text-xs font-semibold text-gray-600 uppercase">Created Date</TableHead>
                                             <TableHead className="text-right text-xs font-semibold text-gray-600 uppercase pr-6">Actions</TableHead>
@@ -189,6 +210,9 @@ const EvaluationTestList = () => {
                                                     <span className="px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-full">
                                                         {paper.performDateCount} Columns
                                                     </span>
+                                                </TableCell>
+                                                <TableCell className="text-sm text-gray-600">
+                                                    {paper.departmentName || "All Departments"}
                                                 </TableCell>
                                                 <TableCell className="text-sm text-gray-600">{paper.createdBy || "Admin"}</TableCell>
                                                 <TableCell className="text-sm text-gray-500">

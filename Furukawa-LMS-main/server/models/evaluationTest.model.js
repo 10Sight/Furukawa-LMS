@@ -13,6 +13,9 @@ class EvaluationTest {
             ? JSON.parse(data.contentStructure)
             : (data.contentStructure || []);
 
+        this.departmentId = data.departmentId ?? null;
+        this.departmentName = data.departmentName ?? null;
+
         this.createdBy = data.createdBy;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -28,9 +31,11 @@ class EvaluationTest {
                     performDateCount INT DEFAULT 4,
                     processType NVARCHAR(255) DEFAULT 'Former process',
                     contentStructure NVARCHAR(MAX),
+                    departmentId INT,
                     createdBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
+                    updatedAt DATETIME DEFAULT GETDATE(),
+                    CONSTRAINT fk_evaluation_tests_department FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL
                 )
             END
             ELSE
@@ -38,6 +43,17 @@ class EvaluationTest {
                 IF COL_LENGTH('evaluation_tests', 'processType') IS NULL
                 BEGIN
                     ALTER TABLE evaluation_tests ADD processType NVARCHAR(255) DEFAULT 'Former process'
+                END
+                IF COL_LENGTH('evaluation_tests', 'departmentId') IS NULL
+                BEGIN
+                    ALTER TABLE evaluation_tests ADD departmentId INT
+                END
+                IF NOT EXISTS (
+                    SELECT * FROM sys.foreign_keys WHERE name = 'fk_evaluation_tests_department'
+                )
+                BEGIN
+                    ALTER TABLE evaluation_tests ADD CONSTRAINT fk_evaluation_tests_department
+                        FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL
                 END
             END
         `;
@@ -52,9 +68,9 @@ class EvaluationTest {
 
     static async create(data) {
         const query = `
-            INSERT INTO evaluation_tests (title, performDateCount, processType, contentStructure, createdBy)
+            INSERT INTO evaluation_tests (title, performDateCount, processType, contentStructure, departmentId, createdBy)
             OUTPUT INSERTED.*
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
         `;
         const structureStr = JSON.stringify(data.contentStructure || []);
         const [rows] = await executeQuery(query, [
@@ -62,19 +78,38 @@ class EvaluationTest {
             data.performDateCount || 4,
             data.processType || 'Former process',
             structureStr,
+            data.departmentId ?? null,
             data.createdBy
         ]);
-        return new EvaluationTest(rows[0]);
+        return await this.findById(rows[0].id);
     }
 
     static async findById(id) {
-        const [rows] = await executeQuery("SELECT * FROM evaluation_tests WHERE id = ?", [id]);
+        const [rows] = await executeQuery(
+            `SELECT et.*, d.name as departmentName
+             FROM evaluation_tests et
+             LEFT JOIN departments d ON et.departmentId = d.id
+             WHERE et.id = ?`,
+            [id]
+        );
         if (rows.length === 0) return null;
         return new EvaluationTest(rows[0]);
     }
 
-    static async findAll() {
-        const [rows] = await executeQuery("SELECT * FROM evaluation_tests ORDER BY createdAt DESC");
+    static async findAll(filters = {}) {
+        let query = `
+            SELECT et.*, d.name as departmentName
+            FROM evaluation_tests et
+            LEFT JOIN departments d ON et.departmentId = d.id
+        `;
+        const params = [];
+        if (filters.departmentId !== undefined && filters.departmentId !== null) {
+            query += " WHERE et.departmentId = ?";
+            params.push(filters.departmentId);
+        }
+        query += " ORDER BY et.createdAt DESC";
+
+        const [rows] = await executeQuery(query, params);
         return rows.map(row => new EvaluationTest(row));
     }
 
@@ -97,6 +132,10 @@ class EvaluationTest {
         if (data.contentStructure !== undefined) {
             fields.push("contentStructure = ?");
             values.push(JSON.stringify(data.contentStructure));
+        }
+        if (data.departmentId !== undefined) {
+            fields.push("departmentId = ?");
+            values.push(data.departmentId);
         }
 
         if (fields.length === 0) return await this.findById(id);

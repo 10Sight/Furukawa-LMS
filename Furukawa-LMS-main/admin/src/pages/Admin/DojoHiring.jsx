@@ -40,6 +40,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
@@ -93,6 +94,18 @@ import HandoverSheetPage from "./HandoverSheetPage";
 import SixteenDayMonitoring from "./SixteenDayMonitoring";
 import Course from "./Course";
 
+const LEAVING_REASONS = [
+    "Employee not response",
+    "Exam",
+    "Family Function",
+    "Marriage",
+    "Family Problem",
+    "Festival",
+    "Health Problem",
+    "Join other company",
+    "Indiscipline case",
+];
+
 const normalizeStatus = (status) => {
     const s = status || "PRESENT";
     if (s === "LEAVE") return "ON_LEAVE";
@@ -144,6 +157,16 @@ const DojoHiring = () => {
     const [selectedRows, setSelectedRows] = useState(new Set());
     const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    // Reason of Leaving dropdown state (used inside Add/Edit form)
+    const [leavingReasonOption, setLeavingReasonOption] = useState("");
+    const [customLeavingReason, setCustomLeavingReason] = useState("");
+    // Quick status change ("Left") confirmation dialog state
+    const [isLeftConfirmOpen, setIsLeftConfirmOpen] = useState(false);
+    const [leftConfirmTarget, setLeftConfirmTarget] = useState(null);
+    const [leftConfirmDate, setLeftConfirmDate] = useState("");
+    const [leftConfirmReason, setLeftConfirmReason] = useState("");
+    const [leftConfirmCustomReason, setLeftConfirmCustomReason] = useState("");
+    const [isLeftConfirmSubmitting, setIsLeftConfirmSubmitting] = useState(false);
     const [importProgress, setImportProgress] = useState({
         total: 0,
         success: 0,
@@ -244,6 +267,21 @@ const DojoHiring = () => {
         if (name === 'sectionId') setFormData(prev => ({ ...prev, lineId: "", subSectionId: "", stationId: "" }));
         if (name === 'lineId') setFormData(prev => ({ ...prev, subSectionId: "", stationId: "" }));
         if (name === 'subSectionId') setFormData(prev => ({ ...prev, stationId: "" }));
+    };
+
+    const handleLeavingReasonSelect = (value) => {
+        setLeavingReasonOption(value);
+        if (value === "Other") {
+            setFormData(prev => ({ ...prev, reasonOfLeaving: customLeavingReason }));
+        } else {
+            setFormData(prev => ({ ...prev, reasonOfLeaving: value }));
+        }
+    };
+
+    const handleCustomLeavingReasonChange = (e) => {
+        const { value } = e.target;
+        setCustomLeavingReason(value);
+        setFormData(prev => ({ ...prev, reasonOfLeaving: value }));
     };
 
     const handleSubmit = async () => {
@@ -367,9 +405,12 @@ const DojoHiring = () => {
 
     const handleQuickStatusChange = async (userId, newStatus) => {
         if (newStatus === "LEFT") {
-            if (!window.confirm("Are you sure you want to mark this candidate as Left? They will be moved to the Left Candidates list.")) {
-                return;
-            }
+            setLeftConfirmTarget({ id: userId });
+            setLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
+            setLeftConfirmReason("");
+            setLeftConfirmCustomReason("");
+            setIsLeftConfirmOpen(true);
+            return;
         }
         try {
             await updateUser({ id: userId, status: newStatus }).unwrap();
@@ -378,6 +419,28 @@ const DojoHiring = () => {
             refetch();
         } catch (error) {
             toast.error(error?.data?.message || "Failed to update status");
+        }
+    };
+
+    const handleConfirmLeftStatus = async () => {
+        if (!leftConfirmTarget) return;
+
+        setIsLeftConfirmSubmitting(true);
+        try {
+            await updateUser({
+                id: leftConfirmTarget.id,
+                status: "LEFT",
+                leavingDate: leftConfirmDate || null,
+                reasonOfLeaving: (leftConfirmReason === "Other" ? leftConfirmCustomReason : leftConfirmReason)?.trim() || null,
+            }).unwrap();
+            toast.success("Status updated to Left");
+            refetch();
+            setIsLeftConfirmOpen(false);
+            setLeftConfirmTarget(null);
+        } catch (error) {
+            toast.error(error?.data?.message || "Failed to update status");
+        } finally {
+            setIsLeftConfirmSubmitting(false);
         }
     };
 
@@ -662,6 +725,16 @@ const DojoHiring = () => {
             contractorId: user.contractorId ? String(user.contractorId) : "",
             expectedHandover: user.expectedHandover ? String(user.expectedHandover).substring(0, 10) : ""
         });
+
+        const existingReason = user.reasonOfLeaving || "";
+        if (existingReason && !LEAVING_REASONS.includes(existingReason)) {
+            setLeavingReasonOption("Other");
+            setCustomLeavingReason(existingReason);
+        } else {
+            setLeavingReasonOption(existingReason);
+            setCustomLeavingReason("");
+        }
+
         setIsAddModalOpen(true);
     };
 
@@ -676,6 +749,8 @@ const DojoHiring = () => {
             pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
             leavingDate: "", reasonOfLeaving: "", contractor: "", contractorId: "", expectedHandover: ""
         });
+        setLeavingReasonOption("");
+        setCustomLeavingReason("");
     };
 
     const stats = [
@@ -1502,13 +1577,26 @@ const DojoHiring = () => {
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="reasonOfLeaving">Reason of Leaving</Label>
-                                    <Input 
-                                        id="reasonOfLeaving" 
-                                        name="reasonOfLeaving" 
-                                        value={formData.reasonOfLeaving} 
-                                        onChange={handleInputChange} 
-                                        placeholder="Enter reason..."
-                                    />
+                                    <Select value={leavingReasonOption} onValueChange={handleLeavingReasonSelect}>
+                                        <SelectTrigger id="reasonOfLeaving">
+                                            <SelectValue placeholder="Select Reason" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {LEAVING_REASONS.map((reason) => (
+                                                <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                                            ))}
+                                            <SelectItem value="Other">Other</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    {leavingReasonOption === "Other" && (
+                                        <Textarea
+                                            id="customReasonOfLeaving"
+                                            value={customLeavingReason}
+                                            onChange={handleCustomLeavingReasonChange}
+                                            placeholder="Please specify the reason"
+                                            rows={3}
+                                        />
+                                    )}
                                 </div>
                             </>
                         )}
@@ -1669,6 +1757,80 @@ const DojoHiring = () => {
                         >
                             {isDeleting ? <IconLoader className="w-4 h-4 animate-spin" /> : <IconTrash className="w-4 h-4" />}
                             {isDeleting ? "Removing..." : "Remove"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            {/* Left Status Confirmation Dialog */}
+            <Dialog
+                open={isLeftConfirmOpen}
+                onOpenChange={(open) => {
+                    setIsLeftConfirmOpen(open);
+                    if (!open) setLeftConfirmTarget(null);
+                }}
+            >
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                            <IconAlertCircle className="w-6 h-6 text-red-600" />
+                        </div>
+                        <DialogTitle className="text-center text-xl font-bold">Mark as Left</DialogTitle>
+                        <DialogDescription className="text-center">
+                            Please provide the leaving details before confirming this status change.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="leftConfirmDate">Date of Leaving</Label>
+                            <Input
+                                id="leftConfirmDate"
+                                type="date"
+                                value={leftConfirmDate}
+                                onChange={(e) => setLeftConfirmDate(e.target.value)}
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="leftConfirmReason">Reason of Leaving</Label>
+                            <Select value={leftConfirmReason} onValueChange={setLeftConfirmReason}>
+                                <SelectTrigger id="leftConfirmReason">
+                                    <SelectValue placeholder="Select Reason" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {LEAVING_REASONS.map((reason) => (
+                                        <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                                    ))}
+                                    <SelectItem value="Other">Other</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            {leftConfirmReason === "Other" && (
+                                <Textarea
+                                    value={leftConfirmCustomReason}
+                                    onChange={(e) => setLeftConfirmCustomReason(e.target.value)}
+                                    placeholder="Please specify the reason"
+                                    rows={3}
+                                />
+                            )}
+                        </div>
+                    </div>
+                    <DialogFooter className="flex gap-2 sm:justify-center mt-4">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setIsLeftConfirmOpen(false);
+                                setLeftConfirmTarget(null);
+                            }}
+                            className="flex-1"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleConfirmLeftStatus}
+                            disabled={isLeftConfirmSubmitting}
+                            className="flex-1 gap-2"
+                        >
+                            {isLeftConfirmSubmitting && <IconLoader className="w-4 h-4 animate-spin" />}
+                            Confirm
                         </Button>
                     </DialogFooter>
                 </DialogContent>

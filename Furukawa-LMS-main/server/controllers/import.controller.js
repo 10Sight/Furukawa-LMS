@@ -718,11 +718,18 @@ const processSingleEmployeeRow = async ({
  * needs them. Shared by both the standard and /employees-full single-shot and chunked flows.
  */
 const buildImportHierarchyMaps = async (resolveFullHierarchy = false) => {
-    const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
+    const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE (isDeleted = 0 OR isDeleted IS NULL)");
     const [allSections] = await executeQuery("SELECT id, name, departmentId, category FROM sections WHERE isActive = 1");
     const [allContractors] = await executeQuery("SELECT id, name FROM contractors WHERE status = 'active'");
 
-    const deptMap = new Map(allDepts.map(d => [d.name.toLowerCase().trim(), d.id]));
+    const deptMap = new Map();
+    allDepts.forEach(d => {
+        const name = d.name.toLowerCase().trim();
+        deptMap.set(name, d.id);
+        if (name.includes(" - ")) {
+            deptMap.set(name.split(" - ")[0].trim(), d.id);
+        }
+    });
 
     const sectionMap = new Map();
     allSections.forEach(s => {
@@ -732,6 +739,9 @@ const buildImportHierarchyMaps = async (resolveFullHierarchy = false) => {
         sectionMap.set(`${deptId}|${name}`, s.id);
         if (category && category !== "not applicable") {
             sectionMap.set(`${deptId}|${name} - ${category}`, s.id);
+        }
+        if (name.includes(" - ")) {
+            sectionMap.set(`${deptId}|${name.split(" - ")[0].trim()}`, s.id);
         }
     });
 
@@ -1444,31 +1454,7 @@ export const importDojoUsers = async (req, res) => {
             throw new ApiError(400, "No data found in Excel file");
         }
 
-        const [allDepts] = await executeQuery("SELECT id, name FROM departments WHERE isDeleted = 0");
-        const [allSections] = await executeQuery("SELECT id, name, departmentId FROM sections WHERE isActive = 1");
-        const [allLines] = await executeQuery("SELECT id, name, sectionId FROM [lines] WHERE isActive = 1");
-        const [allSubSections] = await executeQuery("SELECT id, name, lineId FROM sub_sections WHERE isActive = 1");
-        const [allStations] = await executeQuery("SELECT id, name, subSectionId FROM machines WHERE isActive = 1");
-
-        const deptMap = new Map();
-        allDepts.forEach(d => {
-            const name = d.name.toLowerCase().trim();
-            deptMap.set(name, d.id);
-            if (name.includes(" - ")) {
-                const parts = name.split(" - ");
-                deptMap.set(parts[0].trim(), d.id);
-            }
-        });
-
-        const sectionMap = new Map();
-        allSections.forEach(s => {
-            const name = s.name.toLowerCase().trim();
-            sectionMap.set(`${s.departmentId}|${name}`, s.id);
-            if (name.includes(" - ")) {
-                const parts = name.split(" - ");
-                sectionMap.set(`${s.departmentId}|${parts[0].trim()}`, s.id);
-            }
-        });
+        const { deptMap, sectionMap, lineMap, subSectionMap, stationMap } = await buildImportHierarchyMaps(true);
 
         const results = { success: [], failed: [], total: data.length, updatedCount: 0 };
 
@@ -1534,6 +1520,9 @@ export const importDojoUsers = async (req, res) => {
                 // Resolve hierarchy
                 const departmentId = normalizedRow.department ? deptMap.get(normalizedRow.department.toLowerCase().trim()) : null;
                 const sectionId = (departmentId && normalizedRow.section) ? sectionMap.get(`${departmentId}|${normalizedRow.section.toLowerCase().trim()}`) : null;
+                const lineId = (sectionId && normalizedRow.line) ? (lineMap.get(`${sectionId}|${normalizedRow.line.toLowerCase().trim()}`) || null) : null;
+                const subSectionId = (lineId && normalizedRow.sub_section) ? (subSectionMap.get(`${lineId}|${normalizedRow.sub_section.toLowerCase().trim()}`) || null) : null;
+                const stationId = (subSectionId && normalizedRow.stationNo) ? (stationMap.get(`${subSectionId}|${normalizedRow.stationNo.toLowerCase().trim()}`) || null) : null;
 
                 const userData = {
                     fullName: normalizedRow.fullName,
@@ -1552,6 +1541,9 @@ export const importDojoUsers = async (req, res) => {
                     sectionId: null,
                     targetDeptId: departmentId,
                     targetSectionId: sectionId,
+                    targetLineId: lineId,
+                    targetSubSectionId: subSectionId,
+                    targetStationId: stationId,
                     designation: normalizedRow.designation,
                     dob: normalizedRow.dob,
                     joiningDate: normalizedRow.joiningDate || new Date().toISOString().split('T')[0],

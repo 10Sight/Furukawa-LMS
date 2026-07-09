@@ -105,25 +105,25 @@ class UserHierarchySnapshot {
                 FROM users u
                 LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
                 OUTER APPLY (
-                    SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId 
-                    FROM sub_sections ss WHERE ss.id = u.subSectionId
+                    SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId
+                    FROM sub_sections ss WHERE ss.id = COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END))
                 ) ss_res
                 OUTER APPLY (
                     SELECT TOP 1 l.name as lineName, l.sectionId as lSectionId, l.uniCode as lineUnicode, l.department as lDeptId
-                    FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
+                    FROM [lines] l WHERE l.id = COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), ss_res.ssLineId)
                 ) l_res
                 OUTER APPLY (
                     SELECT TOP 1 s.name as sectionName, s.uniCode as sectionUnicode, s.departmentId as sDeptId
-                    FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
+                    FROM [sections] s WHERE s.id = COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), l_res.lSectionId)
                 ) s_res
                 OUTER APPLY (
-                    SELECT TOP 1 name, uniCode 
-                    FROM departments d 
-                    WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
-                       OR (u.departmentId IS NULL AND (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name))
+                    SELECT TOP 1 name, uniCode
+                    FROM departments d
+                    WHERE d.id = COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), s_res.sDeptId, l_res.lDeptId)
+                       OR (u.departmentId IS NULL AND u.targetDeptId IS NULL AND (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name))
                 ) d
                 OUTER APPLY (
-                    SELECT TOP 1 name as stationName FROM machines WHERE id = u.stationId
+                    SELECT TOP 1 name as stationName FROM machines WHERE id = COALESCE(u.stationId, (CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END))
                 ) st
                 WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL);
             `;

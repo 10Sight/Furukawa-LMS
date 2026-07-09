@@ -1785,14 +1785,14 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       whereClauses.push(`(
         u.departmentId IN (${placeholders})
         OR u.department IN (${placeholders})
-        OR (u.isTemporary = 1 AND (u.targetDeptId IN (${placeholders}) OR u.targetDeptId IS NULL))
+        OR u.isTemporary = 1
         OR EXISTS (
           SELECT 1 FROM OPENJSON(ISNULL(u.departments, '[]'))
           WITH (deptId INT '$')
           WHERE deptId IN (${placeholders})
         )
       )`);
-      params.push(...allowedDepts, ...allowedDepts, ...allowedDepts, ...allowedDepts);
+      params.push(...allowedDepts, ...allowedDepts, ...allowedDepts);
     } else {
       // Non-admin layout with no assigned departments: block all access
       whereClauses.push("1=0");

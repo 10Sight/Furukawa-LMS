@@ -62,6 +62,7 @@ const useOperatorGrid = (baseParams, { skip }) => {
     const [page, setPage] = useState(1);
     const [items, setItems] = useState([]);
     const [hasMore, setHasMore] = useState(true);
+    const [total, setTotal] = useState(0);
 
     const paramsKey = JSON.stringify(baseParams);
 
@@ -74,6 +75,7 @@ const useOperatorGrid = (baseParams, { skip }) => {
         setPage(1);
         setItems([]);
         setHasMore(true);
+        setTotal(0);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedSearch, paramsKey]);
 
@@ -82,11 +84,20 @@ const useOperatorGrid = (baseParams, { skip }) => {
         if (!users) return;
         setItems(prev => {
             if (page === 1) return users;
+            // Merge fresh data for users we already hold locally (e.g. after an optimistic
+            // update) instead of discarding it, and append any genuinely new users.
+            const newUsersMap = new Map(users.map(u => [u.id || u._id, u]));
+            const updatedPrev = prev.map(u => {
+                const id = u.id || u._id;
+                return newUsersMap.has(id) ? newUsersMap.get(id) : u;
+            });
             const existingIds = new Set(prev.map(u => u.id || u._id));
-            return [...prev, ...users.filter(u => !existingIds.has(u.id || u._id))];
+            const trulyNew = users.filter(u => !existingIds.has(u.id || u._id));
+            return [...updatedPrev, ...trulyNew];
         });
         const totalPages = data?.data?.totalPages || 1;
         setHasMore(page < totalPages);
+        setTotal(data?.data?.totalUsers ?? 0);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data, page]);
 
@@ -99,6 +110,7 @@ const useOperatorGrid = (baseParams, { skip }) => {
         setPage(1);
         setItems([]);
         setHasMore(true);
+        setTotal(0);
         refetch();
     };
 
@@ -106,9 +118,11 @@ const useOperatorGrid = (baseParams, { skip }) => {
         search,
         setSearch,
         items,
+        setItems,
         isFetching,
         hasMore,
-        total: data?.data?.totalUsers ?? items.length,
+        total,
+        setTotal,
         loadMore,
         reset,
     };
@@ -151,8 +165,8 @@ const MachineDetail = () => {
 
     const [assignEmployee] = useAssignEmployeeMutation();
     const [removeEmployee] = useRemoveEmployeeMutation();
-    const [assigningId, setAssigningId] = useState(null);
-    const [removingId, setRemovingId] = useState(null);
+    const [assigningIds, setAssigningIds] = useState({});
+    const [removingIds, setRemovingIds] = useState({});
 
     const machine = machineData?.data;
     const lineName = linesData?.data?.find(l => (l.id || l._id) == lineId)?.name || "Line";
@@ -180,31 +194,95 @@ const MachineDetail = () => {
     };
 
     const handleAssign = async (userId) => {
-        setAssigningId(userId);
+        setAssigningIds(prev => ({ ...prev, [userId]: true }));
+
+        const operator = departmentGrid.items.find(u => (u.id || u._id) === userId);
+        if (!operator) {
+            setAssigningIds(prev => {
+                const next = { ...prev };
+                delete next[userId];
+                return next;
+            });
+            return;
+        }
+
+        const newAssignment = {
+            machineId: Number(machineId),
+            stationName: machine.name,
+            subSectionId: machine.subSectionId,
+            subSectionName: machine.subSectionName || "",
+            assigned_at: new Date().toISOString()
+        };
+
+        const updatedOperator = {
+            ...operator,
+            assignments: [...(operator.assignments || []), newAssignment]
+        };
+
+        departmentGrid.setItems(prev => prev.map(u => (u.id || u._id) === userId ? updatedOperator : u));
+        assignedGrid.setItems(prev => {
+            const exists = prev.some(u => (u.id || u._id) === userId);
+            if (exists) return prev;
+            return [updatedOperator, ...prev];
+        });
+        assignedGrid.setTotal(t => t + 1);
+
         try {
             await assignEmployee({ machineId, userId }).unwrap();
             toast.success("Operator assigned successfully");
-            departmentGrid.reset();
-            assignedGrid.reset();
         } catch (error) {
             toast.error(error.data?.message || "Failed to assign operator");
+            departmentGrid.setItems(prev => prev.map(u => (u.id || u._id) === userId ? operator : u));
+            assignedGrid.setItems(prev => prev.filter(u => (u.id || u._id) !== userId));
+            assignedGrid.setTotal(t => Math.max(0, t - 1));
         } finally {
-            setAssigningId(null);
+            setAssigningIds(prev => {
+                const next = { ...prev };
+                delete next[userId];
+                return next;
+            });
         }
     };
 
     const handleRemove = async (userId) => {
         if (!window.confirm("Are you sure you want to remove this operator from the machine?")) return;
-        setRemovingId(userId);
+        setRemovingIds(prev => ({ ...prev, [userId]: true }));
+
+        const operator = assignedGrid.items.find(u => (u.id || u._id) === userId);
+        let updatedOperator = null;
+        if (operator) {
+            updatedOperator = {
+                ...operator,
+                assignments: (operator.assignments || []).filter(a => String(a.machineId) !== String(machineId))
+            };
+        }
+
+        assignedGrid.setItems(prev => prev.filter(u => (u.id || u._id) !== userId));
+        assignedGrid.setTotal(t => Math.max(0, t - 1));
+        if (updatedOperator) {
+            departmentGrid.setItems(prev => prev.map(u => (u.id || u._id) === userId ? updatedOperator : u));
+        }
+
         try {
             await removeEmployee({ machineId, userId }).unwrap();
             toast.success("Operator removed successfully");
-            departmentGrid.reset();
-            assignedGrid.reset();
         } catch (error) {
             toast.error(error.data?.message || "Failed to remove operator");
+            if (operator) {
+                assignedGrid.setItems(prev => {
+                    const exists = prev.some(u => (u.id || u._id) === userId);
+                    if (exists) return prev;
+                    return [...prev, operator];
+                });
+                assignedGrid.setTotal(t => t + 1);
+                departmentGrid.setItems(prev => prev.map(u => (u.id || u._id) === userId ? operator : u));
+            }
         } finally {
-            setRemovingId(null);
+            setRemovingIds(prev => {
+                const next = { ...prev };
+                delete next[userId];
+                return next;
+            });
         }
     };
 
@@ -287,11 +365,11 @@ const MachineDetail = () => {
                                                 <Button
                                                     size="sm"
                                                     variant={assigned ? "secondary" : "default"}
-                                                    disabled={assigned || assigningId === opId}
+                                                    disabled={assigned || !!assigningIds[opId]}
                                                     onClick={() => handleAssign(opId)}
                                                     className="gap-1"
                                                 >
-                                                    {assigningId === opId ? (
+                                                    {assigningIds[opId] ? (
                                                         <IconLoader className="h-4 w-4 animate-spin" />
                                                     ) : assigned ? (
                                                         <IconUserCheck className="h-4 w-4" />
@@ -383,9 +461,9 @@ const MachineDetail = () => {
                                                     size="icon"
                                                     className="text-red-500 hover:text-red-700"
                                                     onClick={() => handleRemove(opId)}
-                                                    disabled={removingId === opId}
+                                                    disabled={!!removingIds[opId]}
                                                 >
-                                                    {removingId === opId ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconTrash className="h-4 w-4" />}
+                                                    {removingIds[opId] ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconTrash className="h-4 w-4" />}
                                                 </Button>
                                             </div>
                                         </div>

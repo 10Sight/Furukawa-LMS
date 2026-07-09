@@ -3,6 +3,64 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
+// Rebuilds the users.stations/subSections/lines/sections/departments JSON array
+// columns from the user's primary hierarchy fields + all machine_assignments rows,
+// so that multi-select UI (Students.jsx / StudentDetail.jsx) stays in sync with
+// assignments made from the Machine Detail page.
+async function syncUserHierarchyArrays(userId) {
+    try {
+        const [userRows] = await executeQuery(
+            "SELECT departmentId, sectionId, lineId, subSectionId, stationId FROM users WHERE id = ?",
+            [userId]
+        );
+        if (userRows.length === 0) return;
+        const user = userRows[0];
+
+        const [assignmentRows] = await executeQuery(`
+            SELECT m.id as stationId, m.subSectionId, l.id as lineId, l.sectionId, l.department as departmentId
+            FROM machine_assignments ma
+            JOIN machines m ON ma.machine_id = m.id
+            JOIN [lines] l ON m.line = l.id
+            WHERE ma.user_id = ?
+        `, [userId]);
+
+        const stationIds = new Set();
+        const subSectionIds = new Set();
+        const lineIds = new Set();
+        const sectionIds = new Set();
+        const departmentIds = new Set();
+
+        if (user.stationId) stationIds.add(user.stationId);
+        if (user.subSectionId) subSectionIds.add(user.subSectionId);
+        if (user.lineId) lineIds.add(user.lineId);
+        if (user.sectionId) sectionIds.add(user.sectionId);
+        if (user.departmentId) departmentIds.add(user.departmentId);
+
+        for (const row of assignmentRows) {
+            if (row.stationId) stationIds.add(row.stationId);
+            if (row.subSectionId) subSectionIds.add(row.subSectionId);
+            if (row.lineId) lineIds.add(row.lineId);
+            if (row.sectionId) sectionIds.add(row.sectionId);
+            if (row.departmentId) departmentIds.add(row.departmentId);
+        }
+
+        await executeQuery(`
+            UPDATE users
+            SET stations = ?, subSections = ?, lines = ?, sections = ?, departments = ?
+            WHERE id = ?
+        `, [
+            JSON.stringify([...stationIds]),
+            JSON.stringify([...subSectionIds]),
+            JSON.stringify([...lineIds]),
+            JSON.stringify([...sectionIds]),
+            JSON.stringify([...departmentIds]),
+            userId
+        ]);
+    } catch (error) {
+        console.error(`Error syncing user hierarchy arrays for user ${userId}:`, error);
+    }
+}
+
 // @desc    Create a new machine (Station)
 // @route   POST /api/machines
 // @access  Private
@@ -405,6 +463,8 @@ export const assignEmployee = asyncHandler(async (req, res) => {
             userId
         ]);
 
+        await syncUserHierarchyArrays(userId);
+
     } catch (error) {
         if (error.number === 2627 || error.number === 2601) {
             throw new ApiError("Employee is already assigned to this machine", 400);
@@ -476,6 +536,8 @@ export const removeEmployee = asyncHandler(async (req, res) => {
                 await executeQuery("UPDATE users SET stationId = NULL WHERE id = ?", [userId]);
             }
         }
+
+        await syncUserHierarchyArrays(userId);
     } catch (error) {
         console.error("Error syncing user hierarchy on removal:", error);
     }

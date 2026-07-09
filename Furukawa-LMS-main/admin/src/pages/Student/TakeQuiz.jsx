@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { formatPaperSubTitle } from "@/utils/formatters";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axiosInstance from "@/Helper/axiosInstance";
@@ -61,6 +61,8 @@ const TakeQuiz = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [conductedBy, setConductedBy] = useState("");
+  const nameSearchTimeoutRef = useRef(null);
+  const eCodeSearchTimeoutRef = useRef(null);
 
   // Populate candidate info automatically if candidate is taking quiz directly
   useEffect(() => {
@@ -72,9 +74,33 @@ const TakeQuiz = () => {
     }
   }, [currentUser, canAdminister]);
 
-  const handleCandidateNameChange = async (value) => {
+  // Clear pending debounced searches on unmount
+  useEffect(() => {
+    return () => {
+      if (nameSearchTimeoutRef.current) clearTimeout(nameSearchTimeoutRef.current);
+      if (eCodeSearchTimeoutRef.current) clearTimeout(eCodeSearchTimeoutRef.current);
+    };
+  }, []);
+
+  const searchStudents = async (value, limit) => {
+    const response = await axiosInstance.get(`/api/users/students`, {
+      params: {
+        search: value,
+        page: 1,
+        limit,
+        includeTemporary: "true",
+        isDojo: quiz?.isDojo ? "true" : undefined,
+        ojtApprovedToday: !quiz?.isDojo ? "true" : undefined
+      }
+    });
+    return response.data?.data?.users || [];
+  };
+
+  const handleCandidateNameChange = (value) => {
     setCandidateName(value);
     setSelectedStudent(null); // Reset selected student as typing indicates custom/new candidate
+
+    if (nameSearchTimeoutRef.current) clearTimeout(nameSearchTimeoutRef.current);
 
     if (!canAdminister) {
       setECode(""); // Clear own eCode so backend doesn't resolve to the logged-in user
@@ -87,31 +113,25 @@ const TakeQuiz = () => {
       return;
     }
 
-    try {
-      setIsSearching(true);
-      const response = await axiosInstance.get(`/api/users/students`, {
-        params: {
-          search: value,
-          page: 1,
-          limit: 10,
-          includeTemporary: "true",
-          isDojo: quiz?.isDojo ? "true" : undefined,
-          ojtApprovedToday: !quiz?.isDojo ? "true" : undefined
-        }
-      });
-      const studentsList = response.data?.data?.users || [];
-      setSearchSuggestions(studentsList);
-      setShowSuggestions(studentsList.length > 0);
-    } catch (err) {
-      console.error("Failed to search students:", err);
-    } finally {
-      setIsSearching(false);
-    }
+    setIsSearching(true);
+    nameSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const studentsList = await searchStudents(value, 10);
+        setSearchSuggestions(studentsList);
+        setShowSuggestions(studentsList.length > 0);
+      } catch (err) {
+        console.error("Failed to search students:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500);
   };
 
-  const handleECodeChange = async (value) => {
+  const handleECodeChange = (value) => {
     setECode(value);
     setSelectedStudent(null); // Reset as typing indicates custom/new E.code
+
+    if (eCodeSearchTimeoutRef.current) clearTimeout(eCodeSearchTimeoutRef.current);
 
     if (!canAdminister) {
       return;
@@ -121,29 +141,21 @@ const TakeQuiz = () => {
       return;
     }
 
-    try {
-      const response = await axiosInstance.get(`/api/users/students`, {
-        params: {
-          search: value,
-          page: 1,
-          limit: 5,
-          includeTemporary: "true",
-          isDojo: quiz?.isDojo ? "true" : undefined,
-          ojtApprovedToday: !quiz?.isDojo ? "true" : undefined
+    eCodeSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const studentsList = await searchStudents(value, 5);
+        const exactMatch = studentsList.find(s => {
+          const studentCode = s.userName || "";
+          return studentCode.toLowerCase().trim() === value.toLowerCase().trim();
+        });
+        if (exactMatch) {
+          setCandidateName(exactMatch.fullName);
+          setSelectedStudent(exactMatch);
         }
-      });
-      const studentsList = response.data?.data?.users || [];
-      const exactMatch = studentsList.find(s => {
-        const studentCode = s.userName || "";
-        return studentCode.toLowerCase().trim() === value.toLowerCase().trim();
-      });
-      if (exactMatch) {
-        setCandidateName(exactMatch.fullName);
-        setSelectedStudent(exactMatch);
+      } catch (err) {
+        console.error("Failed to search student by E.code:", err);
       }
-    } catch (err) {
-      console.error("Failed to search student by E.code:", err);
-    }
+    }, 500);
   };
 
   const handleSelectStudent = (student) => {

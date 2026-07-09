@@ -1,5 +1,25 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import axiosBaseQuery from "@/Helper/axiosBaseQuery";
+import { userApi } from "./UserApi";
+import { instructorApi } from "./InstructorApi";
+
+// MachineApi, userApi and instructorApi are separate RTK Query slices with
+// independent tag registries, so invalidatesTags here only clears MachineApi's
+// own cache. Dispatch the other slices' invalidation actions directly so the
+// Students/StudentDetail screens (which read from userApi/instructorApi) don't
+// keep showing stale station/hierarchy assignments after a machine assign/remove.
+const invalidateUserCaches = (userId) => (dispatch) => {
+    dispatch(userApi.util.invalidateTags([
+        { type: "User", id: userId },
+        { type: "User", id: "LIST" },
+        "User",
+    ]));
+    dispatch(instructorApi.util.invalidateTags([
+        "Instructor",
+        "InstructorStudent",
+        { type: "InstructorStudent", id: userId },
+    ]));
+};
 
 export const MachineApi = createApi({
     reducerPath: "MachineApi",
@@ -97,14 +117,20 @@ export const MachineApi = createApi({
                 data: { userId },
             }),
             invalidatesTags: (result, error, { userId }) => [
-                "MachineEmployees", 
-                { type: "User", id: userId }, 
+                "MachineEmployees",
+                { type: "User", id: userId },
                 { type: "User", id: "LIST" },
                 "User",
                 "SubSection",
                 "Line",
                 "Section"
             ],
+            async onQueryStarted({ userId }, { dispatch, queryFulfilled }) {
+                try {
+                    await queryFulfilled;
+                    dispatch(invalidateUserCaches(userId));
+                } catch { /* mutation failed, nothing to invalidate */ }
+            },
         }),
 
         // Remove Employee
@@ -114,7 +140,7 @@ export const MachineApi = createApi({
                 method: "DELETE",
             }),
             invalidatesTags: (result, error, { userId }) => [
-                "MachineEmployees", 
+                "MachineEmployees",
                 { type: "User", id: userId },
                 { type: "User", id: "LIST" },
                 "User",
@@ -122,6 +148,12 @@ export const MachineApi = createApi({
                 "Line",
                 "Section"
             ],
+            async onQueryStarted({ userId }, { dispatch, queryFulfilled }) {
+                try {
+                    await queryFulfilled;
+                    dispatch(invalidateUserCaches(userId));
+                } catch { /* mutation failed, nothing to invalidate */ }
+            },
         }),
 
         // Get Machine Employees

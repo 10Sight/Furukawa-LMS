@@ -379,9 +379,13 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const offset = (page - 1) * limit;
 
   let whereClauses = [
-    "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
-    "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+    "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
+  if (req.query.ignoreShutter !== "true") {
+    whereClauses.push(
+      "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+    );
+  }
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(
       EXISTS (
@@ -1542,9 +1546,13 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   let whereClauses = [
     "((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))",
     "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
-    "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
-    "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+    "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
+  if (req.query.ignoreShutter !== "true") {
+    whereClauses.push(
+      "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+    );
+  }
   if (req.query.dojoHandoverPassedOnly === "true") {
     whereClauses.push(`(
       EXISTS (

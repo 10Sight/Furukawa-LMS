@@ -94,7 +94,8 @@ export default function RoleUserManager() {
         search: searchTerm,
         excludeRoles: "ADMIN,SUPERADMIN",
         roleManagerFilters: "true",
-        includeLeft: "true"
+        includeLeft: "true",
+        ignoreShutter: "true"
     });
 
     const { data: allDeptsRes } = useGetAllDepartmentsQuery({ page: 1, limit: 100 });
@@ -590,7 +591,7 @@ function AddUserDialog({ isOpen, setIsOpen, role, onSuccess }) {
         page: 1,
         limit: 10,
         search: search,
-        // We'll filter on frontend for now or just rely on search
+        ignoreShutter: "true"
     }, { skip: !isOpen || activeTab !== "existing" });
 
     const handleAssign = async (userId) => {

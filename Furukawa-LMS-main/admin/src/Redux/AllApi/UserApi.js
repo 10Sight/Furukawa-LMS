@@ -7,10 +7,10 @@ export const userApi = createApi({
     tagTypes: ['User', 'ImportLog'],
     endpoints: (builder) => ({
         getAllUsers: builder.query({
-            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", isStaff = "", excludeCustomRoles = "", excludeTrainers = "", excludeAdmins = "", departmentId = "", sectionId = "", lineId = "", subSectionId = "", stationId = "", passedQuizOnly = "", includeTemporary = "", dojoHandoverPassedOnly = "", designation = "", includeEvaluationInfo = "", excludeCounts = "" } = {}) => ({
+            query: ({ page = 1, limit = 20, sortBy = "createdAt", order = "desc", search = "", role = "", unit = "", customRoleId = "", isEmployee = "", isStaff = "", excludeCustomRoles = "", excludeTrainers = "", excludeAdmins = "", departmentId = "", sectionId = "", lineId = "", subSectionId = "", stationId = "", passedQuizOnly = "", includeTemporary = "", dojoHandoverPassedOnly = "", designation = "", includeEvaluationInfo = "", excludeCounts = "", ignoreShutter = "" } = {}) => ({
                 url: "/api/users",
                 method: "GET",
-                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, isStaff, excludeCustomRoles, excludeTrainers, excludeAdmins, departmentId, sectionId, lineId, subSectionId, stationId, passedQuizOnly, includeTemporary, dojoHandoverPassedOnly, designation, includeEvaluationInfo, excludeCounts }
+                params: { page, limit, sortBy, order, search, role, unit, customRoleId, isEmployee, isStaff, excludeCustomRoles, excludeTrainers, excludeAdmins, departmentId, sectionId, lineId, subSectionId, stationId, passedQuizOnly, includeTemporary, dojoHandoverPassedOnly, designation, includeEvaluationInfo, excludeCounts, ignoreShutter }
             }),
             providesTags: ['User'],
         }),

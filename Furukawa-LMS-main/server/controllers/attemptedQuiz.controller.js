@@ -1291,14 +1291,56 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
 
     const values = [];
 
+    // Restrict department/section scope for CUSTOM role users to their assigned hierarchy
+    const isSuperAdminOrAdmin = req.user?.role === 'SUPERADMIN' || req.user?.role === 'ADMIN' || req.user?.isAdmin;
+    let allowedDepts = [];
+    let allowedSections = [];
+    if (req.user && req.user.role === 'CUSTOM' && !isSuperAdminOrAdmin) {
+        if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+        try {
+            const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
+            if (Array.isArray(parsedDepts)) parsedDepts.forEach(d => {
+                const id = (d && typeof d === 'object') ? String(d.id || d._id || '') : String(d);
+                if (id) allowedDepts.push(id);
+            });
+        } catch (e) { /* ignore parse errors */ }
+        allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
+
+        if (req.user.sectionId) allowedSections.push(String(req.user.sectionId));
+        try {
+            const parsedSections = typeof req.user.sections === 'string' ? JSON.parse(req.user.sections) : (req.user.sections || []);
+            if (Array.isArray(parsedSections)) parsedSections.forEach(s => {
+                const id = (s && typeof s === 'object') ? String(s.id || s._id || '') : String(s);
+                if (id) allowedSections.push(id);
+            });
+        } catch (e) { /* ignore parse errors */ }
+        allowedSections = [...new Set(allowedSections)].filter(Boolean);
+    }
+
     if (departmentId) {
-        sql += " AND u_hier_resolved.resolvedDeptId = ?";
-        values.push(parseInt(departmentId));
+        if (allowedDepts.length > 0 && !allowedDepts.includes(String(departmentId))) {
+            sql += " AND 1 = 0";
+        } else {
+            sql += " AND u_hier_resolved.resolvedDeptId = ?";
+            values.push(parseInt(departmentId));
+        }
+    } else if (allowedDepts.length > 0) {
+        sql += ` AND u_hier_resolved.resolvedDeptId IN (${allowedDepts.map(() => '?').join(',')})`;
+        values.push(...allowedDepts);
     }
+
     if (sectionId) {
-        sql += " AND u_hier_resolved.resolvedSectionId = ?";
-        values.push(parseInt(sectionId));
+        if (allowedSections.length > 0 && !allowedSections.includes(String(sectionId))) {
+            sql += " AND 1 = 0";
+        } else {
+            sql += " AND u_hier_resolved.resolvedSectionId = ?";
+            values.push(parseInt(sectionId));
+        }
+    } else if (allowedSections.length > 0) {
+        sql += ` AND u_hier_resolved.resolvedSectionId IN (${allowedSections.map(() => '?').join(',')})`;
+        values.push(...allowedSections);
     }
+
     if (lineId) {
         sql += " AND u_hier_resolved.resolvedLineId = ?";
         values.push(parseInt(lineId));

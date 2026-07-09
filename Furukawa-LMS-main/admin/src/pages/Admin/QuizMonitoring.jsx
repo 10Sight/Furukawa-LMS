@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -46,13 +47,57 @@ const AdminQuizMonitoring = () => {
   const [selectedTestType, setSelectedTestType] = useState("all");
   const [search, setSearch] = useState("");
 
+  // Restrict department/section filters for CUSTOM role users to their assigned scope
+  const currentUser = useSelector((state) => state.auth.user);
+  const isAdmin = currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN" || currentUser?.isAdmin;
+  const isCustomRole = currentUser?.role === "CUSTOM" && !isAdmin;
+
+  const assignedDepartments = useMemo(() => {
+    if (!isCustomRole) return [];
+    const ids = [];
+    if (Array.isArray(currentUser?.departments)) {
+      currentUser.departments.forEach((d) => {
+        const id = d && typeof d === "object" ? (d.id || d._id) : d;
+        if (id) ids.push(String(id));
+      });
+    }
+    if (currentUser?.departmentId) ids.push(String(currentUser.departmentId));
+    return [...new Set(ids)];
+  }, [currentUser, isCustomRole]);
+
+  const assignedSections = useMemo(() => {
+    if (!isCustomRole) return [];
+    const ids = [];
+    if (Array.isArray(currentUser?.sections)) {
+      currentUser.sections.forEach((s) => {
+        const id = s && typeof s === "object" ? (s.id || s._id) : s;
+        if (id) ids.push(String(id));
+      });
+    }
+    if (currentUser?.sectionId) ids.push(String(currentUser.sectionId));
+    return [...new Set(ids)];
+  }, [currentUser, isCustomRole]);
+
+  const isDeptSelectDisabled = isCustomRole && assignedDepartments.length === 1;
+  const isSectionSelectDisabled = isCustomRole && assignedSections.length === 1;
+
   // 1. Fetch organizational metadata
   const { data: deptsData, isLoading: deptsLoading } = useGetAllDepartmentsQuery({ limit: 1000 });
   const departments = deptsData?.data?.departments || [];
 
+  const assignableDepartments = useMemo(() => {
+    if (!isCustomRole) return departments;
+    return departments.filter((d) => assignedDepartments.includes(String(d.id)));
+  }, [departments, assignedDepartments, isCustomRole]);
+
   const deptQueryId = selectedDeptId === "all" ? "" : selectedDeptId;
   const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(deptQueryId, { skip: !deptQueryId });
   const sections = sectionsData?.data || [];
+
+  const assignableSections = useMemo(() => {
+    if (!isCustomRole) return sections;
+    return sections.filter((s) => assignedSections.includes(String(s.id)));
+  }, [sections, assignedSections, isCustomRole]);
 
   const { data: linesData, isLoading: linesLoading } = useGetLinesQuery();
   const allLines = linesData?.data || [];
@@ -104,6 +149,19 @@ const AdminQuizMonitoring = () => {
     setSelectedSubSectionId("all");
   };
 
+  // Pre-select and freeze the department/section when the CUSTOM user has exactly one assigned
+  useEffect(() => {
+    if (isDeptSelectDisabled && selectedDeptId !== assignedDepartments[0]) {
+      setSelectedDeptId(assignedDepartments[0]);
+    }
+  }, [isDeptSelectDisabled, assignedDepartments, selectedDeptId]);
+
+  useEffect(() => {
+    if (isSectionSelectDisabled && selectedSectionId !== assignedSections[0]) {
+      setSelectedSectionId(assignedSections[0]);
+    }
+  }, [isSectionSelectDisabled, assignedSections, selectedSectionId]);
+
   // 2. Fetch Attempts based on filters
   const queryParams = useMemo(() => {
     const params = {};
@@ -133,8 +191,8 @@ const AdminQuizMonitoring = () => {
   };
 
   const handleResetAll = () => {
-    setSelectedDeptId("all");
-    setSelectedSectionId("all");
+    setSelectedDeptId(isDeptSelectDisabled ? assignedDepartments[0] : "all");
+    setSelectedSectionId(isSectionSelectDisabled ? assignedSections[0] : "all");
     setSelectedLineId("all");
     setSelectedSubSectionId("all");
     setSelectedLevel("all");
@@ -143,8 +201,8 @@ const AdminQuizMonitoring = () => {
   };
 
   const hasActiveFilters =
-    selectedDeptId !== "all" ||
-    selectedSectionId !== "all" ||
+    (selectedDeptId !== "all" && !isDeptSelectDisabled) ||
+    (selectedSectionId !== "all" && !isSectionSelectDisabled) ||
     selectedLineId !== "all" ||
     selectedSubSectionId !== "all" ||
     selectedLevel !== "all" ||
@@ -190,13 +248,13 @@ const AdminQuizMonitoring = () => {
             {/* Department */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">Department</label>
-              <Select value={selectedDeptId} onValueChange={handleDeptChange}>
+              <Select value={selectedDeptId} onValueChange={handleDeptChange} disabled={isDeptSelectDisabled}>
                 <SelectTrigger className="w-full h-10">
                   <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map((d) => (
+                  {!isDeptSelectDisabled && <SelectItem value="all">All Departments</SelectItem>}
+                  {assignableDepartments.map((d) => (
                     <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -209,14 +267,14 @@ const AdminQuizMonitoring = () => {
               <Select
                 value={selectedSectionId}
                 onValueChange={handleSectionChange}
-                disabled={selectedDeptId === "all"}
+                disabled={selectedDeptId === "all" || isSectionSelectDisabled}
               >
                 <SelectTrigger className="w-full h-10">
                   <SelectValue placeholder={selectedDeptId === "all" ? "Select Department first" : "Select Section"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Sections</SelectItem>
-                  {sections.map((s) => (
+                  {!isSectionSelectDisabled && <SelectItem value="all">All Sections</SelectItem>}
+                  {assignableSections.map((s) => (
                     <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -332,13 +390,17 @@ const AdminQuizMonitoring = () => {
               {selectedDeptId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
                   Dept: {departments.find(d => String(d.id) === selectedDeptId)?.name || selectedDeptId}
-                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => handleDeptChange("all")} />
+                  {!isDeptSelectDisabled && (
+                    <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => handleDeptChange("all")} />
+                  )}
                 </Badge>
               )}
               {selectedSectionId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
                   Sec: {sections.find(s => String(s.id) === selectedSectionId)?.name || selectedSectionId}
-                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => handleSectionChange("all")} />
+                  {!isSectionSelectDisabled && (
+                    <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => handleSectionChange("all")} />
+                  )}
                 </Badge>
               )}
               {selectedLineId !== "all" && (

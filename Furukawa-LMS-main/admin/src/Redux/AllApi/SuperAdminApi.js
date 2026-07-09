@@ -323,9 +323,10 @@ export const superAdminApi = createApi({
 
     // Restore from backup
     restoreFromBackup: builder.mutation({
-      query: (backupId) => ({
+      query: ({ backupId, collections = [], confirmRestore = false }) => ({
         url: `/api/data-management/backup/${backupId}/restore`,
         method: "POST",
+        data: { collections, confirmRestore },
       }),
       invalidatesTags: ["DataManagement"],
     }),

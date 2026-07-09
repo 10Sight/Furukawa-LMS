@@ -312,7 +312,9 @@ const DataManagement = () => {
           <div className="space-y-6">
             {/* Data Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {dataStats?.data?.statistics && Object.entries(dataStats.data.statistics).map(([key, stats]) => {
+              {dataStats?.data?.statistics && Object.entries(dataStats.data.statistics)
+                .filter(([key]) => availableCollections.some(c => c.id === key))
+                .map(([key, stats]) => {
                 const collection = availableCollections.find(c => c.id === key);
                 const Icon = collection?.icon || HardDrive;
                 return (
@@ -455,9 +457,9 @@ const DataManagement = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {backupHistory?.data?.backups?.map((backup) => (
-                      <tr key={backup._id}>
+                      <tr key={backup.id}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {backup.backup?.id || backup._id}
+                          {backup.backup?.id || backup.id}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {formatDate(backup.createdAt)}
@@ -476,14 +478,14 @@ const DataManagement = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                           {backup.fileExists && (
                             <button
-                              onClick={() => setShowRestoreConfirm(backup.backup?.id || backup._id)}
+                              onClick={() => setShowRestoreConfirm(backup.backup?.id || backup.id)}
                               className="text-indigo-600 hover:text-indigo-900"
                             >
                               Restore
                             </button>
                           )}
                           <button
-                            onClick={() => setShowDeleteConfirm(backup.backup?.id || backup._id)}
+                            onClick={() => setShowDeleteConfirm(backup.backup?.id || backup.id)}
                             className="text-red-600 hover:text-red-900"
                           >
                             Delete
@@ -792,7 +794,7 @@ const DataManagement = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {operationHistory?.data?.operations?.map((operation) => (
-                    <tr key={operation._id}>
+                    <tr key={operation.id}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           {getOperationStatusIcon(operation.action)}

@@ -119,7 +119,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             auditParams.push(...filters.map(f => `%${f}%`));
 
             if (superAdminIds.length > 0) {
-                auditSql += ` AND (user NOT IN (${superAdminIds.map(() => '?').join(',')}) OR user IS NULL)`;
+                auditSql += ` AND ([user] NOT IN (${superAdminIds.map(() => '?').join(',')}) OR [user] IS NULL)`;
                 auditParams.push(...superAdminIds);
             }
         }
@@ -310,7 +310,7 @@ export const getEngagementStats = asyncHandler(async (req, res) => {
             const superAdmins = await User.find({ role: 'SUPERADMIN' });
             const sIds = superAdmins.map(u => u.id);
             if (sIds.length > 0) {
-                loginSql += ` AND (user NOT IN (${sIds.join(',')}) OR user IS NULL)`;
+                loginSql += ` AND ([user] NOT IN (${sIds.join(',')}) OR [user] IS NULL)`;
             }
         }
 
@@ -498,7 +498,7 @@ export const getAuditStats = asyncHandler(async (req, res) => {
     const { groupBy = 'month', userId, startDate, endDate, year } = req.query;
     let whereClauses = [];
     let params = [];
-    if (userId) { whereClauses.push("user = ?"); params.push(userId); }
+    if (userId) { whereClauses.push("[user] = ?"); params.push(userId); }
     if (startDate) { whereClauses.push("createdAt >= ?"); params.push(new Date(startDate)); }
     if (endDate) { whereClauses.push("createdAt < ?"); params.push(new Date(endDate)); }
     if (year && groupBy === 'month') {
@@ -530,7 +530,7 @@ export const exportAuditStats = asyncHandler(async (req, res) => {
     const { groupBy = 'month', userId, startDate, endDate, year } = req.query;
     let whereClauses = [];
     let params = [];
-    if (userId) { whereClauses.push("user = ?"); params.push(userId); }
+    if (userId) { whereClauses.push("[user] = ?"); params.push(userId); }
     if (startDate) { whereClauses.push("createdAt >= ?"); params.push(new Date(startDate)); }
     if (endDate) { whereClauses.push("createdAt < ?"); params.push(new Date(endDate)); }
     if (year && groupBy === 'month') {

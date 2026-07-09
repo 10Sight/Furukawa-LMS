@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from "react-dom";
+import * as XLSX from 'xlsx';
 import {
     useDojoRegisterMutation,
     useGetTemporaryUsersQuery,
@@ -68,7 +70,9 @@ import {
     IconInfoCircle,
     IconX,
     IconHistory,
-    IconUserMinus
+    IconUserMinus,
+    IconClock,
+    IconAlertTriangle
 } from "@tabler/icons-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -92,6 +96,13 @@ const normalizeStatus = (status) => {
     const s = status || "PRESENT";
     if (s === "LEAVE") return "ON_LEAVE";
     return s;
+};
+
+const formatDuration = (totalSeconds) => {
+    const seconds = Math.max(0, Math.round(totalSeconds || 0));
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${String(secs).padStart(2, "0")}`;
 };
 
 const DojoHiring = () => {
@@ -131,6 +142,15 @@ const DojoHiring = () => {
     const [userToDelete, setUserToDelete] = useState(null);
     const [selectedRows, setSelectedRows] = useState(new Set());
     const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importProgress, setImportProgress] = useState({
+        total: 0,
+        success: 0,
+        failed: 0,
+        timeElapsed: 0,
+        errors: [],
+        done: false,
+    });
 
     const [searchTerm, setSearchTerm] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
@@ -153,6 +173,26 @@ const DojoHiring = () => {
     useEffect(() => {
         setCurrentPage(1);
     }, [activeTab, searchTerm, genderFilter, deptFilter, startDate, endDate]);
+
+    // Tick the elapsed time while an import is running
+    useEffect(() => {
+        if (!isImporting || importProgress.done) return;
+        const interval = setInterval(() => {
+            setImportProgress((prev) => ({ ...prev, timeElapsed: prev.timeElapsed + 1 }));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [isImporting, importProgress.done]);
+
+    // Warn before the user navigates away mid-import
+    useEffect(() => {
+        if (!isImporting) return;
+        const handleBeforeUnload = (e) => {
+            e.preventDefault();
+            e.returnValue = "";
+        };
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, [isImporting]);
 
     const getStatusParam = (tab) => tab === "left" ? "LEFT" : "ACTIVE";
 
@@ -364,6 +404,18 @@ const DojoHiring = () => {
         fileInputRef.current?.click();
     };
 
+    const closeImportOverlay = () => {
+        setIsImporting(false);
+        setImportProgress({
+            total: 0,
+            success: 0,
+            failed: 0,
+            timeElapsed: 0,
+            errors: [],
+            done: false,
+        });
+    };
+
     const handleFileChange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -375,7 +427,61 @@ const DojoHiring = () => {
             return;
         }
 
-        const toastId = toast.loading("Importing candidates...");
+        // Parse the workbook client-side just to count valid rows for the progress summary;
+        // the actual import still happens in a single request on the server.
+        let rows;
+        try {
+            const buffer = await file.arrayBuffer();
+            const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+
+            let headerRowIndex = -1;
+            for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+                const row = allRows[i];
+                if (row && Array.isArray(row) && row.some((cell) => {
+                    if (!cell) return false;
+                    const c = cell.toString().trim().toLowerCase();
+                    return c === "employeeid" || c === "employee code" || c === "employee id";
+                })) {
+                    headerRowIndex = i;
+                    break;
+                }
+            }
+            if (headerRowIndex === -1) headerRowIndex = 0;
+
+            const headers = allRows[headerRowIndex].map((h) => h?.toString().trim() || "");
+            const rawData = allRows.slice(headerRowIndex + 1);
+            rows = rawData
+                .map((r) => {
+                    const obj = {};
+                    headers.forEach((h, idx) => {
+                        obj[h || `__EMPTY_${idx}`] = r[idx];
+                    });
+                    return obj;
+                })
+                .filter((r) => Object.values(r).some((v) => v !== null && v !== undefined && v.toString().trim() !== ""));
+
+            if (rows.length === 0) {
+                toast.error("No data found in the Excel file");
+                return;
+            }
+        } catch (error) {
+            console.error("Excel parse error:", error);
+            toast.error("Failed to read the Excel file");
+            return;
+        }
+
+        setIsImportModalOpen(false);
+        setImportProgress({
+            total: rows.length,
+            success: 0,
+            failed: 0,
+            timeElapsed: 0,
+            errors: [],
+            done: false,
+        });
+        setIsImporting(true);
 
         try {
             const formData = new FormData();
@@ -383,22 +489,21 @@ const DojoHiring = () => {
 
             const result = await importDojoCandidates(formData).unwrap();
 
-            const successCount = result.data.success?.length || 0;
-            const failedCount = result.data.failed?.length || 0;
+            const successList = result?.data?.success || [];
+            const failedList = result?.data?.failed || [];
 
-            if (failedCount > 0) {
-                toast.warning(`Imported ${successCount} candidates. ${failedCount} failed.`);
-            } else {
-                toast.success(`Successfully imported ${successCount} candidates!`);
-                setIsImportModalOpen(false);
-            }
-
-            toast.dismiss(toastId);
+            setImportProgress((prev) => ({
+                ...prev,
+                success: successList.length,
+                failed: failedList.length,
+                errors: failedList.map((f) => `Row ${f.row ?? "-"}: ${f.error || "Failed to import"}`),
+                done: true,
+            }));
             refetch();
         } catch (error) {
             console.error("Import error:", error);
-            toast.dismiss(toastId);
-            toast.error(error?.data?.message || "Failed to import candidates");
+            const message = error?.data?.message || "Failed to import candidates";
+            setImportProgress((prev) => ({ ...prev, done: true, errors: [...prev.errors, `Import stopped: ${message}`] }));
         }
     };
 
@@ -707,6 +812,79 @@ const DojoHiring = () => {
     }
 
     return (
+        <>
+        {isImporting && createPortal(
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
+                    <div className="flex flex-col items-center gap-3 text-center">
+                        {!importProgress.done ? (
+                            <div className="h-12 w-12 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" />
+                        ) : (
+                            <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+                                <IconCheck className="h-7 w-7 text-green-600" />
+                            </div>
+                        )}
+                        <h3 className="text-lg font-bold text-slate-900">
+                            {importProgress.done ? "Import Complete" : "Importing Candidates..."}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                            {importProgress.done
+                                ? "Review the summary below and close when ready."
+                                : "Please keep this tab open until the import finishes."}
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="text-xs text-slate-600 font-medium">Total Rows</div>
+                            <div className="text-xl font-bold text-slate-900">{importProgress.total}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2">
+                            <IconClock className="h-4 w-4 text-slate-500" />
+                            <div>
+                                <div className="text-xs text-slate-600 font-medium">Time Elapsed</div>
+                                <div className="text-sm font-bold text-slate-900">{formatDuration(importProgress.timeElapsed)}</div>
+                            </div>
+                        </div>
+                        {importProgress.done && (
+                            <>
+                                <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                                    <div className="text-xs text-green-700 font-medium">Succeeded</div>
+                                    <div className="text-xl font-bold text-green-900">{importProgress.success}</div>
+                                </div>
+                                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                                    <div className="text-xs text-red-700 font-medium">Failed</div>
+                                    <div className="text-xl font-bold text-red-900">{importProgress.failed}</div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {importProgress.errors.length > 0 && (
+                        <div className="space-y-1.5">
+                            <h4 className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                                <IconAlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                                Skipped / Failed Rows ({importProgress.errors.length})
+                            </h4>
+                            <div className="max-h-32 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 space-y-1">
+                                {importProgress.errors.map((err, idx) => (
+                                    <div key={idx} className="text-xs text-red-700 font-mono break-words">
+                                        {err}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {importProgress.done && (
+                        <Button onClick={closeImportOverlay} className="w-full">
+                            Done
+                        </Button>
+                    )}
+                </div>
+            </div>,
+            document.body
+        )}
         <div className="p-6 space-y-6 animate-in fade-in duration-500 bg-slate-50/50 min-h-screen">
             <Tabs value={dojoTab} onValueChange={handleDojoTabChange} className="w-full">
                 <TabsList className="no-print mb-6 flex flex-wrap gap-2 w-fit bg-slate-100 p-1.5 rounded-xl shadow-sm border border-slate-200">
@@ -1540,6 +1718,7 @@ const DojoHiring = () => {
             </Dialog>
 
         </div>
+        </>
     );
 };
 

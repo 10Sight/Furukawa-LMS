@@ -2342,12 +2342,13 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     handoverWhereClauses.push("d.id = ?");
     handoverParams.push(departmentId);
   }
+  let handoverDateFilterClause = "";
   if (req.query.startDate) {
-    handoverWhereClauses.push("u.joiningDate >= ?");
+    handoverDateFilterClause += " AND hs.date >= ?";
     handoverParams.push(req.query.startDate);
   }
   if (req.query.endDate) {
-    handoverWhereClauses.push("u.joiningDate <= ?");
+    handoverDateFilterClause += " AND hs.date <= ?";
     handoverParams.push(req.query.endDate);
   }
 
@@ -2362,6 +2363,7 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
           CROSS APPLY OPENJSON(hs.entries) as entry
           WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
             AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+            ${handoverDateFilterClause}
       )
   `, handoverParams);
   const handoverCount = handoverData[0]?.handoverCount || 0;

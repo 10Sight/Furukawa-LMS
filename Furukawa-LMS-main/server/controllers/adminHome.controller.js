@@ -526,22 +526,22 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         yearly:  "FORMAT(expectedHandover, 'yyyy')",
     };
     const actualFormatMap = {
-        daily:   "FORMAT(CAST(updatedAt AS DATE), 'yyyy-MM-dd')",
-        monthly: "FORMAT(CAST(updatedAt AS DATE), 'yyyy-MM')",
-        yearly:  "FORMAT(CAST(updatedAt AS DATE), 'yyyy')",
+        daily:   "FORMAT(hs.date, 'yyyy-MM-dd')",
+        monthly: "FORMAT(hs.date, 'yyyy-MM')",
+        yearly:  "FORMAT(hs.date, 'yyyy')",
     };
 
     // Temp users store their destination in targetDeptId; after handover it moves to departmentId
     // Accepts comma-separated IDs for multi-select
     let expectedDeptClause = '';
-    let actualDeptClause = '';
+    let actualDeptClausePrefixed = '';
     const expectedParams = [start, end];
     const actualParams   = [start, end];
     const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
     if (deptIds.length > 0) {
         const ph = deptIds.map(() => '?').join(',');
         expectedDeptClause = `AND COALESCE(departmentId, targetDeptId) IN (${ph})`;
-        actualDeptClause   = `AND COALESCE(departmentId, targetDeptId) IN (${ph})`;
+        actualDeptClausePrefixed = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
         expectedParams.push(...deptIds);
         actualParams.push(...deptIds);
     }
@@ -582,33 +582,37 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
     const [actualRows] = await executeQuery(`
         SELECT
             ${actualFormatMap[safeGroupBy]} AS period,
-            COUNT(*)                        AS actual
-        FROM users
-        WHERE expectedHandover IS NOT NULL
-          AND isTemporary = 0
-          AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND CAST(updatedAt AS DATE) >= ?
-          AND CAST(updatedAt AS DATE) <= ?
-          ${actualDeptClause}
+            COUNT(DISTINCT u.id)            AS actual
+        FROM users u
+        INNER JOIN handover_sheets hs ON 1=1
+        CROSS APPLY OPENJSON(hs.entries) as entry
+        WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+          AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND hs.date >= ?
+          AND hs.date <= ?
+          ${actualDeptClausePrefixed}
         GROUP BY ${actualFormatMap[safeGroupBy]}
         ORDER BY period ASC
     `, actualParams);
 
-    // Per-department actual breakdown (grouped by period + COALESCE(departmentId, targetDeptId))
+    // Per-department actual breakdown (grouped by period + COALESCE(u.departmentId, u.targetDeptId))
     const [deptActualRows] = await executeQuery(`
         SELECT
             ${actualFormatMap[safeGroupBy]}            AS period,
-            CAST(COALESCE(departmentId, targetDeptId) AS NVARCHAR(20))         AS deptId,
-            COUNT(*)                                   AS actual
-        FROM users
-        WHERE expectedHandover IS NOT NULL
-          AND isTemporary = 0
-          AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND COALESCE(departmentId, targetDeptId) IS NOT NULL
-          AND CAST(updatedAt AS DATE) >= ?
-          AND CAST(updatedAt AS DATE) <= ?
-          ${actualDeptClause}
-        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(departmentId, targetDeptId)
+            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20))     AS deptId,
+            COUNT(DISTINCT u.id)                       AS actual
+        FROM users u
+        INNER JOIN handover_sheets hs ON 1=1
+        CROSS APPLY OPENJSON(hs.entries) as entry
+        WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+          AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
+          AND hs.date >= ?
+          AND hs.date <= ?
+          ${actualDeptClausePrefixed}
+        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId)
         ORDER BY period ASC
     `, actualParams);
 

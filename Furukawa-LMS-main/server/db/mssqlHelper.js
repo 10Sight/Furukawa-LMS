@@ -1,14 +1,10 @@
-import { poolPromise, mssql } from "./connectDB.js";
+import { poolPromise } from "./connectDB.js";
 
 /**
- * Helper to execute MSSQL queries with parameters, mimicking the array-based parameter approach of mysql2.
- * Usage:
- * const [rows, result] = await executeQuery("SELECT * FROM users WHERE id = ?", [userId]);
+ * Runs a query against a given mssql Request (either pool.request() or transaction.request()),
+ * mimicking the array-based parameter approach of mysql2.
  */
-export const executeQuery = async (queryText, params = []) => {
-    const pool = await poolPromise;
-    const request = pool.request();
-
+export const runOnRequest = async (request, queryText, params = []) => {
     let processedQuery = queryText;
 
     let paramIndex = 0;
@@ -64,4 +60,38 @@ export const executeQuery = async (queryText, params = []) => {
     };
 
     return [result.recordset || [], fakeMetadata];
+};
+
+/**
+ * Helper to execute MSSQL queries with parameters, mimicking the array-based parameter approach of mysql2.
+ * Usage:
+ * const [rows, result] = await executeQuery("SELECT * FROM users WHERE id = ?", [userId]);
+ */
+export const executeQuery = async (queryText, params = []) => {
+    const pool = await poolPromise;
+    const request = pool.request();
+    return runOnRequest(request, queryText, params);
+};
+
+/**
+ * Returns the list of user base table names in the dbo schema.
+ * Used to dynamically discover tables instead of relying on a hardcoded map.
+ */
+export const getUserTables = async () => {
+    const [rows] = await executeQuery(
+        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = 'dbo' AND TABLE_NAME <> 'sysdiagrams'"
+    );
+    return rows.map(r => r.TABLE_NAME);
+};
+
+/**
+ * Checks whether a table has an IDENTITY column.
+ * SET IDENTITY_INSERT fails on tables without one, so this must be checked before using it.
+ */
+export const tableHasIdentity = async (tableName) => {
+    const [rows] = await executeQuery(
+        "SELECT OBJECTPROPERTY(OBJECT_ID(?), 'TableHasIdentity') AS HasIdentity",
+        [tableName]
+    );
+    return !!(rows[0] && rows[0].HasIdentity);
 };

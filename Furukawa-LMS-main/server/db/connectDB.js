@@ -49,7 +49,30 @@ export const pool = {
         return executeQuery(query, params);
     },
     getConnection: async () => {
-        return { release: () => { } };
+        const { runOnRequest } = await import("./mssqlHelper.js");
+        const dbPool = await poolPromise;
+        const transaction = new sql.Transaction(dbPool);
+        let started = false;
+
+        return {
+            query: async (query, params = []) => {
+                const request = started ? transaction.request() : dbPool.request();
+                return runOnRequest(request, query, params);
+            },
+            beginTransaction: async () => {
+                await transaction.begin();
+                started = true;
+            },
+            commit: async () => {
+                await transaction.commit();
+            },
+            rollback: async () => {
+                if (started) {
+                    await transaction.rollback();
+                }
+            },
+            release: () => { }
+        };
     }
 };
 

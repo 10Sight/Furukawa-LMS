@@ -679,6 +679,7 @@ const TakeQuiz = () => {
           <div className="grid grid-cols-12 border-b-[3px] border-black text-xs uppercase font-bold">
             {/* Left box */}
             <div className="col-span-7 border-r-[3px] border-black p-4 space-y-3 bg-white">
+              {/* Process Name */}
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">Process Name :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold">
@@ -687,6 +688,7 @@ const TakeQuiz = () => {
                     : quiz?.title || "Visual"}
                 </span>
               </div>
+              {/* Candidate Name */}
               <div className="flex gap-2 items-center relative">
                 <span className="min-w-[120px] text-black">Candidate Name :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold relative">
@@ -736,6 +738,7 @@ const TakeQuiz = () => {
                   )}
                 </span>
               </div>
+              {/* E.Code */}
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">E.Code :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-mono">
@@ -759,6 +762,7 @@ const TakeQuiz = () => {
                   )}
                 </span>
               </div>
+              {/* Department */}
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">Department :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">

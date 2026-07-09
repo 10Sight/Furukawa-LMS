@@ -993,13 +993,20 @@ export const updateUser = asyncHandler(async (req, res) => {
     const currentSkillMap = parseJSON(oldUser.currentSkill, {});
     const [machRows] = await executeQuery("SELECT subSectionId FROM machines WHERE id = ?", [data.stationId]);
     const subSecId = machRows.length > 0 ? machRows[0].subSectionId : null;
-    if (subSecId && currentSkillMap[subSecId]) {
-      data.currentLevel = currentSkillMap[subSecId];
-    } else if (oldUser.currentLevel) {
-      data.currentLevel = oldUser.currentLevel;
-      if (subSecId) currentSkillMap[subSecId] = oldUser.currentLevel;
+    
+    // If a level was explicitly passed in the request, preserve it and seed it into the new sub-section mapping
+    if (data.currentLevel !== undefined && data.currentLevel) {
+      if (subSecId) currentSkillMap[subSecId] = data.currentLevel;
     } else {
-      data.currentLevel = null;
+      // Fall back to resolving the level from the sub-section history or old level
+      if (subSecId && currentSkillMap[subSecId]) {
+        data.currentLevel = currentSkillMap[subSecId];
+      } else if (oldUser.currentLevel) {
+        data.currentLevel = oldUser.currentLevel;
+        if (subSecId) currentSkillMap[subSecId] = oldUser.currentLevel;
+      } else {
+        data.currentLevel = null;
+      }
     }
     data.currentSkill = currentSkillMap;
   }
@@ -1751,7 +1758,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     } else whereClauses.push("1=0");
   } else if (req.user.role === "CUSTOM") {
     const customTargetLayout = String(req.user.customRole?.targetLayout || '').toLowerCase();
-    const isAdminLayout = ['admin', 'superadmin'].includes(customTargetLayout);
+    const isFullAccessLayout = ['admin', 'superadmin', 'trainer'].includes(customTargetLayout);
 
     // Resolve the set of departments this custom user is allowed to see
     let allowedDepts = [];
@@ -1762,8 +1769,8 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     } catch (e) { }
     allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
 
-    if (isAdminLayout && allowedDepts.length === 0) {
-      // Admin-layout with no assigned departments: full access, no restriction
+    if (isFullAccessLayout && allowedDepts.length === 0) {
+      // Admin/Trainer-layout with no assigned departments: full access, no restriction
     } else if (allowedDepts.length > 0) {
       // Restricted to assigned departments (applies to both layouts when depts are assigned)
       const placeholders = allowedDepts.map(() => '?').join(',');

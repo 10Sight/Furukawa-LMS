@@ -1,9 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
 import archiver from "archiver";
+import AdmZip from "adm-zip";
 import { promisify } from "util";
 import { exec } from "child_process";
 import { pool } from "../db/connectDB.js";
+import { getUserTables, tableHasIdentity } from "../db/mssqlHelper.js";
 
 // Import all models mainly to ensure tables init or for referencing names if needed,
 // but for bulk generic ops, simple SQL is often cleaner.
@@ -44,6 +46,13 @@ const ENTITY_TABLE_MAP = {
 // Map collection names to Models for validation/schema awareness if needed
 // (Models in SQL are mostly wrappers, might not support bulk validate same way)
 
+// Resolves collection keys (friendly alias or raw table name) to real table names,
+// dropping anything not present in the live table list. This whitelist check is what
+// makes it safe to accept a raw table name here instead of only alias lookups -
+// a key that isn't a real table (e.g. an injection attempt) is silently filtered out.
+const resolveTableNames = (keys, allTables) =>
+    keys.map(k => ENTITY_TABLE_MAP[k] || k).filter(name => allTables.includes(name));
+
 // === DATABASE BACKUP OPERATIONS ===
 
 // Create database backup
@@ -76,13 +85,14 @@ export const createDatabaseBackup = asyncHandler(async (req, res) => {
             version: process.env.APP_VERSION || '1.0.0'
         };
 
-        // Export data from tables
+        // Export data from all tables in the database
         const collectionsData = {};
+        const allTables = await getUserTables();
 
-        for (const [key, tableName] of Object.entries(ENTITY_TABLE_MAP)) {
-            const [rows] = await pool.query(`SELECT * FROM ${tableName}`);
-            collectionsData[key] = rows;
-            backupMetadata.collections[key] = rows.length;
+        for (const tableName of allTables) {
+            const [rows] = await pool.query(`SELECT * FROM [${tableName}]`);
+            collectionsData[tableName] = rows;
+            backupMetadata.collections[tableName] = rows.length;
         }
 
         const backupData = {
@@ -156,15 +166,15 @@ export const getBackupHistory = asyncHandler(async (req, res) => {
         // Fetch logs
         // Join with users for populating userId
         const query = `
-            SELECT a.*, u.fullName, u.email 
-            FROM audits a 
-            LEFT JOIN users u ON a.user = u.id 
-            WHERE a.action = 'CREATE_BACKUP' 
-            ORDER BY a.${validSort} ${orderSql} 
-            LIMIT ? OFFSET ?
+            SELECT a.*, u.fullName, u.email
+            FROM audits a
+            LEFT JOIN users u ON a.[user] = u.id
+            WHERE a.action = 'CREATE_BACKUP'
+            ORDER BY a.${validSort} ${orderSql}
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         `;
 
-        const [rows] = await pool.query(query, [Number(limit), Number(offset)]);
+        const [rows] = await pool.query(query, [Number(offset), Number(limit)]);
 
         const [countRow] = await pool.query("SELECT COUNT(*) as total FROM audits WHERE action = 'CREATE_BACKUP'");
         const totalBackups = countRow[0].total;
@@ -220,14 +230,8 @@ export const restoreFromBackup = asyncHandler(async (req, res) => {
 
     if (!confirmRestore) throw new ApiError('Restore confirmation required', 400);
 
-    // Find backup in audit logs
-    // Details is JSON, need LIKE or JSON_EXTRACT to find ID?
-    // "details": {"id": "backup_..."}
-    // Simple robust way: query audits with action CREATE_BACKUP and filter in app if volume low,
-    // or use JSON_EXTRACT if MySQL 5.7+
-
-    // Assuming JSON_EXTRACT:
-    const [rows] = await pool.query("SELECT * FROM audits WHERE action = 'CREATE_BACKUP' AND JSON_EXTRACT(details, '$.id') = ?", [backupId]);
+    // Find backup in audit logs by matching the JSON-encoded backup id in details
+    const [rows] = await pool.query("SELECT * FROM audits WHERE action = 'CREATE_BACKUP' AND JSON_VALUE(details, '$.id') = ?", [backupId]);
     const backupRecord = rows[0];
 
     if (!backupRecord) throw new ApiError('Backup not found', 404);
@@ -245,7 +249,10 @@ export const restoreFromBackup = asyncHandler(async (req, res) => {
 
     let backupContent;
     if (backupPath.endsWith('.zip')) {
-        throw new ApiError('Compressed backup restore not yet implemented', 501);
+        const zip = new AdmZip(backupPath);
+        const entry = zip.getEntries().find(e => e.entryName.endsWith('.json'));
+        if (!entry) throw new ApiError('No backup data found in archive', 400);
+        backupContent = JSON.parse(zip.readAsText(entry));
     } else {
         const fileData = await fs.readFile(backupPath, 'utf8');
         backupContent = JSON.parse(fileData);
@@ -259,43 +266,60 @@ export const restoreFromBackup = asyncHandler(async (req, res) => {
     try {
         await conn.beginTransaction();
 
-        // Disable FK checks
-        await conn.query("SET FOREIGN_KEY_CHECKS = 0");
-
+        const allTables = await getUserTables();
         const keysToRestore = collections.length ? collections : Object.keys(backupContent.data);
+        const tableNames = resolveTableNames(keysToRestore, allTables);
+
+        // Disable FK constraints on the tables being restored
+        for (const tableName of tableNames) {
+            await conn.query(`ALTER TABLE [${tableName}] NOCHECK CONSTRAINT ALL`);
+        }
 
         for (const key of keysToRestore) {
-            const tableName = ENTITY_TABLE_MAP[key];
+            const [tableName] = resolveTableNames([key], allTables);
             if (!tableName) continue;
 
             const tableData = backupContent.data[key];
             if (!tableData || !Array.isArray(tableData)) continue;
 
-            // Truncate
-            await conn.query(`TRUNCATE TABLE ${tableName}`);
+            // MSSQL cannot TRUNCATE a table referenced by a foreign key, even with constraints disabled
+            await conn.query(`DELETE FROM [${tableName}]`);
 
-            // Bulk Insert
+            // Bulk Insert, chunked to stay under MSSQL's ~2100 bound-parameter limit per query
             if (tableData.length > 0) {
-                // Construct bulk insert
-                // Need columns from first item
                 const columns = Object.keys(tableData[0]);
-                const placeholders = `(${columns.map(() => '?').join(',')})`;
-                const sql = `INSERT INTO ${tableName} (${columns.map(c => `\`${c}\``).join(',')}) VALUES ${tableData.map(() => placeholders).join(',')}`;
+                const batchSize = Math.max(1, Math.floor(2000 / columns.length));
+                const hasIdentity = await tableHasIdentity(tableName);
 
-                const flattenValues = tableData.flatMap(row =>
-                    columns.map(col => {
-                        const val = row[col];
-                        // Handle objects/arrays specifically if they map to JSON columns
-                        if (typeof val === 'object' && val !== null) return JSON.stringify(val);
-                        return val;
-                    })
-                );
+                if (hasIdentity) await conn.query(`SET IDENTITY_INSERT [${tableName}] ON`);
+                try {
+                    for (let i = 0; i < tableData.length; i += batchSize) {
+                        const batch = tableData.slice(i, i + batchSize);
+                        const placeholders = `(${columns.map(() => '?').join(',')})`;
+                        const sql = `INSERT INTO [${tableName}] (${columns.map(c => `[${c}]`).join(',')}) VALUES ${batch.map(() => placeholders).join(',')}`;
 
-                await conn.query(sql, flattenValues);
+                        const flattenValues = batch.flatMap(row =>
+                            columns.map(col => {
+                                const val = row[col];
+                                // Handle objects/arrays specifically if they map to JSON columns
+                                if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+                                return val;
+                            })
+                        );
+
+                        await conn.query(sql, flattenValues);
+                    }
+                } finally {
+                    if (hasIdentity) await conn.query(`SET IDENTITY_INSERT [${tableName}] OFF`);
+                }
             }
         }
 
-        await conn.query("SET FOREIGN_KEY_CHECKS = 1");
+        // Re-enable FK constraints
+        for (const tableName of tableNames) {
+            await conn.query(`ALTER TABLE [${tableName}] WITH CHECK CHECK CONSTRAINT ALL`);
+        }
+
         await conn.commit();
 
         await Audit.create({
@@ -312,7 +336,6 @@ export const restoreFromBackup = asyncHandler(async (req, res) => {
         }, 'Restore completed'));
 
     } catch (error) {
-        await conn.query("SET FOREIGN_KEY_CHECKS = 1"); // Ensure re-enable
         await conn.rollback();
         throw new ApiError(`Restore failed: ${error.message}`, 500);
     } finally {
@@ -324,7 +347,7 @@ export const restoreFromBackup = asyncHandler(async (req, res) => {
 export const deleteBackup = asyncHandler(async (req, res) => {
     const { backupId } = req.params;
 
-    const [rows] = await pool.query("SELECT * FROM audits WHERE action = 'CREATE_BACKUP' AND JSON_EXTRACT(details, '$.id') = ?", [backupId]);
+    const [rows] = await pool.query("SELECT * FROM audits WHERE action = 'CREATE_BACKUP' AND JSON_VALUE(details, '$.id') = ?", [backupId]);
     const record = rows[0];
 
     if (!record) throw new ApiError('Backup not found', 404);
@@ -359,13 +382,11 @@ export const exportSystemData = asyncHandler(async (req, res) => {
     } = req.body;
 
     const exportData = {};
-    const keysToExport = collections.length ? collections : Object.keys(ENTITY_TABLE_MAP);
+    const allTables = await getUserTables();
+    const keysToExport = collections.length ? resolveTableNames(collections, allTables) : allTables;
 
-    for (const key of keysToExport) {
-        const tableName = ENTITY_TABLE_MAP[key];
-        if (!tableName) continue;
-
-        let sql = `SELECT * FROM ${tableName}`;
+    for (const tableName of keysToExport) {
+        let sql = `SELECT * FROM [${tableName}]`;
         let params = [];
         let clauses = [];
 
@@ -385,10 +406,10 @@ export const exportSystemData = asyncHandler(async (req, res) => {
 
         try {
             const [rows] = await pool.query(sql, params);
-            exportData[key] = rows;
+            exportData[tableName] = rows;
         } catch (e) {
             // Likely table missing or column missing
-            console.warn(`Skipped export for ${key}: ${e.message}`);
+            console.warn(`Skipped export for ${tableName}: ${e.message}`);
         }
     }
 
@@ -442,17 +463,18 @@ export const importSystemData = asyncHandler(async (req, res) => {
     try {
         await conn.beginTransaction();
 
+        const allTables = await getUserTables();
         const keys = collections.length ? collections : Object.keys(importData.data);
 
         for (const key of keys) {
-            const tableName = ENTITY_TABLE_MAP[key];
+            const [tableName] = resolveTableNames([key], allTables);
             if (!tableName) continue;
 
             const data = importData.data[key];
             if (!Array.isArray(data) || data.length === 0) continue;
 
             if (mode === 'replace') {
-                await conn.query(`DELETE FROM ${tableName}`);
+                await conn.query(`DELETE FROM [${tableName}]`);
             }
 
             let imported = 0;
@@ -469,7 +491,7 @@ export const importSystemData = asyncHandler(async (req, res) => {
                     const vals = Object.values(record).map(v => (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v);
 
                     // Prepare placeholders
-                    const sql = `INSERT INTO ${tableName} (${cols.map(c => `\`${c}\``).join(',')}) VALUES (${cols.map(() => '?').join(',')})`;
+                    const sql = `INSERT INTO [${tableName}] (${cols.map(c => `[${c}]`).join(',')}) VALUES (${cols.map(() => '?').join(',')})`;
 
                     // With REPLACE mode, we want standard INSERT? 
                     // Or ON DUPLICATE KEY UPDATE?
@@ -498,25 +520,35 @@ export const importSystemData = asyncHandler(async (req, res) => {
 // Stats
 export const getDataStatistics = asyncHandler(async (req, res) => {
     const stats = {};
+    const allTables = await getUserTables();
 
-    for (const [key, tableName] of Object.entries(ENTITY_TABLE_MAP)) {
-        const [rows] = await pool.query(`SELECT COUNT(*) as total FROM ${tableName}`);
-        // Recent?
-        // SELECT COUNT(*) FROM table WHERE createdAt >= ...
-        // Requires checking schema or wrapping try catch
+    for (const tableName of allTables) {
+        const [rows] = await pool.query(`SELECT COUNT(*) as total FROM [${tableName}]`);
         let recent = 0;
         try {
-            const [recRows] = await pool.query(`SELECT COUNT(*) as c FROM ${tableName} WHERE createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)`);
+            const [recRows] = await pool.query(`SELECT COUNT(*) as c FROM [${tableName}] WHERE createdAt >= DATEADD(day, -7, GETDATE())`);
             recent = recRows[0].c;
         } catch (e) { }
 
-        stats[key] = {
+        stats[tableName] = {
             total: rows[0].total,
             recent
         };
     }
 
-    res.json(new ApiResponse(200, { statistics: stats }, 'Fetched stats'));
+    let estimatedSize = 0;
+    try {
+        const [sizeRows] = await pool.query("SELECT SUM(reserved_page_count) * 8 * 1024 AS totalBytes FROM sys.dm_db_partition_stats");
+        estimatedSize = sizeRows[0]?.totalBytes || 0;
+    } catch (e) { }
+
+    const summary = {
+        totalCollections: allTables.length,
+        totalRecords: Object.values(stats).reduce((sum, s) => sum + s.total, 0),
+        estimatedSize
+    };
+
+    res.json(new ApiResponse(200, { statistics: stats, summary }, 'Fetched stats'));
 });
 
 export const getDataOperationHistory = asyncHandler(async (req, res) => {
@@ -524,8 +556,8 @@ export const getDataOperationHistory = asyncHandler(async (req, res) => {
     const offset = (Number(page) - 1) * Number(limit);
 
     const [rows] = await pool.query(
-        "SELECT a.*, u.fullName FROM audits a LEFT JOIN users u ON a.user = u.id WHERE action IN ('CREATE_BACKUP','RESTORE_BACKUP','EXPORT_DATA','IMPORT_DATA') ORDER BY createdAt DESC LIMIT ? OFFSET ?",
-        [Number(limit), Number(offset)]
+        "SELECT a.*, u.fullName FROM audits a LEFT JOIN users u ON a.[user] = u.id WHERE action IN ('CREATE_BACKUP','RESTORE_BACKUP','EXPORT_DATA','IMPORT_DATA') ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+        [Number(offset), Number(limit)]
     );
 
     const [c] = await pool.query("SELECT COUNT(*) as total FROM audits WHERE action IN ('CREATE_BACKUP','RESTORE_BACKUP','EXPORT_DATA','IMPORT_DATA')");
@@ -539,12 +571,12 @@ export const cleanupOldData = asyncHandler(async (req, res) => {
     const results = {};
 
     if (cleanupAuditLogs) {
-        const sql = "SELECT COUNT(*) as count FROM audits WHERE createdAt < DATE_SUB(NOW(), INTERVAL ? DAY)";
+        const sql = "SELECT COUNT(*) as count FROM audits WHERE createdAt < DATEADD(day, -?, GETDATE())";
         const [rows] = await pool.query(sql, [auditLogRetentionDays]);
         results.auditLogs = { toDelete: rows[0].count };
 
         if (!dryRun) {
-            await pool.query("DELETE FROM audits WHERE createdAt < DATE_SUB(NOW(), INTERVAL ? DAY)", [auditLogRetentionDays]);
+            await pool.query("DELETE FROM audits WHERE createdAt < DATEADD(day, -?, GETDATE())", [auditLogRetentionDays]);
             results.auditLogs.deleted = rows[0].count;
         }
     }

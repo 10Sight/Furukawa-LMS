@@ -91,7 +91,7 @@ router.get("/", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAll
 router.get("/instructors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllInstructors);
 
 // Get all students (admin/super-admin/instructor only)
-router.get("/students", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET]), getAllStudents);
+router.get("/students", verifyJWT, authorizeRoles(SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, "isTrainer", "isAdmin"), getAllStudents);
 
 // Get all mentors
 router.get("/mentors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllMentors);

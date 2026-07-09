@@ -75,6 +75,7 @@ import {
     IconAlertTriangle
 } from "@tabler/icons-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -799,6 +800,52 @@ const DojoHiring = () => {
         setEndDate("");
     };
 
+    const formatDateLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    const monthOptions = React.useMemo(() => {
+        const options = [{ value: "ALL", label: "All Time" }];
+        const now = new Date();
+        for (let i = 0; i < 12; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            options.push({
+                value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+                label: d.toLocaleString("en-US", { month: "long", year: "numeric" }),
+            });
+        }
+        return options;
+    }, []);
+
+    const handleMonthChange = (value) => {
+        if (value === "ALL") {
+            clearDateRange();
+            return;
+        }
+        const [year, month] = value.split("-").map(Number);
+        const firstDay = new Date(year, month - 1, 1);
+        const lastDay = new Date(year, month, 0);
+        setStartDate(formatDateLocal(firstDay));
+        setEndDate(formatDateLocal(lastDay));
+    };
+
+    const getMonthValue = () => {
+        if (!startDate && !endDate) return "ALL";
+        if (!startDate || !endDate) return "CUSTOM";
+
+        const [sy, sm, sd] = startDate.split("-").map(Number);
+        const [ey, em] = endDate.split("-").map(Number);
+
+        if (sy === ey && sm === em && sd === 1) {
+            const lastDayOfMonth = new Date(sy, sm, 0).getDate();
+            const [, , ed] = endDate.split("-").map(Number);
+            if (ed === lastDayOfMonth) {
+                return `${sy}-${String(sm).padStart(2, "0")}`;
+            }
+        }
+        return "CUSTOM";
+    };
+
+    const monthValue = getMonthValue();
+
     if (!canRead) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
@@ -998,6 +1045,32 @@ const DojoHiring = () => {
                                 options={genderOptions}
                                 placeholder="Select Gender"
                             />
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" className="flex items-center gap-2 border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-4 h-10 font-medium">
+                                        <IconCalendar className="w-4 h-4 text-slate-500" />
+                                        <span>
+                                            {monthValue === "ALL"
+                                                ? "Timeframe"
+                                                : monthValue === "CUSTOM"
+                                                    ? "Custom"
+                                                    : monthOptions.find(o => o.value === monthValue)?.label || "Timeframe"
+                                            }
+                                        </span>
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="max-h-[300px] overflow-y-auto">
+                                    {monthOptions.map((option) => (
+                                        <DropdownMenuItem
+                                            key={option.value}
+                                            onClick={() => handleMonthChange(option.value)}
+                                            className="font-medium cursor-pointer"
+                                        >
+                                            {option.label}
+                                        </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 h-10">
                                 <Input
                                     type="date"

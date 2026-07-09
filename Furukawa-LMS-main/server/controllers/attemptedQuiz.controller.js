@@ -1202,7 +1202,8 @@ export const rejectExtraAttempt = asyncHandler(async (req, res) => {
 });
 
 export const getMonitoringAttempts = asyncHandler(async (req, res) => {
-    const { departmentId, sectionId, lineId, subSectionId, level, testType, search } = req.query;
+    const { departmentId, sectionId, lineId, subSectionId, level, testType, search, isTemporary } = req.query;
+    const isTemporaryQuery = isTemporary === 'true' || isTemporary === '1' || isTemporary === true;
 
     let sql = `
         SELECT
@@ -1295,7 +1296,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
     const isSuperAdminOrAdmin = req.user?.role === 'SUPERADMIN' || req.user?.role === 'ADMIN' || req.user?.isAdmin;
     let allowedDepts = [];
     let allowedSections = [];
-    if (req.user && req.user.role === 'CUSTOM' && !isSuperAdminOrAdmin) {
+    if (req.user && req.user.role === 'CUSTOM' && !isSuperAdminOrAdmin && !isTemporaryQuery) {
         if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
         try {
             const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
@@ -1364,6 +1365,10 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
         } else if (testType === "REGULAR") {
             sql += " AND q.isDojo = 0 AND q.isHandover = 0 AND q.isTheoretical = 0";
         }
+    }
+
+    if (isTemporaryQuery) {
+        sql += " AND u.isTemporary = 1";
     }
 
     if (search) {

@@ -916,7 +916,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
       </TabsContent>
 
       <TabsContent value="testMonitoring">
-        <AdminQuizMonitoring />
+        <AdminQuizMonitoring isDojo={forceDojo} />
       </TabsContent>
 
       <TabsContent value="certificateTemplates">

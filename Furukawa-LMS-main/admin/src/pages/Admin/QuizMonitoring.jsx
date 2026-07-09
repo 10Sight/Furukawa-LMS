@@ -36,7 +36,7 @@ import {
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const AdminQuizMonitoring = () => {
+const AdminQuizMonitoring = ({ isDojo = false }) => {
   const navigate = useNavigate();
   const [deleteAttempt, { isLoading: isDeleting }] = useDeleteAttemptMutation();
   const [selectedDeptId, setSelectedDeptId] = useState("all");
@@ -50,7 +50,7 @@ const AdminQuizMonitoring = () => {
   // Restrict department/section filters for CUSTOM role users to their assigned scope
   const currentUser = useSelector((state) => state.auth.user);
   const isAdmin = currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN" || currentUser?.isAdmin;
-  const isCustomRole = currentUser?.role === "CUSTOM" && !isAdmin;
+  const isCustomRole = currentUser?.role === "CUSTOM" && !isAdmin && !isDojo;
 
   const assignedDepartments = useMemo(() => {
     if (!isCustomRole) return [];
@@ -172,8 +172,9 @@ const AdminQuizMonitoring = () => {
     if (selectedLevel !== "all") params.level = selectedLevel;
     if (selectedTestType !== "all") params.testType = selectedTestType;
     if (search.trim()) params.search = search.trim();
+    if (isDojo) params.isTemporary = true;
     return params;
-  }, [selectedDeptId, selectedSectionId, selectedLineId, selectedSubSectionId, selectedLevel, selectedTestType, search]);
+  }, [selectedDeptId, selectedSectionId, selectedLineId, selectedSubSectionId, selectedLevel, selectedTestType, search, isDojo]);
 
   const { data: attemptsData, isLoading: attemptsLoading, refetch } = useGetMonitoringAttemptsQuery(queryParams);
   const attempts = attemptsData?.data || [];

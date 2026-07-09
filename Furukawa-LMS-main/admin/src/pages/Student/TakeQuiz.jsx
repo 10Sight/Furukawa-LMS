@@ -766,10 +766,7 @@ const TakeQuiz = () => {
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">Department :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
-                  {(selectedStudent
-                    ? (selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName)
-                    : (currentUser?.department?.name || currentUser?.department || currentUser?.departmentName)
-                  ) || "—"}
+                  {(selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName) || "—"}
                 </span>
               </div>
             </div>
@@ -1240,10 +1237,7 @@ const TakeQuiz = () => {
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">Department :</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
-                  {(selectedStudent
-                    ? (selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName)
-                    : (currentUser?.department?.name || currentUser?.department || currentUser?.departmentName)
-                  ) || "—"}
+                  {(selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName) || "—"}
                 </span>
               </div>
             </div>

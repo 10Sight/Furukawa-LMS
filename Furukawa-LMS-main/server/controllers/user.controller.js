@@ -1758,7 +1758,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     } else whereClauses.push("1=0");
   } else if (req.user.role === "CUSTOM") {
     const customTargetLayout = String(req.user.customRole?.targetLayout || '').toLowerCase();
-    const isFullAccessLayout = ['admin', 'superadmin', 'trainer'].includes(customTargetLayout);
+    const isFullAccessLayout = ['admin', 'superadmin', 'trainer', 'instructor'].includes(customTargetLayout);
 
     // Resolve the set of departments this custom user is allowed to see
     let allowedDepts = [];

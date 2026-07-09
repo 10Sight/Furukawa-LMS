@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useGetAdminHomeUserStatusStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { Skeleton } from "@/components/ui/skeleton";
-import { IconUsers, IconChartPie, IconChartBar } from "@tabler/icons-react";
+import { IconUsers, IconChartPie, IconChartBar, IconChevronDown, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import highcharts3d from 'highcharts/highcharts-3d';
@@ -17,10 +22,73 @@ if (typeof highcharts3d === 'function') {
 
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#94a3b8', '#8b5cf6']; // Green (Present), Amber (Leave), Red (Left)
 
-const UserStatusDistributionChart = ({ dateRange }) => {
+const _now = new Date();
+const CURRENT_YEAR = _now.getFullYear();
+const MONTH_END = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+const toApiDates = (timeframe, rawStart, rawEnd) => {
+    if (!rawStart || !rawEnd) return { startDate: '', endDate: '' };
+    if (timeframe === 'monthly') {
+        const [ey, em] = rawEnd.split('-').map(Number);
+        const lastDay = new Date(ey, em, 0).getDate();
+        return { startDate: `${rawStart}-01`, endDate: `${rawEnd}-${String(lastDay).padStart(2, '0')}` };
+    }
+    if (timeframe === 'yearly') {
+        return { startDate: `${rawStart}-01-01`, endDate: `${rawEnd}-12-31` };
+    }
+    return { startDate: rawStart, endDate: rawEnd };
+};
+
+const INPUT_CONFIG = {
+    daily: { type: 'date', min: '2020-01-01', max: MONTH_END, placeholder: 'YYYY-MM-DD' },
+    monthly: { type: 'month', min: '2020-01', max: `${CURRENT_YEAR}-12`, placeholder: 'YYYY-MM' },
+    yearly: { type: 'number', min: 2020, max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
+};
+
+const getDefaultDates = (timeframe) => {
+    const now = new Date();
+    if (timeframe === 'daily') {
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        return {
+            rawStart: firstOfMonth.toISOString().split('T')[0],
+            rawEnd: lastOfMonth.toISOString().split('T')[0],
+        };
+    }
+    if (timeframe === 'monthly') {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        return {
+            rawStart: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}`,
+            rawEnd: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+        };
+    }
+    return {
+        rawStart: String(now.getFullYear() - 4),
+        rawEnd: String(now.getFullYear()),
+    };
+};
+
+const UserStatusDistributionChart = () => {
     const { t } = useTranslate();
-    const { data: statsData, isLoading, error } = useGetAdminHomeUserStatusStatsQuery({ ...dateRange, isTemporary: 1 });
-    const [viewType, setViewType] = useState('pie'); // 'pie' or 'bar'
+    const [viewType, setViewType] = useState('bar'); // 'pie' or 'bar'
+    const [timeframe, setTimeframe] = useState('daily');
+    const [rawStart, setRawStart] = useState(() => getDefaultDates('daily').rawStart);
+    const [rawEnd, setRawEnd] = useState(() => getDefaultDates('daily').rawEnd);
+    const [selectedDepts, setSelectedDepts] = useState([]);
+
+    const { data: deptsData } = useGetAllDepartmentsQuery();
+    const departments = deptsData?.data?.departments || [];
+
+    const { startDate, endDate } = useMemo(
+        () => toApiDates(timeframe, rawStart, rawEnd),
+        [timeframe, rawStart, rawEnd]
+    );
+
+    const { data: statsData, isLoading, error } = useGetAdminHomeUserStatusStatsQuery({
+        startDate,
+        endDate,
+        departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
+    });
 
     const allData = statsData?.data || { dojo: [] };
     const chartData = allData.dojo || [];
@@ -33,9 +101,34 @@ const UserStatusDistributionChart = ({ dateRange }) => {
         return trans === key ? status : trans;
     };
 
+    const cfg = INPUT_CONFIG[timeframe];
+    const deptLabel = selectedDepts.length === 0
+        ? t('charts.allDepartments')
+        : selectedDepts.length === 1
+            ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
+            : `${selectedDepts.length} ${t('nav.departments')}`;
+
+    const handleTimeframeChange = (tf) => {
+        const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
+        setTimeframe(tf);
+        setRawStart(s);
+        setRawEnd(e);
+    };
+
+    const handleReset = () => {
+        const { rawStart: s, rawEnd: e } = getDefaultDates('daily');
+        setTimeframe('daily');
+        setRawStart(s);
+        setRawEnd(e);
+        setSelectedDepts([]);
+    };
+
+    const toggleDept = (id, checked) =>
+        setSelectedDepts(prev => checked ? [...prev, id] : prev.filter(x => x !== id));
+
     if (isLoading) {
         return (
-            <Card className="col-span-1">
+            <Card className="col-span-1 md:col-span-2">
                 <CardHeader>
                     <Skeleton className="h-6 w-48 mb-2" />
                     <Skeleton className="h-4 w-32" />
@@ -49,7 +142,7 @@ const UserStatusDistributionChart = ({ dateRange }) => {
 
     if (error) {
         return (
-            <Card className="col-span-1 border-red-200">
+            <Card className="col-span-1 md:col-span-2 border-red-200">
                 <CardContent className="p-6 text-center text-red-500">
                     {t("charts.failedToLoadUserStatus")}
                 </CardContent>
@@ -104,6 +197,18 @@ const UserStatusDistributionChart = ({ dateRange }) => {
         title: { text: '' },
         xAxis: { categories: chartData.map(item => translateStatus(item.name)) },
         yAxis: { title: { text: t("nav.trainees") } },
+        plotOptions: {
+            column: {
+                dataLabels: {
+                    enabled: true,
+                    style: { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    verticalAlign: 'top',
+                    align: 'center',
+                    y: -20,
+                    allowOverlap: true,
+                }
+            }
+        },
         series: [{
             name: t("charts.total"),
             data: chartData.map(item => item.value),
@@ -115,31 +220,137 @@ const UserStatusDistributionChart = ({ dateRange }) => {
     });
 
     return (
-        <Card className="col-span-1">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="space-y-1">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                        <IconUsers className="h-5 w-5 text-indigo-600" />
-                        {t("charts.attendanceStatus")}
-                    </CardTitle>
-                    <CardDescription>
-                        {t("charts.attendanceStatusDesc")}
-                    </CardDescription>
+        <Card className="col-span-1 md:col-span-2">
+            <CardHeader className="pb-4">
+                <div className="flex flex-row items-center justify-between space-y-0">
+                    <div className="space-y-1">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                            <IconUsers className="h-5 w-5 text-indigo-600" />
+                            {t("charts.attendanceStatus")}
+                        </CardTitle>
+                        <CardDescription>
+                            {t("charts.attendanceStatusDesc")}
+                        </CardDescription>
+                    </div>
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setViewType(viewType === 'pie' ? 'bar' : 'pie')}
+                        title={viewType === 'pie' ? t("charts.switchToBar") : t("charts.switchToPie")}
+                    >
+                        {viewType === 'pie' ? <IconChartBar className="h-4 w-4" /> : <IconChartPie className="h-4 w-4" />}
+                    </Button>
                 </div>
-                <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setViewType(viewType === 'pie' ? 'bar' : 'pie')}
-                    title={viewType === 'pie' ? t("charts.switchToBar") : t("charts.switchToPie")}
-                >
-                    {viewType === 'pie' ? <IconChartBar className="h-4 w-4" /> : <IconChartPie className="h-4 w-4" />}
-                </Button>
+
+                {/* Filter bar */}
+                <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
+
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                            {t('charts.timeframe')}
+                        </Label>
+                        <div className="flex gap-1">
+                            {[
+                                { key: 'daily', label: t('charts.daily30d') },
+                                { key: 'monthly', label: t('charts.monthly12m') },
+                                { key: 'yearly', label: t('charts.yearly5y') },
+                            ].map(({ key, label }) => (
+                                <Button
+                                    key={key}
+                                    variant={timeframe === key ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 px-3 text-xs"
+                                    onClick={() => handleTimeframeChange(key)}
+                                >
+                                    {label}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.from')}</Label>
+                        <Input
+                            type={cfg.type}
+                            value={rawStart}
+                            onChange={e => setRawStart(e.target.value)}
+                            min={String(cfg.min)}
+                            max={rawEnd || String(cfg.max)}
+                            step={cfg.step}
+                            placeholder={cfg.placeholder}
+                            className="h-8 text-xs w-36"
+                        />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.to')}</Label>
+                        <Input
+                            type={cfg.type}
+                            value={rawEnd}
+                            onChange={e => setRawEnd(e.target.value)}
+                            min={rawStart || String(cfg.min)}
+                            max={String(cfg.max)}
+                            step={cfg.step}
+                            placeholder={cfg.placeholder}
+                            className="h-8 text-xs w-36"
+                        />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                            {t('charts.targetDepartment')}
+                        </Label>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-8 w-44 justify-between text-xs font-normal px-3">
+                                    <span className="truncate">{deptLabel}</span>
+                                    <IconChevronDown className="h-3.5 w-3.5 opacity-50 shrink-0 ml-1" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-48 p-2" align="start">
+                                <div className="max-h-52 overflow-y-auto space-y-0.5">
+                                    {departments.map(d => {
+                                        const id = String(d.id ?? d._id);
+                                        return (
+                                            <label key={id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                                                <Checkbox
+                                                    checked={selectedDepts.includes(id)}
+                                                    onCheckedChange={v => toggleDept(id, !!v)}
+                                                    className="h-3.5 w-3.5"
+                                                />
+                                                <span className="text-xs truncate">{d.name}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                                {selectedDepts.length > 0 && (
+                                    <button
+                                        className="mt-2 w-full text-xs text-slate-400 hover:text-slate-700 text-center py-1 border-t border-slate-100"
+                                        onClick={() => setSelectedDepts([])}
+                                    >
+                                        {t('charts.clearSelection')}
+                                    </button>
+                                )}
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800 self-end"
+                        onClick={handleReset}
+                    >
+                        <IconRefresh className="h-3.5 w-3.5 mr-1" />
+                        {t('charts.reset')}
+                    </Button>
+                </div>
             </CardHeader>
             <CardContent>
                 <div className="h-[450px] w-full relative mt-4">
                     <HighchartsReact
-                        key={viewType}
+                        key={`${viewType}-${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}`}
                         highcharts={Highcharts}
                         options={viewType === 'pie' ? getPieOptions() : getBarOptions()}
                     />
@@ -163,4 +374,3 @@ const UserStatusDistributionChart = ({ dateRange }) => {
 };
 
 export default UserStatusDistributionChart;
-

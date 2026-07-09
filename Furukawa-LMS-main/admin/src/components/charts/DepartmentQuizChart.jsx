@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query/react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useGetDepartmentQuizStatsQuery } from '@/Redux/AllApi/AnalyticsApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
-import { IconChartBar, IconRefresh } from "@tabler/icons-react";
+import { IconChartBar, IconRefresh, IconCalendar, IconX } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import 'highcharts/modules/no-data-to-display';
@@ -50,9 +52,19 @@ const FilterSelect = ({ label, placeholder, value, onChange, items, disabled, al
 
 /* ══════════════════════════════════════════════════════════════ */
 
+const formatDateLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const DepartmentQuizChart = ({ dateRange }) => {
     const { t } = useTranslate();
     const [filters, setFilters] = useState({ departmentId: '', sectionId: '' });
+    const [startDate, setStartDate] = useState(dateRange?.startDate || '');
+    const [endDate, setEndDate]     = useState(dateRange?.endDate || '');
+
+    /* ── Sync local date range with the parent-provided dashboard filter ── */
+    useEffect(() => {
+        setStartDate(dateRange?.startDate || '');
+        setEndDate(dateRange?.endDate || '');
+    }, [dateRange?.startDate, dateRange?.endDate]);
 
     const set = (key) => (val) => {
         const cleared = val === 'all' ? '' : val;
@@ -63,11 +75,65 @@ const DepartmentQuizChart = ({ dateRange }) => {
         }
     };
 
-    const handleReset = () => setFilters({ departmentId: '', sectionId: '' });
+    const hasDateRangeFilter = startDate || endDate;
+    const clearDateRange = () => {
+        setStartDate('');
+        setEndDate('');
+    };
+
+    const monthOptions = useMemo(() => {
+        const options = [{ value: 'ALL', label: t('charts.allTime') }];
+        const now = new Date();
+        for (let i = 0; i < 12; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            options.push({
+                value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+                label: d.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+            });
+        }
+        return options;
+    }, [t]);
+
+    const handleMonthChange = (value) => {
+        if (value === 'ALL') {
+            clearDateRange();
+            return;
+        }
+        const [year, month] = value.split('-').map(Number);
+        const firstDay = new Date(year, month - 1, 1);
+        const lastDay  = new Date(year, month, 0);
+        setStartDate(formatDateLocal(firstDay));
+        setEndDate(formatDateLocal(lastDay));
+    };
+
+    const getMonthValue = () => {
+        if (!startDate && !endDate) return 'ALL';
+        if (!startDate || !endDate) return 'CUSTOM';
+
+        const [sy, sm, sd] = startDate.split('-').map(Number);
+        const [ey, em, ed] = endDate.split('-').map(Number);
+
+        if (sy === ey && sm === em && sd === 1) {
+            const lastDayOfMonth = new Date(sy, sm, 0).getDate();
+            if (ed === lastDayOfMonth) {
+                return `${sy}-${String(sm).padStart(2, '0')}`;
+            }
+        }
+        return 'CUSTOM';
+    };
+
+    const monthValue = getMonthValue();
+
+    const handleReset = () => {
+        setFilters({ departmentId: '', sectionId: '' });
+        setStartDate(dateRange?.startDate || '');
+        setEndDate(dateRange?.endDate || '');
+    };
 
     /* ── API: chart data ── */
     const { data: statsData, isLoading, error } = useGetDepartmentQuizStatsQuery({
-        ...dateRange,
+        startDate,
+        endDate,
         departmentId: filters.departmentId,
         sectionId:    filters.sectionId,
     });
@@ -133,8 +199,8 @@ const DepartmentQuizChart = ({ dateRange }) => {
             gridLineWidth: 0,
             labels: {
                 style:    { fontSize: '12px', fontWeight: '600', color: '#334155' },
-                rotation: chartData.length > 6 ? -45 : 0,
-                align:    chartData.length > 6 ? 'right' : 'center',
+                rotation: 0,
+                align:    'center',
                 autoRotation: false,
             },
         },
@@ -238,6 +304,66 @@ const DepartmentQuizChart = ({ dateRange }) => {
                         allLabel={t('charts.allSections')}
                     />
 
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.timeframe')}</Label>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-8 px-3 text-xs w-44 justify-start font-medium text-slate-700">
+                                    <IconCalendar className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
+                                    {monthValue === 'ALL'
+                                        ? t('charts.allTime')
+                                        : monthValue === 'CUSTOM'
+                                            ? t('charts.custom')
+                                            : (monthOptions.find(o => o.value === monthValue)?.label || t('charts.allTime'))
+                                    }
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="max-h-[300px] overflow-y-auto">
+                                {monthOptions.map((option) => (
+                                    <DropdownMenuItem
+                                        key={option.value}
+                                        onClick={() => handleMonthChange(option.value)}
+                                        className="text-xs font-medium cursor-pointer"
+                                    >
+                                        {option.label}
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.from')} / {t('charts.to')}</Label>
+                        <div className="flex items-center gap-1.5 h-8 rounded-md border border-input bg-transparent px-2">
+                            <Input
+                                type="date"
+                                value={startDate}
+                                onChange={(e) => setStartDate(e.target.value)}
+                                max={endDate || undefined}
+                                className="h-6 w-[112px] border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+                            />
+                            <span className="text-slate-400 text-[10px] font-bold">-</span>
+                            <Input
+                                type="date"
+                                value={endDate}
+                                onChange={(e) => setEndDate(e.target.value)}
+                                min={startDate || undefined}
+                                className="h-6 w-[112px] border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+                            />
+                            {hasDateRangeFilter && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={clearDateRange}
+                                    className="h-5 w-5 shrink-0 p-0 text-slate-400 hover:text-slate-700"
+                                    title={t('charts.clearSelection')}
+                                >
+                                    <IconX className="h-3 w-3" />
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+
                     <div className="self-end">
                         <Button
                             variant="ghost"
@@ -271,7 +397,7 @@ const DepartmentQuizChart = ({ dateRange }) => {
                 ) : (
                     <>
                         <HighchartsReact
-                            key={`${filters.departmentId}-${filters.sectionId}`}
+                            key={`${filters.departmentId}-${filters.sectionId}-${startDate}-${endDate}`}
                             highcharts={Highcharts}
                             options={chartOptions}
                         />

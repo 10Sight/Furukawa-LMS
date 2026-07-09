@@ -220,7 +220,7 @@ const Home = () => {
         <DojoHandoverComparisonChart />
         <ContractorWiseOperatorChart />
         <TestPaperPassChart />
-        <UserStatusDistributionChart dateRange={dateRange} />
+        <UserStatusDistributionChart />
         <DepartmentQuizChart dateRange={dateRange} />
         <EfficiencyChart />
       </div>

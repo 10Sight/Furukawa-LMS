@@ -30,10 +30,10 @@ export const adminHomeApi = createApi({
             keepUnusedDataFor: 0,
         }),
         getAdminHomeUserStatusStats: builder.query({
-            query: ({ startDate = "", endDate = "" } = {}) => ({
+            query: ({ startDate = "", endDate = "", departmentId = "" } = {}) => ({
                 url: "/api/admin-home/user-status-stats",
                 method: "GET",
-                params: { startDate, endDate }
+                params: { startDate, endDate, departmentId }
             }),
             keepUnusedDataFor: 0,
         }),

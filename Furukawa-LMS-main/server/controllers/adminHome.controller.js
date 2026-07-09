@@ -675,14 +675,21 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
  * Groups counts by isTemporary (Dojo vs Operator) and status
  */
 export const getAdminHomeUserStatusStats = asyncHandler(async (req, res) => {
-    const { startDate, endDate } = req.query;
-    
+    const { startDate, endDate, departmentId } = req.query;
+
     let whereClause = "WHERE (isEmployee = 1 OR isTemporary = 1) AND (isDeleted = 0 OR isDeleted IS NULL)";
     let params = [];
 
     if (startDate && endDate) {
         whereClause += " AND updatedAt >= ? AND updatedAt <= ?";
         params.push(startDate, endDate);
+    }
+
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        whereClause += ` AND COALESCE(departmentId, targetDeptId) IN (${ph})`;
+        params.push(...deptIds);
     }
 
     const query = `

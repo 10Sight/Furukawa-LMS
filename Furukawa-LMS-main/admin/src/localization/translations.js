@@ -193,6 +193,8 @@ export const translations = {
     "charts.loading": "Loading",
     "charts.noData": "No data",
     "charts.clearSelection": "Clear selection",
+    "charts.allTime": "All Time",
+    "charts.custom": "Custom",
 
     // Dojo Handover Comparison Chart
     "charts.dojoHandoverComparison": "Dojo Handover Comparison",
@@ -499,6 +501,8 @@ export const translations = {
     "charts.loading": "लोड हो रहा है",
     "charts.noData": "कोई डेटा नहीं",
     "charts.clearSelection": "चयन साफ़ करें",
+    "charts.allTime": "सभी समय",
+    "charts.custom": "कस्टम",
 
     // Dojo Handover Comparison Chart
     "charts.dojoHandoverComparison": "Dojo हैंडओवर तुलना",
@@ -805,6 +809,8 @@ export const translations = {
     "charts.loading": "読み込み中",
     "charts.noData": "データなし",
     "charts.clearSelection": "選択をクリア",
+    "charts.allTime": "すべての期間",
+    "charts.custom": "カスタム",
 
     // Dojo Handover Comparison Chart
     "charts.dojoHandoverComparison": "Dojo 引き継ぎ比較",
@@ -1111,6 +1117,8 @@ export const translations = {
     "charts.loading": "加载中",
     "charts.noData": "暂无数据",
     "charts.clearSelection": "清除选择",
+    "charts.allTime": "所有时间",
+    "charts.custom": "自定义",
 
     // Dojo Handover Comparison Chart
     "charts.dojoHandoverComparison": "Dojo 交接对比",
@@ -1417,6 +1425,8 @@ export const translations = {
     "charts.loading": "Загрузка",
     "charts.noData": "Нет данных",
     "charts.clearSelection": "Очистить выбор",
+    "charts.allTime": "Все время",
+    "charts.custom": "Пользовательский",
 
     // Dojo Handover Comparison Chart
     "charts.dojoHandoverComparison": "Сравнение передач Dojo",

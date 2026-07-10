@@ -24,6 +24,13 @@ const sanitizeUser = (user) => {
 
 // Attach customRole payload (allowedPages) if assigned
 const attachCustomRole = async (user, safeUser) => {
+  // If the user instance already carries a resolved customRole (findOne/findById join
+  // it in), reuse it directly instead of re-querying custom_roles.
+  if (user?.customRoleId && user?.customRole) {
+    safeUser.customRole = user.customRole;
+    return safeUser;
+  }
+
   // Fallback: If no customRoleId but user has a restricted flag, try to find a default role by name
   if (!user?.customRoleId) {
     let defaultRoleName = "";
@@ -71,10 +78,11 @@ const attachCustomRole = async (user, safeUser) => {
   return safeUser;
 };
 
-// Generate tokens
-export const generateAuthTokens = async (userId) => {
+// Generate tokens. Accepts either an already-loaded User instance (preferred -- avoids
+// a redundant findById when the caller already has the user) or a plain userId.
+export const generateAuthTokens = async (userOrId) => {
   try {
-    const user = await User.findById(userId);
+    const user = userOrId instanceof User ? userOrId : await User.findById(userOrId);
     const accessToken = user.generateAccessToken();
     const refreshToken = user.generateRefreshToken();
     user.refreshToken = refreshToken;
@@ -199,12 +207,12 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   // 3. Generate Tokens
-  const { accessToken, refreshToken } = await generateAuthTokens(user.id);
+  const { accessToken, refreshToken } = await generateAuthTokens(user);
 
   // 4. Sanitize User
   const loggedInUser = await attachCustomRole(user, sanitizeUser(user));
 
-  await logAudit(user.id, "LOGIN");
+  logAudit(user.id, "LOGIN").catch(err => console.error("logAudit(LOGIN) failed:", err));
 
   return res
     .status(200)
@@ -236,13 +244,13 @@ export const logout = asyncHandler(async (req, res) => {
     // If req.user is just data, we might need to fetch. 
     // Based on previous code, it checked instance.
     if (!(user instanceof User)) {
-      user = await User.findById(user.id || user._id);
+      user = await User.findByIdLight(user.id || user._id);
     }
 
     if (user) {
       user.refreshToken = null; // Clean logout
       await user.save();
-      await logAudit(user.id, "LOGOUT");
+      logAudit(user.id, "LOGOUT").catch(err => console.error("logAudit(LOGOUT) failed:", err));
     }
   }
 
@@ -312,9 +320,9 @@ export const refreshAccessAndRefreshToken = asyncHandler(async (req, res) => {
     throw new ApiError("Invalid token!", 401);
   }
 
-  const { accessToken, refreshToken: newRefreshToken } = await generateAuthTokens(user.id);
+  const { accessToken, refreshToken: newRefreshToken } = await generateAuthTokens(user);
 
-  await logAudit(user.id, "REFRESH_TOKEN");
+  logAudit(user.id, "REFRESH_TOKEN").catch(err => console.error("logAudit(REFRESH_TOKEN) failed:", err));
 
   return res
     .status(200)

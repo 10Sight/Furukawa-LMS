@@ -3383,7 +3383,7 @@ p {
                 }
 
                 const { generateAuthTokens } = await import("./auth.controller.js");
-                const { accessToken, refreshToken } = await generateAuthTokens(foundUser.id);
+                const { accessToken, refreshToken } = await generateAuthTokens(foundUser);
                 const { accessTokenOptions, refreshTokenOptions } = await import("../utils/constant.js");
 
                 res.cookie("accessToken", accessToken, accessTokenOptions);
@@ -3667,7 +3667,7 @@ p {
                 }
 
                 const { generateAuthTokens } = await import("./auth.controller.js");
-                const { accessToken, refreshToken } = await generateAuthTokens(foundUser.id);
+                const { accessToken, refreshToken } = await generateAuthTokens(foundUser);
                 const { accessTokenOptions, refreshTokenOptions } = await import("../utils/constant.js");
 
                 res.cookie("accessToken", accessToken, accessTokenOptions);

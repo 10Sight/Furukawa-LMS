@@ -133,6 +133,16 @@ class User {
 
         // Internal tracking for password changes
         this._originalPassword = data.password;
+
+        // Internal tracking for hierarchy ID changes, so save() can skip the
+        // 5-query name resolution when none of these were actually modified.
+        this._originalHierarchyIds = {
+            departmentId: this.departmentId,
+            sectionId: this.sectionId,
+            lineId: this.lineId,
+            subSectionId: this.subSectionId,
+            stationId: this.stationId,
+        };
     }
 
     static async init() {
@@ -1058,8 +1068,18 @@ class User {
             this.subSectionId = this.subSectionId || parseInt(this.subSections[0]);
         }
 
-        applyHierarchyCascade(this);
-        await resolveHierarchyNames(this);
+        // Skip the cascade + 5-query name resolution unless a hierarchy ID actually
+        // changed since load -- these run on every save() (login/logout/refresh all
+        // call save() just to persist refreshToken) and were a major source of
+        // needless DB round-trips under load.
+        const original = this._originalHierarchyIds || {};
+        const hierarchyChanged = ["departmentId", "sectionId", "lineId", "subSectionId", "stationId"]
+            .some(key => (this[key] ?? null) !== (original[key] ?? null));
+
+        if (hierarchyChanged) {
+            applyHierarchyCascade(this);
+            await resolveHierarchyNames(this);
+        }
 
         // Only update fields that are defined on the instance
         const definedFields = fields.filter(field => this[field] !== undefined);
@@ -1077,6 +1097,13 @@ class User {
         await executeQuery(`UPDATE users SET ${setClause} WHERE id = ?`, values);
 
         this._originalPassword = this.password;
+        this._originalHierarchyIds = {
+            departmentId: this.departmentId,
+            sectionId: this.sectionId,
+            lineId: this.lineId,
+            subSectionId: this.subSectionId,
+            stationId: this.stationId,
+        };
         return this;
     }
 

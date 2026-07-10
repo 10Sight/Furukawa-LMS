@@ -376,9 +376,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let totalSql = `
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
-                INNER JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                INNER JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE u.leavingDate IS NOT NULL
                   AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
@@ -405,9 +403,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     u.id AS userId,
                     ${leaveDateSql} AS leaving_date
                 FROM users u
-                INNER JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                INNER JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE u.leavingDate IS NOT NULL
                   AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
@@ -485,15 +481,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let attendanceGateSql = `
                 SELECT COUNT(DISTINCT al.payCode) AS cnt
                 FROM attendance_logs al
-                LEFT JOIN users u
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-                WHERE CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
-                  AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
-              AND ISNULL(u.isTemporary, 0) = 0
+                LEFT JOIN users u ON al.userId = u.id
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
+                WHERE al.[date] >= '${sqlStartDate}'
+                  AND al.[date] <= '${sqlEndDate}'
+                  AND ISNULL(u.isTemporary, 0) = 0
                   ${hierCondition}
                   ${getEligibleUserSql("u")}
             `;
@@ -2066,12 +2058,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         let contractorTotalSql = `
             SELECT
                 ${contractorColumnSql} AS contractorName,
-                COUNT(DISTINCT UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))) AS totalHeadcount
+                COUNT(DISTINCT u.empId) AS totalHeadcount
             FROM users u
             WHERE ISNULL(u.isDeleted, 0) = 0
               AND u.empId IS NOT NULL
-              AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-              AND NULLIF(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))), '') IS NOT NULL
+              AND u.empId != ''
+              AND u.[contractor] IS NOT NULL AND u.[contractor] != ''
         `;
         const contractorTotalParams = [];
         contractorTotalSql = applyContractorCommonFilters(contractorTotalSql, contractorTotalParams, { applyUserShift: false });
@@ -2082,18 +2074,16 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         let contractorPresentSql = `
             SELECT
                 ${contractorColumnSql} AS contractorName,
-                COUNT(DISTINCT UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))) AS actualPresent
+                COUNT(DISTINCT u.empId) AS actualPresent
             FROM attendance_logs al
-            INNER JOIN users u
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+            INNER JOIN users u ON al.userId = u.id
             WHERE ISNULL(u.isDeleted, 0) = 0
               AND u.empId IS NOT NULL
-              AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-              AND NULLIF(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))), '') IS NOT NULL
-              AND CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
-              AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
-              AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) IN ('P','PRESENT')
+              AND u.empId != ''
+              AND u.[contractor] IS NOT NULL AND u.[contractor] != ''
+              AND al.[date] >= '${masterSqlStartDate}'
+              AND al.[date] <= '${masterSqlEndDate}'
+              AND al.status IN ('P','PRESENT','Present')
         `;
         const contractorPresentParams = [];
         contractorPresentSql = applyContractorCommonFilters(contractorPresentSql, contractorPresentParams, { applyAttendanceShift: true });
@@ -2782,26 +2772,24 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         let attendanceSql = `
             SELECT
                 ${bucketCaseSQL} AS bucket,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(attendanceStatus))) IN ('P','PRESENT') THEN 1 ELSE 0 END) AS presentCount,
-                SUM(CASE WHEN UPPER(LTRIM(RTRIM(attendanceStatus))) IN ('ABSENT', 'LEAVE', 'HALF DAY') THEN 1 ELSE 0 END) AS absentCount
+                SUM(CASE WHEN attendanceStatus IN ('P','PRESENT','Present') THEN 1 ELSE 0 END) AS presentCount,
+                SUM(CASE WHEN attendanceStatus IN ('ABSENT', 'LEAVE', 'HALF DAY', 'Absent', 'Leave', 'Half Day') THEN 1 ELSE 0 END) AS absentCount
             FROM (
                 SELECT
                     u.empId,
                     al.status AS attendanceStatus,
-                    DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, al.[date])) AS tenureDays
+                    DATEDIFF(DAY, ${joinDateSQL}, al.[date]) AS tenureDays
                 FROM attendance_logs al
                 INNER JOIN users u
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                    ON al.userId = u.id
                     AND ISNULL(u.isTemporary, 0) = 0
                 LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-                WHERE CONVERT(DATE, al.[date]) >= ?
-                  AND CONVERT(DATE, al.[date]) <= ?
+                    ON u.empId = uhs.employeeid
+                WHERE al.[date] >= ?
+                  AND al.[date] <= ?
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
                   AND ${joinDateSQL} IS NOT NULL
                   ${hierCondition}
                   ${getDesignationShutterExclusionSql("u")}
@@ -2828,23 +2816,21 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         if (hasCustomTenureRange) {
             let customAttendanceSql = `
                 SELECT
-                    SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN 1 ELSE 0 END) AS presentCount,
-                    SUM(CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT', 'LEAVE', 'HALF DAY') THEN 1 ELSE 0 END) AS absentCount
+                    SUM(CASE WHEN al.status IN ('P','PRESENT','Present') THEN 1 ELSE 0 END) AS presentCount,
+                    SUM(CASE WHEN al.status IN ('ABSENT', 'LEAVE', 'HALF DAY', 'Absent', 'Leave', 'Half Day') THEN 1 ELSE 0 END) AS absentCount
                 FROM attendance_logs al
                 INNER JOIN users u
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+                    ON al.userId = u.id
                     AND ISNULL(u.isTemporary, 0) = 0
                 LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-                WHERE CONVERT(DATE, al.[date]) >= ?
-                  AND CONVERT(DATE, al.[date]) <= ?
+                    ON u.empId = uhs.employeeid
+                WHERE al.[date] >= ?
+                  AND al.[date] <= ?
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
                   AND ${joinDateSQL} IS NOT NULL
-                  AND DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, al.[date])) BETWEEN ? AND ?
+                  AND DATEDIFF(DAY, ${joinDateSQL}, al.[date]) BETWEEN ? AND ?
                   ${hierCondition}
                   ${getDesignationShutterExclusionSql("u")}
                   ${getSnapshotEmployeeExistsSql("u")}
@@ -2872,13 +2858,11 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     u.empId,
                     DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?)) AS tenureDays
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
                   AND ${joinDateSQL} IS NOT NULL
                   AND ${joinDateSQL} <= ?
                   AND (${leaveDateSQL} IS NULL OR ${leaveDateSQL} >= ?)
@@ -2910,13 +2894,11 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             let customMasterSql = `
                 SELECT COUNT(DISTINCT u.empId) AS totalCount
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
                   AND ${joinDateSQL} IS NOT NULL
                   AND ${joinDateSQL} <= ?
                   AND (${leaveDateSQL} IS NULL OR ${leaveDateSQL} >= ?)
@@ -2946,9 +2928,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     u.id AS userId,
                     DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) AS tenureDays
                 FROM users u
-                INNER JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                INNER JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
                   ${attritionHierCondition}
@@ -2985,9 +2965,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             let customAttritionSql = `
                 SELECT COUNT(DISTINCT u.id) AS leftCount
                 FROM users u
-                INNER JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                INNER JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
                   AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?

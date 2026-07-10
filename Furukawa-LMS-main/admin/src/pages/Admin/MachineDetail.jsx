@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -149,6 +150,17 @@ const useInfiniteScrollSentinel = (containerRef, sentinelRef, onLoadMore, active
 const MachineDetail = () => {
     const { departmentId, lineId, machineId } = useParams();
     const navigate = useNavigate();
+    const { user } = useSelector((state) => state.auth);
+
+    const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+
+    const rawAssignedDepts = Array.isArray(user?.departments) ? [...user.departments] : [];
+    if (user?.departmentId) rawAssignedDepts.push(user.departmentId);
+    const assignedDeptIds = rawAssignedDepts.map(id => String(id?.id || id?._id || id)).filter(Boolean);
+
+    const rawAssignedSections = Array.isArray(user?.sections) ? [...user.sections] : [];
+    if (user?.sectionId) rawAssignedSections.push(user.sectionId);
+    const assignedSectionIds = rawAssignedSections.map(id => String(id?.id || id?._id || id)).filter(Boolean);
 
     const validDepartmentId = departmentId && (!isNaN(departmentId) || departmentId.includes('-'));
     const validMachineId = machineId && !isNaN(machineId);
@@ -171,9 +183,21 @@ const MachineDetail = () => {
     const machine = machineData?.data;
     const lineName = linesData?.data?.find(l => (l.id || l._id) == lineId)?.name || "Line";
 
+    let querySectionId;
+    let shouldSkipDeptQuery = !validDepartmentId;
+
+    if (!isAdmin) {
+        const hasDeptAccess = assignedDeptIds.length === 0 || assignedDeptIds.includes(String(departmentId));
+        if (!hasDeptAccess) {
+            shouldSkipDeptQuery = true;
+        } else if (assignedSectionIds.length > 0) {
+            querySectionId = assignedSectionIds.join(",");
+        }
+    }
+
     const departmentGrid = useOperatorGrid(
-        { departmentId, role: "STUDENT" },
-        { skip: !validDepartmentId }
+        { departmentId, sectionId: querySectionId, role: "STUDENT" },
+        { skip: shouldSkipDeptQuery }
     );
     const assignedGrid = useOperatorGrid(
         { stationId: machineId },
@@ -319,7 +343,7 @@ const MachineDetail = () => {
                                     Department Operators
                                 </CardTitle>
                                 <CardDescription>
-                                    {departmentGrid.total} operator{departmentGrid.total !== 1 ? 's' : ''} in {departmentData?.data?.name || "this department"}
+                                    {departmentGrid.total} operator{departmentGrid.total !== 1 ? 's' : ''} {querySectionId ? "in assigned sections" : `in ${departmentData?.data?.name || "this department"}`}
                                 </CardDescription>
                             </div>
                         </div>

@@ -1023,21 +1023,17 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 -- Match final dashboard eligibility logic:
                 -- attendance_logs.payCode = users.empId, employee exists in user_hierarchy_snapshots,
                 -- users.isTemporary = 0, not deleted, and designation is not shuttered/off.
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN al.payCode END) AS mappedPresentCount,
+                COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN al.payCode END) AS mappedPresentCount,
                 CAST(0 AS INT) AS unmappedPresentCount,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN al.payCode END) AS totalPresentCount,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absentCount,
+                COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN al.payCode END) AS totalPresentCount,
+                COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT','LEAVE','HALF DAY','Absent','Leave','Half Day') THEN al.payCode END) AS absentCount,
                 COUNT(DISTINCT al.payCode) AS totalCount
             FROM attendance_logs al
-            INNER JOIN users u
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-            INNER JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+            INNER JOIN users u ON al.userId = u.id
+            INNER JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
             WHERE 1=1
-              AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
-              AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
+              AND al.[date] >= '${sqlStartDate}'
+              AND al.[date] <= '${sqlEndDate}'
               ${hierCondition}
               ${getEligibleUserSql("u")}
         `;

@@ -1,4 +1,9 @@
-import { poolPromise } from "./connectDB.js";
+import { poolPromise, longRunningPoolPromise } from "./connectDB.js";
+import logger from "../logger/winston.logger.js";
+
+const SLOW_QUERY_THRESHOLD_MS = 2000;
+
+const truncateForLog = (text) => (text.length > 300 ? `${text.slice(0, 300)}...` : text);
 
 /**
  * Runs a query against a given mssql Request (either pool.request() or transaction.request()),
@@ -46,29 +51,43 @@ export const runOnRequest = async (request, queryText, params = []) => {
         return `@${paramName}`;
     });
 
-    const result = await request.query(processedQuery);
+    const startedAt = Date.now();
+    try {
+        const result = await request.query(processedQuery);
+        const durationMs = Date.now() - startedAt;
 
-    // Mimic the mysql2 return format: [rows, fields/metadata]
-    // result.recordset contains the rows
-    // result.rowsAffected contains the number of rows affected
+        if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+            logger.warn(`[SLOW QUERY] Execution took ${durationMs}ms: ${truncateForLog(queryText)}`);
+        }
 
-    // For INSERT queries involving IDENTITY, returning the ID requires OUTPUT INSERTED.id in MSSQL,
-    // which complicates simple translation. If we just need rows, we return recordset.
-    const fakeMetadata = {
-        insertId: null, // We'll need to manually ensure output inserted.id is used if we need insertId
-        affectedRows: result.rowsAffected ? result.rowsAffected[0] : 0
-    };
+        // Mimic the mysql2 return format: [rows, fields/metadata]
+        // result.recordset contains the rows
+        // result.rowsAffected contains the number of rows affected
 
-    return [result.recordset || [], fakeMetadata];
+        // For INSERT queries involving IDENTITY, returning the ID requires OUTPUT INSERTED.id in MSSQL,
+        // which complicates simple translation. If we just need rows, we return recordset.
+        const fakeMetadata = {
+            insertId: null, // We'll need to manually ensure output inserted.id is used if we need insertId
+            affectedRows: result.rowsAffected ? result.rowsAffected[0] : 0
+        };
+
+        return [result.recordset || [], fakeMetadata];
+    } catch (error) {
+        const durationMs = Date.now() - startedAt;
+        logger.error(`[QUERY FAILED] after ${durationMs}ms: ${error.message} | Query: ${truncateForLog(queryText)}`);
+        throw error;
+    }
 };
 
 /**
  * Helper to execute MSSQL queries with parameters, mimicking the array-based parameter approach of mysql2.
  * Usage:
  * const [rows, result] = await executeQuery("SELECT * FROM users WHERE id = ?", [userId]);
+ * Pass { longRunning: true } to run against the long-running pool (5 minute timeout) for
+ * operations like PDF generation or bulk import/restore.
  */
-export const executeQuery = async (queryText, params = []) => {
-    const pool = await poolPromise;
+export const executeQuery = async (queryText, params = [], options = {}) => {
+    const pool = await (options.longRunning ? longRunningPoolPromise : poolPromise);
     const request = pool.request();
     return runOnRequest(request, queryText, params);
 };

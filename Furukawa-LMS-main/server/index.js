@@ -6,7 +6,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import ENV from "./configs/env.config.js";
 import logger from "./logger/winston.logger.js";
-import connectDB from "./db/connectDB.js";
+import connectDB, { getPoolStatus } from "./db/connectDB.js";
 import path from "path";
 import fs from "fs";
 import socketIOService from "./utils/socketIO.js";
@@ -215,12 +215,14 @@ app.get("/", (req, res) => {
 });
 
 // Health check endpoint
-app.get("/api/health", (req, res) => {
+app.get("/api/health", async (req, res) => {
+    const db = await getPoolStatus();
     res.status(200).json({
         status: "OK",
         message: "Server is running",
         timestamp: new Date().toISOString(),
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        db
     });
 });
 

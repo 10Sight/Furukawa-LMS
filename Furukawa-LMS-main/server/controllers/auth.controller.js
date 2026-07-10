@@ -262,7 +262,11 @@ export const profile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id);
   const safeUser = sanitizeUser(user);
 
-  await attachCustomRole(user, safeUser);
+  // findById() already resolves customRole via its own join (formatUser carries it into
+  // safeUser). Only fall back to attachCustomRole's default-role-by-name lookup when it's missing.
+  if (!safeUser.customRole) {
+    await attachCustomRole(user, safeUser);
+  }
 
   return res.status(200).json(new ApiResponse(200, safeUser, "User profile fetched successfully!"));
 });

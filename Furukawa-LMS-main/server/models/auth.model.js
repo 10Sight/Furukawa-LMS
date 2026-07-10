@@ -123,6 +123,14 @@ class User {
         this.ojt = typeof data.ojt === 'string' ? JSON.parse(data.ojt) : (data.ojt || []);
         this.expectedHandover = data.expectedHandover || null;
 
+        // Carry over any extra columns/joined fields (e.g. deptName, assignments) that
+        // aren't explicitly mapped above but were returned by the query.
+        Object.keys(data).forEach(key => {
+            if (this[key] === undefined) {
+                this[key] = data[key];
+            }
+        });
+
         // Internal tracking for password changes
         this._originalPassword = data.password;
     }
@@ -810,10 +818,26 @@ class User {
         return user;
     }
 
+    // Lightweight lookup used by verifyJWT: only the base users columns plus a fast
+    // LEFT JOIN on departments for deptName. Skips the OUTER APPLY hierarchy resolution
+    // and the assignments FOR JSON PATH subquery that findById() needs for full profiles.
+    static async findByIdLight(id) {
+        if (!id || isNaN(id)) return null;
+        const query = `
+            SELECT u.*, d.name as deptName
+            FROM users u
+            LEFT JOIN departments d ON d.id = u.departmentId
+            WHERE u.id = ?
+        `;
+        const [rows] = await executeQuery(query, [id]);
+        if (rows.length === 0) return null;
+        return new User(rows[0]);
+    }
+
     static async findById(id) {
         if (!id || isNaN(id)) return null;
         const query = `
-            SELECT u.*, 
+            SELECT u.*,
                    d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
                    COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId) as resolvedDeptId,
                    COALESCE(u.sectionId, l_res.lSectionId) as resolvedSectionId,

@@ -19,7 +19,7 @@ const verifyJWT = asyncHandler(async (req, res, next) => {
             throw new ApiError("Access Token Expired!", 401);
         }
 
-        const user = await User.findById(decodedToken?.id);
+        const user = await User.findByIdLight(decodedToken?.id);
 
         if (!user) {
             throw new ApiError("Invalid Access Token!", 401);

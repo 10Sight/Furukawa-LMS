@@ -289,6 +289,16 @@ class User {
                 console.error("Migration error for departmentId index:", err);
             }
 
+            // Create index for empId to optimize lookups and joins
+            try {
+                const [existsEmpIdIdx] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'idx_users_empId' AND object_id = OBJECT_ID('users')");
+                if (existsEmpIdIdx.length === 0) {
+                    await executeQuery("CREATE INDEX idx_users_empId ON users(empId)");
+                }
+            } catch (err) {
+                console.error("Migration error for empId index:", err);
+            }
+
             // Ensure phoneNumber is nullable and has no unique constraint (duplicates are allowed)
             try {
                 // 1. Drop existing unique indexes/constraints on phoneNumber first

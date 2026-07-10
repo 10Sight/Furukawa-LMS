@@ -57,6 +57,21 @@ class AttendanceLog {
             const pool = await poolPromise;
             await pool.query(query);
             console.log("AttendanceLog table initialized in MSSQL.");
+
+            // Create indexes for payCode and date columns to optimize queries
+            const indexQuery = `
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_attendance_logs_payCode' AND object_id = OBJECT_ID('attendance_logs'))
+                BEGIN
+                    CREATE INDEX idx_attendance_logs_payCode ON attendance_logs(payCode);
+                END
+                
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_attendance_logs_date' AND object_id = OBJECT_ID('attendance_logs'))
+                BEGIN
+                    CREATE INDEX idx_attendance_logs_date ON attendance_logs([date]);
+                END
+            `;
+            await pool.query(indexQuery);
+            console.log("Indexes checked/created for attendance_logs.");
         } catch (err) {
             console.error("Table Init Error:", err);
         }

@@ -1,9 +1,8 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useGetAllInstructorsQuery, useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
+import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetCoursesQuery } from '@/Redux/AllApi/CourseApi';
-import { useGetAllAuditsQuery } from '@/Redux/AllApi/AuditApi';
 import {
   Card,
   CardContent,
@@ -11,20 +10,17 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   IconUsers,
   IconCalendar,
   IconBook,
   IconTrendingUp,
-  IconActivity,
   IconPlus,
   IconSettings,
   IconChartBar,
-  IconClipboardCheck,
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import LazyContainer from "@/components/common/LazyContainer";
 import DepartmentQuizChart from "@/components/charts/DepartmentQuizChart";
 import DojoHiringTrendChart from "@/components/charts/DojoHiringTrendChart";
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
@@ -33,6 +29,8 @@ import EfficiencyChart from "@/components/charts/EfficiencyChart";
 import DojoHandoverComparisonChart from "@/components/charts/DojoHandoverComparisonChart";
 import ContractorWiseOperatorChart from "@/components/charts/ContractorWiseOperatorChart";
 import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
+import RecentActivityCard from "@/components/dashboard/RecentActivityCard";
+import SystemOverviewCard from "@/components/dashboard/SystemOverviewCard";
 import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { IconUserPlus } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate";
@@ -112,7 +110,6 @@ const Home = () => {
 
   // API calls for all stats
   const { data: studentsData, isLoading: studentsLoading } = useGetAllStudentsQuery();
-  const { data: instructorsData, isLoading: instructorsLoading } = useGetAllInstructorsQuery();
   const { data: departmentsData, isLoading: departmentsLoading } = useGetAllDepartmentsQuery();
   const { data: coursesData, isLoading: coursesLoading } = useGetCoursesQuery({
     page: 1,
@@ -121,10 +118,6 @@ const Home = () => {
     category: "",
     status: ""
   });
-  const { data: auditsData, isLoading: auditsLoading } = useGetAllAuditsQuery({
-    page: 1,
-    limit: 10
-  });
 
   // Dojo Hiring stats from the new API
   const { data: dojoStats, isLoading: dojoLoading } = useGetAdminHomeDojoStatsQuery(dateRange);
@@ -132,10 +125,8 @@ const Home = () => {
 
   // Extract counts from API responses
   const totalStudents = studentsData?.data?.totalUsers || 0;
-  const totalInstructors = instructorsData?.data?.totalUsers || 0;
   const totalDepartments = departmentsData?.data?.totalDepartments || 0;
   const totalCourses = coursesData?.data?.total || 0;
-  const recentActivities = auditsData?.data?.audits || [];
 
   // Calculate additional statistics
   const activeStudents = useMemo(() => {
@@ -215,72 +206,36 @@ const Home = () => {
 
 
       {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <DojoHiringTrendChart />
-        <DojoHandoverComparisonChart />
-        <ContractorWiseOperatorChart />
-        <TestPaperPassChart />
-        <UserStatusDistributionChart />
-        <DepartmentQuizChart dateRange={dateRange} />
-        <EfficiencyChart />
+      <div className="grid grid-cols-1 gap-6">
+        <LazyContainer minHeight={460}>
+          <DojoHiringTrendChart />
+        </LazyContainer>
+        <LazyContainer minHeight={640}>
+          <DojoHandoverComparisonChart />
+        </LazyContainer>
+        <LazyContainer minHeight={640}>
+          <ContractorWiseOperatorChart />
+        </LazyContainer>
+        <LazyContainer minHeight={420}>
+          <TestPaperPassChart />
+        </LazyContainer>
+        <LazyContainer minHeight={520}>
+          <UserStatusDistributionChart />
+        </LazyContainer>
+        <LazyContainer minHeight={560}>
+          <DepartmentQuizChart dateRange={dateRange} />
+        </LazyContainer>
+        <LazyContainer minHeight={600}>
+          <EfficiencyChart />
+        </LazyContainer>
       </div>
 
       {/* Main Content Area (Moved below charts) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Activity */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <IconActivity className="h-5 w-5" />
-                {t('home.recentActivity')}
-              </CardTitle>
-              <CardDescription>{t('home.latestSystemEvents')}</CardDescription>
-            </div>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/analytics">{t('home.viewAll')}</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {auditsLoading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="flex items-center space-x-3">
-                    <Skeleton className="h-8 w-8 rounded-full" />
-                    <div className="space-y-1 flex-1">
-                      <Skeleton className="h-4 w-3/4" />
-                      <Skeleton className="h-3 w-1/2" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : recentActivities.length > 0 ? (
-              <div className="space-y-4">
-                {recentActivities.slice(0, 5).map((activity, index) => (
-                  <div key={activity._id || index} className="flex items-start space-x-3">
-                    <div className="h-2 w-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900 truncate">
-                        {activity.action || t('home.systemActivity')}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {activity.user?.fullName || 'System'} • {new Date(activity.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {activity.action?.split(' ')[0] || t('home.activity')}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center text-gray-500 py-8">
-                <IconActivity className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                <p>{t('home.noRecentActivity')}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <LazyContainer minHeight={420}>
+          <RecentActivityCard />
+        </LazyContainer>
 
         {/* Quick Actions */}
         <Card>
@@ -330,35 +285,9 @@ const Home = () => {
       </div>
 
       {/* System Health Indicators */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <IconClipboardCheck className="h-5 w-5" />
-            {t('home.systemOverview')}
-          </CardTitle>
-          <CardDescription>{t('home.kpi')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-lg font-bold text-green-600">{activeStudents}</div>
-              <div className="text-sm text-gray-500">{t('home.activeOperators')}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-blue-600">{activeDepartments}</div>
-              <div className="text-sm text-gray-500">{t('home.runningDepartments')}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-purple-600">{publishedCourses}</div>
-              <div className="text-sm text-gray-500">{t('home.publishedCourses')}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-orange-600">{recentActivities.length}</div>
-              <div className="text-sm text-gray-500">{t('home.recentActivities')}</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <LazyContainer minHeight={140}>
+        <SystemOverviewCard />
+      </LazyContainer>
     </div>
   );
 };

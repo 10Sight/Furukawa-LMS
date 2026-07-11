@@ -57,6 +57,14 @@ export const auditApi = createApi({
             }),
             invalidatesTags: ['Audit'],
         }),
+
+        logAction: builder.mutation({
+            query: ({ action, details }) => ({
+                url: "/api/audits/log",
+                method: "POST",
+                data: { action, details },
+            }),
+        }),
     }),
 });
 
@@ -64,4 +72,5 @@ export const {
     useGetAllAuditsQuery,
     useGetAuditByIdQuery,
     useDeleteAuditMutation,
+    useLogActionMutation,
 } = auditApi;

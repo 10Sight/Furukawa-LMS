@@ -12,6 +12,7 @@ import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetLinesQuery } from "@/Redux/AllApi/LineApi";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import { useGetStudentOJTsQuery } from "@/Redux/AllApi/OnJobTrainingApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import {
   IconFileText,
   IconSearch,
@@ -67,6 +68,18 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
       setActiveTestPaperTab(tabFromUrl);
     }
   }, [searchParams]);
+
+  const [logAction] = useLogActionMutation();
+
+  useEffect(() => {
+    const actionByTab = {
+      testPaper: "VIEW_TEST_PAPER_LIST",
+      testMonitoring: "VIEW_TEST_MONITORING",
+      certificateTemplates: "VIEW_CERTIFICATE_TEMPLATES",
+    };
+    const action = actionByTab[activeTestPaperTab];
+    if (action) logAction({ action, details: {} });
+  }, [activeTestPaperTab]);
 
   const hasPermission = (permission) => {
     if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;

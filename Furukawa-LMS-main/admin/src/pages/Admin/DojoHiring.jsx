@@ -16,6 +16,7 @@ import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesBySubSectionQuery } from "@/Redux/AllApi/MachineApi";
 import { useGetAllContractorsQuery } from "@/Redux/AllApi/ContractorApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { toast } from "sonner";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -148,6 +149,15 @@ const DojoHiring = () => {
     const canCreate = hasPermission("dojo_hiring:create");
     const canUpdate = hasPermission("dojo_hiring:update");
     const canDelete = hasPermission("dojo_hiring:delete");
+
+    const [logAction] = useLogActionMutation();
+
+    useEffect(() => {
+        if (!canRead) return;
+        logAction({ action: "VIEW_DOJO_HIRING", details: { page: "Dojo Hiring" } })
+            .unwrap()
+            .catch((err) => console.error("Failed to log page view:", err));
+    }, [canRead, logAction]);
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -301,6 +311,10 @@ const DojoHiring = () => {
                 };
                 await updateUser(payload).unwrap();
                 toast.success("Employee details updated successfully");
+                logAction({
+                    action: "UPDATE_DOJO_USER",
+                    details: { fullName: selectedUser.fullName, empId: selectedUser.empId },
+                }).unwrap().catch((err) => console.error("Failed to log action:", err));
             } else {
                 // Create mode
                 const payload = {
@@ -316,8 +330,12 @@ const DojoHiring = () => {
                 };
                 await dojoRegister(payload).unwrap();
                 toast.success("Temporary employee registered successfully");
+                logAction({
+                    action: "ADD_DOJO_USER",
+                    details: { fullName: formData.fullName, empId: formData.empId },
+                }).unwrap().catch((err) => console.error("Failed to log action:", err));
             }
-            
+
             closeModal();
             refetch();
         } catch (error) {
@@ -330,6 +348,10 @@ const DojoHiring = () => {
         try {
             await deleteUser(userToDelete.id).unwrap();
             toast.success("Candidate removed from pipeline");
+            logAction({
+                action: "DELETE_DOJO_USER",
+                details: { fullName: userToDelete.fullName, empId: userToDelete.empId },
+            }).unwrap().catch((err) => console.error("Failed to log action:", err));
             setIsDeleteModalOpen(false);
             setUserToDelete(null);
             refetch();
@@ -391,9 +413,15 @@ const DojoHiring = () => {
     };
 
     const handleBulkDelete = async () => {
+        const targets = allUsers.filter(u => selectedRows.has(u.id));
         try {
             await Promise.all([...selectedRows].map(id => deleteUser(id).unwrap()));
             toast.success(`Removed ${selectedRows.size} candidates`);
+            targets.forEach(({ fullName, empId }) => {
+                logAction({ action: "DELETE_DOJO_USER", details: { fullName, empId } })
+                    .unwrap()
+                    .catch((err) => console.error("Failed to log action:", err));
+            });
             setSelectedRows(new Set());
             setIsBulkDeleteOpen(false);
             refetch();
@@ -403,9 +431,9 @@ const DojoHiring = () => {
         }
     };
 
-    const handleQuickStatusChange = async (userId, newStatus) => {
+    const handleQuickStatusChange = async (user, newStatus) => {
         if (newStatus === "LEFT") {
-            setLeftConfirmTarget({ id: userId });
+            setLeftConfirmTarget({ id: user.id, fullName: user.fullName, empId: user.empId });
             setLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
             setLeftConfirmReason("");
             setLeftConfirmCustomReason("");
@@ -413,9 +441,13 @@ const DojoHiring = () => {
             return;
         }
         try {
-            await updateUser({ id: userId, status: newStatus }).unwrap();
+            await updateUser({ id: user.id, status: newStatus }).unwrap();
             const label = newStatus === "ON_LEAVE" ? "On Leave" : newStatus.charAt(0) + newStatus.slice(1).toLowerCase();
             toast.success(`Status updated to ${label}`);
+            logAction({
+                action: "UPDATE_DOJO_USER",
+                details: { fullName: user.fullName, empId: user.empId, status: newStatus },
+            }).unwrap().catch((err) => console.error("Failed to log action:", err));
             refetch();
         } catch (error) {
             toast.error(error?.data?.message || "Failed to update status");
@@ -434,6 +466,10 @@ const DojoHiring = () => {
                 reasonOfLeaving: (leftConfirmReason === "Other" ? leftConfirmCustomReason : leftConfirmReason)?.trim() || null,
             }).unwrap();
             toast.success("Status updated to Left");
+            logAction({
+                action: "UPDATE_DOJO_USER",
+                details: { fullName: leftConfirmTarget.fullName, empId: leftConfirmTarget.empId, status: "LEFT" },
+            }).unwrap().catch((err) => console.error("Failed to log action:", err));
             refetch();
             setIsLeftConfirmOpen(false);
             setLeftConfirmTarget(null);
@@ -1298,7 +1334,7 @@ const DojoHiring = () => {
                                                 <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                                                     <Select
                                                         value={normalizeStatus(user.status)}
-                                                        onValueChange={(newStatus) => handleQuickStatusChange(user.id, newStatus)}
+                                                        onValueChange={(newStatus) => handleQuickStatusChange(user, newStatus)}
                                                         disabled={!hasPermission("user:change_status") && !canUpdate}
                                                     >
                                                         <SelectTrigger className="w-[130px] border-0 shadow-none p-0 h-auto focus:ring-0 [&>svg]:hidden">

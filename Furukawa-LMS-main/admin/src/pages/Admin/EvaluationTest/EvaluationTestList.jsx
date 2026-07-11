@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
     useGetEvaluationTestsQuery,
@@ -40,6 +40,7 @@ import EvaluationTestMonitoring from "./EvaluationTestMonitoring";
 
 const EvaluationTestList = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [searchTerm, setSearchTerm] = useState("");
     const [deleteId, setDeleteId] = useState(null);
     const [selectedDepartment, setSelectedDepartment] = useState("all");
@@ -200,7 +201,7 @@ const EvaluationTestList = () => {
                                                 <TableCell className="text-center font-medium text-gray-500">{index + 1}</TableCell>
                                                 <TableCell className="font-semibold text-gray-800">
                                                     <button
-                                                        onClick={() => navigate(`/admin/evaluation-test/${paper.id}/operators`)}
+                                                        onClick={() => navigate(`/admin/evaluation-test/${paper.id}/operators`, { state: { from: location.pathname + location.search } })}
                                                         className="text-blue-600 hover:text-blue-800 hover:underline text-left font-semibold focus:outline-none transition-all"
                                                     >
                                                         {paper.title}

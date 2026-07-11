@@ -299,6 +299,51 @@ class User {
                 console.error("Migration error for empId index:", err);
             }
 
+            // Create index for userName/email to optimize login lookups (User.findOne by
+            // userName/email was doing a full table scan on every login attempt).
+            try {
+                const [existsUserNameIdx] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'idx_users_userName' AND object_id = OBJECT_ID('users')");
+                if (existsUserNameIdx.length === 0) {
+                    await executeQuery("CREATE INDEX idx_users_userName ON users(userName)");
+                }
+            } catch (err) {
+                console.error("Migration error for userName index:", err);
+            }
+
+            try {
+                const [existsEmailIdx] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'idx_users_email' AND object_id = OBJECT_ID('users')");
+                if (existsEmailIdx.length === 0) {
+                    await executeQuery("CREATE INDEX idx_users_email ON users(email)");
+                }
+            } catch (err) {
+                console.error("Migration error for email index:", err);
+            }
+
+            // Create index on the legacy string 'department' column and a covering composite
+            // index so the "(departmentId = ? OR department = ? OR department = ?) AND isDeleted
+            // ... AND isEmployee ..." lookups used by department.controller.js (studentCount /
+            // students preview) can use an index seek instead of a full table scan.
+            try {
+                const [existsDeptStrIdx] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'idx_users_department_str' AND object_id = OBJECT_ID('users')");
+                if (existsDeptStrIdx.length === 0) {
+                    await executeQuery("CREATE INDEX idx_users_department_str ON users(department)");
+                }
+            } catch (err) {
+                console.error("Migration error for department (string) index:", err);
+            }
+
+            try {
+                const [existsDeptLookupIdx] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'idx_users_dept_lookup' AND object_id = OBJECT_ID('users')");
+                if (existsDeptLookupIdx.length === 0) {
+                    await executeQuery(`
+                        CREATE INDEX idx_users_dept_lookup ON users(departmentId, isEmployee, isDeleted)
+                        INCLUDE (id, fullName, email, slug, createdAt, avatar, userName, empId, currentLevel, status, isTrainer, customRoleId, department)
+                    `);
+                }
+            } catch (err) {
+                console.error("Migration error for dept lookup composite index:", err);
+            }
+
             // Ensure phoneNumber is nullable and has no unique constraint (duplicates are allowed)
             try {
                 // 1. Drop existing unique indexes/constraints on phoneNumber first

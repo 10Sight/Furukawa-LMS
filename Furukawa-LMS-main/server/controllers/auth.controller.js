@@ -171,7 +171,7 @@ export const register = asyncHandler(async (req, res) => {
 
   if (!createdUser) throw new ApiError("Something went wrong in registering!", 400);
 
-  await logAudit(user.id, "REGISTER", { role });
+  await logAudit(user.id, "REGISTER", { role }, { req });
 
   return res
     .status(201)
@@ -212,7 +212,7 @@ export const login = asyncHandler(async (req, res) => {
   // 4. Sanitize User
   const loggedInUser = await attachCustomRole(user, sanitizeUser(user));
 
-  logAudit(user.id, "LOGIN").catch(err => console.error("logAudit(LOGIN) failed:", err));
+  logAudit(user.id, "LOGIN", {}, { req }).catch(err => console.error("logAudit(LOGIN) failed:", err));
 
   return res
     .status(200)
@@ -250,7 +250,7 @@ export const logout = asyncHandler(async (req, res) => {
     if (user) {
       user.refreshToken = null; // Clean logout
       await user.save();
-      logAudit(user.id, "LOGOUT").catch(err => console.error("logAudit(LOGOUT) failed:", err));
+      logAudit(user.id, "LOGOUT", {}, { req }).catch(err => console.error("logAudit(LOGOUT) failed:", err));
     }
   }
 
@@ -301,7 +301,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   const link = `${redirectUrl}/reset-password?token=${resetToken}`;
   await sendMail(user.email, "Reset Password", link, "Reset your password");
 
-  await logAudit(user.id, "FORGOT_PASSWORD");
+  await logAudit(user.id, "FORGOT_PASSWORD", {}, { req });
 
   return res
     .status(200)
@@ -322,7 +322,7 @@ export const refreshAccessAndRefreshToken = asyncHandler(async (req, res) => {
 
   const { accessToken, refreshToken: newRefreshToken } = await generateAuthTokens(user);
 
-  logAudit(user.id, "REFRESH_TOKEN").catch(err => console.error("logAudit(REFRESH_TOKEN) failed:", err));
+  logAudit(user.id, "REFRESH_TOKEN", {}, { req }).catch(err => console.error("logAudit(REFRESH_TOKEN) failed:", err));
 
   return res
     .status(200)
@@ -359,7 +359,7 @@ export const changePassword = asyncHandler(async (req, res) => {
   user.refreshToken = null;
   await user.save();
 
-  await logAudit(user.id, "CHANGE_PASSWORD");
+  await logAudit(user.id, "CHANGE_PASSWORD", {}, { req });
 
   return res
     .status(200)
@@ -402,7 +402,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   await existingUser.save();
 
-  await logAudit(existingUser.id, "RESET_PASSWORD");
+  await logAudit(existingUser.id, "RESET_PASSWORD", {}, { req });
 
   return res
     .status(200)
@@ -473,7 +473,7 @@ export const dojoRegister = asyncHandler(async (req, res) => {
 
   if (!createdUser) throw new ApiError("Something went wrong in registering Dojo Candidate!", 400);
 
-  await logAudit(user.id, "REGISTER_DOJO", { role: "STUDENT", isTemporary: true });
+  await logAudit(user.id, "REGISTER_DOJO", { role: "STUDENT", isTemporary: true }, { req });
 
   return res
     .status(201)

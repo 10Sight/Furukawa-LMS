@@ -1376,7 +1376,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
     // machine_assignments has no FK to users, so it doesn't cascade on delete - clean it up explicitly
     await executeQuery("DELETE FROM machine_assignments WHERE user_id = ?", [userId]);
     await executeQuery("DELETE FROM users WHERE id = ?", [userId]);
-    await logAudit(req.user.id, "DELETE_USER_PERMANENT", { userId });
+    await logAudit(req.user.id, "DELETE_USER_PERMANENT", { userId }, { req });
 
     await removeUsersFromDepartmentAssignments([userId]);
     await syncHierarchyUserLists(affectedSubSectionIds, affectedLineIds, affectedSectionIds);
@@ -1388,7 +1388,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
     const { affectedSubSectionIds, affectedLineIds, affectedSectionIds } = await collectHierarchySyncTargets(user[0]);
 
     await executeQuery("UPDATE users SET isDeleted = 1 WHERE id = ?", [userId]);
-    await logAudit(req.user.id, "DELETE_USER_SOFT", { userId });
+    await logAudit(req.user.id, "DELETE_USER_SOFT", { userId }, { req });
 
     // A soft-deleted user must drop out of department/section/line/sub-section membership too
     await removeUsersFromDepartmentAssignments([userId]);
@@ -2183,7 +2183,7 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
       const matchedIds = matchedRows.map(r => r.id);
 
       if (!matchedIds.length) {
-        await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+        await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters }, { req });
         return res.json(new ApiResponse(200, null, "No matching users found to delete"));
       }
 
@@ -2193,7 +2193,7 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
         matchedIds
       );
       await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${phs})`, matchedIds);
-      await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+      await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters }, { req });
       await removeUsersFromDepartmentAssignments(matchedIds);
       await syncHierarchyForRows(rowsToDelete);
       return res.json(new ApiResponse(200, null, "All matching users deleted"));
@@ -2230,7 +2230,7 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
     );
     await executeQuery(`UPDATE users SET isDeleted = 1 ${whereSQL}`, params);
 
-    await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters });
+    await logAudit(req.user.id, "BULK_DELETE_USERS_FILTERED", { filters }, { req });
     await removeUsersFromDepartmentAssignments(rowsToDelete.map(r => r.id));
     await syncHierarchyForRows(rowsToDelete);
     return res.json(new ApiResponse(200, null, "All matching users deleted"));
@@ -2247,7 +2247,7 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
   const placeholders = ids.map(() => "?").join(",");
   await executeQuery(`UPDATE users SET isDeleted = 1 WHERE id IN (${placeholders})`, ids);
 
-  await logAudit(req.user.id, "BULK_DELETE_USERS_LIST", { count: ids.length });
+  await logAudit(req.user.id, "BULK_DELETE_USERS_LIST", { count: ids.length }, { req });
   await removeUsersFromDepartmentAssignments(ids);
   await syncHierarchyForRows(rowsToDelete);
   res.json(new ApiResponse(200, null, "Selected users deleted"));
@@ -2578,7 +2578,7 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
     count: updates.length,
     isAllSelected: !!isAllSelected,
     datesModified: Object.keys(shiftSchedulePatch).length,
-  });
+  }, { req });
 
   try {
     await UserHierarchySnapshot.syncFromUsers();

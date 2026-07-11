@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
     useGetEvaluationTestByIdQuery,
@@ -92,6 +92,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     const { id, attemptId } = useParams();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const location = useLocation();
+    const fromPath = location.state?.from || "/admin/evaluation-test";
+    const grandFromPath = location.state?.grandFrom || fromPath;
     const isPrintModeUrl = searchParams.get("mode") === "print";
 
     const { user } = useSelector((state) => state.auth);
@@ -343,7 +346,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                 await createAttempt(payload).unwrap();
                 alert("Student practical evaluation sheet saved successfully!");
             }
-            navigate(`/admin/evaluation-test/${activeTemplate?.testId || id}/operators`);
+            navigate(`/admin/evaluation-test/${activeTemplate?.testId || id}/operators`, { state: { from: grandFromPath } });
         } catch (error) {
             console.error("Failed to submit student evaluation", error);
             alert(`Error ${isEdit ? "updating" : "submitting"} student evaluation sheet.`);
@@ -900,7 +903,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                             variant="ghost"
                             size="icon"
                             onClick={() => {
-                                if (isPrintModeUrl) navigate("/admin/evaluation-test");
+                                if (isPrintModeUrl) navigate(fromPath);
                                 else setIsPrintMode(false);
                             }}
                             className="hover:bg-gray-800 text-white hover:text-white"
@@ -947,7 +950,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                     <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => navigate("/admin/evaluation-test")}
+                        onClick={() => navigate(fromPath)}
                         className="h-9 w-9 border-gray-200 text-gray-600 hover:text-gray-800"
                     >
                         <IconArrowLeft className="h-5 w-5" />

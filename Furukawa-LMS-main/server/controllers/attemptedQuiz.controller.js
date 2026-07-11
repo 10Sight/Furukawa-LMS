@@ -12,6 +12,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { checkModuleAccessForAssessments } from "../utils/moduleCompletion.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Helper to check if a student has an OJT approved today
 const checkOjtApprovedToday = async (userId) => {
@@ -648,6 +649,14 @@ export const startQuiz = asyncHandler(async (req, res) => {
         }))
     };
 
+    logAudit(req.user.id, "START_QUIZ_ATTEMPT", {
+        title: quiz.title,
+        isDojo: !!quiz.isDojo,
+        attemptNumber: previousAttempts + 1,
+    }, { resourceType: "Quiz", resourceId: quiz.id, req }).catch(err =>
+        console.error("logAudit(START_QUIZ_ATTEMPT) failed:", err.message)
+    );
+
     res.json(new ApiResponse(200, {
         canAttempt: true,
         quiz: quizForTaking
@@ -953,6 +962,18 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     };
 
     const attempt = await AttemptedQuiz.create(attemptData);
+
+    logAudit(req.user.id, "SUBMIT_QUIZ_ATTEMPT", {
+        quizId: quiz.id,
+        quizTitle: quiz.title,
+        attemptedByName: studentName,
+        attemptedByEmpId: studentEmpId,
+        scorePercent,
+        passed,
+        timeTaken: timeTaken || 0,
+    }, { resourceType: "QuizAttempt", resourceId: attempt.id, req }).catch(err =>
+        console.error("logAudit(SUBMIT_QUIZ_ATTEMPT) failed:", err.message)
+    );
 
     let nextModuleUnlocked = false;
     let levelUpgraded = false;

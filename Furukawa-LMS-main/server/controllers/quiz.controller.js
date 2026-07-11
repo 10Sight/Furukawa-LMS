@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { slugify } from "../utils/slugify.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -124,6 +125,15 @@ export const createQuiz = asyncHandler(async (req, res) => {
         quiz.questions = parseJSON(quiz.questions);
         quiz.skillUpgradation = parseJSON(quiz.skillUpgradation);
     }
+
+    logAudit(req.user.id, "CREATE_TEST_PAPER", {
+        title: quiz.title,
+        scope: quiz.scope,
+        questionCount: questions.length,
+        isDojo: !!quiz.isDojo,
+    }, { resourceType: "Quiz", resourceId: quiz.id, req }).catch(err =>
+        console.error("logAudit(CREATE_TEST_PAPER) failed:", err.message)
+    );
 
     res.status(201).json(new ApiResponse(201, quiz, "Quiz created successfully"));
 });
@@ -406,6 +416,13 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     quiz.targetDeptId = parseJSON(quiz.targetDeptId, []);
     quiz.targetSectionId = parseJSON(quiz.targetSectionId, []);
 
+    logAudit(req.user.id, "UPDATE_TEST_PAPER", {
+        title: quiz.title,
+        updatedFields: Object.keys(req.body).filter(k => req.body[k] !== undefined && k !== 'questions'),
+    }, { resourceType: "Quiz", resourceId: quiz.id, req }).catch(err =>
+        console.error("logAudit(UPDATE_TEST_PAPER) failed:", err.message)
+    );
+
     res.json(new ApiResponse(200, quiz, "Updated"));
 });
 
@@ -414,7 +431,15 @@ export const deleteQuiz = asyncHandler(async (req, res) => {
     const id = await resolveQuizId(req.params.id);
     if (!id) throw new ApiError("Quiz not found", 404);
 
+    const [rows] = await executeQuery("SELECT title FROM quizzes WHERE id = ?", [id]);
+    const quizTitle = rows[0]?.title;
+
     const [result, metadata] = await executeQuery("DELETE FROM quizzes WHERE id = ?", [id]);
+
+    logAudit(req.user.id, "DELETE_TEST_PAPER", { title: quizTitle },
+        { resourceType: "Quiz", resourceId: id, req }
+    ).catch(err => console.error("logAudit(DELETE_TEST_PAPER) failed:", err.message));
+
     res.json(new ApiResponse(200, null, "Deleted"));
 });
 

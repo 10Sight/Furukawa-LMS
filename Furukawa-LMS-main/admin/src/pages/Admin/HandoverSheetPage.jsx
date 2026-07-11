@@ -36,6 +36,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
+import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import HandoverSheet from '@/components/departments/HandoverSheet';
 
 const MONTHS = [
@@ -303,6 +304,16 @@ const HandoverSheetPage = () => {
 
     const [deleteHandoverSheet] = useDeleteHandoverSheetMutation();
     const [bulkDeleteHandoverSheets] = useBulkDeleteHandoverSheetsMutation();
+    const [logAction] = useLogActionMutation();
+
+    useEffect(() => {
+        if (sheetMode) return;
+        logAction({
+            action: activeTab === 'monitoring' ? 'VIEW_HANDOVER_SHEETS_MONITORING' : 'VIEW_HANDOVER_SHEETS_DASHBOARD',
+            details: { subTab: activeTab },
+        }).catch(() => {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, sheetMode]);
 
     const { data: dashData, isFetching: dashFetching } = useGetHandoverSheetsMonitoringQuery({
         departmentId: dashDept,
@@ -438,6 +449,10 @@ const HandoverSheetPage = () => {
         try {
             await deleteHandoverSheet(row.id).unwrap();
             toast.success("Handover sheet deleted successfully");
+            logAction({
+                action: 'DELETE_HANDOVER_SHEET',
+                details: { handoverSheetId: row.id, departmentName: row.departmentName, date: row.date },
+            }).catch(() => {});
             setDashSelectedIds(prev => prev.filter(id => id !== row.id));
             setMonitorSelectedIds(prev => prev.filter(id => id !== row.id));
         } catch {
@@ -451,6 +466,10 @@ const HandoverSheetPage = () => {
         try {
             await bulkDeleteHandoverSheets(ids).unwrap();
             toast.success(`${ids.length} handover sheet${ids.length !== 1 ? 's' : ''} deleted successfully`);
+            logAction({
+                action: 'BULK_DELETE_HANDOVER_SHEETS',
+                details: { handoverSheetIds: ids, deletedCount: ids.length },
+            }).catch(() => {});
             clearSelection();
         } catch {
             toast.error("Failed to delete selected handover sheets");

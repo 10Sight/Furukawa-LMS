@@ -12,6 +12,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import sendMail from "../utils/mail.util.js";
+import logAudit from "../utils/auditLogger.js";
 
 const normalizeParam = (val) => {
     if (!val || val === 'undefined' || val === 'null' || val === '' || val === '0' || val === 'all' || val === 'All') return null;
@@ -1402,6 +1403,16 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
     }
     // ----------------------------------
 
+    logAudit(req.user?.id, isSubmitted ? "SUBMIT_HANDOVER_SHEET" : "SAVE_HANDOVER_SHEET_DRAFT", {
+        departmentId,
+        sectionId: sectionId || null,
+        shift: shift || null,
+        date,
+        entriesCount: Array.isArray(entries) ? entries.length : 0,
+    }, { resourceType: "HandoverSheet", resourceId: sheet.id, req }).catch(err =>
+        console.error("logAudit(SAVE_HANDOVER_SHEET) failed:", err.message)
+    );
+
     return res.status(200).json(
         new ApiResponse(200, sheet, isSubmitted ? "Handover Sheet submitted and emailed successfully" : "Handover Sheet progress saved successfully")
     );
@@ -1431,6 +1442,14 @@ export const saveHandoverSheetConfig = asyncHandler(async (req, res) => {
 
     const updatedBy = req.user?.fullName || req.user?.name || "System";
     const saved = await HandoverSheetConfig.upsert(departmentId, config, remark, updatedBy, sectionId || null);
+
+    logAudit(req.user?.id, "SAVE_HANDOVER_SHEET_CONFIG", {
+        departmentId,
+        sectionId: sectionId || null,
+        remark: remark || null,
+    }, { resourceType: "HandoverSheetConfig", resourceId: departmentId, req }).catch(err =>
+        console.error("logAudit(SAVE_HANDOVER_SHEET_CONFIG) failed:", err.message)
+    );
 
     return res.status(200).json(
         new ApiResponse(200, saved, "Configuration saved successfully")
@@ -1476,6 +1495,14 @@ export const sendHandoverPDF = asyncHandler(async (req, res) => {
     }];
 
     await sendMail(email, subject, message, attachments);
+
+    logAudit(req.user?.id, "EMAIL_HANDOVER_SHEET_PDF", {
+        email,
+        departmentName,
+        date,
+    }, { resourceType: "HandoverSheet", req }).catch(err =>
+        console.error("logAudit(EMAIL_HANDOVER_SHEET_PDF) failed:", err.message)
+    );
 
     res.json(new ApiResponse(200, null, "Email sent successfully with PDF attachment"));
 });
@@ -1570,6 +1597,12 @@ export const deleteHandoverSheet = asyncHandler(async (req, res) => {
 
     await executeQuery("DELETE FROM handover_sheets WHERE id = ?", [id]);
 
+    logAudit(req.user?.id, "DELETE_HANDOVER_SHEET", {
+        handoverSheetId: id,
+    }, { resourceType: "HandoverSheet", resourceId: id, req }).catch(err =>
+        console.error("logAudit(DELETE_HANDOVER_SHEET) failed:", err.message)
+    );
+
     return res.status(200).json(new ApiResponse(200, null, "Handover sheet deleted successfully"));
 });
 
@@ -1582,6 +1615,13 @@ export const bulkDeleteHandoverSheets = asyncHandler(async (req, res) => {
 
     const placeholders = validIds.map(() => '?').join(',');
     await executeQuery(`DELETE FROM handover_sheets WHERE id IN (${placeholders})`, validIds);
+
+    logAudit(req.user?.id, "BULK_DELETE_HANDOVER_SHEETS", {
+        handoverSheetIds: validIds,
+        deletedCount: validIds.length,
+    }, { resourceType: "HandoverSheet", req }).catch(err =>
+        console.error("logAudit(BULK_DELETE_HANDOVER_SHEETS) failed:", err.message)
+    );
 
     return res.status(200).json(new ApiResponse(200, { deletedCount: validIds.length }, "Handover sheets deleted successfully"));
 });

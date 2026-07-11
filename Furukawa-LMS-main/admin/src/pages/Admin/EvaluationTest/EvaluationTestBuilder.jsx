@@ -6,6 +6,7 @@ import {
     useUpdateEvaluationTestMutation
 } from "@/Redux/AllApi/EvaluationTestApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -100,6 +101,7 @@ const EvaluationTestBuilder = () => {
     const [updateEvaluationTest, { isLoading: isUpdating }] = useUpdateEvaluationTestMutation();
     const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
     const departments = departmentsData?.data?.departments || [];
+    const [logAction] = useLogActionMutation();
 
     // Populate data when in edit mode
     useEffect(() => {
@@ -111,6 +113,21 @@ const EvaluationTestBuilder = () => {
             setContentStructure(normalizeContentStructure(test.contentStructure || [], test.title));
             setDepartmentId(test.departmentId ? String(test.departmentId) : "all");
         }
+    }, [isEditMode, fetchResponse]);
+
+    // Log page-view audit events for the create/edit builder form
+    useEffect(() => {
+        if (isEditMode) {
+            if (fetchResponse?.data) {
+                logAction({
+                    action: "VIEW_EDIT_EVALUATION_TEST_TEMPLATE",
+                    details: { testId: id, title: fetchResponse.data.title }
+                });
+            }
+        } else {
+            logAction({ action: "VIEW_CREATE_EVALUATION_TEST_TEMPLATE" });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEditMode, fetchResponse]);
 
     // Binds shortcut key to close print preview
@@ -433,6 +450,7 @@ const EvaluationTestBuilder = () => {
     };
 
     const handlePrint = () => {
+        logAction({ action: "PRINT_EVALUATION_TEST_TEMPLATE", details: { testId: id || "new", title } });
         window.print();
     };
 

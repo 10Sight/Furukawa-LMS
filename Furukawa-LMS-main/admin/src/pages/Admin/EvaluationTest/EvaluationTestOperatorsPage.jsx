@@ -7,6 +7,7 @@ import {
 } from "@/Redux/AllApi/EvaluationTestApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,19 @@ const EvaluationTestOperatorsPage = () => {
     const testDetail = testRes?.data;
     const testTitle = testDetail?.title || "DOJO Evaluation Test";
     const maxCols = testDetail?.performDateCount || 4;
+
+    const [logAction] = useLogActionMutation();
+
+    // Log page-view audit event once the template details have resolved
+    useEffect(() => {
+        if (testRes?.data) {
+            logAction({
+                action: "VIEW_EVALUATION_TEST_OPERATORS",
+                details: { testId, testTitle: testRes.data.title }
+            });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [testRes]);
 
     // Fetch all submitted grading sheets/attempts for this specific template
     const { data: attemptsRes, isLoading: isLoadingAttempts, refetch: refetchAttempts } = 

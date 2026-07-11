@@ -3,6 +3,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import EvaluationTest from "../models/evaluationTest.model.js";
 import EvaluationTestAttempt from "../models/evaluationTestAttempt.model.js";
+import logAudit from "../utils/auditLogger.js";
 
 export const createEvaluationTest = asyncHandler(async (req, res) => {
     const { title, performDateCount, processType, contentStructure, departmentId } = req.body;
@@ -24,6 +25,14 @@ export const createEvaluationTest = asyncHandler(async (req, res) => {
     };
 
     const evaluationTest = await EvaluationTest.create(testData);
+
+    logAudit(req.user?.id, "CREATE_EVALUATION_TEST", {
+        title: evaluationTest.title,
+        processType: evaluationTest.processType,
+        departmentId: evaluationTest.departmentId,
+    }, { resourceType: "EvaluationTest", resourceId: evaluationTest.id, req }).catch(err =>
+        console.error("logAudit(CREATE_EVALUATION_TEST) failed:", err.message)
+    );
 
     res.status(201).json(
         new ApiResponse(201, evaluationTest, "Evaluation test created successfully")
@@ -78,6 +87,13 @@ export const updateEvaluationTest = asyncHandler(async (req, res) => {
 
     const updatedTest = await EvaluationTest.update(id, updateData);
 
+    logAudit(req.user?.id, "UPDATE_EVALUATION_TEST", {
+        title: updatedTest.title,
+        testId: id,
+    }, { resourceType: "EvaluationTest", resourceId: id, req }).catch(err =>
+        console.error("logAudit(UPDATE_EVALUATION_TEST) failed:", err.message)
+    );
+
     res.json(
         new ApiResponse(200, updatedTest, "Evaluation test updated successfully")
     );
@@ -92,6 +108,13 @@ export const deleteEvaluationTest = asyncHandler(async (req, res) => {
     }
 
     await EvaluationTest.delete(id);
+
+    logAudit(req.user?.id, "DELETE_EVALUATION_TEST", {
+        title: existingTest.title,
+        testId: id,
+    }, { resourceType: "EvaluationTest", resourceId: id, req }).catch(err =>
+        console.error("logAudit(DELETE_EVALUATION_TEST) failed:", err.message)
+    );
 
     res.json(
         new ApiResponse(200, null, "Evaluation test deleted successfully")
@@ -122,6 +145,14 @@ export const createEvaluationTestAttempt = asyncHandler(async (req, res) => {
         isHandoverEligible,
         passedDate
     });
+
+    logAudit(req.user?.id, "CREATE_EVALUATION_TEST_ATTEMPT", {
+        traineeName: newAttempt.traineeName,
+        employeeNo: newAttempt.employeeNo,
+        testId: parsedTestId,
+    }, { resourceType: "EvaluationTestAttempt", resourceId: newAttempt.id, req }).catch(err =>
+        console.error("logAudit(CREATE_EVALUATION_TEST_ATTEMPT) failed:", err.message)
+    );
 
     res.status(201).json(
         new ApiResponse(201, newAttempt, "Evaluation test sheet submitted successfully")
@@ -181,6 +212,37 @@ export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
         passedDate
     });
 
+    const auditMeta = { resourceType: "EvaluationTestAttempt", resourceId: id, req };
+    const auditDetails = {
+        traineeName: updatedAttempt.traineeName,
+        employeeNo: updatedAttempt.employeeNo,
+        attemptId: id,
+    };
+
+    const prevApprovedStatus = existingAttempt.attemptData?._approvedStatus;
+    const nextApprovedStatus = effectiveAttemptData?._approvedStatus;
+    if (nextApprovedStatus && nextApprovedStatus !== prevApprovedStatus) {
+        const action = nextApprovedStatus === "APPROVED" ? "APPROVE_EVALUATION_TEST_ATTEMPT" : "REJECT_EVALUATION_TEST_ATTEMPT";
+        logAudit(req.user?.id, action, { ...auditDetails, status: nextApprovedStatus }, auditMeta).catch(err =>
+            console.error(`logAudit(${action}) failed:`, err.message)
+        );
+    }
+
+    const prevConfirmedStatus = existingAttempt.attemptData?._confirmedStatus;
+    const nextConfirmedStatus = effectiveAttemptData?._confirmedStatus;
+    if (nextConfirmedStatus && nextConfirmedStatus !== prevConfirmedStatus) {
+        const action = nextConfirmedStatus === "APPROVED" ? "CONFIRM_EVALUATION_TEST_ATTEMPT" : "REJECT_CONFIRM_EVALUATION_TEST_ATTEMPT";
+        logAudit(req.user?.id, action, { ...auditDetails, status: nextConfirmedStatus }, auditMeta).catch(err =>
+            console.error(`logAudit(${action}) failed:`, err.message)
+        );
+    }
+
+    if (nextApprovedStatus === prevApprovedStatus && nextConfirmedStatus === prevConfirmedStatus) {
+        logAudit(req.user?.id, "UPDATE_EVALUATION_TEST_ATTEMPT", auditDetails, auditMeta).catch(err =>
+            console.error("logAudit(UPDATE_EVALUATION_TEST_ATTEMPT) failed:", err.message)
+        );
+    }
+
     res.json(
         new ApiResponse(200, updatedAttempt, "Evaluation test sheet record updated successfully")
     );
@@ -195,6 +257,14 @@ export const deleteEvaluationTestAttempt = asyncHandler(async (req, res) => {
     }
 
     await EvaluationTestAttempt.delete(id);
+
+    logAudit(req.user?.id, "DELETE_EVALUATION_TEST_ATTEMPT", {
+        traineeName: existingAttempt.traineeName,
+        employeeNo: existingAttempt.employeeNo,
+        attemptId: id,
+    }, { resourceType: "EvaluationTestAttempt", resourceId: id, req }).catch(err =>
+        console.error("logAudit(DELETE_EVALUATION_TEST_ATTEMPT) failed:", err.message)
+    );
 
     res.json(
         new ApiResponse(200, null, "Evaluation test sheet record deleted successfully")

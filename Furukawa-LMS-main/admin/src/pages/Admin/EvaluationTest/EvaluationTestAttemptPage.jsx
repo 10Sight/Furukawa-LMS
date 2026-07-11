@@ -8,6 +8,7 @@ import {
     useUpdateEvaluationTestAttemptMutation
 } from "@/Redux/AllApi/EvaluationTestApi";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import {
@@ -153,6 +154,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     const [createAttempt, { isLoading: isSubmitting }] = useCreateEvaluationTestAttemptMutation();
     // 3b. Update attempt mutation (for approvals and incremental updates)
     const [updateAttempt] = useUpdateEvaluationTestAttemptMutation();
+    const [logAction] = useLogActionMutation();
 
     // 4. Fetch users for matching trainee name / employee ID
     const { data: usersResponse } = useGetAllUsersQuery(
@@ -166,6 +168,27 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     const contentStructure = React.useMemo(() => {
         return normalizeContentStructure(activeTemplate?.contentStructure || [], testTitle);
     }, [activeTemplate, testTitle]);
+
+    // Log page-view audit events once the relevant data has loaded
+    useEffect(() => {
+        if (isView && attemptResponse?.data) {
+            logAction({
+                action: "VIEW_EVALUATION_TEST_ATTEMPT",
+                details: { attemptId: attemptId || editAttemptId, traineeName: attemptResponse.data.traineeName }
+            });
+        } else if (isEdit && attemptResponse?.data) {
+            logAction({
+                action: "VIEW_EDIT_EVALUATION_TEST_ATTEMPT",
+                details: { attemptId: editAttemptId, traineeName: attemptResponse.data.traineeName }
+            });
+        } else if (!isView && !isEdit && templateResponse?.data) {
+            logAction({
+                action: "VIEW_CREATE_EVALUATION_TEST_ATTEMPT",
+                details: { testId: id, testTitle: templateResponse.data.title }
+            });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isView, isEdit, attemptResponse, templateResponse]);
 
     // Dynamic perform dates state
     const [performDates, setPerformDates] = useState([]);
@@ -433,6 +456,10 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     }, [contentStructure]);
 
     const handlePrint = () => {
+        logAction({
+            action: "PRINT_EVALUATION_TEST_ATTEMPT",
+            details: { attemptId: attemptId || editAttemptId || "new", traineeName }
+        });
         window.print();
     };
 

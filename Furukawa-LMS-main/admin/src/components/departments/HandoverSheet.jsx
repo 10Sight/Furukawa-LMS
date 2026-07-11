@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import UserAutocomplete from '../common/UserAutocomplete';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const INTERVIEW_OPTIONS = [
     { value: "OK", label: "✓ OK" },
@@ -179,6 +180,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const tableRef = useRef(null);
 
+    const [logAction] = useLogActionMutation();
+
     const fetchConfig = async () => {
         if (!departmentId) return;
         try {
@@ -224,6 +227,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
             setIsEditingLayout(false);
             setLayoutRemark("");
             toast.success("Configuration saved successfully");
+            logAction({ action: "SAVE_HANDOVER_SHEET_CONFIG", details: { departmentId, sectionId, remark: layoutRemark } }).catch(() => {});
         } catch (error) {
             console.error("Error saving handover sheet config:", error);
             toast.error("Failed to save configuration");
@@ -237,6 +241,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
             if (response.data.success) {
                 setConfigHistory(response.data.data);
                 setIsHistoryOpen(true);
+                logAction({ action: "VIEW_HANDOVER_SHEET_LAYOUT_HISTORY", details: { departmentId, sectionId } }).catch(() => {});
             }
         } catch (error) {
             console.error("Error fetching handover sheet history:", error);
@@ -330,6 +335,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
         };
 
         fetchData();
+
+        logAction({
+            action: "VIEW_HANDOVER_SHEET",
+            details: { departmentId, sectionId, date, sheetId, viewOnly },
+        }).catch(() => {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [departmentId, sectionId, date, departmentName, sectionName, sheetId, propShift]);
 
     const handleEntryChange = (index, field, value) => {
@@ -584,6 +595,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
             pdf.save(`Handover_Sheet_${departmentName.replace(/\s+/g, '_')}_${date}.pdf`);
             setIsPrintDialogOpen(false);
             toast.success("PDF downloaded successfully");
+            logAction({ action: "DOWNLOAD_HANDOVER_SHEET_PDF", details: { departmentId, sectionId, date } }).catch(() => {});
         }
     };
 
@@ -616,6 +628,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
 
             toast.success("High-res image downloaded!");
             setIsPrintDialogOpen(false);
+            logAction({ action: "DOWNLOAD_HANDOVER_SHEET_IMAGE", details: { departmentId, sectionId, date } }).catch(() => {});
         } catch (error) {
             console.error("Image export error:", error);
             toast.error("Failed to generate high-res image.");
@@ -646,6 +659,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                 toast.success("Email sent successfully!");
                 toast.dismiss(loadingToast);
                 setIsPrintDialogOpen(false);
+                logAction({ action: "EMAIL_HANDOVER_SHEET_PDF", details: { departmentId, sectionId, date, email: emailForPDF } }).catch(() => {});
                 setEmailForPDF("");
             }
         } catch (error) {
@@ -755,7 +769,13 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                 <IconHistory className="h-4 w-4 mr-2" />
                                                 History
                                             </Button>
-                                            <Button variant="outline" onClick={() => setIsEditingLayout(true)}>
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => {
+                                                    setIsEditingLayout(true);
+                                                    logAction({ action: "TOGGLE_HANDOVER_SHEET_LAYOUT_EDIT", details: { departmentId, sectionId } }).catch(() => {});
+                                                }}
+                                            >
                                                 <IconSettings className="h-4 w-4 mr-2" />
                                                 Edit Layout
                                             </Button>
@@ -764,7 +784,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                     <Button
                                         variant="outline"
                                         className="border-green-600 text-green-600 hover:bg-green-50"
-                                        onClick={() => exportToExcel("Handover Sheet", { departmentId, sectionId, date })}
+                                        onClick={() => {
+                                            exportToExcel("Handover Sheet", { departmentId, sectionId, date });
+                                            logAction({ action: "EXPORT_HANDOVER_SHEET_EXCEL", details: { departmentId, sectionId, date } }).catch(() => {});
+                                        }}
                                     >
                                         <IconDownload className="h-4 w-4 mr-2" />
                                         Export

@@ -2360,6 +2360,18 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     handoverParams.push(req.query.endDate);
   }
 
+  // Default to the current month when no date filter is applied, so the
+  // "Total Handover" card reflects this month's approvals instead of all-time.
+  if (!req.query.startDate && !req.query.endDate) {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const formatISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    handoverDateFilterClause += " AND hs.date >= ? AND hs.date <= ?";
+    handoverParams.push(formatISO(startOfMonth), formatISO(endOfMonth));
+  }
+
   const [handoverData] = await executeQuery(`
     SELECT COUNT(DISTINCT u.id) as handoverCount
     FROM users u

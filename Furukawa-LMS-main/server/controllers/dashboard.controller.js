@@ -24,9 +24,7 @@ const getDesignationShutterExclusionSql = (alias = "u") => `
         SELECT 1
         FROM designation_shutters ds
         WHERE ds.designation IS NOT NULL
-          AND LTRIM(RTRIM(CAST(ds.designation AS NVARCHAR(255)))) != ''
-          AND UPPER(LTRIM(RTRIM(CAST(ds.designation AS NVARCHAR(255)))))
-            = UPPER(LTRIM(RTRIM(CAST(${alias}.designation AS NVARCHAR(255)))))
+          AND ds.designation = ${alias}.designation
     )
 `;
 
@@ -35,9 +33,7 @@ const getSnapshotEmployeeExistsSql = (alias = "u") => `
         SELECT 1
         FROM user_hierarchy_snapshots elig_uhs
         WHERE elig_uhs.employeeid IS NOT NULL
-          AND LTRIM(RTRIM(CAST(elig_uhs.employeeid AS NVARCHAR(100)))) != ''
-          AND UPPER(LTRIM(RTRIM(CAST(elig_uhs.employeeid AS NVARCHAR(100)))))
-            = UPPER(LTRIM(RTRIM(CAST(${alias}.empId AS NVARCHAR(100)))))
+          AND elig_uhs.employeeid = ${alias}.empId
     )
 `;
 
@@ -45,7 +41,7 @@ const getEligibleUserSql = (alias = "u") => `
     AND ISNULL(${alias}.isDeleted, 0) = 0
     AND ISNULL(${alias}.isTemporary, 0) = 0
     AND ${alias}.empId IS NOT NULL
-    AND LTRIM(RTRIM(CAST(${alias}.empId AS NVARCHAR(100)))) != ''
+    AND ${alias}.empId != ''
     ${getDesignationShutterExclusionSql(alias)}
     ${getSnapshotEmployeeExistsSql(alias)}
 `;
@@ -1027,21 +1023,17 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 -- Match final dashboard eligibility logic:
                 -- attendance_logs.payCode = users.empId, employee exists in user_hierarchy_snapshots,
                 -- users.isTemporary = 0, not deleted, and designation is not shuttered/off.
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN al.payCode END) AS mappedPresentCount,
+                COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN al.payCode END) AS mappedPresentCount,
                 CAST(0 AS INT) AS unmappedPresentCount,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN al.payCode END) AS totalPresentCount,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absentCount,
+                COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN al.payCode END) AS totalPresentCount,
+                COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT','LEAVE','HALF DAY','Absent','Leave','Half Day') THEN al.payCode END) AS absentCount,
                 COUNT(DISTINCT al.payCode) AS totalCount
             FROM attendance_logs al
-            INNER JOIN users u
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-            INNER JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+            INNER JOIN users u ON al.userId = u.id
+            INNER JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
             WHERE 1=1
-              AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
-              AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
+              AND al.[date] >= '${sqlStartDate}'
+              AND al.[date] <= '${sqlEndDate}'
               ${hierCondition}
               ${getEligibleUserSql("u")}
         `;
@@ -1134,18 +1126,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             SELECT
                 CONVERT(VARCHAR, al.[date], 23) AS fullDate,
                 DAY(al.[date]) AS dayNum,
-                COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN al.payCode END) AS absent_count,
+                COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT','LEAVE','HALF DAY', 'Absent', 'Leave', 'Half Day') THEN al.payCode END) AS absent_count,
                 COUNT(DISTINCT al.payCode) AS total_count
             FROM attendance_logs al
-            INNER JOIN users u
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-            INNER JOIN user_hierarchy_snapshots uhs
-                ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                 = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+            INNER JOIN users u ON al.userId = u.id
+            INNER JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
             WHERE 1=1
-              AND CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
-              AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
+              AND al.[date] >= '${sqlStartDate}'
+              AND al.[date] <= '${sqlEndDate}'
               AND ISNULL(u.isTemporary, 0) = 0
               ${hierCondition}
               ${getDesignationShutterExclusionSql("u")}
@@ -1342,17 +1330,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const attendanceMasterBaseFrom = `
         FROM attendance_logs al
         LEFT JOIN users u
-            ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-             = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
+            ON al.userId = u.id
             AND ISNULL(u.isTemporary, 0) = 0
         LEFT JOIN user_hierarchy_snapshots uhs
-            ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-             = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-        WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
-          AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
+            ON u.empId = uhs.employeeid
+        WHERE al.[date] >= '${masterSqlStartDate}'
+          AND al.[date] <= '${masterSqlEndDate}'
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND ISNULL(u.isTemporary, 0) = 0
-          AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) IN ('P','PRESENT')
+          AND al.status IN ('P', 'PRESENT', 'Present')
     `;
 
     // IMPORTANT SHIFT/ALL FIX:
@@ -1459,13 +1445,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ${columnSql} AS rawName,
                     COUNT(DISTINCT u.empId) AS total
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
             `;
             const params = [];
             sqlText = addUserMasterFilters(sqlText, params, "u");
@@ -1491,17 +1475,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         try {
             let sqlText = `
                 SELECT DISTINCT
-                    LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))) AS stateName
+                    LTRIM(RTRIM(u.state)) AS stateName
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
                   AND u.state IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.state AS NVARCHAR(510)))) != ''
+                  AND u.state != ''
             `;
             const params = [];
             sqlText = addUserMasterFilters(sqlText, params, "u");
@@ -1519,17 +1501,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         try {
             let sqlText = `
                 SELECT DISTINCT
-                    LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))) AS districtName
+                    LTRIM(RTRIM(u.district)) AS districtName
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
                   AND u.district IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.district AS NVARCHAR(510)))) != ''
+                  AND u.district != ''
             `;
             const params = [];
             sqlText = addUserMasterFilters(sqlText, params, "u");
@@ -1549,13 +1529,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let sqlText = `
                 SELECT COUNT(DISTINCT u.empId) AS total
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
             `;
 
             const params = [];
@@ -1638,12 +1616,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.empId) AS total
                 FROM users u
                 LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                    ON u.empId = uhs.employeeid
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
                   ${resolvedMasterExtraWhere}
             `;
 
@@ -1793,17 +1770,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ${columnSql} AS rawName,
                     COUNT(DISTINCT u.empId) AS total
                 FROM attendance_logs al
-                INNER JOIN users u
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
-                WHERE CONVERT(DATE, al.[date]) >= '${masterSqlStartDate}'
-                  AND CONVERT(DATE, al.[date]) <= '${masterSqlEndDate}'
-                  AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(40))))) IN ('P','PRESENT')
+                INNER JOIN users u ON al.userId = u.id
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
+                WHERE al.[date] >= '${masterSqlStartDate}'
+                  AND al.[date] <= '${masterSqlEndDate}'
+                  AND al.status IN ('P','PRESENT','Present')
                   AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND u.empId != ''
             `;
 
             const attendanceParams = [];
@@ -1827,9 +1800,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     ${columnSql} AS rawName,
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE 1=1
             `;
 
@@ -1852,9 +1823,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let denominatorSql = `
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
-                LEFT JOIN user_hierarchy_snapshots uhs
-                    ON UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(uhs.employeeid AS NVARCHAR(100)))))
+                LEFT JOIN user_hierarchy_snapshots uhs ON u.empId = uhs.employeeid
                 WHERE 1=1
             `;
             const denominatorParams = [];

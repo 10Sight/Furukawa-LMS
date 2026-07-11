@@ -12,6 +12,7 @@ import ENV from "../configs/env.config.js";
 import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 
 import { executeQuery } from "../db/mssqlHelper.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Helper to resolve studentId (from ID, userName, empId or slug)
 const resolveStudentId = async (studentId) => {
@@ -220,6 +221,9 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     }
 
     let updatedHistory = [];
+    const oldVerifiedBy = (sheet && !isNewAttempt) ? sheet.verifiedBy : null;
+    const oldApprovedBy = (sheet && !isNewAttempt) ? sheet.approvedBy : null;
+    const oldVerifiedByEduCell = (sheet && !isNewAttempt) ? sheet.verifiedByEduCell : null;
     if (sheet && !isNewAttempt) {
         updatedHistory = Array.isArray(sheet.adminRemarksHistory) ? sheet.adminRemarksHistory : [];
     }
@@ -278,6 +282,41 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             adminRemarksHistory: updatedHistory
         });
     }
+
+    // --- Audit Logging ---
+    const auditMeta = { resourceType: "SixteenDayMonitoring", resourceId: sheet.id, req };
+    const auditDetails = {
+        studentId: sid,
+        employeeName: sheet.employeeName,
+        attemptNumber: sheet.attemptNumber,
+    };
+
+    const saveAction = (status || sheet.status) === "Submitted" ? "SUBMIT_SIXTEEN_DAY_MONITORING" : "SAVE_SIXTEEN_DAY_MONITORING_DRAFT";
+    logAudit(req.user?.id, saveAction, auditDetails, auditMeta).catch(err =>
+        console.error(`logAudit(${saveAction}) failed:`, err.message)
+    );
+
+    if (verifiedBy && verifiedBy !== oldVerifiedBy) {
+        const outcome = verifiedBy.includes("Rejected") ? "Rejected" : "Approved";
+        logAudit(req.user?.id, "VERIFY_SIXTEEN_DAY_MONITORING", { ...auditDetails, outcome, verifiedBy }, auditMeta).catch(err =>
+            console.error("logAudit(VERIFY_SIXTEEN_DAY_MONITORING) failed:", err.message)
+        );
+    }
+
+    if (approvedBy && approvedBy !== oldApprovedBy) {
+        const outcome = approvedBy.includes("Rejected") ? "Rejected" : "Approved";
+        logAudit(req.user?.id, "APPROVE_SIXTEEN_DAY_MONITORING", { ...auditDetails, outcome, approvedBy }, auditMeta).catch(err =>
+            console.error("logAudit(APPROVE_SIXTEEN_DAY_MONITORING) failed:", err.message)
+        );
+    }
+
+    if (verifiedByEduCell && verifiedByEduCell !== oldVerifiedByEduCell) {
+        const outcome = verifiedByEduCell.includes("Rejected") ? "Rejected" : "Approved";
+        logAudit(req.user?.id, "VERIFY_EDU_CELL_SIXTEEN_DAY_MONITORING", { ...auditDetails, outcome, verifiedByEduCell }, auditMeta).catch(err =>
+            console.error("logAudit(VERIFY_EDU_CELL_SIXTEEN_DAY_MONITORING) failed:", err.message)
+        );
+    }
+    // ---------------------
 
     // Auto-enroll trainee in Skill Upgradation Plan if verifiedBy is approved
     const isVerified = verifiedBy && 
@@ -409,6 +448,12 @@ export const sendSixteenDayMonitoringEmail = asyncHandler(async (req, res) => {
     // 4. Send Email
     await sendMail(to, `16-Day Monitoring Report: ${student?.fullName || sheet.employeeName}`, html, [], cc);
 
+    logAudit(req.user?.id, "EMAIL_SIXTEEN_DAY_MONITORING_REPORT", {
+        studentId: sid, employeeName: student?.fullName || sheet.employeeName, to, cc
+    }, { resourceType: "SixteenDayMonitoring", resourceId: sheet.id, req }).catch(err =>
+        console.error("logAudit(EMAIL_SIXTEEN_DAY_MONITORING_REPORT) failed:", err.message)
+    );
+
     return res.status(200).json(
         new ApiResponse(200, null, "Monitoring report emailed successfully")
     );
@@ -433,6 +478,11 @@ export const saveSixteenDayMonitoringConfig = asyncHandler(async (req, res) => {
         remark,
         updatedBy: req.user?.fullName || req.user?.name
     });
+
+    logAudit(req.user?.id, "SAVE_SIXTEEN_DAY_MONITORING_CONFIG", { departmentId, sectionId, remark }, {
+        resourceType: "MonitoringConfig", resourceId: departmentId, req
+    }).catch(err => console.error("logAudit(SAVE_SIXTEEN_DAY_MONITORING_CONFIG) failed:", err.message));
+
     return res.status(200).json(
         new ApiResponse(200, null, "16 Day Monitoring config saved")
     );
@@ -523,6 +573,12 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
     });
 
     await sendMail(to, `16-Day Monitoring & Mentee Feedback Report: ${student?.fullName || sheet.employeeName}`, html, [], cc);
+
+    logAudit(req.user?.id, "EMAIL_COMBINED_MONITORING_REPORT", {
+        studentId: sid, employeeName: student?.fullName || sheet.employeeName, to, cc
+    }, { resourceType: "SixteenDayMonitoring", resourceId: sheet.id, req }).catch(err =>
+        console.error("logAudit(EMAIL_COMBINED_MONITORING_REPORT) failed:", err.message)
+    );
 
     return res.status(200).json(
         new ApiResponse(200, null, "Combined monitoring report emailed successfully")

@@ -714,11 +714,10 @@ export const createCustomRole = asyncHandler(async (req, res) => {
     const newRole = await CustomRole.create({ name, description, color, permissions, allowedPages, generateManagementPage, targetLayout });
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
-    await auditLogger({
-      action: 'CREATE_ROLE', userId: req.user.id,
-      details: { roleName: name, permissions: permissions.length, roleId: newRole.id },
-      ipAddress: req.ip, userAgent: req.get('User-Agent')
-    });
+    await auditLogger(req.user.id, 'CREATE_ROLE',
+      { roleName: name, permissions: permissions.length, roleId: newRole.id },
+      { resourceType: 'CustomRole', resourceId: newRole.id, req }
+    );
 
     res.status(201).json(new ApiResponse(201, newRole, "Role created successfully"));
 
@@ -749,11 +748,10 @@ export const updateRolePermissions = asyncHandler(async (req, res) => {
     });
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
-    await auditLogger({
-      action: 'UPDATE_ROLE', userId: req.user.id,
-      details: { roleId, roleName: updated.name, permissionsChanged: permissions?.length ?? 0 },
-      ipAddress: req.ip, userAgent: req.get('User-Agent')
-    });
+    await auditLogger(req.user.id, 'UPDATE_ROLE',
+      { roleId, roleName: updated.name, permissionsChanged: permissions?.length ?? 0 },
+      { resourceType: 'CustomRole', resourceId: roleId, req }
+    );
 
     res.json(new ApiResponse(200, updated, "Role updated successfully"));
   } catch (error) {
@@ -774,11 +772,10 @@ export const deleteCustomRole = asyncHandler(async (req, res) => {
     await CustomRole.delete(roleId); // internally enforces zero-user constraint
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
-    await auditLogger({
-      action: 'DELETE_ROLE', userId: req.user.id,
-      details: { roleId, roleName: customRole.name },
-      ipAddress: req.ip, userAgent: req.get('User-Agent')
-    });
+    await auditLogger(req.user.id, 'DELETE_ROLE',
+      { roleId, roleName: customRole.name },
+      { resourceType: 'CustomRole', resourceId: roleId, req }
+    );
 
     res.json(new ApiResponse(200, {}, "Role deleted successfully"));
   } catch (error) {

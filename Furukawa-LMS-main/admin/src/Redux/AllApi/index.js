@@ -158,6 +158,7 @@ export {
     useGetAllAuditsQuery,
     useGetAuditByIdQuery,
     useDeleteAuditMutation,
+    useLogActionMutation,
 } from './AuditApi';
 
 // Attempted Quiz API exports

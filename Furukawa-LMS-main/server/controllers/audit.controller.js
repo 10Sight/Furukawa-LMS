@@ -4,6 +4,13 @@ import User from "../models/auth.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import logAudit from "../utils/auditLogger.js";
+
+// In-memory per-user/action throttle to avoid a DB round-trip on every client log call.
+// Bounded by (active users x distinct action identifiers), not by request volume, so it doesn't need eviction.
+const lastLoggedAt = new Map();
+const THROTTLE_WINDOW_MS = 5000;
+const MAX_DETAILS_LENGTH = 2000;
 
 // Helper to populate user details
 const populateAuditUser = async (audit) => {
@@ -184,6 +191,40 @@ export const getAuditById = asyncHandler(async (req, res) => {
     }
 
     res.json(new ApiResponse(200, audit, "Audit log fetched successfully"));
+});
+
+// Generic endpoint for any page to log a view/action without a dedicated backend route.
+export const logClientAction = asyncHandler(async (req, res) => {
+    const { action, details } = req.body;
+
+    if (!action || typeof action !== "string" || !/^[A-Z][A-Z0-9_]{2,49}$/.test(action)) {
+        throw new ApiError("A valid action identifier (e.g. VIEW_DASHBOARD) is required", 400);
+    }
+
+    // Respond immediately so client logging never blocks page rendering.
+    res.status(200).json(new ApiResponse(200, {}, "Action accepted"));
+
+    // Only dedupe VIEW_* actions (prone to accidental duplicate calls from re-renders).
+    // Mutations (ADD_/UPDATE_/DELETE_/etc.) are one-shot per user click and must never be dropped,
+    // otherwise back-to-back actions on different targets (e.g. bulk delete) would silently disappear.
+    if (action.startsWith("VIEW_")) {
+        const throttleKey = `${req.user.id}:${action}`;
+        const now = Date.now();
+        const last = lastLoggedAt.get(throttleKey);
+        if (last && now - last < THROTTLE_WINDOW_MS) {
+            return;
+        }
+        lastLoggedAt.set(throttleKey, now);
+    }
+
+    let safeDetails = details && typeof details === "object" ? details : {};
+    if (JSON.stringify(safeDetails).length > MAX_DETAILS_LENGTH) {
+        safeDetails = { truncated: true };
+    }
+
+    logAudit(req.user.id, action, safeDetails, { req }).catch((err) =>
+        console.error("logClientAction background logging error:", err.message)
+    );
 });
 
 export const deleteAudit = asyncHandler(async (req, res) => {

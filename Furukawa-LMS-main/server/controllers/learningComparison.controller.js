@@ -2,7 +2,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import LearningComparison from "../models/learningComparison.model.js";
-import { saveToLocal } from "../utils/fileStorage.util.js";
+import { saveToLocal, deleteFromLocal } from "../utils/fileStorage.util.js";
 
 const fileFields = [
     "beforeVideo", "beforePdf", "beforeExcel", "beforeWord", "beforePpt", "beforeImage",
@@ -74,6 +74,13 @@ export const updateComparison = asyncHandler(async (req, res) => {
         const kept = rawKept.map(i => (typeof i === 'string' ? i : i.path));
         const keptDescs = rawKept.map(i => (typeof i === 'string' ? '' : (i.description || '')));
 
+        // Remove files the user deleted (present in DB but not kept) from disk
+        const existingUrls = Array.isArray(existing[field]) ? existing[field] : [];
+        const removedUrls = existingUrls.filter(url => !kept.includes(url));
+        for (const url of removedUrls) {
+            await deleteFromLocal(url);
+        }
+
         const newUrls = [];
         if (req.files && req.files[field] && req.files[field].length > 0) {
             for (const file of req.files[field]) {
@@ -99,6 +106,14 @@ export const deleteComparison = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const comparison = await LearningComparison.findById(id);
     if (!comparison) throw new ApiError("Comparison not found", 404);
+
+    for (const field of fileFields) {
+        const urls = Array.isArray(comparison[field]) ? comparison[field] : [];
+        for (const url of urls) {
+            await deleteFromLocal(url);
+        }
+    }
+
     await LearningComparison.delete(id);
     res.json(new ApiResponse(200, null, "Comparison deleted successfully"));
 });

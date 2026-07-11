@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useCreateQuizMutation } from "@/Redux/AllApi/QuizApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesQuery } from "@/Redux/AllApi/LineApi";
@@ -44,9 +45,14 @@ const AddTestPaper = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [createQuiz, { isLoading }] = useCreateQuizMutation();
+  const [logAction] = useLogActionMutation();
   const { uploadFile, isUploading: isImageUploading } = useFileUpload();
 
   const { user: currentUser } = useSelector((state) => state.auth);
+
+  useEffect(() => {
+    logAction({ action: "VIEW_ADD_TEST_PAPER", details: { page: "Add Test Paper" } });
+  }, []);
 
   const hasButtonPermission = React.useCallback((permissionKey) => {
     if (!currentUser) return false;

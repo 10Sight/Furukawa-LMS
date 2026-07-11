@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { 
     useGetEvaluationTestByIdQuery, 
@@ -40,6 +40,8 @@ import {
 const EvaluationTestOperatorsPage = () => {
     const { testId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
+    const fromPath = location.state?.from || "/admin/evaluation-test";
 
     // Permission checking
     const currentUser = useSelector((state) => state.auth.user);
@@ -140,7 +142,7 @@ const EvaluationTestOperatorsPage = () => {
                     <Button 
                         variant="outline" 
                         size="icon" 
-                        onClick={() => navigate("/admin/evaluation-test")}
+                        onClick={() => navigate(fromPath)}
                         className="h-9 w-9 border-gray-200 text-gray-600 hover:text-gray-800"
                     >
                         <IconArrowLeft className="h-5 w-5" />
@@ -157,7 +159,7 @@ const EvaluationTestOperatorsPage = () => {
                 </div>
                 {canTake && (
                     <Button 
-                        onClick={() => navigate(`/admin/attempt-evaluation-test/${testId}`)}
+                        onClick={() => navigate(`/admin/attempt-evaluation-test/${testId}`, { state: { from: location.pathname + location.search, grandFrom: fromPath } })}
                         className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md shadow-blue-200 flex items-center gap-2"
                     >
                         <IconUserPlus className="h-4.5 w-4.5" />
@@ -361,7 +363,7 @@ const EvaluationTestOperatorsPage = () => {
                                                             <Button
                                                                 variant="outline"
                                                                 size="xs"
-                                                                onClick={() => navigate(`/admin/view-evaluation-attempt/${attempt.id}`)}
+                                                                onClick={() => navigate(`/admin/view-evaluation-attempt/${attempt.id}`, { state: { from: location.pathname + location.search, grandFrom: fromPath } })}
                                                                 className="h-7 text-[10px] px-2 text-blue-600 hover:text-blue-700 border-gray-200 flex items-center gap-1"
                                                             >
                                                                 <IconEye className="h-3.5 w-3.5" />
@@ -373,9 +375,9 @@ const EvaluationTestOperatorsPage = () => {
                                                                 size="xs"
                                                                 onClick={() => {
                                                                     if (hasAttempt) {
-                                                                        navigate(`/admin/attempt-evaluation-test/${testId}?attemptId=${attempt.id}`);
+                                                                        navigate(`/admin/attempt-evaluation-test/${testId}?attemptId=${attempt.id}`, { state: { from: location.pathname + location.search, grandFrom: fromPath } });
                                                                     } else {
-                                                                        navigate(`/admin/attempt-evaluation-test/${testId}?trainee=${encodeURIComponent(operator.fullName)}&empId=${encodeURIComponent(operator.userName || operator.empId)}`);
+                                                                        navigate(`/admin/attempt-evaluation-test/${testId}?trainee=${encodeURIComponent(operator.fullName)}&empId=${encodeURIComponent(operator.userName || operator.empId)}`, { state: { from: location.pathname + location.search, grandFrom: fromPath } });
                                                                     }
                                                                 }}
                                                                 className="h-7 text-[10px] px-2 bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1"

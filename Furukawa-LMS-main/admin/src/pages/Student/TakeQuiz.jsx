@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { formatPaperSubTitle } from "@/utils/formatters";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axiosInstance from "@/Helper/axiosInstance";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const TakeQuiz = () => {
   const { quizId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [logAction] = useLogActionMutation();
 
   const [loading, setLoading] = useState(true);
   const [quiz, setQuiz] = useState(null);
@@ -201,6 +203,7 @@ const TakeQuiz = () => {
         }
 
         setQuiz(data.quiz);
+        logAction({ action: "VIEW_TAKE_QUIZ", details: { quizId, title: data.quiz?.title } });
 
         // Check if there is a saved session in localStorage
         const savedSessionStr = localStorage.getItem(STORAGE_KEY);

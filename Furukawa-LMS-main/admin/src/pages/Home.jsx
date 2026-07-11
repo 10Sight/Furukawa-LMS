@@ -32,6 +32,7 @@ import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
 import RecentActivityCard from "@/components/dashboard/RecentActivityCard";
 import SystemOverviewCard from "@/components/dashboard/SystemOverviewCard";
 import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import { IconUserPlus } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate";
 
@@ -107,6 +108,13 @@ const QuickActionCard = ({ title, description, icon: Icon, linkTo, color = "blue
 const Home = () => {
   const { t } = useTranslate();
   const [dateRange, setDateRange] = React.useState({ startDate: '', endDate: '' });
+  const [logAction] = useLogActionMutation();
+
+  React.useEffect(() => {
+    logAction({ action: "VIEW_DASHBOARD", details: { page: "Admin Home" } })
+      .unwrap()
+      .catch((err) => console.error("Failed to log page view:", err));
+  }, [logAction]);
 
   // API calls for all stats
   const { data: studentsData, isLoading: studentsLoading } = useGetAllStudentsQuery();

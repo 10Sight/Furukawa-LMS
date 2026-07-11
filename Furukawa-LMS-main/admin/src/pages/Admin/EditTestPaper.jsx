@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useGetQuizByIdQuery, useUpdateQuizMutation } from "@/Redux/AllApi/QuizApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesQuery } from "@/Redux/AllApi/LineApi";
@@ -46,9 +47,14 @@ const EditTestPaper = () => {
   
   const { data: quizResponse, isFetching: quizFetching } = useGetQuizByIdQuery(quizId);
   const [updateQuiz, { isLoading: isSaving }] = useUpdateQuizMutation();
+  const [logAction] = useLogActionMutation();
   const { uploadFile, isUploading: isImageUploading } = useFileUpload();
 
   const { user: currentUser } = useSelector((state) => state.auth);
+
+  useEffect(() => {
+    if (quizId) logAction({ action: "VIEW_EDIT_TEST_PAPER", details: { quizId } });
+  }, [quizId]);
 
   const hasButtonPermission = React.useCallback((permissionKey) => {
     if (!currentUser) return false;

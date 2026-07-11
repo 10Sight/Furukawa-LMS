@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import {
   IconFileAnalytics,
@@ -26,14 +26,15 @@ import {
   useGetAuditByIdQuery,
   useDeleteAuditMutation
 } from "@/Redux/AllApi/AuditApi";
-import { useLazyExportAuditStatsQuery } from "@/Redux/AllApi/AnalyticsApi";
 import { toast } from "sonner";
 
 const AuditLogs = () => {
   const { user: currentUser } = useSelector((state) => state.auth);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedLogs, setSelectedLogs] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [logs, setLogs] = useState([]);
   const [showFilters, setShowFilters] = useState(true);
   const [showLogDetail, setShowLogDetail] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
@@ -49,8 +50,14 @@ const AuditLogs = () => {
     ipAddress: "",
     severity: ""
   });
-  const [auditGroupBy, setAuditGroupBy] = useState('month');
-  const [triggerExportAuditStats, { isFetching: isExportingStats }] = useLazyExportAuditStatsQuery();
+
+  const loadMoreRef = useRef(null);
+
+  // Debounce the search input so we only hit the API 500ms after typing stops
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(searchTerm), 500);
+    return () => clearTimeout(timeout);
+  }, [searchTerm]);
 
   // Date range calculations
   const getDateRangeFilter = () => {
@@ -101,11 +108,12 @@ const AuditLogs = () => {
   if (filters.severity) apiParams.severity = filters.severity;
   if (dateFrom) apiParams.dateFrom = dateFrom.toISOString();
   if (dateTo) apiParams.dateTo = dateTo.toISOString();
-  if (searchTerm) apiParams.search = searchTerm;
+  if (debouncedSearch) apiParams.search = debouncedSearch;
 
   const {
     data: auditLogsData,
     isLoading,
+    isFetching,
     isError,
     error,
     refetch
@@ -117,6 +125,19 @@ const AuditLogs = () => {
     auditLogsData?.audits ||
     auditLogsData?.logs ||
     [];
+
+  // Reset the accumulated list and go back to page 1 whenever the filter criteria change
+  useEffect(() => {
+    setCurrentPage(1);
+    setLogs([]);
+  }, [debouncedSearch, filters.action, filters.userId, filters.severity, filters.dateFrom, filters.dateTo, dateRange, sortBy, sortOrder]);
+
+  // Accumulate pages of results as they arrive
+  useEffect(() => {
+    if (!auditLogsData) return;
+    setLogs((prev) => (currentPage === 1 ? auditLogs : [...prev, ...auditLogs]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditLogsData]);
 
   const totalPages = auditLogsData?.data?.pagination?.pages ||
     auditLogsData?.data?.pagination?.totalPages ||
@@ -132,6 +153,24 @@ const AuditLogs = () => {
     auditLogsData?.total ||
     auditLogs.length;
 
+  // Infinite scroll: load the next page once the sentinel div scrolls into view
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetching && currentPage < totalPages) {
+          setCurrentPage((prev) => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [isFetching, currentPage, totalPages]);
+
   const handleExportLogs = async () => {
     try {
       // Create a CSV export of visible logs
@@ -139,7 +178,7 @@ const AuditLogs = () => {
         // Header
         ['Date', 'User', 'Action', 'Resource Type', 'Resource ID', 'IP Address', 'User Agent'].join(','),
         // Data rows
-        ...auditLogs.map(log => [
+        ...logs.map(log => [
           new Date(log.createdAt).toLocaleString(),
           log.user ? log.user.fullName : 'System',
           log.action,
@@ -337,10 +376,30 @@ const AuditLogs = () => {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <select className="border rounded px-2 py-1 text-sm" value={auditGroupBy} onChange={e => setAuditGroupBy(e.target.value)}>
-            <option value="month">By Month</option>
-            <option value="year">By Year</option>
-          </select>
+          <div className="flex items-center gap-1 text-sm">
+            <label className="text-gray-600" htmlFor="audit-date-from">From</label>
+            <input
+              id="audit-date-from"
+              type="date"
+              value={filters.dateFrom}
+              onChange={(e) => {
+                setFilters({ ...filters, dateFrom: e.target.value });
+                setDateRange('custom');
+              }}
+              className="border border-gray-300 rounded px-2 py-1 text-sm"
+            />
+            <label className="text-gray-600" htmlFor="audit-date-to">To</label>
+            <input
+              id="audit-date-to"
+              type="date"
+              value={filters.dateTo}
+              onChange={(e) => {
+                setFilters({ ...filters, dateTo: e.target.value });
+                setDateRange('custom');
+              }}
+              className="border border-gray-300 rounded px-2 py-1 text-sm"
+            />
+          </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 rounded-md transition-colors text-xs sm:text-sm ${showFilters ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -355,32 +414,6 @@ const AuditLogs = () => {
           >
             <IconDownload className="w-3 h-3 sm:w-4 sm:h-4" />
             <span>Export CSV</span>
-          </button>
-          <button
-            disabled={isExportingStats}
-            onClick={async () => {
-              const { data } = await triggerExportAuditStats({ groupBy: auditGroupBy, format: 'excel' })
-              const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a'); a.href = url; a.download = `audit_stats_${auditGroupBy}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
-            }}
-            className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs sm:text-sm"
-          >
-            <IconDownload className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span>Export Stats (Excel)</span>
-          </button>
-          <button
-            disabled={isExportingStats}
-            onClick={async () => {
-              const { data } = await triggerExportAuditStats({ groupBy: auditGroupBy, format: 'pdf' })
-              const blob = new Blob([data], { type: 'application/pdf' })
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a'); a.href = url; a.download = `audit_stats_${auditGroupBy}.pdf`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
-            }}
-            className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-xs sm:text-sm"
-          >
-            <IconDownload className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span>Export Stats (PDF)</span>
           </button>
         </div>
       </div>
@@ -402,7 +435,7 @@ const AuditLogs = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">Delete Actions</p>
               <p className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">
-                {auditLogs.filter(log => log.action?.includes('DELETE')).length}
+                {logs.filter(log => log.action?.includes('DELETE')).length}
               </p>
             </div>
             <IconAlertTriangle className="w-6 h-6 sm:w-8 sm:h-8 text-red-600 flex-shrink-0" />
@@ -414,7 +447,7 @@ const AuditLogs = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">Login Actions</p>
               <p className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">
-                {auditLogs.filter(log => log.action?.includes('LOGIN')).length}
+                {logs.filter(log => log.action?.includes('LOGIN')).length}
               </p>
             </div>
             <IconExclamationMark className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-600 flex-shrink-0" />
@@ -426,7 +459,7 @@ const AuditLogs = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">Unique Users</p>
               <p className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">
-                {new Set(auditLogs.filter(log => log.user).map(log => log.user._id)).size}
+                {new Set(logs.filter(log => log.user).map(log => log.user._id)).size}
               </p>
             </div>
             <IconUser className="w-6 h-6 sm:w-8 sm:h-8 text-green-600 flex-shrink-0" />
@@ -527,15 +560,40 @@ const AuditLogs = () => {
 
       {/* Search */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-        <div className="relative max-w-full sm:max-w-md">
-          <IconSearch className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search audit logs..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+        <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
+          <div className="relative max-w-full sm:max-w-md flex-1">
+            <IconSearch className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search audit logs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: 'VIEW', label: 'View' },
+              { value: 'UPDATE', label: 'Update' },
+              { value: 'DELETE', label: 'Delete' }
+            ].map((badge) => (
+              <button
+                key={badge.value}
+                onClick={() =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    action: prev.action === badge.value ? '' : badge.value
+                  }))
+                }
+                className={`px-3 py-1 rounded-full text-xs sm:text-sm font-medium transition-colors ${filters.action === badge.value
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+              >
+                {badge.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -544,7 +602,7 @@ const AuditLogs = () => {
         {/* Mobile Card View */}
         <div className="block md:hidden">
           <div className="p-4 space-y-4">
-            {isLoading ? (
+            {isLoading && logs.length === 0 ? (
               <div className="flex justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
@@ -552,14 +610,14 @@ const AuditLogs = () => {
               <div className="text-center py-8 text-red-600">
                 Error loading audit logs: {error?.data?.message || error?.message}
               </div>
-            ) : auditLogs.length === 0 ? (
+            ) : logs.length === 0 ? (
               <div className="text-center py-8">
                 <IconFileAnalytics className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900">No Audit Logs</h3>
                 <p className="text-gray-500">No audit logs found for the selected criteria.</p>
               </div>
             ) : (
-              auditLogs.map((log) => {
+              logs.map((log) => {
                 const ActionIcon = getActionIcon(log.action);
                 return (
                   <div key={log._id} className="bg-gray-50 rounded-lg p-4 space-y-3">
@@ -662,7 +720,7 @@ const AuditLogs = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {isLoading ? (
+              {isLoading && logs.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="px-6 py-8 text-center">
                     <div className="flex justify-center">
@@ -678,7 +736,7 @@ const AuditLogs = () => {
                     </div>
                   </td>
                 </tr>
-              ) : auditLogs.length === 0 ? (
+              ) : logs.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="px-6 py-8 text-center">
                     <div className="flex flex-col items-center">
@@ -689,7 +747,7 @@ const AuditLogs = () => {
                   </td>
                 </tr>
               ) : (
-                auditLogs.map((log) => {
+                logs.map((log) => {
                   const ActionIcon = getActionIcon(log.action);
                   return (
                     <tr key={log._id} className="hover:bg-gray-50">
@@ -770,54 +828,18 @@ const AuditLogs = () => {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Infinite scroll sentinel */}
         <div className="px-4 sm:px-6 py-4 border-t border-gray-200">
-          <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-            <div className="text-xs sm:text-sm text-gray-700">
-              Showing {((currentPage - 1) * 20) + 1} to {Math.min(currentPage * 20, totalLogs)} of {totalLogs} logs
-            </div>
-            <div className="flex items-center justify-center space-x-1 sm:space-x-2">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="px-2 sm:px-3 py-1 text-xs sm:text-sm border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-              >
-                <span className="hidden sm:inline">Previous</span>
-                <span className="sm:hidden">←</span>
-              </button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                let page;
-                if (totalPages <= 5) {
-                  page = i + 1;
-                } else if (currentPage <= 3) {
-                  page = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  page = totalPages - 4 + i;
-                } else {
-                  page = currentPage - 2 + i;
-                }
-                return (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm border rounded-md ${currentPage === page
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'border-gray-300 hover:bg-gray-50'
-                      }`}
-                  >
-                    {page}
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="px-2 sm:px-3 py-1 text-xs sm:text-sm border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-              >
-                <span className="hidden sm:inline">Next</span>
-                <span className="sm:hidden">→</span>
-              </button>
-            </div>
+          <div className="text-xs sm:text-sm text-gray-700 text-center mb-2">
+            Showing {logs.length} of {totalLogs} logs
+          </div>
+          <div ref={loadMoreRef} className="flex justify-center py-2">
+            {isFetching && logs.length > 0 && (
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            )}
+            {!isFetching && logs.length > 0 && currentPage >= totalPages && (
+              <span className="text-xs text-gray-400">No more logs</span>
+            )}
           </div>
         </div>
       </div>

@@ -190,22 +190,16 @@ export const bulkEnrollUsers = asyncHandler(async (req, res) => {
     }
 
     // Reuse audit logger (it uses its own pool usually)
-    await auditLogger({
-        action: 'BULK_ENROLL_USERS',
-        userId: req.user.id,
-        details: {
-            userCount: userIds.length,
-            courseCount: targetCourses.length,
-            departmentId,
-            results: {
-                successful: results.successful.length,
-                failed: results.failed.length,
-                skipped: results.skipped.length
-            }
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
-    });
+    await auditLogger(req.user.id, 'BULK_ENROLL_USERS', {
+        userCount: userIds.length,
+        courseCount: targetCourses.length,
+        departmentId,
+        results: {
+            successful: results.successful.length,
+            failed: results.failed.length,
+            skipped: results.skipped.length
+        }
+    }, { req });
 
     res.json(new ApiResponse(200, {
         results,
@@ -354,22 +348,16 @@ export const bulkSendEmails = asyncHandler(async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    await auditLogger({
-        action: 'BULK_SEND_EMAILS',
-        userId: req.user.id,
-        details: {
-            recipientType,
-            totalRecipients: results.total,
-            subject,
-            template,
-            results: {
-                successful: results.successful.length,
-                failed: results.failed.length
-            }
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
-    });
+    await auditLogger(req.user.id, 'BULK_SEND_EMAILS', {
+        recipientType,
+        totalRecipients: results.total,
+        subject,
+        template,
+        results: {
+            successful: results.successful.length,
+            failed: results.failed.length
+        }
+    }, { req });
 
     res.json(new ApiResponse(200, {
         results,
@@ -542,24 +530,18 @@ export const bulkGenerateCertificates = asyncHandler(async (req, res) => {
         }
     } catch (e) { }
 
-    await auditLogger({
-        action: 'BULK_GENERATE_CERTIFICATES',
-        userId: req.user.id,
-        details: {
-            courseId,
-            templateId,
-            departmentId,
-            criteria,
-            totalUsers: eligibleUsers.length,
-            results: {
-                successful: results.successful.length,
-                failed: results.failed.length,
-                skipped: results.skipped.length
-            }
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
-    });
+    await auditLogger(req.user.id, 'BULK_GENERATE_CERTIFICATES', {
+        courseId,
+        templateId,
+        departmentId,
+        criteria,
+        totalUsers: eligibleUsers.length,
+        results: {
+            successful: results.successful.length,
+            failed: results.failed.length,
+            skipped: results.skipped.length
+        }
+    }, { req });
 
     res.json(new ApiResponse(200, {
         results,

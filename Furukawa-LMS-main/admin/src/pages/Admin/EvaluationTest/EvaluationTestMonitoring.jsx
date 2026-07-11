@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,7 @@ import {
 
 const EvaluationTestMonitoring = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [deleteAttempt, { isLoading: isDeleting }] = useDeleteEvaluationTestAttemptMutation();
   const [deleteId, setDeleteId] = useState(null);
 
@@ -430,7 +431,7 @@ const EvaluationTestMonitoring = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => navigate(`/admin/view-evaluation-attempt/${attempt.id}`)}
+                              onClick={() => navigate(`/admin/view-evaluation-attempt/${attempt.id}`, { state: { from: location.pathname + location.search } })}
                               className="h-8 w-8 p-0 border-gray-200 hover:bg-slate-50 text-slate-600 rounded-lg"
                               title="Audit Test Sheet"
                             >
@@ -440,7 +441,7 @@ const EvaluationTestMonitoring = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => navigate(`/admin/attempt-evaluation-test/${attempt.testId}?attemptId=${attempt.id}`)}
+                              onClick={() => navigate(`/admin/attempt-evaluation-test/${attempt.testId}?attemptId=${attempt.id}`, { state: { from: location.pathname + location.search } })}
                               className="h-8 w-8 p-0 border-gray-200 hover:bg-slate-50 text-slate-600 rounded-lg"
                               title="Edit/Fill Sheet"
                             >

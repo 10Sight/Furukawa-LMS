@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGetAllAuditsQuery } from '@/Redux/AllApi/AuditApi';
 import { useGetAllInstructorsQuery, useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
@@ -10,9 +10,6 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
-import { useLazyExportAuditStatsQuery } from "@/Redux/AllApi/AnalyticsApi";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -22,18 +19,31 @@ import {
   IconCalendar,
   IconBook,
   IconTrendingUp,
-  IconClock
+  IconClock,
+  IconSearch
 } from "@tabler/icons-react";
 
 const Analytics = ({ pageName = "Recent Activity" }) => {
-  const navigate = useNavigate();
-  const [auditGroupBy, setAuditGroupBy] = useState('month');
-  const [triggerExportAuditStats, { isFetching: isExportingAudit }] = useLazyExportAuditStatsQuery();
-  const { data: auditsData, isLoading: auditsLoading } = useGetAllAuditsQuery({
-    page: 1,
-    limit: 200
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filters, setFilters] = useState({ action: "", dateFrom: "", dateTo: "" });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [activities, setActivities] = useState([]);
+  const loadMoreRef = useRef(null);
 
-  });
+  // Debounce the search input so we only hit the API 500ms after typing stops
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(searchTerm), 500);
+    return () => clearTimeout(timeout);
+  }, [searchTerm]);
+
+  const auditParams = { page: currentPage, limit: 20 };
+  if (debouncedSearch) auditParams.search = debouncedSearch;
+  if (filters.action) auditParams.action = filters.action;
+  if (filters.dateFrom) auditParams.dateFrom = new Date(filters.dateFrom).toISOString();
+  if (filters.dateTo) auditParams.dateTo = new Date(filters.dateTo).toISOString();
+
+  const { data: auditsData, isLoading: auditsLoading, isFetching: auditsFetching } = useGetAllAuditsQuery(auditParams);
   const { data: studentsData } = useGetAllStudentsQuery();
   const { data: instructorsData } = useGetAllInstructorsQuery();
   const { data: departmentsData } = useGetAllDepartmentsQuery();
@@ -45,8 +55,40 @@ const Analytics = ({ pageName = "Recent Activity" }) => {
     status: ""
   });
 
-  const activities = auditsData?.data?.audits || [];
+  const pageActivities = auditsData?.data?.audits || [];
   const totalActivities = auditsData?.data?.pagination?.total || 0;
+  const totalPages = auditsData?.data?.pagination?.pages || Math.ceil(totalActivities / 20) || 1;
+
+  // Reset the accumulated list and go back to page 1 whenever the filter criteria change
+  useEffect(() => {
+    setCurrentPage(1);
+    setActivities([]);
+  }, [debouncedSearch, filters.action, filters.dateFrom, filters.dateTo]);
+
+  // Accumulate pages of results as they arrive
+  useEffect(() => {
+    if (!auditsData) return;
+    setActivities((prev) => (currentPage === 1 ? pageActivities : [...prev, ...pageActivities]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditsData]);
+
+  // Infinite scroll: load the next page once the sentinel div scrolls into view
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !auditsFetching && currentPage < totalPages) {
+          setCurrentPage((prev) => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [auditsFetching, currentPage, totalPages]);
 
   // Calculate some basic stats
   const totalStudents = studentsData?.data?.totalUsers || 0;
@@ -80,32 +122,23 @@ const Analytics = ({ pageName = "Recent Activity" }) => {
           <h1 className="text-2xl font-bold text-gray-900">{pageName}</h1>
           <p className="text-gray-600">Recent system activity and monitoring</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <select className="border rounded px-2 py-1 text-sm" value={auditGroupBy} onChange={e => setAuditGroupBy(e.target.value)}>
-            <option value="month">Audit by Month</option>
-            <option value="year">Audit by Year</option>
-          </select>
-          <Button
-            variant="outline"
-            disabled={isExportingAudit}
-            onClick={async () => {
-              const { data } = await triggerExportAuditStats({ groupBy: auditGroupBy, format: 'excel' });
-              const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a'); a.href = url; a.download = `audit_stats_${auditGroupBy}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
-            }}
-          >Export Audit (Excel)</Button>
-          <Button
-            variant="outline"
-            disabled={isExportingAudit}
-            onClick={async () => {
-              const { data } = await triggerExportAuditStats({ groupBy: auditGroupBy, format: 'pdf' });
-              const blob = new Blob([data], { type: 'application/pdf' });
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a'); a.href = url; a.download = `audit_stats_${auditGroupBy}.pdf`; document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
-            }}
-          >Export Audit (PDF)</Button>
-          <Button onClick={() => navigate('/admin/exam-history')}>Exam History</Button>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <label className="text-gray-600" htmlFor="analytics-date-from">From</label>
+          <input
+            id="analytics-date-from"
+            type="date"
+            value={filters.dateFrom}
+            onChange={(e) => setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
+            className="border border-gray-300 rounded px-2 py-1 text-sm"
+          />
+          <label className="text-gray-600" htmlFor="analytics-date-to">To</label>
+          <input
+            id="analytics-date-to"
+            type="date"
+            value={filters.dateTo}
+            onChange={(e) => setFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
+            className="border border-gray-300 rounded px-2 py-1 text-sm"
+          />
         </div>
       </div>
 
@@ -172,7 +205,46 @@ const Analytics = ({ pageName = "Recent Activity" }) => {
         </Card>
       </div>
 
-
+      {/* Search & Action Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
+            <div className="relative max-w-full sm:max-w-md flex-1">
+              <IconSearch className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search activities..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: 'VIEW', label: 'View' },
+                { value: 'UPDATE', label: 'Update' },
+                { value: 'DELETE', label: 'Delete' }
+              ].map((badge) => (
+                <button
+                  key={badge.value}
+                  onClick={() =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      action: prev.action === badge.value ? '' : badge.value
+                    }))
+                  }
+                  className={`px-3 py-1 rounded-full text-xs sm:text-sm font-medium transition-colors ${filters.action === badge.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                >
+                  {badge.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Recent Activities */}
       <Card>
@@ -182,11 +254,11 @@ const Analytics = ({ pageName = "Recent Activity" }) => {
             Recent System Activities
           </CardTitle>
           <CardDescription>
-            Latest {activities.length} of {totalActivities} total activities
+            Showing {activities.length} of {totalActivities} total activities
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {auditsLoading ? (
+          {auditsLoading && activities.length === 0 ? (
             <div className="space-y-4">
               {[...Array(10)].map((_, i) => (
                 <div key={i} className="flex items-center space-x-4 p-4 border rounded-lg">
@@ -236,6 +308,14 @@ const Analytics = ({ pageName = "Recent Activity" }) => {
                   </div>
                 );
               })}
+              <div ref={loadMoreRef} className="flex justify-center py-4">
+                {auditsFetching && activities.length > 0 && (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                )}
+                {!auditsFetching && currentPage >= totalPages && (
+                  <span className="text-xs text-gray-400">No more activities</span>
+                )}
+              </div>
             </div>
           ) : (
             <div className="text-center text-gray-500 py-12">

@@ -40,6 +40,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { exportToExcel } from "@/utils/exportHelper";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const DEFAULT_MONITORING_CONFIG_16 = [
     {
@@ -219,6 +220,8 @@ const SixteenDayMonitoringSheet = ({
         return false;
     };
 
+    const [logAction] = useLogActionMutation();
+
     useEffect(() => {
         const loadInitialData = async () => {
             if (!studentId) {
@@ -329,6 +332,11 @@ const SixteenDayMonitoringSheet = ({
                     setSelectedAttemptId("");
                     setIsForceNewAttempt(false);
                 }
+
+                logAction({
+                    action: 'VIEW_SIXTEEN_DAY_MONITORING_SHEET',
+                    details: { studentId, employeeName: studentName || employeeCode }
+                }).unwrap().catch((err) => console.error("Failed to log sheet view:", err));
             } catch (error) {
                 console.error("Error fetching monitoring data:", error);
             } finally {
@@ -338,6 +346,7 @@ const SixteenDayMonitoringSheet = ({
 
         loadInitialData();
         fetchConfig();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [studentId, studentName, employeeCode, departmentName, sectionName, initialForceNewAttempt]);
 
     const fetchHistoryAttempts = async () => {
@@ -460,6 +469,10 @@ const SixteenDayMonitoringSheet = ({
             if (response.data.success) {
                 setHistory(response.data.data);
                 setShowHistory(true);
+                logAction({
+                    action: 'VIEW_SIXTEEN_DAY_MONITORING_LAYOUT_HISTORY',
+                    details: { departmentId, sectionId: sectionId || 0 }
+                }).unwrap().catch((err) => console.error("Failed to log layout history view:", err));
             }
         } catch (error) {
             toast.error("Failed to fetch history");
@@ -1007,7 +1020,13 @@ const SixteenDayMonitoringSheet = ({
                         <Button
                             variant="outline"
                             className="border-green-600 text-green-600 hover:bg-green-50 h-9"
-                            onClick={() => exportToExcel("16-Day Monitoring Sheet", { studentId })}
+                            onClick={() => {
+                                logAction({
+                                    action: 'EXPORT_SIXTEEN_DAY_MONITORING_SHEET',
+                                    details: { studentId, employeeName: headerInfo.employeeName }
+                                }).unwrap().catch((err) => console.error("Failed to log export:", err));
+                                exportToExcel("16-Day Monitoring Sheet", { studentId });
+                            }}
                         >
                             <Download className="mr-2 h-4 w-4" />
                             Export

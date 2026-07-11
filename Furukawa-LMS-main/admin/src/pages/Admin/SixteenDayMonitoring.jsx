@@ -45,6 +45,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
+import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 
 const EMPTY_ARRAY = [];
 const SixteenDayMonitoring = ({ readOnly = false }) => {
@@ -192,6 +193,23 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
             fetchMonitoringList();
         }
     }, [dept, section, line, studentId, activeTab, assignableDepartments]);
+
+    const [logAction] = useLogActionMutation();
+
+    // Log once per tab/department transition — not on every filter tweak
+    useEffect(() => {
+        if (!dept) return;
+        if (activeTab === 'stack') {
+            logAction({ action: 'VIEW_SIXTEEN_DAY_MONITORING_STACK', details: { dept } })
+                .unwrap()
+                .catch((err) => console.error("Failed to log stack view:", err));
+        } else if (activeTab === 'layout') {
+            logAction({ action: 'VIEW_SIXTEEN_DAY_MONITORING_LAYOUT', details: { departmentId: dept, sectionId: section } })
+                .unwrap()
+                .catch((err) => console.error("Failed to log layout view:", err));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, dept]);
 
     // Role-based Initialization & Auto-select
     useEffect(() => {

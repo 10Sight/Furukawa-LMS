@@ -1,6 +1,5 @@
 import { Router } from "express";
 import {
-    createDatabaseBackup,
     getBackupHistory,
     restoreFromBackup,
     deleteBackup,
@@ -21,9 +20,6 @@ router.use(verifyJWT);
 router.use(authorizeRoles("SUPERADMIN", "ADMIN"));
 
 // === DATABASE BACKUP ROUTES ===
-
-// Create database backup
-router.post("/backup", createDatabaseBackup);
 
 // Get backup history
 router.get("/backup/history", getBackupHistory);

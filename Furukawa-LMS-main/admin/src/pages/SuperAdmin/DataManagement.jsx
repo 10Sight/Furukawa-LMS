@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-  useCreateDatabaseBackupMutation,
   useGetBackupHistoryQuery,
   useRestoreFromBackupMutation,
   useDeleteBackupMutation,
@@ -38,12 +37,6 @@ import { toast } from "react-hot-toast";
 
 const DataManagement = () => {
   const [activeTab, setActiveTab] = useState('overview');
-  const [backupConfig, setBackupConfig] = useState({
-    includeFiles: false,
-    compression: true,
-    encryption: false,
-    description: ''
-  });
   const [exportConfig, setExportConfig] = useState({
     collections: [],
     format: 'json',
@@ -68,7 +61,6 @@ const DataManagement = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
 
   // API Hooks
-  const [createBackup, { isLoading: creatingBackup }] = useCreateDatabaseBackupMutation();
   const [restoreBackup, { isLoading: restoring }] = useRestoreFromBackupMutation();
   const [deleteBackup, { isLoading: deleting }] = useDeleteBackupMutation();
   const [exportData, { isLoading: exporting }] = useExportSystemDataMutation();
@@ -111,29 +103,11 @@ const DataManagement = () => {
     }
   };
 
-  // Create backup
-  const handleCreateBackup = async () => {
-    try {
-      const result = await createBackup(backupConfig).unwrap();
-      toast.success('Backup created successfully');
-      refetchBackups();
-      setBackupConfig({
-        includeFiles: false,
-        compression: true,
-        encryption: false,
-        description: ''
-      });
-    } catch (error) {
-      toast.error(error.data?.message || 'Failed to create backup');
-    }
-  };
-
   // Restore from backup
   const handleRestoreBackup = async (backupId) => {
     try {
       await restoreBackup({
         backupId,
-        collections: [],
         confirmRestore: true
       }).unwrap();
       toast.success('Backup restored successfully');
@@ -371,75 +345,20 @@ const DataManagement = () => {
 
         {activeTab === 'backups' && (
           <div className="space-y-6">
-            {/* Create Backup Section */}
-            <div className="bg-white rounded-lg shadow-sm border">
-              <div className="p-6 border-b">
-                <h3 className="text-lg font-semibold text-gray-900">Create New Backup</h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={backupConfig.description}
-                      onChange={(e) => setBackupConfig({ ...backupConfig, description: e.target.value })}
-                      placeholder="Enter backup description..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-6">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={backupConfig.compression}
-                        onChange={(e) => setBackupConfig({ ...backupConfig, compression: e.target.checked })}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="ml-2 text-sm text-gray-700">Enable compression</span>
-                    </label>
-
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={backupConfig.includeFiles}
-                        onChange={(e) => setBackupConfig({ ...backupConfig, includeFiles: e.target.checked })}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="ml-2 text-sm text-gray-700">Include files</span>
-                    </label>
-                  </div>
-
-                  <button
-                    onClick={handleCreateBackup}
-                    disabled={creatingBackup}
-                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    {creatingBackup ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Archive className="h-4 w-4 mr-2" />
-                    )}
-                    Create Backup
-                  </button>
-                </div>
-              </div>
-            </div>
-
             {/* Backup History */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-6 border-b">
                 <h3 className="text-lg font-semibold text-gray-900">Backup History</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Native SQL Server .bak files found in C:\DojoBackup
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Backup ID
+                        File Name
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Created

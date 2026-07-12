@@ -198,5 +198,5 @@ export const pool = {
     }
 };
 
-export { poolPromise, longRunningPoolPromise, sql as mssql };
+export { poolPromise, longRunningPoolPromise, sql as mssql, baseConfig };
 export default connectDB;

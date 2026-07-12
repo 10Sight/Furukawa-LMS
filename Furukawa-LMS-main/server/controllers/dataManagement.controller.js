@@ -1,11 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
-import archiver from "archiver";
-import AdmZip from "adm-zip";
-import { promisify } from "util";
-import { exec } from "child_process";
-import { pool } from "../db/connectDB.js";
+import { pool, mssql, baseConfig } from "../db/connectDB.js";
 import { getUserTables, tableHasIdentity } from "../db/mssqlHelper.js";
+import ENV from "../configs/env.config.js";
 
 // Import all models mainly to ensure tables init or for referencing names if needed,
 // but for bulk generic ops, simple SQL is often cleaner.
@@ -26,7 +23,19 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-const execAsync = promisify(exec);
+// Native SQL Server .bak files live here; SQL Server itself must be able to read/write
+// this path since RESTORE DATABASE runs inside the SQL Server service, not this process.
+const BACKUP_DIR = "C:\\DojoBackup";
+
+// Resolves a backupId (filename) to a path inside BACKUP_DIR, rejecting anything that
+// isn't a plain "<name>.bak" filename so it can't be used for directory traversal.
+const resolveBackupFile = (backupId) => {
+    const filename = path.basename(backupId || "");
+    if (!filename || filename !== backupId || !/\.bak$/i.test(filename)) {
+        throw new ApiError("Invalid backup file name", 400);
+    }
+    return { filename, filePath: path.join(BACKUP_DIR, filename) };
+};
 
 // Map collection/entity names to Table names
 const ENTITY_TABLE_MAP = {
@@ -54,321 +63,135 @@ const resolveTableNames = (keys, allTables) =>
     keys.map(k => ENTITY_TABLE_MAP[k] || k).filter(name => allTables.includes(name));
 
 // === DATABASE BACKUP OPERATIONS ===
-
-// Create database backup
-export const createDatabaseBackup = asyncHandler(async (req, res) => {
-    try {
-        const { includeFiles = false, compression = true, encryption = false, description } = req.body;
-
-        const backupId = `backup_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const backupDir = path.join(process.cwd(), 'backups');
-        const backupPath = path.join(backupDir, backupId);
-
-        // Create backup directory
-        try {
-            await fs.access(backupDir);
-        } catch {
-            await fs.mkdir(backupDir, { recursive: true });
-        }
-
-        const backupMetadata = {
-            id: backupId,
-            createdAt: new Date(),
-            createdBy: req.user.id,
-            description: description || `Database backup created at ${new Date().toISOString()}`,
-            includeFiles,
-            compression,
-            encryption, // Not fully implemented in this logic
-            status: 'in_progress',
-            size: 0,
-            collections: {},
-            version: process.env.APP_VERSION || '1.0.0'
-        };
-
-        // Export data from all tables in the database
-        const collectionsData = {};
-        const allTables = await getUserTables();
-
-        for (const tableName of allTables) {
-            const [rows] = await pool.query(`SELECT * FROM [${tableName}]`);
-            collectionsData[tableName] = rows;
-            backupMetadata.collections[tableName] = rows.length;
-        }
-
-        const backupData = {
-            metadata: backupMetadata,
-            data: collectionsData,
-            timestamp: new Date().toISOString()
-        };
-
-        let backupFilePath = `${backupPath}.json`;
-
-        // Write backup data
-        await fs.writeFile(backupFilePath, JSON.stringify(backupData, null, 2));
-
-        // Compress
-        if (compression) {
-            const compressedPath = `${backupPath}.zip`;
-            const output = await import('fs').then(fs => fs.createWriteStream(compressedPath));
-            const archive = archiver('zip', { zlib: { level: 9 } });
-
-            await new Promise((resolve, reject) => {
-                output.on('close', resolve);
-                output.on('error', reject);
-                archive.on('error', reject);
-                archive.pipe(output);
-                archive.file(backupFilePath, { name: `${backupId}.json` });
-                archive.finalize();
-            });
-
-            await fs.unlink(backupFilePath);
-            backupFilePath = compressedPath;
-        }
-
-        const stats = await fs.stat(backupFilePath);
-        backupMetadata.size = stats.size;
-        backupMetadata.status = 'completed';
-        backupMetadata.filePath = backupFilePath;
-
-        // Log to Audit
-        await Audit.create({
-            user: req.user.id,
-            action: 'CREATE_BACKUP',
-            details: backupMetadata,
-            ipAddress: req.ip || '',
-            userAgent: req.get('User-Agent') || ''
-        });
-
-        res.json(new ApiResponse(200, {
-            backupId,
-            metadata: backupMetadata,
-            message: 'Database backup created successfully'
-        }, 'Backup created successfully'));
-
-    } catch (error) {
-        console.error("Backup failed:", error);
-        throw new ApiError('Failed to create database backup', 500);
-    }
-});
+// .bak files are produced outside this app (e.g. a SQL Server Agent maintenance plan)
+// and dropped into BACKUP_DIR. This module only lists, restores, and deletes them.
 
 // Get backup history
 export const getBackupHistory = asyncHandler(async (req, res) => {
+    const { page = 1, limit = 10 } = req.query;
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 10;
+
     try {
-        const { page = 1, limit = 10, sortBy = 'createdAt', order = 'desc' } = req.query;
-        const offset = (Number(page) - 1) * Number(limit);
-
-        // Raw SQL for sorting
-        const orderSql = order === 'desc' ? 'DESC' : 'ASC';
-        const sortColStr = sortBy === 'createdAt' ? 'createdAt' : 'createdAt'; // Safety
-
-        const validSort = ['createdAt'].includes(sortBy) ? sortBy : 'createdAt';
-
-        // Fetch logs
-        // Join with users for populating userId
-        const query = `
-            SELECT a.*, u.fullName, u.email
-            FROM audits a
-            LEFT JOIN users u ON a.[user] = u.id
-            WHERE a.action = 'CREATE_BACKUP'
-            ORDER BY a.${validSort} ${orderSql}
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        `;
-
-        const [rows] = await pool.query(query, [Number(offset), Number(limit)]);
-
-        const [countRow] = await pool.query("SELECT COUNT(*) as total FROM audits WHERE action = 'CREATE_BACKUP'");
-        const totalBackups = countRow[0].total;
-
-        // Check files
-        const backupsWithStatus = await Promise.all(rows.map(async (row) => {
-            // Details is JSON
-            let details = row.details;
-            if (typeof details === 'string') {
-                try { details = JSON.parse(details); } catch (e) { }
-            }
-
-            let fileExists = false;
-            let fileSize = 0;
-            if (details && details.filePath) {
-                try {
-                    const stats = await fs.stat(details.filePath);
-                    fileExists = true;
-                    fileSize = stats.size;
-                } catch (e) { }
-            }
-
-            return {
-                ...row,
-                details,
-                user: { fullName: row.fullName, email: row.email },
-                fileExists,
-                fileSize,
-                backup: details
-            };
-        }));
-
-        res.json(new ApiResponse(200, {
-            backups: backupsWithStatus,
-            pagination: {
-                currentPage: Number(page),
-                totalPages: Math.ceil(totalBackups / Number(limit)),
-                totalBackups,
-                limit: Number(limit)
-            }
-        }, 'Backup history fetched successfully'));
-
-    } catch (error) {
-        console.error(error);
-        throw new ApiError('Failed to fetch backup history', 500);
+        await fs.access(BACKUP_DIR);
+    } catch {
+        await fs.mkdir(BACKUP_DIR, { recursive: true });
     }
+
+    const entries = await fs.readdir(BACKUP_DIR);
+    const bakFiles = entries.filter(name => /\.bak$/i.test(name));
+
+    const filesWithStats = await Promise.all(bakFiles.map(async (filename) => {
+        const stats = await fs.stat(path.join(BACKUP_DIR, filename));
+        return { filename, size: stats.size, createdAt: stats.birthtime || stats.mtime };
+    }));
+
+    filesWithStats.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const totalBackups = filesWithStats.length;
+    const offset = (pageNum - 1) * limitNum;
+    const pageFiles = filesWithStats.slice(offset, offset + limitNum);
+
+    const backups = pageFiles.map(f => ({
+        id: f.filename,
+        createdAt: f.createdAt,
+        fileExists: true,
+        backup: { id: f.filename, size: f.size }
+    }));
+
+    res.json(new ApiResponse(200, {
+        backups,
+        pagination: {
+            currentPage: pageNum,
+            totalPages: Math.max(1, Math.ceil(totalBackups / limitNum)),
+            totalBackups,
+            limit: limitNum
+        }
+    }, 'Backup history fetched successfully'));
 });
 
 // Restore from backup
 export const restoreFromBackup = asyncHandler(async (req, res) => {
     const { backupId } = req.params;
-    const { collections = [], confirmRestore = false } = req.body;
+    const { confirmRestore = false } = req.body;
 
     if (!confirmRestore) throw new ApiError('Restore confirmation required', 400);
 
-    // Find backup in audit logs by matching the JSON-encoded backup id in details
-    const [rows] = await pool.query("SELECT * FROM audits WHERE action = 'CREATE_BACKUP' AND JSON_VALUE(details, '$.id') = ?", [backupId]);
-    const backupRecord = rows[0];
-
-    if (!backupRecord) throw new ApiError('Backup not found', 404);
-
-    let details = backupRecord.details;
-    if (typeof details === 'string') details = JSON.parse(details);
-
-    const backupPath = details.filePath;
+    const { filename, filePath } = resolveBackupFile(backupId);
 
     try {
-        await fs.access(backupPath);
+        await fs.access(filePath);
     } catch {
         throw new ApiError('Backup file not found', 404);
     }
 
-    let backupContent;
-    if (backupPath.endsWith('.zip')) {
-        const zip = new AdmZip(backupPath);
-        const entry = zip.getEntries().find(e => e.entryName.endsWith('.json'));
-        if (!entry) throw new ApiError('No backup data found in archive', 400);
-        backupContent = JSON.parse(zip.readAsText(entry));
-    } else {
-        const fileData = await fs.readFile(backupPath, 'utf8');
-        backupContent = JSON.parse(fileData);
-    }
+    // Restore runs against `master` on its own connection pool: the target database
+    // gets dropped into SINGLE_USER mode and its own connections severed, so we can't
+    // run this over the app's normal pool (which targets that same database).
+    const masterPool = new mssql.ConnectionPool({ ...baseConfig, database: 'master' });
+    let singleUserSet = false;
 
-    if (!backupContent.data || !backupContent.metadata) {
-        throw new ApiError('Invalid backup format', 400);
-    }
-
-    const conn = await pool.getConnection();
     try {
-        await conn.beginTransaction();
+        await masterPool.connect();
 
-        const allTables = await getUserTables();
-        const keysToRestore = collections.length ? collections : Object.keys(backupContent.data);
-        const tableNames = resolveTableNames(keysToRestore, allTables);
+        await masterPool.request().query(`ALTER DATABASE [${ENV.DB_NAME}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE`);
+        singleUserSet = true;
 
-        // Disable FK constraints on the tables being restored
-        for (const tableName of tableNames) {
-            await conn.query(`ALTER TABLE [${tableName}] NOCHECK CONSTRAINT ALL`);
-        }
+        await masterPool.request()
+            .input('backupPath', mssql.NVarChar, filePath)
+            .query(`RESTORE DATABASE [${ENV.DB_NAME}] FROM DISK = @backupPath WITH REPLACE`);
 
-        for (const key of keysToRestore) {
-            const [tableName] = resolveTableNames([key], allTables);
-            if (!tableName) continue;
-
-            const tableData = backupContent.data[key];
-            if (!tableData || !Array.isArray(tableData)) continue;
-
-            // MSSQL cannot TRUNCATE a table referenced by a foreign key, even with constraints disabled
-            await conn.query(`DELETE FROM [${tableName}]`);
-
-            // Bulk Insert, chunked to stay under MSSQL's ~2100 bound-parameter limit per query
-            if (tableData.length > 0) {
-                const columns = Object.keys(tableData[0]);
-                const batchSize = Math.max(1, Math.floor(2000 / columns.length));
-                const hasIdentity = await tableHasIdentity(tableName);
-
-                if (hasIdentity) await conn.query(`SET IDENTITY_INSERT [${tableName}] ON`);
-                try {
-                    for (let i = 0; i < tableData.length; i += batchSize) {
-                        const batch = tableData.slice(i, i + batchSize);
-                        const placeholders = `(${columns.map(() => '?').join(',')})`;
-                        const sql = `INSERT INTO [${tableName}] (${columns.map(c => `[${c}]`).join(',')}) VALUES ${batch.map(() => placeholders).join(',')}`;
-
-                        const flattenValues = batch.flatMap(row =>
-                            columns.map(col => {
-                                const val = row[col];
-                                // Handle objects/arrays specifically if they map to JSON columns
-                                if (typeof val === 'object' && val !== null) return JSON.stringify(val);
-                                return val;
-                            })
-                        );
-
-                        await conn.query(sql, flattenValues);
-                    }
-                } finally {
-                    if (hasIdentity) await conn.query(`SET IDENTITY_INSERT [${tableName}] OFF`);
-                }
-            }
-        }
-
-        // Re-enable FK constraints
-        for (const tableName of tableNames) {
-            await conn.query(`ALTER TABLE [${tableName}] WITH CHECK CHECK CONSTRAINT ALL`);
-        }
-
-        await conn.commit();
+        await masterPool.request().query(`ALTER DATABASE [${ENV.DB_NAME}] SET MULTI_USER`);
+        singleUserSet = false;
 
         await Audit.create({
             user: req.user.id,
             action: 'RESTORE_BACKUP',
-            details: { backupId, restoredCollections: keysToRestore },
-            ipAddress: req.ip,
-            userAgent: req.get('User-Agent')
+            details: { backupId: filename },
+            ipAddress: req.ip || '',
+            userAgent: req.get('User-Agent') || ''
         });
 
         res.json(new ApiResponse(200, {
             message: 'Database restored successfully',
-            backupId
+            backupId: filename
         }, 'Restore completed'));
-
     } catch (error) {
-        await conn.rollback();
         throw new ApiError(`Restore failed: ${error.message}`, 500);
     } finally {
-        conn.release();
+        if (singleUserSet) {
+            try {
+                await masterPool.request().query(`ALTER DATABASE [${ENV.DB_NAME}] SET MULTI_USER`);
+            } catch (e) {
+                console.error('Failed to restore MULTI_USER mode after a failed restore:', e.message);
+            }
+        }
+        await masterPool.close().catch(() => { });
     }
 });
 
 // Delete backup
 export const deleteBackup = asyncHandler(async (req, res) => {
     const { backupId } = req.params;
+    const { filename, filePath } = resolveBackupFile(backupId);
 
-    const [rows] = await pool.query("SELECT * FROM audits WHERE action = 'CREATE_BACKUP' AND JSON_VALUE(details, '$.id') = ?", [backupId]);
-    const record = rows[0];
-
-    if (!record) throw new ApiError('Backup not found', 404);
-
-    let details = record.details;
-    if (typeof details === 'string') details = JSON.parse(details);
-
-    if (details.filePath) {
-        try {
-            await fs.unlink(details.filePath);
-        } catch (e) { }
+    try {
+        await fs.access(filePath);
+    } catch {
+        throw new ApiError('Backup file not found', 404);
     }
 
-    details.deleted = true;
-    details.deletedAt = new Date();
-    details.deletedBy = req.user.id;
+    await fs.unlink(filePath);
 
-    // Update audit info
-    await pool.query("UPDATE audits SET details = ? WHERE id = ?", [JSON.stringify(details), record.id]);
+    await Audit.create({
+        user: req.user.id,
+        action: 'DELETE_BACKUP',
+        details: { backupId: filename },
+        ipAddress: req.ip || '',
+        userAgent: req.get('User-Agent') || ''
+    });
 
-    res.json(new ApiResponse(200, { backupId }, 'Backup deleted successfully'));
+    res.json(new ApiResponse(200, { backupId: filename }, 'Backup deleted successfully'));
 });
 
 // === DATA EXPORT ===
@@ -556,11 +379,11 @@ export const getDataOperationHistory = asyncHandler(async (req, res) => {
     const offset = (Number(page) - 1) * Number(limit);
 
     const [rows] = await pool.query(
-        "SELECT a.*, u.fullName FROM audits a LEFT JOIN users u ON a.[user] = u.id WHERE action IN ('CREATE_BACKUP','RESTORE_BACKUP','EXPORT_DATA','IMPORT_DATA') ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+        "SELECT a.*, u.fullName FROM audits a LEFT JOIN users u ON a.[user] = u.id WHERE action IN ('RESTORE_BACKUP','DELETE_BACKUP','EXPORT_DATA','IMPORT_DATA') ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
         [Number(offset), Number(limit)]
     );
 
-    const [c] = await pool.query("SELECT COUNT(*) as total FROM audits WHERE action IN ('CREATE_BACKUP','RESTORE_BACKUP','EXPORT_DATA','IMPORT_DATA')");
+    const [c] = await pool.query("SELECT COUNT(*) as total FROM audits WHERE action IN ('RESTORE_BACKUP','DELETE_BACKUP','EXPORT_DATA','IMPORT_DATA')");
 
     res.json(new ApiResponse(200, { operations: rows, total: c[0].total }, 'History fetched'));
 });
@@ -581,8 +404,7 @@ export const cleanupOldData = asyncHandler(async (req, res) => {
         }
     }
 
-    // Backups logic similar, involves checking Audit logs for 'CREATE_BACKUP' and iterating files
-    // Implemented simplified
+    // Backup cleanup (deleting old .bak files from BACKUP_DIR) is not implemented yet.
 
     res.json(new ApiResponse(200, { results }, 'Cleanup run'));
 });

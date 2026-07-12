@@ -238,7 +238,6 @@ export {
     useGetCourseAnalyticsQuery as useSuperAdminGetCourseAnalyticsQuery,
     useGenerateCustomReportMutation,
     useExportAnalyticsMutation,
-    useCreateDatabaseBackupMutation,
     useGetBackupHistoryQuery,
     useRestoreFromBackupMutation,
     useDeleteBackupMutation,

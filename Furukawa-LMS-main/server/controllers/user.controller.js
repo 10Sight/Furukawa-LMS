@@ -840,6 +840,12 @@ export const createUser = asyncHandler(async (req, res) => {
 
   const newUserId = result[0].id;
 
+  const isStudentLike = (data.isEmployee ? 1 : 0) || (data.role === 'CUSTOM' && !data.isTrainer);
+  if (isStudentLike) {
+    logAudit(req.user?.id, "CREATE_STUDENT", { studentId: newUserId, userName: data.userName, fullName: data.fullName, departmentId: data.departmentId }, { resourceType: "User", resourceId: newUserId, req })
+      .catch(err => console.error("logAudit(CREATE_STUDENT) failed:", err.message));
+  }
+
   // Sync stations to machine_assignments
   const assignedBy = req.user?.id || null;
   for (const stationId of stations) {
@@ -1194,6 +1200,16 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   if (updates.length > 1) {
     await executeQuery(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, [...values, userId]);
+
+    const resultIsEmployee = data.isEmployee !== undefined ? (data.isEmployee ? 1 : 0) : oldUser.isEmployee;
+    const resultRole = data.role !== undefined ? data.role : oldUser.role;
+    const resultIsTrainer = data.isTrainer !== undefined ? (data.isTrainer ? 1 : 0) : oldUser.isTrainer;
+    const isStudentLike = resultIsEmployee || (resultRole === 'CUSTOM' && !resultIsTrainer);
+    if (isStudentLike) {
+      const changedFields = fieldsToUpdate.filter(f => data[f] !== undefined);
+      logAudit(req.user?.id, "UPDATE_STUDENT", { studentId: userId, changedFields }, { resourceType: "User", resourceId: userId, req })
+        .catch(err => console.error("logAudit(UPDATE_STUDENT) failed:", err.message));
+    }
   }
 
   // Trigger Hierarchy Sync
@@ -1356,13 +1372,16 @@ export const updateUser = asyncHandler(async (req, res) => {
 export const deleteUser = asyncHandler(async (req, res) => {
   const userId = req.params.id;
 
-  const [rows] = await executeQuery("SELECT id, avatar FROM users WHERE id = ?", [userId]);
+  const [rows] = await executeQuery("SELECT id, avatar, role, isEmployee, isTrainer, fullName FROM users WHERE id = ?", [userId]);
   if (rows.length === 0) throw new ApiError("User not found", 404);
 
   const avatar = parseJSON(rows[0].avatar);
   if (avatar?.url && avatar.url.startsWith('/uploads/')) {
     await deleteFromLocal(avatar.url);
   }
+
+  const isStudentLike = rows[0].isEmployee || (rows[0].role === 'CUSTOM' && !rows[0].isTrainer);
+  const targetFullName = rows[0].fullName;
 
   if (req.user.role === "SUPERADMIN" || req.user.role === "ADMIN") {
     // Before permanent delete, get hierarchy assignments to cleanup
@@ -1377,6 +1396,10 @@ export const deleteUser = asyncHandler(async (req, res) => {
     await executeQuery("DELETE FROM machine_assignments WHERE user_id = ?", [userId]);
     await executeQuery("DELETE FROM users WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_PERMANENT", { userId }, { req });
+    if (isStudentLike) {
+      logAudit(req.user.id, "DELETE_STUDENT_PERMANENT", { studentId: userId, fullName: targetFullName }, { resourceType: "User", resourceId: userId, req })
+        .catch(err => console.error("logAudit(DELETE_STUDENT_PERMANENT) failed:", err.message));
+    }
 
     await removeUsersFromDepartmentAssignments([userId]);
     await syncHierarchyUserLists(affectedSubSectionIds, affectedLineIds, affectedSectionIds);
@@ -1389,6 +1412,10 @@ export const deleteUser = asyncHandler(async (req, res) => {
 
     await executeQuery("UPDATE users SET isDeleted = 1 WHERE id = ?", [userId]);
     await logAudit(req.user.id, "DELETE_USER_SOFT", { userId }, { req });
+    if (isStudentLike) {
+      logAudit(req.user.id, "DELETE_STUDENT_SOFT", { studentId: userId, fullName: targetFullName }, { resourceType: "User", resourceId: userId, req })
+        .catch(err => console.error("logAudit(DELETE_STUDENT_SOFT) failed:", err.message));
+    }
 
     // A soft-deleted user must drop out of department/section/line/sub-section membership too
     await removeUsersFromDepartmentAssignments([userId]);

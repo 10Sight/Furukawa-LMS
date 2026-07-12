@@ -5,6 +5,46 @@ const SLOW_QUERY_THRESHOLD_MS = 2000;
 
 const truncateForLog = (text) => (text.length > 300 ? `${text.slice(0, 300)}...` : text);
 
+// Matches schema-inspection/DDL statements (table/column existence checks, CREATE/ALTER/DROP
+// TABLE|INDEX|COLUMN). At boot, 60+ models each fire an unawaited Model.init() that runs one
+// of these, so dozens race for the pool's 20 connections at once and contend for SQL Server's
+// catalog locks, producing the multi-second [SLOW QUERY] warnings. These are queued to run one
+// at a time below; normal application queries are unaffected and still run concurrently.
+const SCHEMA_QUERY_PATTERN =
+    /\b(sysobjects|information_schema|sys\.(?:columns|indexes|tables|foreign_keys|objects)|objectproperty|col_length)\b|\b(?:create|alter|drop)\b\s+(?:unique\s+)?(?:table|index|column)\b/i;
+
+// Chain that schema/DDL queries are serialized onto, one at a time, in call order.
+let schemaQueuePromise = Promise.resolve();
+
+const executeRequest = async (request, processedQuery, queryText) => {
+    const startedAt = Date.now();
+    try {
+        const result = await request.query(processedQuery);
+        const durationMs = Date.now() - startedAt;
+
+        if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+            logger.warn(`[SLOW QUERY] Execution took ${durationMs}ms: ${truncateForLog(queryText)}`);
+        }
+
+        // Mimic the mysql2 return format: [rows, fields/metadata]
+        // result.recordset contains the rows
+        // result.rowsAffected contains the number of rows affected
+
+        // For INSERT queries involving IDENTITY, returning the ID requires OUTPUT INSERTED.id in MSSQL,
+        // which complicates simple translation. If we just need rows, we return recordset.
+        const fakeMetadata = {
+            insertId: null, // We'll need to manually ensure output inserted.id is used if we need insertId
+            affectedRows: result.rowsAffected ? result.rowsAffected[0] : 0
+        };
+
+        return [result.recordset || [], fakeMetadata];
+    } catch (error) {
+        const durationMs = Date.now() - startedAt;
+        logger.error(`[QUERY FAILED] after ${durationMs}ms: ${error.message} | Query: ${truncateForLog(queryText)}`);
+        throw error;
+    }
+};
+
 /**
  * Runs a query against a given mssql Request (either pool.request() or transaction.request()),
  * mimicking the array-based parameter approach of mysql2.
@@ -51,32 +91,16 @@ export const runOnRequest = async (request, queryText, params = []) => {
         return `@${paramName}`;
     });
 
-    const startedAt = Date.now();
-    try {
-        const result = await request.query(processedQuery);
-        const durationMs = Date.now() - startedAt;
-
-        if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
-            logger.warn(`[SLOW QUERY] Execution took ${durationMs}ms: ${truncateForLog(queryText)}`);
-        }
-
-        // Mimic the mysql2 return format: [rows, fields/metadata]
-        // result.recordset contains the rows
-        // result.rowsAffected contains the number of rows affected
-
-        // For INSERT queries involving IDENTITY, returning the ID requires OUTPUT INSERTED.id in MSSQL,
-        // which complicates simple translation. If we just need rows, we return recordset.
-        const fakeMetadata = {
-            insertId: null, // We'll need to manually ensure output inserted.id is used if we need insertId
-            affectedRows: result.rowsAffected ? result.rowsAffected[0] : 0
-        };
-
-        return [result.recordset || [], fakeMetadata];
-    } catch (error) {
-        const durationMs = Date.now() - startedAt;
-        logger.error(`[QUERY FAILED] after ${durationMs}ms: ${error.message} | Query: ${truncateForLog(queryText)}`);
-        throw error;
+    if (!SCHEMA_QUERY_PATTERN.test(queryText)) {
+        return executeRequest(request, processedQuery, queryText);
     }
+
+    // Serialize this schema query behind whatever's already queued, without letting one
+    // failure block the rest of the queue.
+    const run = () => executeRequest(request, processedQuery, queryText);
+    const resultPromise = schemaQueuePromise.then(run, run);
+    schemaQueuePromise = resultPromise.then(() => {}, () => {});
+    return resultPromise;
 };
 
 /**

@@ -40,6 +40,7 @@ import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetAllOnJobTrainingsQuery, useDeleteOnJobTrainingMutation, useGetServerLanIpQuery } from "@/Redux/AllApi/OnJobTrainingApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
 
@@ -103,6 +104,15 @@ const OnJobTraining = () => {
 
     const [deleteOjt, { isLoading: isDeleting }] = useDeleteOnJobTrainingMutation();
     const { data: lanIpData } = useGetServerLanIpQuery();
+    const [logAction] = useLogActionMutation();
+
+    useEffect(() => {
+        logAction({
+            action: 'VIEW_ON_JOB_TRAINING_PAGE',
+            details: { departmentId: selectedDepartment || null, sectionId: selectedSection || null }
+        }).unwrap().catch((err) => console.error("Failed to log OJT page view:", err));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleCopyLink = async (ojt) => {
         if (!ojt.shareToken) {
@@ -118,6 +128,10 @@ const OnJobTraining = () => {
         try {
             await navigator.clipboard.writeText(link);
             toast.success("Link copied to clipboard");
+            logAction({
+                action: 'COPY_ON_JOB_TRAINING_SHARE_LINK',
+                details: { ojtId: ojt.id || ojt._id }
+            }).unwrap().catch((err) => console.error("Failed to log copy link:", err));
         } catch {
             toast.error("Failed to copy link");
         }

@@ -31,6 +31,7 @@ import {
   useGetImportLogDetailsQuery,
 } from "@/Redux/AllApi/UserApi";
 import { useGetUniqueDesignationsQuery } from "@/Redux/AllApi/DesignationApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { IconChevronDown } from "@tabler/icons-react";
 import {
@@ -298,6 +299,14 @@ const Students = () => {
   const [activeTab, setActiveTab] = useState("all");
   const [assignmentType, setAssignmentType] = useState("department");
 
+  const [logAction] = useLogActionMutation();
+  useEffect(() => {
+    logAction({
+      action: "VIEW_STUDENTS_LIST",
+      details: { page: currentPage, searchTerm, filters, activeTab },
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, searchTerm, JSON.stringify(filters), activeTab]);
 
   const handleStudentClick = (student) => {
     if (!student) return;

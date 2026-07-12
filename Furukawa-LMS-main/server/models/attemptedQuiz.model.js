@@ -24,6 +24,13 @@ class QuizAttempt {
         this.studentName = data.studentName || null;
         this.studentEmpId = data.studentEmpId || null;
 
+        // Snapshot of student status/hierarchy at attempt time (survives promotion or deletion)
+        this.studentIsTemporary = data.studentIsTemporary ? 1 : 0;
+        this.studentDeptId = data.studentDeptId !== undefined ? data.studentDeptId : null;
+        this.studentSectionId = data.studentSectionId !== undefined ? data.studentSectionId : null;
+        this.studentLineId = data.studentLineId !== undefined ? data.studentLineId : null;
+        this.studentSubSectionId = data.studentSubSectionId !== undefined ? data.studentSubSectionId : null;
+
         // Admin adjustment metadata
         this.manuallyAdjusted = !!data.manuallyAdjusted;
         this.adjustedBy = data.adjustedBy;
@@ -85,6 +92,37 @@ class QuizAttempt {
                     ALTER TABLE [attempted_quizzes] ADD [studentEmpId] NVARCHAR(255) NULL;
                 END
             `);
+
+            // Migration: add studentIsTemporary/studentDeptId/studentSectionId/studentLineId/studentSubSectionId
+            // snapshot columns so monitoring views survive user promotion or permanent deletion
+            await executeQuery(`
+                IF NOT EXISTS (
+                    SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'attempted_quizzes' AND COLUMN_NAME = 'studentIsTemporary'
+                )
+                BEGIN
+                    ALTER TABLE [attempted_quizzes] ADD [studentIsTemporary] BIT DEFAULT 0;
+                    ALTER TABLE [attempted_quizzes] ADD [studentDeptId] INT NULL;
+                    ALTER TABLE [attempted_quizzes] ADD [studentSectionId] INT NULL;
+                    ALTER TABLE [attempted_quizzes] ADD [studentLineId] INT NULL;
+                    ALTER TABLE [attempted_quizzes] ADD [studentSubSectionId] INT NULL;
+                END
+            `);
+
+            // One-time backfill for rows created before the hierarchy snapshot columns existed.
+            // Only touches rows still missing a snapshot, so it's a cheap no-op on subsequent boots.
+            await executeQuery(`
+                UPDATE aq SET
+                    studentIsTemporary = COALESCE(u.isTemporary, 0),
+                    studentDeptId = COALESCE(u.departmentId, CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END),
+                    studentSectionId = COALESCE(u.sectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END),
+                    studentLineId = COALESCE(u.lineId, CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END),
+                    studentSubSectionId = COALESCE(u.subSectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)
+                FROM attempted_quizzes aq
+                JOIN users u ON CAST(u.id AS NVARCHAR(255)) = aq.student OR (aq.studentEmpId IS NOT NULL AND u.empId = aq.studentEmpId)
+                WHERE aq.studentDeptId IS NULL AND aq.studentSectionId IS NULL
+                  AND aq.studentLineId IS NULL AND aq.studentSubSectionId IS NULL
+            `);
         } catch (error) {
             logger.error("Failed to initialize QuizAttempt table", error);
         }
@@ -98,6 +136,7 @@ class QuizAttempt {
             "startedAt", "completedAt", "attemptNumber", "timeTaken",
             "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes", "conductedBy",
             "studentName", "studentEmpId",
+            "studentIsTemporary", "studentDeptId", "studentSectionId", "studentLineId", "studentSubSectionId",
             "createdAt"
         ];
 

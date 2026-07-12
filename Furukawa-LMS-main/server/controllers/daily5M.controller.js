@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import sendMail from "../utils/mail.util.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Default Configuration matching the current hardcoded table
 const DEFAULT_CONFIG = {
@@ -82,6 +83,9 @@ export const get5MConfig = asyncHandler(async (req, res) => {
 
     const configRecord = await Daily5MConfig.findByDepartmentId(departmentId);
 
+    logAudit(req.user?.id, "VIEW_DAILY_5M_CONFIG", { departmentId }, { resourceType: "DAILY_5M_CONFIG", resourceId: departmentId, req })
+        .catch(err => console.error("logAudit(VIEW_DAILY_5M_CONFIG) failed:", err.message));
+
     // If no custom config, return default
     if (!configRecord) {
         return res.json(new ApiResponse(200, { isDefault: true, config: DEFAULT_CONFIG }, "Default configuration returned"));
@@ -98,6 +102,10 @@ export const save5MConfig = asyncHandler(async (req, res) => {
     const userName = req.user?.name || "Admin"; // Assuming req.user is populated by auth middleware
 
     const updated = await Daily5MConfig.upsert(departmentId, config, remark, userName);
+
+    logAudit(req.user?.id, "SAVE_DAILY_5M_CONFIG", { departmentId, remark }, { resourceType: "DAILY_5M_CONFIG", resourceId: departmentId, req })
+        .catch(err => console.error("logAudit(SAVE_DAILY_5M_CONFIG) failed:", err.message));
+
     res.json(new ApiResponse(200, updated, "Configuration saved successfully"));
 });
 
@@ -106,6 +114,10 @@ export const getConfigHistory = asyncHandler(async (req, res) => {
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
     const history = await Daily5MConfig.getHistory(departmentId);
+
+    logAudit(req.user?.id, "VIEW_DAILY_5M_CONFIG_HISTORY", { departmentId }, { resourceType: "DAILY_5M_CONFIG", resourceId: departmentId, req })
+        .catch(err => console.error("logAudit(VIEW_DAILY_5M_CONFIG_HISTORY) failed:", err.message));
+
     res.json(new ApiResponse(200, history, "Configuration history fetched"));
 });
 
@@ -142,6 +154,9 @@ export const send5MPDF = asyncHandler(async (req, res) => {
     }];
 
     await sendMail(email, subject, message, attachments);
+
+    logAudit(req.user?.id, "SEND_DAILY_5M_PDF_EMAIL", { email, departmentName, date }, { resourceType: "DAILY_5M_RECORD", req })
+        .catch(err => console.error("logAudit(SEND_DAILY_5M_PDF_EMAIL) failed:", err.message));
 
     res.json(new ApiResponse(200, null, "Email sent successfully with PDF attachment"));
 });

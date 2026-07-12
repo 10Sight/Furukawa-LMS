@@ -153,6 +153,15 @@ const SkillUpgradationWrapper = () => {
             return;
         }
         try {
+            const existingPlansResponse = await axiosInstance.get('/api/skill-upgradation-plan/list', {
+                params: { departmentId: createDept, sectionId: createSection }
+            });
+            const existingPlans = existingPlansResponse.data?.data || [];
+            const duplicate = existingPlans.find(p => String(p.year) === String(createYear));
+            if (duplicate) {
+                toast.error(`A plan for Year ${createYear} already exists for this department and section. Open it from the list instead.`);
+                return;
+            }
             const response = await axiosInstance.post(`/api/skill-upgradation-plan/department/${createDept}`, {
                 sectionId: createSection,
                 year: createYear,

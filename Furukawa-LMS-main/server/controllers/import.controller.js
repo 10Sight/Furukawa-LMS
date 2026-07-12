@@ -1,5 +1,6 @@
 import XLSX from "xlsx";
 import { executeQuery } from "../db/mssqlHelper.js";
+import logAudit from "../utils/auditLogger.js";
 import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -956,6 +957,9 @@ export const finalizeImportEmployees = async (req, res) => {
 
     const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [logId]);
 
+    logAudit(req.user?.id, "IMPORT_STUDENTS_STANDARD", { logId, successCount, failCount, updatedCount }, { resourceType: "ImportLog", resourceId: logId, req })
+        .catch(err => console.error("logAudit(IMPORT_STUDENTS_STANDARD) failed:", err.message));
+
     res.json(new ApiResponse(200, {
         logId,
         totalRows: log[0]?.totalRows || 0,
@@ -1156,6 +1160,9 @@ export const finalizeImportEmployeesFull = async (req, res) => {
     }
 
     const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [logId]);
+
+    logAudit(req.user?.id, "IMPORT_STUDENTS_FULL", { logId, successCount, failCount, updatedCount }, { resourceType: "ImportLog", resourceId: logId, req })
+        .catch(err => console.error("logAudit(IMPORT_STUDENTS_FULL) failed:", err.message));
 
     res.json(new ApiResponse(200, {
         logId,

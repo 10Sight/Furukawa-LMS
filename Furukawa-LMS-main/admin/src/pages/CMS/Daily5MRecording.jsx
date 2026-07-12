@@ -17,6 +17,7 @@ import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
 import { useLazyGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { useLazyGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { useGetSubSectionsQuery } from '@/Redux/AllApi/SubSectionApi';
+import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import { Button } from "@/components/ui/button";
 import {
     IconSettings,
@@ -55,6 +56,7 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
     const [searchTerm, setSearchTerm] = useState("");
     const [trigger, { data: searchResults, isFetching: isSearching }] = useLazyGetAllUsersQuery();
     const [selectedRole, setSelectedRole] = useState("QA_SHIFT_INCHARGE");
+    const [logAction] = useLogActionMutation();
 
     const roles = [
         { id: "QA_SHIFT_INCHARGE", label: "QA Shift In-charge" }
@@ -76,7 +78,10 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
     };
 
     useEffect(() => {
-        if (open) fetchAssignments();
+        if (open) {
+            fetchAssignments();
+            logAction({ action: "VIEW_DAILY_5M_PEOPLE_MANAGEMENT", details: { departmentId } }).catch(() => {});
+        }
     }, [open, departmentId]);
 
     const handleSearch = (val) => {
@@ -1006,6 +1011,7 @@ const Daily5MRecording = () => {
     const [searchParams] = useSearchParams();
     const urlRecordId = searchParams.get('recordId');
     const viewMode = searchParams.get('mode') === 'view';
+    const [logAction] = useLogActionMutation();
     const { data: departmentsData, isLoading: isLoadingDepts } = useGetAllDepartmentsQuery();
     const { data: sectionsData, isLoading: isLoadingSections } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
     const { data: linesData, isLoading: isLoadingLines } = useGetLinesBySectionQuery(selectedSection, { skip: !selectedSection });
@@ -1151,6 +1157,7 @@ const Daily5MRecording = () => {
             // Priority 3: Fetch all records for today to show in the list
             fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
             setShowFormList(true);
+            logAction({ action: "VIEW_DAILY_5M_PAGE", details: { departmentId: selectedDepartment, sectionId: selectedSection, date: selectedDate } }).catch(() => {});
         }
     }, [selectedDepartment, selectedSection, selectedDate, location.state?.recordId, urlRecordId]);
 
@@ -1213,6 +1220,7 @@ const Daily5MRecording = () => {
             if (response.data.success) {
                 setConfigHistory(response.data.data);
                 setIsViewingHistory(true);
+                logAction({ action: "VIEW_DAILY_5M_LAYOUT_HISTORY", details: { departmentId: selectedDepartment } }).catch(() => {});
             }
         } catch (error) {
             console.error("Error fetching history:", error);
@@ -1299,6 +1307,7 @@ const Daily5MRecording = () => {
             pdf.save(`Daily_5M_${selectedDeptName.replace(/\s+/g, '_')}_${selectedDate}.pdf`);
             setIsPrintDialogOpen(false);
             toast.success("PDF downloaded successfully");
+            logAction({ action: "DOWNLOAD_DAILY_5M_PDF", details: { departmentName: selectedDeptName, date: selectedDate } }).catch(() => {});
         }
     };
 
@@ -1333,6 +1342,7 @@ const Daily5MRecording = () => {
 
             toast.success("High-res image downloaded! You can now insert this into PPT.");
             setIsPrintDialogOpen(false);
+            logAction({ action: "DOWNLOAD_DAILY_5M_IMAGE", details: { departmentName: selectedDeptName, date: selectedDate } }).catch(() => {});
         } catch (error) {
             console.error("Image export error:", error);
             toast.error("Failed to generate high-res image.");

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { IconArrowLeft, IconLoader } from "@tabler/icons-react";
@@ -7,10 +7,12 @@ import { useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
 import MachineManager from '@/components/departments/MachineManager';
 import SubSectionManager from '@/components/departments/SubSectionManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const LineDetail = () => {
     const { departmentId, lineId } = useParams();
     const navigate = useNavigate();
+    const [logAction] = useLogActionMutation();
 
     // Fetch Department and Line Details for Header
     const { data: departmentData, isLoading: isDeptLoading } = useGetDepartmentByIdQuery(departmentId);
@@ -19,6 +21,14 @@ const LineDetail = () => {
     const departmentName = departmentData?.data?.name || "Loading Department...";
     const currentLine = linesData?.data?.find(l => (l.id || l._id).toString() === lineId.toString());
     const lineName = currentLine?.name || "Loading Line...";
+
+    useEffect(() => {
+        if (!departmentData?.data?.name || !currentLine?.name) return;
+        logAction({
+            action: "VIEW_LINE_DETAIL",
+            details: { departmentId, departmentName: departmentData.data.name, lineId, lineName: currentLine.name },
+        });
+    }, [departmentId, lineId, departmentData?.data?.name, currentLine?.name]);
 
     if (isDeptLoading || isLinesLoading) {
         return <div className="flex justify-center items-center h-screen"><IconLoader className="animate-spin" /></div>;

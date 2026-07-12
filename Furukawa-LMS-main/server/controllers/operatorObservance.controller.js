@@ -5,6 +5,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
+import logAudit from "../utils/auditLogger.js";
 
 const normalizeLevel = (level) => String(level || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 
@@ -193,6 +194,11 @@ export const getObservanceByStudent = asyncHandler(async (req, res) => {
     const observance = await OperatorObservance.findByStudentId(resolvedId);
     const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
 
+    logAudit(req.user?.id, "VIEW_OPERATOR_OBSERVANCE_SHEET",
+        { studentId: resolvedId, operatorNameCode: observance?.operatorNameCode || "" },
+        { resourceType: "OperatorObservance", resourceId: resolvedId, req }
+    ).catch(err => console.error("logAudit(VIEW_OPERATOR_OBSERVANCE_SHEET) failed:", err.message));
+
     // If no record exists, return an empty structure so frontend can initialize
     if (!observance) {
         return res.json(new ApiResponse(200, { isNew: true, studentId: resolvedId, level1Date: derivedLevel1Date, preparedBy: "", checkedBy: "", verifiedBy: "", status: "Draft" }, "No existing observance record"));
@@ -229,6 +235,10 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
     let observance = await OperatorObservance.findByStudentId(resolvedId);
 
     if (observance) {
+        const previousStatus = observance.status;
+        const previousCheckedBy = observance.checkedBy || "";
+        const previousVerifiedBy = observance.verifiedBy || "";
+
         // Update existing
         observance.lineName = data.lineName;
         observance.processName = data.processName;
@@ -243,6 +253,28 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
 
 
         await observance.save();
+
+        const auditAction = observance.status === "Submitted" && previousStatus !== "Submitted"
+            ? "SUBMIT_OPERATOR_OBSERVANCE_SHEET"
+            : "SAVE_OPERATOR_OBSERVANCE_SHEET_DRAFT";
+        logAudit(req.user?.id, auditAction,
+            { studentId: resolvedId, lineName: observance.lineName, processName: observance.processName, preparedBy: observance.preparedBy },
+            { resourceType: "OperatorObservance", resourceId: resolvedId, req }
+        ).catch(err => console.error(`logAudit(${auditAction}) failed:`, err.message));
+
+        if (observance.checkedBy && observance.checkedBy !== previousCheckedBy) {
+            logAudit(req.user?.id, "CHECK_OPERATOR_OBSERVANCE_SHEET",
+                { studentId: resolvedId, lineName: observance.lineName, processName: observance.processName, checkedBy: observance.checkedBy, action: observance.checkedBy.startsWith("Approved") ? "Approved" : "Rejected" },
+                { resourceType: "OperatorObservance", resourceId: resolvedId, req }
+            ).catch(err => console.error("logAudit(CHECK_OPERATOR_OBSERVANCE_SHEET) failed:", err.message));
+        }
+
+        if (observance.verifiedBy && observance.verifiedBy !== previousVerifiedBy) {
+            logAudit(req.user?.id, "VERIFY_OPERATOR_OBSERVANCE_SHEET",
+                { studentId: resolvedId, lineName: observance.lineName, processName: observance.processName, verifiedBy: observance.verifiedBy, action: observance.verifiedBy.startsWith("Approved") ? "Approved" : "Rejected" },
+                { resourceType: "OperatorObservance", resourceId: resolvedId, req }
+            ).catch(err => console.error("logAudit(VERIFY_OPERATOR_OBSERVANCE_SHEET) failed:", err.message));
+        }
 
         // Trigger Email Notification only if status is Submitted
         if (data.status === "Submitted") {
@@ -262,6 +294,11 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
             verifiedBy: data.verifiedBy || "",
             status: data.status || "Draft",
         });
+
+        logAudit(req.user?.id, "CREATE_OPERATOR_OBSERVANCE_SHEET",
+            { studentId: resolvedId, lineName: newRecord.lineName, processName: newRecord.processName, status: newRecord.status },
+            { resourceType: "OperatorObservance", resourceId: resolvedId, req }
+        ).catch(err => console.error("logAudit(CREATE_OPERATOR_OBSERVANCE_SHEET) failed:", err.message));
 
         // Trigger Email Notification only if status is Submitted
         if (data.status === "Submitted") {

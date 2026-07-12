@@ -2,6 +2,7 @@ import Daily5MAssignment from "../models/daily5MAssignment.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Get assignments for a department
 export const getAssignments = asyncHandler(async (req, res) => {
@@ -35,7 +36,10 @@ export const addAssignment = asyncHandler(async (req, res) => {
     }
 
     const newId = await Daily5MAssignment.create({ departmentId, role, userId, userName });
-    
+
+    logAudit(req.user?.id, "ADD_DAILY_5M_ASSIGNMENT", { departmentId, role, assignedUser: userName, assignedUserId: userId }, { resourceType: "DAILY_5M_ASSIGNMENT", resourceId: newId, req })
+        .catch(err => console.error("logAudit(ADD_DAILY_5M_ASSIGNMENT) failed:", err.message));
+
     res.status(201).json(new ApiResponse(201, { id: newId }, "Assignment added successfully"));
 });
 
@@ -48,10 +52,13 @@ export const removeAssignment = asyncHandler(async (req, res) => {
     }
 
     const success = await Daily5MAssignment.delete(id);
-    
+
     if (!success) {
         throw new ApiError("Assignment not found", 404);
     }
+
+    logAudit(req.user?.id, "REMOVE_DAILY_5M_ASSIGNMENT", { assignmentId: id }, { resourceType: "DAILY_5M_ASSIGNMENT", resourceId: id, req })
+        .catch(err => console.error("logAudit(REMOVE_DAILY_5M_ASSIGNMENT) failed:", err.message));
 
     res.status(200).json(new ApiResponse(200, null, "Assignment removed successfully"));
 });

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const MachineManager = ({ subSectionId, lineId }) => {
     const { data: machinesData, isLoading, error } = useGetMachinesBySubSectionQuery(subSectionId, {
@@ -38,6 +39,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
     const [createMachine, { isLoading: isCreating }] = useCreateMachineMutation();
     const [updateMachine, { isLoading: isUpdating }] = useUpdateMachineMutation();
     const [deleteMachine, { isLoading: isDeleting }] = useDeleteMachineMutation();
+    const [logAction] = useLogActionMutation();
     const { data: activeConfigData } = useGetActiveConfigQuery();
     const activeLevels = activeConfigData?.data?.levels || [];
 
@@ -65,6 +67,16 @@ const MachineManager = ({ subSectionId, lineId }) => {
                 description: newMachineDescription,
                 criticality: newMachineCriticality
             }).unwrap();
+            logAction({
+                action: "CREATE_STATION",
+                details: {
+                    lineId,
+                    subSectionId,
+                    name: newMachineName,
+                    description: newMachineDescription,
+                    criticality: newMachineCriticality,
+                },
+            });
             toast.success("Station created successfully");
             setNewMachineName("");
             setNewMachineDescription("");
@@ -74,7 +86,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
         }
     };
 
-    const handleDeleteMachine = async (e, machineId) => {
+    const handleDeleteMachine = async (e, machineId, machineName) => {
         e.stopPropagation();
         if (!machineId) {
             toast.error("Invalid machine ID");
@@ -86,6 +98,10 @@ const MachineManager = ({ subSectionId, lineId }) => {
 
         try {
             await deleteMachine(machineId).unwrap();
+            logAction({
+                action: "DELETE_STATION",
+                details: { id: machineId, name: machineName },
+            });
             toast.success("Machine deleted successfully");
         } catch (error) {
             toast.error(error.data?.message || "Failed to delete machine");
@@ -115,6 +131,15 @@ const MachineManager = ({ subSectionId, lineId }) => {
                 description: editDescription,
                 criticality: editCriticality
             }).unwrap();
+            logAction({
+                action: "UPDATE_STATION",
+                details: {
+                    id: editingMachine.id || editingMachine._id,
+                    name: editName,
+                    description: editDescription,
+                    criticality: editCriticality,
+                },
+            });
             toast.success("Machine updated successfully");
             setIsEditDialogOpen(false);
             setEditingMachine(null);
@@ -297,7 +322,7 @@ const MachineManager = ({ subSectionId, lineId }) => {
                                             <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600" onClick={(e) => startEditing(e, machine)}>
                                                 <IconEdit className="h-4 w-4" />
                                             </Button>
-                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600" onClick={(e) => handleDeleteMachine(e, machine.id || machine._id)}>
+                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600" onClick={(e) => handleDeleteMachine(e, machine.id || machine._id, machine.name)}>
                                                 {isDeleting ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconTrash className="h-4 w-4" />}
                                             </Button>
                                         </div>

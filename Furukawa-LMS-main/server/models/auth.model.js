@@ -378,9 +378,9 @@ class User {
                         DROP STATISTICS users.UQ_users_phoneNumber_Filtered;
                     IF EXISTS (SELECT * FROM sys.objects WHERE name = 'UQ_users_phoneNumber_Filtered' AND parent_object_id = OBJECT_ID('users') AND type = 'UQ')
                         ALTER TABLE users DROP CONSTRAINT UQ_users_phoneNumber_Filtered;
+                    IF EXISTS (SELECT * FROM sys.objects WHERE name = 'UQ_users_phoneNumber' AND parent_object_id = OBJECT_ID('users') AND type = 'UQ')
+                        ALTER TABLE users DROP CONSTRAINT UQ_users_phoneNumber;
                 `);
-                
-                try { await executeQuery("ALTER TABLE [users] DROP CONSTRAINT [UQ_users_phoneNumber]"); } catch (e) { }
 
                 // 2. Make column nullable
                 await executeQuery("ALTER TABLE users ALTER COLUMN phoneNumber NVARCHAR(50) NULL");

@@ -7,6 +7,7 @@ import { IconPrinter, IconDownload, IconDeviceFloppy, IconArrowLeft, IconCamera,
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
 import { useGetOnJobTrainingByIdQuery, useUpdateOnJobTrainingMutation } from "@/Redux/AllApi/OnJobTrainingApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Model Name", readOnly = false, onBack }) => {
     const componentRef = useRef();
@@ -16,6 +17,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
     // If ojtId is passed, use it. Otherwise fall back to studentId (legacy/fallback support if needed, but we are moving to ID based)
     const { data: ojtData, isLoading, refetch } = useGetOnJobTrainingByIdQuery(ojtId, { skip: !ojtId });
     const [updateOnJobTraining, { isLoading: isSaving }] = useUpdateOnJobTrainingMutation();
+    const [logAction] = useLogActionMutation();
 
     // Local State
     const [entries, setEntries] = useState(Array(15).fill({}));
@@ -109,6 +111,10 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
     }, [summary.totalMarks, summary.totalMarksObtained, summary.totalPercentage]);
 
     const handlePrint = () => {
+        logAction({
+            action: 'PRINT_ON_JOB_TRAINING_FORM',
+            details: { ojtId, sheetType: "Evaluation Sheet" }
+        }).unwrap().catch((err) => console.error("Failed to log print:", err));
         window.print();
     };
 
@@ -243,7 +249,13 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                     <Button
                         variant="outline"
                         className="gap-2 border-green-600 text-green-600 hover:bg-green-50"
-                        onClick={() => exportToExcel("On Job Training Evaluation Sheet", { id: ojtId })}
+                        onClick={() => {
+                            logAction({
+                                action: 'EXPORT_ON_JOB_TRAINING_EXCEL',
+                                details: { ojtId, sheetType: "Evaluation Sheet" }
+                            }).unwrap().catch((err) => console.error("Failed to log export:", err));
+                            exportToExcel("On Job Training Evaluation Sheet", { id: ojtId });
+                        }}
                     >
                         <IconDownload className="w-4 h-4" />
                         Export

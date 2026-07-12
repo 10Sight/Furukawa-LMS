@@ -30,6 +30,35 @@ const checkOjtApprovedToday = async (userId) => {
     return rows.length > 0;
 };
 
+// Resolves the snapshot fields (identity + status/hierarchy at attempt time) for the actual
+// candidate taking the quiz. Always queries by the candidate's userId — never req.user — since
+// admins/trainers frequently submit attempts on behalf of a candidate.
+const resolveStudentSnapshot = async (userId) => {
+    const snapshot = {
+        studentName: null, studentEmpId: null, studentIsTemporary: 0,
+        studentDeptId: null, studentSectionId: null, studentLineId: null, studentSubSectionId: null
+    };
+    try {
+        const [rows] = await executeQuery(
+            `SELECT fullName, empId, isTemporary, departmentId, sectionId, lineId, subSectionId,
+                    targetDeptId, targetSectionId, targetLineId, targetSubSectionId
+             FROM users WHERE id = ?`,
+            [userId]
+        );
+        if (rows.length > 0) {
+            const u = rows[0];
+            snapshot.studentName = u.fullName || null;
+            snapshot.studentEmpId = u.empId || null;
+            snapshot.studentIsTemporary = u.isTemporary ? 1 : 0;
+            snapshot.studentDeptId = u.departmentId || (u.isTemporary ? u.targetDeptId : null);
+            snapshot.studentSectionId = u.sectionId || (u.isTemporary ? u.targetSectionId : null);
+            snapshot.studentLineId = u.lineId || (u.isTemporary ? u.targetLineId : null);
+            snapshot.studentSubSectionId = u.subSectionId || (u.isTemporary ? u.targetSubSectionId : null);
+        }
+    } catch (e) { /* non-fatal */ }
+    return snapshot;
+};
+
 // Helper for population
 const populateAttempt = async (attempt) => {
     if (!attempt) return null;
@@ -74,15 +103,43 @@ const populateAttempt = async (attempt) => {
                     } catch (e) { /* non-fatal */ }
                 }
                 if (!u) {
-                    return (attempt.studentName || attempt.studentEmpId) ? {
+                    if (!attempt.studentName && !attempt.studentEmpId) return null;
+
+                    let snapDeptName = null, snapSecName = null, snapLineName = null, snapSubSecName = null;
+                    try {
+                        if (attempt.studentDeptId) {
+                            const [r] = await executeQuery("SELECT name FROM departments WHERE id = ?", [attempt.studentDeptId]);
+                            if (r && r.length > 0) snapDeptName = r[0].name;
+                        }
+                        if (attempt.studentSectionId) {
+                            const [r] = await executeQuery("SELECT name FROM [sections] WHERE id = ?", [attempt.studentSectionId]);
+                            if (r && r.length > 0) snapSecName = r[0].name;
+                        }
+                        if (attempt.studentLineId) {
+                            const [r] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [attempt.studentLineId]);
+                            if (r && r.length > 0) snapLineName = r[0].name;
+                        }
+                        if (attempt.studentSubSectionId) {
+                            const [r] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [attempt.studentSubSectionId]);
+                            if (r && r.length > 0) snapSubSecName = r[0].name;
+                        }
+                    } catch (err) {
+                        console.error("Failed to populate snapshot hierarchy names in populateAttempt:", err.message);
+                    }
+
+                    return {
                         id: _origStudentId, _id: _origStudentId,
                         fullName: attempt.studentName || 'Unknown',
                         userName: attempt.studentEmpId || '',
                         empId: attempt.studentEmpId || '',
-                        email: null, departmentId: null, departmentName: null,
-                        sectionId: null, sectionName: null, lineId: null, lineName: null,
-                        subSectionId: null, subSectionName: null, role: null
-                    } : null;
+                        email: null,
+                        isTemporary: !!attempt.studentIsTemporary,
+                        departmentId: attempt.studentDeptId || null, departmentName: snapDeptName,
+                        sectionId: attempt.studentSectionId || null, sectionName: snapSecName,
+                        lineId: attempt.studentLineId || null, lineName: snapLineName,
+                        subSectionId: attempt.studentSubSectionId || null, subSectionName: snapSubSecName,
+                        role: null
+                    };
                 }
                 let deptName = u.department || null;
                 let secName = null;
@@ -219,11 +276,12 @@ export const attemptQuiz = asyncHandler(async (req, res) => {
     const scorePercent = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
     const passed = scorePercent >= (quiz.passingScore || 70);
 
+    const studentSnapshot = await resolveStudentSnapshot(userId);
+
     const attempt = await AttemptedQuiz.create({
         quiz: resolvedQuizId,
         student: userId,
-        studentName: req.user.fullName || null,
-        studentEmpId: req.user.empId || null,
+        ...studentSnapshot,
         answer: answers.map((ans, idx) => ({
             questionId: questions[idx]._id || questions[idx].id,
             selectedOptions: [ans || ""],
@@ -920,29 +978,15 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     const scorePercent = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
     const passed = scorePercent >= (quiz.passingScore || 70);
 
-    // Snapshot student identity so the attempt survives future user deletion or re-import
-    let studentName = null;
-    let studentEmpId = null;
-    try {
-        if (String(userId) === String(req.user.id)) {
-            studentName = req.user.fullName || null;
-            studentEmpId = req.user.empId || null;
-        } else {
-            const [snapshotRows] = await executeQuery(
-                "SELECT fullName, empId FROM users WHERE id = ?", [userId]
-            );
-            if (snapshotRows.length > 0) {
-                studentName = snapshotRows[0].fullName || null;
-                studentEmpId = snapshotRows[0].empId || null;
-            }
-        }
-    } catch (e) { /* non-fatal */ }
+    // Snapshot student identity + status/hierarchy so the attempt survives future promotion,
+    // deletion, or re-import. Always resolved from the actual candidate (userId), since an
+    // admin/trainer submitting on the candidate's behalf must not stamp their own data here.
+    const studentSnapshot = await resolveStudentSnapshot(userId);
 
     const attemptData = {
         quiz: resolvedQuizId,
         student: userId,
-        studentName,
-        studentEmpId,
+        ...studentSnapshot,
         answer: answers.map((ans, idx) => {
             const question = questions[idx];
             const detailedAnswer = detailedAnswers[idx];
@@ -966,8 +1010,8 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     logAudit(req.user.id, "SUBMIT_QUIZ_ATTEMPT", {
         quizId: quiz.id,
         quizTitle: quiz.title,
-        attemptedByName: studentName,
-        attemptedByEmpId: studentEmpId,
+        attemptedByName: studentSnapshot.studentName,
+        attemptedByEmpId: studentSnapshot.studentEmpId,
         scorePercent,
         passed,
         timeTaken: timeTaken || 0,
@@ -1252,7 +1296,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
             COALESCE(u.userName, aq.studentEmpId, '') as studentUserName,
             u.email as studentEmail,
             u.role as studentRole,
-            u.isTemporary as studentIsTemporary,
+            COALESCE(u.isTemporary, aq.studentIsTemporary, 0) as studentIsTemporary,
             u.currentLevel as studentLevel,
             u_hier_resolved.resolvedDeptId as studentDepartmentId,
             u.department as studentDepartmentName,
@@ -1281,10 +1325,10 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
                 COALESCE(u_hier_raw.dId, dept.id) as resolvedDeptId
             FROM (
                 SELECT
-                    COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) as ssId,
-                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) as lId,
-                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) as sId,
-                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) as dId
+                    COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), aq.studentSubSectionId) as ssId,
+                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), aq.studentLineId) as lId,
+                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), aq.studentSectionId) as sId,
+                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), aq.studentDeptId) as dId
             ) u_hier_raw
             OUTER APPLY (
                 SELECT TOP 1 ss.id, ss.lineId as ssLineId 
@@ -1389,7 +1433,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
     }
 
     if (isTemporaryQuery) {
-        sql += " AND u.isTemporary = 1";
+        sql += " AND COALESCE(u.isTemporary, aq.studentIsTemporary, 0) = 1";
     }
 
     if (search) {

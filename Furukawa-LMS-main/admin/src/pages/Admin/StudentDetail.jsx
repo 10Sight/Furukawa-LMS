@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useGetUserByIdQuery } from "@/Redux/AllApi/UserApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetStudentProgressQuery } from "@/Redux/AllApi/ProgressApi";
 import { useGetStudentSubmissionsQuery } from "@/Redux/AllApi/SubmissionApi";
@@ -66,6 +67,18 @@ import { safeDateFormat, displayDate } from "@/utils/dateUtils";
 
 const safeLocaleDate = (dateValue) => {
   return displayDate(dateValue) || "—";
+};
+
+const TAB_VIEW_ACTIONS = {
+  overview: "VIEW_STUDENT_PROFILE",
+  progress: "VIEW_STUDENT_COURSES",
+  submissions: "VIEW_STUDENT_SUBMISSIONS",
+  quizzes: "VIEW_STUDENT_TEST_ATTEMPTS",
+  ojt: "VIEW_STUDENT_OJT_RECORD",
+  observance: "VIEW_STUDENT_OPERATOR_OBSERVANCE",
+  monitoring3: "VIEW_STUDENT_3DAY_MONITORING",
+  monitoring16: "VIEW_STUDENT_16DAY_MONITORING",
+  skillEvaluation: "VIEW_STUDENT_SKILL_EVALUATION",
 };
 
 const StudentDetail = () => {
@@ -134,6 +147,18 @@ const StudentDetail = () => {
   const allDepts = deptListData?.data?.departments || [];
 
   const student = studentData?.data;
+
+  const [logAction] = useLogActionMutation();
+  useEffect(() => {
+    const action = TAB_VIEW_ACTIONS[activeTab];
+    if (!action) return;
+    logAction({
+      action,
+      details: { studentId, studentName: student?.fullName },
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const progressList = progressData?.data || [];
   const submissions = submissionsData?.data || [];
   const attempts = attemptsData?.data || [];

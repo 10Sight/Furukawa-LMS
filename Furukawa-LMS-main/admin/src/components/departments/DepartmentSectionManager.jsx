@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import SectionLineManager from "./SectionLineManager";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const FORM_TYPES = [
     { id: 'standard', label: 'Assembly' },
@@ -91,6 +92,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [createSection, { isLoading: isCreating }] = useCreateSectionMutation();
     const [updateSection, { isLoading: isUpdating }] = useUpdateSectionMutation();
     const [deleteSection, { isLoading: isDeleting }] = useDeleteSectionMutation();
+    const [logAction] = useLogActionMutation();
 
     const [newSectionName, setNewSectionName] = useState("");
     const [newSectionUniCode, setNewSectionUniCode] = useState("");
@@ -153,6 +155,17 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 daily5mFormType: newSectionFormTypes.join(","),
                 tenCycleFormType: newSectionTenCycleFormTypes.join(",")
             }).unwrap();
+            logAction({
+                action: "CREATE_SECTION",
+                details: {
+                    departmentId,
+                    name: newSectionName,
+                    uniCode: newSectionUniCode,
+                    category: newSectionCategory,
+                    daily5mFormType: newSectionFormTypes.join(","),
+                    tenCycleFormType: newSectionTenCycleFormTypes.join(","),
+                },
+            });
             toast.success("Section created successfully");
             setNewSectionName("");
             setNewSectionUniCode("");
@@ -166,7 +179,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
         }
     };
 
-    const handleDeleteSection = async (sectionId) => {
+    const handleDeleteSection = async (sectionId, sectionName) => {
         if (!canDelete) {
             toast.error("You do not have permission to delete sections");
             return;
@@ -177,6 +190,10 @@ const DepartmentSectionManager = ({ departmentId }) => {
 
         try {
             await deleteSection(sectionId).unwrap();
+            logAction({
+                action: "DELETE_SECTION",
+                details: { id: sectionId, name: sectionName },
+            });
             toast.success("Section deleted successfully");
         } catch (error) {
             toast.error(error.data?.message || "Failed to delete section");
@@ -214,6 +231,17 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 daily5mFormType: editFormTypes.join(","),
                 tenCycleFormType: editTenCycleFormTypes.join(",")
             }).unwrap();
+            logAction({
+                action: "UPDATE_SECTION",
+                details: {
+                    id: editingSection.id || editingSection._id,
+                    name: editName,
+                    uniCode: editUniCode,
+                    category: editCategory,
+                    daily5mFormType: editFormTypes.join(","),
+                    tenCycleFormType: editTenCycleFormTypes.join(","),
+                },
+            });
             toast.success("Section updated successfully");
             setIsEditDialogOpen(false);
             setEditingSection(null);
@@ -544,7 +572,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                                         </Button>
                                                                     )}
                                                                     {canDelete && (
-                                                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:bg-red-50" onClick={() => handleDeleteSection(sectionId)}>
+                                                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:bg-red-50" onClick={() => handleDeleteSection(sectionId, section.name)}>
                                                                             {isDeleting ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconTrash className="h-4 w-4" />}
                                                                         </Button>
                                                                     )}

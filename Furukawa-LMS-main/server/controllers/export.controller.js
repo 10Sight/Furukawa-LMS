@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import { pool } from '../db/connectDB.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import logAudit from '../utils/auditLogger.js';
 
 const sendExcel = async (res, filename, columns, rows) => {
   const workbook = new ExcelJS.Workbook();
@@ -250,6 +251,9 @@ export const exportStudents = asyncHandler(async (req, res) => {
     contractorName: s.contractorName || '',
     createdAt: s.createdAt ? new Date(s.createdAt).toISOString() : '',
   }));
+
+  logAudit(req.user?.id, "EXPORT_STUDENTS_LIST", { format, search, status, departmentId, count: rows.length }, { resourceType: "StudentsExport", req })
+    .catch(err => console.error("logAudit(EXPORT_STUDENTS_LIST) failed:", err.message));
 
   const filename = `students_${new Date().toISOString().slice(0, 10)}`;
   if (format === 'pdf') return sendPDF(res, filename, 'Students Export', columns, rows);

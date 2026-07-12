@@ -86,6 +86,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useSelector } from 'react-redux';
 import DepartmentStatusNotifications from "@/components/departments/DepartmentStatusNotifications";
 import { useLazyExportDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const Departments = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -228,6 +229,7 @@ const Departments = () => {
     useRemoveInstructorMutation();
   const [cancelDepartment] = useCancelDepartmentMutation();
   const [triggerExportDepartments, { isFetching: isExportingDepartments }] = useLazyExportDepartmentsQuery();
+  const [logAction] = useLogActionMutation();
 
   const departments = departmentsData?.data?.departments || [];
 
@@ -254,6 +256,13 @@ const Departments = () => {
       }
     }
   }, [searchParams, departments]);
+  useEffect(() => {
+    logAction({
+      action: "VIEW_DEPARTMENTS_LIST",
+      details: { page, searchTerm, statusFilter },
+    });
+  }, [page, searchTerm, statusFilter]);
+
   const totalPages = departmentsData?.data?.totalPages || 1;
   const totalCount = departmentsData?.data?.totalDepartments || 0;
   const instructors = instructorsData?.data?.users || [];
@@ -400,6 +409,17 @@ const Departments = () => {
         courseIds: selectedCourses,
       }).unwrap();
 
+      logAction({
+        action: "CREATE_DEPARTMENT",
+        details: {
+          name: formData.name,
+          uniCode: formData.uniCode,
+          capacity: formData.capacity,
+          status: formData.status,
+          courseIds: selectedCourses,
+        },
+      });
+
       showToast("success", "Department created successfully");
       setIsAddDialogOpen(false);
       resetForm();
@@ -428,6 +448,17 @@ const Departments = () => {
         },
       }).unwrap();
 
+      logAction({
+        action: "UPDATE_DEPARTMENT",
+        details: {
+          id: selectedDepartment.id || selectedDepartment._id,
+          name: formData.name,
+          uniCode: formData.uniCode,
+          status: formData.status,
+          courseIds: selectedCourses,
+        },
+      });
+
       showToast("success", "Department updated successfully");
       setIsEditDialogOpen(false);
       resetForm();
@@ -443,6 +474,13 @@ const Departments = () => {
     if (!canDelete) return;
     try {
       await deleteDepartment(selectedDepartment.id || selectedDepartment._id).unwrap();
+      logAction({
+        action: "DELETE_DEPARTMENT",
+        details: {
+          id: selectedDepartment.id || selectedDepartment._id,
+          name: selectedDepartment.name,
+        },
+      });
       showToast("success", "Department deleted successfully");
       setIsDeleteDialogOpen(false);
       reloadDepartments();
@@ -458,6 +496,14 @@ const Departments = () => {
         departmentId: selectedDepartment.id || selectedDepartment._id,
         instructorId,
       }).unwrap();
+      logAction({
+        action: "ASSIGN_TRAINER_TO_DEPARTMENT",
+        details: {
+          departmentId: selectedDepartment.id || selectedDepartment._id,
+          departmentName: selectedDepartment.name,
+          instructorId,
+        },
+      });
       showToast("success", "Trainer assigned successfully");
       setIsAssignInstructorDialogOpen(false);
       reloadDepartments();
@@ -471,6 +517,13 @@ const Departments = () => {
     if (!canUpdate) return;
     try {
       await removeInstructor(selectedDepartment.id || selectedDepartment._id).unwrap();
+      logAction({
+        action: "REMOVE_TRAINER_FROM_DEPARTMENT",
+        details: {
+          departmentId: selectedDepartment.id || selectedDepartment._id,
+          departmentName: selectedDepartment.name,
+        },
+      });
       showToast("success", "Trainer removed successfully");
       setIsAssignInstructorDialogOpen(false);
       reloadDepartments();
@@ -488,6 +541,15 @@ const Departments = () => {
         id: selectedDepartment.id || selectedDepartment._id,
         reason: cancelReason
       }).unwrap();
+
+      logAction({
+        action: "CANCEL_DEPARTMENT",
+        details: {
+          departmentId: selectedDepartment.id || selectedDepartment._id,
+          departmentName: selectedDepartment.name,
+          reason: cancelReason,
+        },
+      });
 
       showToast("success", "Department cancelled successfully");
       setIsCancelDepartmentDialogOpen(false);
@@ -517,6 +579,15 @@ const Departments = () => {
         studentIds: validStudentIds,
       }).unwrap();
 
+      logAction({
+        action: "ADD_STUDENTS_TO_DEPARTMENT",
+        details: {
+          departmentId: selectedDepartment.id || selectedDepartment._id,
+          departmentName: selectedDepartment.name,
+          studentIds: validStudentIds,
+        },
+      });
+
       showToast("success", "Students added successfully");
       setIsManageStudentsDialogOpen(false);
       setSelectedStudents([]);
@@ -537,6 +608,10 @@ const Departments = () => {
 
     try {
       await removeStudentFromDepartment({ departmentId, studentId }).unwrap();
+      logAction({
+        action: "REMOVE_STUDENT_FROM_DEPARTMENT",
+        details: { departmentId, studentId, studentName },
+      });
       showToast("success", "Student removed successfully");
       reloadDepartments();
 
@@ -960,6 +1035,10 @@ const Departments = () => {
                       search: searchTerm || '',
                       status: statusFilter !== 'ALL' ? statusFilter : ''
                     });
+                    logAction({
+                      action: "EXPORT_DEPARTMENTS",
+                      details: { format: 'excel', search: searchTerm || '', statusFilter },
+                    });
                     const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -984,6 +1063,10 @@ const Departments = () => {
                       format: 'pdf',
                       search: searchTerm || '',
                       status: statusFilter !== 'ALL' ? statusFilter : ''
+                    });
+                    logAction({
+                      action: "EXPORT_DEPARTMENTS",
+                      details: { format: 'pdf', search: searchTerm || '', statusFilter },
                     });
                     const blob = new Blob([data], { type: 'application/pdf' });
                     const url = window.URL.createObjectURL(blob);

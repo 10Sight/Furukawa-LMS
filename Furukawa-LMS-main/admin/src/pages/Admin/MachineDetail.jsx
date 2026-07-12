@@ -26,6 +26,7 @@ import { useGetDepartmentByIdQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
 import { useGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 
 const PAGE_SIZE = 30;
 
@@ -177,11 +178,20 @@ const MachineDetail = () => {
 
     const [assignEmployee] = useAssignEmployeeMutation();
     const [removeEmployee] = useRemoveEmployeeMutation();
+    const [logAction] = useLogActionMutation();
     const [assigningIds, setAssigningIds] = useState({});
     const [removingIds, setRemovingIds] = useState({});
 
     const machine = machineData?.data;
     const lineName = linesData?.data?.find(l => (l.id || l._id) == lineId)?.name || "Line";
+
+    useEffect(() => {
+        if (!machine) return;
+        logAction({
+            action: "VIEW_MACHINE_DETAIL",
+            details: { departmentId, lineId, machineId, machineName: machine.name },
+        });
+    }, [departmentId, lineId, machineId, machine?.name]);
 
     let querySectionId;
     let shouldSkipDeptQuery = !validDepartmentId;
@@ -253,6 +263,10 @@ const MachineDetail = () => {
 
         try {
             await assignEmployee({ machineId, userId }).unwrap();
+            logAction({
+                action: "ASSIGN_OPERATOR_TO_STATION",
+                details: { machineId, machineName: machine.name, userId, userName: operator.fullName },
+            });
             toast.success("Operator assigned successfully");
         } catch (error) {
             toast.error(error.data?.message || "Failed to assign operator");
@@ -289,6 +303,10 @@ const MachineDetail = () => {
 
         try {
             await removeEmployee({ machineId, userId }).unwrap();
+            logAction({
+                action: "REMOVE_OPERATOR_FROM_STATION",
+                details: { machineId, machineName: machine.name, userId, userName: operator?.fullName },
+            });
             toast.success("Operator removed successfully");
         } catch (error) {
             toast.error(error.data?.message || "Failed to remove operator");

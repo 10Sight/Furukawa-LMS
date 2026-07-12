@@ -6,16 +6,26 @@ import SubSectionDetailHeader from "@/components/departments/SubSectionDetailHea
 import MachineManager from "@/components/departments/MachineManager";
 import { useGetSubSectionByIdQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const SubSectionDetail = () => {
     const { departmentId, lineId, subSectionId } = useParams();
     const navigate = useNavigate();
+    const [logAction] = useLogActionMutation();
 
     // Fetch specific sub-section detail including dynamic users
     const { data: subSectionResult, isLoading: subLoading } = useGetSubSectionByIdQuery(subSectionId, {
         skip: !subSectionId || isNaN(subSectionId)
     });
     const subSection = subSectionResult?.data;
+
+    useEffect(() => {
+        if (!subSection) return;
+        logAction({
+            action: "VIEW_SUBSECTION_DETAIL",
+            details: { departmentId, lineId, subSectionId, subSectionName: subSection.name },
+        });
+    }, [departmentId, lineId, subSectionId, subSection?.name]);
 
     if (subLoading) {
         return (

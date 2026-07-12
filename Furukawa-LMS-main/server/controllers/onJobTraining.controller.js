@@ -3,6 +3,7 @@ import os from "os";
 import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiError } from "../utils/ApiError.js";
 import NotificationService from "../services/notification.service.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -96,9 +97,13 @@ export const createOnJobTraining = async (req, res, next) => {
             ojt.subSection = ojt.subSection ? { id: ojt.subSection, name: ojt.subSectionName } : null;
             ojt.machine = ojt.machine ? { id: ojt.machine, name: ojt.machineName, machineName: ojt.machineDisplayName } : null;
 
-            delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName; 
+            delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName;
             delete ojt.machineName; delete ojt.machineDisplayName;
         }
+
+        logAudit(req.user?.id, "CREATE_ON_JOB_TRAINING", { studentId: userId, departmentId, sectionId, lineId },
+            { resourceType: "OnJobTraining", resourceId: insertedId, req }
+        ).catch(err => console.error("logAudit(CREATE_ON_JOB_TRAINING) failed:", err.message));
 
         res.status(201).json({
             success: true,
@@ -162,10 +167,14 @@ export const getStudentOnJobTrainings = async (req, res, next) => {
             ojt.subSection = ojt.subSection ? { id: ojt.subSection, name: ojt.subSectionName } : null;
             ojt.machine = ojt.machine ? { id: ojt.machine, name: ojt.machineName, machineName: ojt.machineDisplayName } : null;
             
-            delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName; 
+            delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName;
             delete ojt.machineName; delete ojt.machineDisplayName;
             return ojt;
         });
+
+        logAudit(req.user?.id, "VIEW_ON_JOB_TRAINING_LIST", { studentId: userId, count: formatted.length },
+            { resourceType: "OnJobTraining", req }
+        ).catch(err => console.error("logAudit(VIEW_ON_JOB_TRAINING_LIST) failed:", err.message));
 
         res.status(200).json({
             success: true,
@@ -227,9 +236,13 @@ export const getOnJobTrainingById = async (req, res, next) => {
         ojt.creatorName = ojt.creatorName || null;
         ojt.approverName = ojt.approverName || null;
 
-        delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName; 
+        delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName;
         delete ojt.machineName; delete ojt.machineDisplayName;
         delete ojt.studentName; delete ojt.studentEmail; delete ojt.studentAvatar;
+
+        logAudit(req.user?.id, "VIEW_ON_JOB_TRAINING", { ojtId: id, studentId: ojt.student?.id || null, trainingTopic: ojt.trainingTopic || ojt.name },
+            { resourceType: "OnJobTraining", resourceId: id, req }
+        ).catch(err => console.error("logAudit(VIEW_ON_JOB_TRAINING) failed:", err.message));
 
         res.status(200).json({
             success: true,
@@ -310,10 +323,15 @@ export const getOnJobTrainingByShareToken = async (req, res, next) => {
         ojt.creatorName = ojt.creatorName || null;
         ojt.approverName = ojt.approverName || null;
 
+        const ojtId = ojt.id;
         delete ojt.id; delete ojt._id; delete ojt.shareToken;
         delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName;
         delete ojt.machineName; delete ojt.machineDisplayName;
         delete ojt.studentName; delete ojt.studentEmail; delete ojt.studentAvatar;
+
+        logAudit(null, "VIEW_ON_JOB_TRAINING_PUBLIC", { publicToken: token },
+            { resourceType: "OnJobTraining", resourceId: ojtId, req }
+        ).catch(err => console.error("logAudit(VIEW_ON_JOB_TRAINING_PUBLIC) failed:", err.message));
 
         res.status(200).json({
             success: true,
@@ -391,10 +409,14 @@ export const getAllOnJobTrainings = async (req, res, next) => {
             ojt.creatorName = ojt.creatorName || null;
             ojt.approverName = ojt.approverName || null;
             
-            delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName; 
+            delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName;
             delete ojt.machineName; delete ojt.machineDisplayName; delete ojt.studentName; delete ojt.studentEmpId;
             return ojt;
         });
+
+        logAudit(req.user?.id, "VIEW_ON_JOB_TRAINING_LIST", { departmentId, sectionId, lineId, subSectionId, count: formatted.length },
+            { resourceType: "OnJobTraining", req }
+        ).catch(err => console.error("logAudit(VIEW_ON_JOB_TRAINING_LIST) failed:", err.message));
 
         res.status(200).json({
             success: true,
@@ -581,6 +603,10 @@ export const updateOnJobTraining = async (req, res, next) => {
         }
         // ----------------------------------
 
+        logAudit(req.user?.id, "UPDATE_ON_JOB_TRAINING", { ojtId: id, totalMarksObtained, result, remarks },
+            { resourceType: "OnJobTraining", resourceId: id, req }
+        ).catch(err => console.error("logAudit(UPDATE_ON_JOB_TRAINING) failed:", err.message));
+
         res.status(200).json({
             success: true,
             message: "OJT updated successfully",
@@ -605,6 +631,10 @@ export const deleteOnJobTraining = async (req, res, next) => {
         if (rows.length === 0) return next(new ApiError("OJT record not found", 404));
 
         await executeQuery("DELETE FROM on_job_trainings WHERE id = ?", [id]);
+
+        logAudit(req.user?.id, "DELETE_ON_JOB_TRAINING", { id },
+            { resourceType: "OnJobTraining", resourceId: id, req }
+        ).catch(err => console.error("logAudit(DELETE_ON_JOB_TRAINING) failed:", err.message));
 
         res.status(200).json({
             success: true,

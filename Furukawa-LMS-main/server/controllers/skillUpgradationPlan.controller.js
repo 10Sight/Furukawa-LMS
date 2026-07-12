@@ -4,6 +4,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Get skill upgradation plan by department
 export const getSkillUpgradationPlanByDepartment = asyncHandler(async (req, res) => {
@@ -16,6 +17,11 @@ export const getSkillUpgradationPlanByDepartment = asyncHandler(async (req, res)
         sectionId ? parseInt(sectionId) : null,
         year ? parseInt(year) : null
     );
+
+    logAudit(req.user?.id, "VIEW_SKILL_UPGRADATION_PLAN", { departmentId, sectionId, year },
+        { resourceType: "SkillUpgradationPlan", resourceId: plan?.id || departmentId, req }
+    ).catch(err => console.error("logAudit(VIEW_SKILL_UPGRADATION_PLAN) failed:", err.message));
+
     if (!plan) {
         return res.status(200).json(
             new ApiResponse(200, { isNew: true, departmentId, sectionId, year, selectedLines: [], tableData: {} }, "No skill upgradation plan found")
@@ -34,6 +40,12 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
 
     const { sectionId, year, selectedLines, tableData } = req.body || {};
 
+    const existing = await SkillUpgradationPlan.findByHierarchy(
+        parseInt(departmentId),
+        sectionId ? parseInt(sectionId) : null,
+        year ? parseInt(year) : null
+    );
+
     const saved = await SkillUpgradationPlan.upsert({
         departmentId: parseInt(departmentId),
         sectionId: sectionId ? parseInt(sectionId) : null,
@@ -42,6 +54,12 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
         tableData: tableData && typeof tableData === "object" ? tableData : {},
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
     });
+
+    const action = existing ? "SAVE_SKILL_UPGRADATION_PLAN" : "CREATE_SKILL_UPGRADATION_PLAN";
+    const rowCount = Object.keys(saved.tableData || {}).filter(k => k !== "__removedUserIds").length;
+    logAudit(req.user?.id, action, { departmentId, sectionId, year, rowCount },
+        { resourceType: "SkillUpgradationPlan", resourceId: saved.id, req }
+    ).catch(err => console.error(`logAudit(${action}) failed:`, err.message));
 
     // Trigger Email Notification
     NotificationService.sendFormReport("Skill Upgradation Sheet", departmentId, { sectionId, year, selectedLines, tableData })
@@ -102,6 +120,10 @@ export const deleteSkillUpgradationPlan = asyncHandler(async (req, res) => {
     const deleted = await SkillUpgradationPlan.delete(id);
     if (!deleted) throw new ApiError("Skill upgradation plan not found", 404);
 
+    logAudit(req.user?.id, "DELETE_SKILL_UPGRADATION_PLAN", { id },
+        { resourceType: "SkillUpgradationPlan", resourceId: id, req }
+    ).catch(err => console.error("logAudit(DELETE_SKILL_UPGRADATION_PLAN) failed:", err.message));
+
     return res.status(200).json(
         new ApiResponse(200, { id }, "Skill upgradation plan deleted successfully")
     );
@@ -114,6 +136,11 @@ export const listSkillUpgradationPlans = asyncHandler(async (req, res) => {
         departmentId ? parseInt(departmentId) : null,
         sectionId ? parseInt(sectionId) : null
     );
+
+    logAudit(req.user?.id, "VIEW_SKILL_UPGRADATION_PLANS_LIST", { departmentId, sectionId },
+        { resourceType: "SkillUpgradationPlan", req }
+    ).catch(err => console.error("logAudit(VIEW_SKILL_UPGRADATION_PLANS_LIST) failed:", err.message));
+
     return res.status(200).json(
         new ApiResponse(200, plans, "Skill upgradation plans list fetched successfully")
     );

@@ -134,15 +134,21 @@ class MultiSkillingPlan {
         const existing = await this.findByHierarchy(departmentId, sectionId, year);
 
         if (existing) {
+            const incomingIsEmpty = !tableData || Object.keys(tableData).length === 0;
+            const finalTableData = incomingIsEmpty ? existing.tableData : tableData;
+            const finalSelectedLines = (!selectedLines || selectedLines.length === 0) && incomingIsEmpty
+                ? existing.selectedLines
+                : selectedLines;
+
             await executeQuery(
                 `UPDATE multi_skilling_plans
                  SET selectedLines = ?, tableData = ?, updatedBy = ?, updatedAt = GETDATE()
-                 WHERE departmentId = ? 
+                 WHERE departmentId = ?
                    AND (sectionId = ? OR (sectionId IS NULL AND ? IS NULL))
                    AND (year = ? OR (year IS NULL AND ? IS NULL))`,
                 [
-                    JSON.stringify(selectedLines || []),
-                    JSON.stringify(tableData || {}),
+                    JSON.stringify(finalSelectedLines || []),
+                    JSON.stringify(finalTableData || {}),
                     userName || "",
                     departmentId,
                     sectionId,

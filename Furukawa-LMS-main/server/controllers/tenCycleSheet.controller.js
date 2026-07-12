@@ -7,6 +7,7 @@ import EmailConfiguration from "../models/emailConfiguration.model.js";
 import sendMail from "../utils/mail.util.js";
 import emailTemplates from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
+import logAudit from "../utils/auditLogger.js";
 
 export const listTenCycleSheets = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId } = req.query;
@@ -66,6 +67,10 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
         status: "Draft",
         createdBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
     });
+
+    logAudit(req.user?.id, "CREATE_TEN_CYCLE_SHEET", { sheetId: sheet.id, departmentId, sectionId, lineId, formType, status: "Draft" },
+        { resourceType: "TenCycleSheet", resourceId: sheet.id, req }
+    ).catch(err => console.error("logAudit(CREATE_TEN_CYCLE_SHEET) failed:", err.message));
 
     return res.status(201).json(new ApiResponse(201, sheet, "10 cycle sheet created successfully"));
 });
@@ -166,6 +171,11 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
         }
     }
 
+    logAudit(req.user?.id, isSubmit ? "SUBMIT_TEN_CYCLE_SHEET" : "SAVE_TEN_CYCLE_SHEET_DRAFT",
+        { sheetId: id, formType, entriesCount: Array.isArray(updated.entries) ? updated.entries.length : 0, qualityEngineer, dojoEngineer },
+        { resourceType: "TenCycleSheet", resourceId: id, req }
+    ).catch(err => console.error(`logAudit(${isSubmit ? "SUBMIT_TEN_CYCLE_SHEET" : "SAVE_TEN_CYCLE_SHEET_DRAFT"}) failed:`, err.message));
+
     return res.status(200).json(new ApiResponse(200, updated, isSubmit ? "10 cycle sheet submitted successfully" : "10 cycle sheet updated successfully"));
 });
 
@@ -196,6 +206,17 @@ export const approveTenCycleSheet = asyncHandler(async (req, res) => {
         updatedBy: userName
     });
 
+    const outcome = action === 'APPROVE' ? 'Approved' : 'Rejected';
+    if (role === 'VERIFY') {
+        logAudit(req.user?.id, "VERIFY_TEN_CYCLE_SHEET", { sheetId: id, outcome, verifiedBy: userName },
+            { resourceType: "TenCycleSheet", resourceId: id, req }
+        ).catch(err => console.error("logAudit(VERIFY_TEN_CYCLE_SHEET) failed:", err.message));
+    } else {
+        logAudit(req.user?.id, "APPROVE_TEN_CYCLE_SHEET", { sheetId: id, outcome, reviewedBy: userName },
+            { resourceType: "TenCycleSheet", resourceId: id, req }
+        ).catch(err => console.error("logAudit(APPROVE_TEN_CYCLE_SHEET) failed:", err.message));
+    }
+
     return res.status(200).json(new ApiResponse(200, updated, `10-Cycle sheet ${action.toLowerCase()}ed successfully`));
 });
 
@@ -205,5 +226,11 @@ export const deleteTenCycleSheet = asyncHandler(async (req, res) => {
     if (!existing) throw new ApiError("10 cycle sheet not found", 404);
 
     await TenCycleSheet.delete(id);
+
+    logAudit(req.user?.id, "DELETE_TEN_CYCLE_SHEET",
+        { sheetId: id, departmentId: existing.departmentId, formType: existing.formType, deletedBy: req.user?.fullName || req.user?.name || req.user?.userName || "" },
+        { resourceType: "TenCycleSheet", resourceId: id, req }
+    ).catch(err => console.error("logAudit(DELETE_TEN_CYCLE_SHEET) failed:", err.message));
+
     return res.status(200).json(new ApiResponse(200, {}, "10 cycle sheet deleted successfully"));
 });

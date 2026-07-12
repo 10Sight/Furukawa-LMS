@@ -2,6 +2,7 @@ import Daily5MRecord from "../models/daily5MRecord.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import NotificationService from "../services/notification.service.js";
 import { executeQuery } from "../db/mssqlHelper.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Create a new record
 export const create5MRecord = async (req, res, next) => {
@@ -11,6 +12,21 @@ export const create5MRecord = async (req, res, next) => {
 
         if (!departmentId || !date) {
             return next(new ApiError("Department and Date are required", 400));
+        }
+
+        // Fetch the previous state of this session (if any) so we can detect row-level
+        // approve/reject transitions caused by this save.
+        let previousRecordData = null;
+        if (sessionId) {
+            const [existingRows] = await executeQuery(
+                `SELECT TOP 1 recordData FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt DESC`,
+                [sessionId]
+            );
+            if (existingRows && existingRows.length > 0 && existingRows[0].recordData) {
+                previousRecordData = typeof existingRows[0].recordData === 'string'
+                    ? JSON.parse(existingRows[0].recordData)
+                    : existingRows[0].recordData;
+            }
         }
 
         const newRecord = await Daily5MRecord.upsert({
@@ -25,6 +41,25 @@ export const create5MRecord = async (req, res, next) => {
             adminRemarks,
             submittedBy: userId
         });
+
+        if (previousRecordData && recordData) {
+            for (let i = 0; i < 20; i++) {
+                const prevStatus = previousRecordData[`rec_${i}_RowStatus`];
+                const newStatus = recordData[`rec_${i}_RowStatus`];
+                if (newStatus && newStatus !== prevStatus && (newStatus === 'APPROVED' || newStatus === 'REJECTED')) {
+                    logAudit(userId, "ROW_CHECK_DAILY_5M", {
+                        rowIndex: i,
+                        outcome: newStatus,
+                        actionBy: recordData[`rec_${i}_ActionBy`] || null
+                    }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
+                        .catch(err => console.error("logAudit(ROW_CHECK_DAILY_5M) failed:", err.message));
+                }
+            }
+        }
+
+        const auditAction = sessionId ? "UPDATE_DAILY_5M_RECORD" : "CREATE_DAILY_5M_RECORD";
+        logAudit(userId, auditAction, { departmentId, sectionId, formType, date, shift }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
+            .catch(err => console.error(`logAudit(${auditAction}) failed:`, err.message));
 
         /* Automatic report sending removed as per user request to move to a Save -> Preview -> Submit flow */
         /*
@@ -75,6 +110,9 @@ export const get5MRecords = async (req, res, next) => {
         const { records, totalCount } = await Daily5MRecord.findAll(filters);
         const limitInt = parseInt(limit) || 50;
 
+        logAudit(userId, "VIEW_DAILY_5M_RECORDS_LIST", { departmentId, sectionId, startDate, endDate, formType }, { resourceType: "DAILY_5M_RECORD", req })
+            .catch(err => console.error("logAudit(VIEW_DAILY_5M_RECORDS_LIST) failed:", err.message));
+
         res.status(200).json({
             success: true,
             message: "Records fetched successfully",
@@ -100,6 +138,9 @@ export const get5MRecordById = async (req, res, next) => {
         if (!record) {
             return next(new ApiError("Record not found", 404));
         }
+
+        logAudit(req.user?.id, "VIEW_DAILY_5M_RECORD_DETAILS", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
+            .catch(err => console.error("logAudit(VIEW_DAILY_5M_RECORD_DETAILS) failed:", err.message));
 
         res.status(200).json({
             success: true,
@@ -158,6 +199,9 @@ export const delete5MRecord = async (req, res, next) => {
             return next(new ApiError("Record not found or could not be deleted", 404));
         }
 
+        logAudit(req.user?.id, "DELETE_DAILY_5M_RECORD", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
+            .catch(err => console.error("logAudit(DELETE_DAILY_5M_RECORD) failed:", err.message));
+
         res.status(200).json({
             success: true,
             message: "Record deleted successfully"
@@ -179,6 +223,9 @@ export const submit5MRecord = async (req, res, next) => {
 
         // Update record status to 'SUBMITTED' in database
         await Daily5MRecord.updateStatus(id, 'SUBMITTED', req.user.id);
+
+        logAudit(req.user.id, "SUBMIT_DAILY_5M_RECORD", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
+            .catch(err => console.error("logAudit(SUBMIT_DAILY_5M_RECORD) failed:", err.message));
 
         res.status(200).json({
             success: true,
@@ -211,6 +258,9 @@ export const send5MEmail = async (req, res, next) => {
             recordId: record.id
         });
 
+        logAudit(req.user?.id, "SEND_DAILY_5M_EMAIL", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
+            .catch(err => console.error("logAudit(SEND_DAILY_5M_EMAIL) failed:", err.message));
+
         res.status(200).json({
             success: true,
             message: "Email notification sent successfully"
@@ -232,6 +282,9 @@ export const approve5MRecord = async (req, res, next) => {
             return next(new ApiError("Record not found", 404));
         }
 
+        logAudit(userId, "APPROVE_DAILY_5M_RECORD", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
+            .catch(err => console.error("logAudit(APPROVE_DAILY_5M_RECORD) failed:", err.message));
+
         res.status(200).json({
             success: true,
             message: "Record approved successfully"
@@ -252,6 +305,9 @@ export const decline5MRecord = async (req, res, next) => {
         if (!success) {
             return next(new ApiError("Record not found", 404));
         }
+
+        logAudit(userId, "DECLINE_DAILY_5M_RECORD", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
+            .catch(err => console.error("logAudit(DECLINE_DAILY_5M_RECORD) failed:", err.message));
 
         res.status(200).json({
             success: true,

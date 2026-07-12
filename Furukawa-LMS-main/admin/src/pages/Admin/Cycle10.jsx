@@ -15,6 +15,7 @@ import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesByLineQuery } from "@/Redux/AllApi/MachineApi";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import {
     Dialog,
     DialogContent,
@@ -45,6 +46,8 @@ const Cycle10 = () => {
     const canRead = isAdmin || user?.permissions?.includes('ten_cycle:read') || user?.permissions?.includes('ten_cycle:manage');
     const canUpdate = isAdmin || user?.permissions?.includes('ten_cycle:update') || user?.permissions?.includes('ten_cycle:manage');
     const canDelete = isAdmin || user?.permissions?.includes('ten_cycle:delete') || user?.permissions?.includes('ten_cycle:manage');
+
+    const [logAction] = useLogActionMutation();
 
     const [activeTab, setActiveTab] = useState("monitoring");
     const [isEditMode, setIsEditMode] = useState(false);
@@ -224,6 +227,15 @@ const Cycle10 = () => {
             const response = await axiosInstance.get(url);
             if (response.data.success) {
                 setSheetList(response.data.data || []);
+                logAction({
+                    action: "VIEW_TEN_CYCLE_SHEETS_MONITORING",
+                    details: {
+                        departmentId: selectedDepartmentFilter || null,
+                        sectionId: selectedSectionFilter || null,
+                        lineId: selectedLineFilter || null,
+                        subSectionId: selectedSubSectionFilter || null,
+                    }
+                }).catch(() => {});
             }
         } catch (error) {
             toast.error("Failed to load 10 cycle sheets");
@@ -259,6 +271,17 @@ const Cycle10 = () => {
                 setCurrentDepartmentName(data.departmentName || "");
                 setIsEditMode(editMode);
                 setActiveTab('sheet');
+
+                logAction({
+                    action: "VIEW_TEN_CYCLE_SHEET",
+                    details: {
+                        sheetId: data.id,
+                        departmentId: data.departmentId || null,
+                        lineId: data.lineId || null,
+                        formType: data.formType,
+                        status: data.status,
+                    }
+                }).catch(() => {});
             }
         } catch (error) {
             toast.error("Failed to load selected sheet");
@@ -1498,7 +1521,13 @@ const Cycle10 = () => {
                                         <Button
                                             variant="outline"
                                             className="border-green-600 text-green-600 hover:bg-green-50"
-                                            onClick={() => exportToExcel("10-Cycle Check Sheet", { id: selectedSheetId })}
+                                            onClick={() => {
+                                                logAction({
+                                                    action: "EXPORT_TEN_CYCLE_SHEET_EXCEL",
+                                                    details: { sheetId: selectedSheetId, formType }
+                                                }).catch(() => {});
+                                                exportToExcel("10-Cycle Check Sheet", { id: selectedSheetId });
+                                            }}
                                         >
                                             <Download className="mr-2 h-4 w-4" />
                                             Export

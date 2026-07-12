@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import axiosInstance from "@/Helper/axiosInstance";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { toast } from "sonner";
 import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus } from "@tabler/icons-react";
 import {
@@ -104,6 +105,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         };
     }, [authUser, isAdmin, isReadOnly]);
 
+    const [logAction] = useLogActionMutation();
     const [searchText, setSearchText] = useState("");
     const [rows, setRows] = useState([]);
     const [hasLoaded, setHasLoaded] = useState(false);
@@ -140,7 +142,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
     // Initialize rows when both students and plan data are ready
     useEffect(() => {
-        if (isLoadingPlan || isLoadingStudents || hasLoaded) return;
+        if (isLoadingPlan || hasLoaded || (students.length === 0 && Object.keys(tableData || {}).length === 0)) return;
 
         const savedRemovedIds = new Set(tableData.__removedUserIds || []);
         const finalRows = [];
@@ -205,7 +207,27 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         setRemovedUserIds(savedRemovedIds);
         setRows(finalRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, isLoadingStudents, hasLoaded]);
+    }, [tableData, students, isLoadingPlan, hasLoaded]);
+
+    // Safeguard: update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
+    useEffect(() => {
+        if (students.length > 0 && hasLoaded) {
+            setRows(prev => prev.map(row => {
+                if (!row.userId) return row;
+                const student = students.find(s => String(s._id || s.id) === String(row.userId));
+                if (student) {
+                    return {
+                        ...row,
+                        userName: student.fullName || student.name || row.userName,
+                        cardNo: student.cardNo || student.username || student.empId || row.cardNo,
+                        modelLine: row.modelLine || student.lineName || "",
+                        station: row.station || student.subSectionName || "",
+                    };
+                }
+                return row;
+            }));
+        }
+    }, [students, hasLoaded]);
 
     useEffect(() => {
         if (!departmentId) return;
@@ -340,6 +362,10 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     };
 
     const handlePrint = () => {
+        logAction({
+            action: "PRINT_SKILL_UPGRADATION_PLAN",
+            details: { departmentId, sectionId, year }
+        }).catch(() => {});
         window.print();
     };
 

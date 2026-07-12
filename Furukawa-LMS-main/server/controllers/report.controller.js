@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 import HeadcountReport from '../models/headcountReport.model.js';
 import UserHierarchySnapshot from '../models/userHierarchySnapshot.model.js';
 import Mail from '../models/mail.model.js';
+import logAudit from '../utils/auditLogger.js';
 
 /**
  * Controller to handle manual Excel report exports for configured sheets.
@@ -85,13 +86,17 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             break;
 
         case "Operator Observance Check Sheet":
-            const [ooRows] = await executeQuery(`SELECT * FROM operator_observances WHERE id = ?`, [id]);
+            const [ooRows] = await executeQuery(`SELECT * FROM operator_observances WHERE studentId = ?`, [id]);
             if (ooRows.length > 0) {
                 formData = {
                     ...ooRows[0],
                     observanceData: JSON.parse(ooRows[0].observanceData || "{}")
                 };
             }
+            logAudit(req.user?.id, "EXPORT_OPERATOR_OBSERVANCE_SHEET",
+                { studentId: id },
+                { resourceType: "OperatorObservance", resourceId: id, req }
+            ).catch(err => console.error("logAudit(EXPORT_OPERATOR_OBSERVANCE_SHEET) failed:", err.message));
             break;
 
         case "3-Day Monitoring Sheet":

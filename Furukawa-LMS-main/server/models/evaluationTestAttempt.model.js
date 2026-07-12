@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 // Mirrors normalizeContentStructure from EvaluationTestAttemptPage.jsx
 const normalizeContentStructure = (structure, fallbackTitle) => {
@@ -101,6 +102,29 @@ class EvaluationTestAttempt {
         try {
             await executeQuery(query);
             logger.info("MSSQL evaluation_test_attempts table initialized successfully.");
+
+            // Snapshot of trainee status/hierarchy at attempt time, so the record survives
+            // promotion (isTemporary flips to 0) or permanent user deletion.
+            await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentIsTemporary', 'BIT DEFAULT 0');
+            await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentDeptId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentSectionId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentLineId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentSubSectionId', 'INT NULL');
+
+            // One-time backfill for rows created before the snapshot columns existed.
+            // Only touches rows still missing a snapshot, so it's a cheap no-op on subsequent boots.
+            await executeQuery(`
+                UPDATE a SET
+                    studentIsTemporary = COALESCE(u.isTemporary, 0),
+                    studentDeptId = COALESCE(u.departmentId, CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END),
+                    studentSectionId = COALESCE(u.sectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END),
+                    studentLineId = COALESCE(u.lineId, CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END),
+                    studentSubSectionId = COALESCE(u.subSectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)
+                FROM evaluation_test_attempts a
+                JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
+                WHERE a.studentDeptId IS NULL AND a.studentSectionId IS NULL
+                  AND a.studentLineId IS NULL AND a.studentSubSectionId IS NULL
+            `);
         } catch (error) {
             logger.error("Failed to initialize evaluation_test_attempts table", error);
             throw error;
@@ -169,11 +193,27 @@ class EvaluationTestAttempt {
 
     static async create(data) {
         let resolvedUserId = null;
+        let studentIsTemporary = 0;
+        let studentDeptId = null;
+        let studentSectionId = null;
+        let studentLineId = null;
+        let studentSubSectionId = null;
         if (data.employeeNo) {
             try {
-                const [userRows] = await executeQuery("SELECT id FROM users WHERE empId = ? OR userName = ?", [data.employeeNo, data.employeeNo.toLowerCase()]);
+                const [userRows] = await executeQuery(
+                    `SELECT id, isTemporary, departmentId, sectionId, lineId, subSectionId,
+                            targetDeptId, targetSectionId, targetLineId, targetSubSectionId
+                     FROM users WHERE empId = ? OR userName = ?`,
+                    [data.employeeNo, data.employeeNo.toLowerCase()]
+                );
                 if (userRows && userRows.length > 0) {
-                    resolvedUserId = userRows[0].id;
+                    const u = userRows[0];
+                    resolvedUserId = u.id;
+                    studentIsTemporary = u.isTemporary ? 1 : 0;
+                    studentDeptId = u.departmentId || (u.isTemporary ? u.targetDeptId : null);
+                    studentSectionId = u.sectionId || (u.isTemporary ? u.targetSectionId : null);
+                    studentLineId = u.lineId || (u.isTemporary ? u.targetLineId : null);
+                    studentSubSectionId = u.subSectionId || (u.isTemporary ? u.targetSubSectionId : null);
                 }
             } catch (e) {
                 logger.error("Failed to resolve trainee userId in EvaluationTestAttempt.create", e);
@@ -181,9 +221,12 @@ class EvaluationTestAttempt {
         }
 
         const query = `
-            INSERT INTO evaluation_test_attempts (testId, traineeName, employeeNo, educatorName, attemptData, createdBy, userId, isHandoverEligible, passedDate)
+            INSERT INTO evaluation_test_attempts (
+                testId, traineeName, employeeNo, educatorName, attemptData, createdBy, userId, isHandoverEligible, passedDate,
+                studentIsTemporary, studentDeptId, studentSectionId, studentLineId, studentSubSectionId
+            )
             OUTPUT INSERTED.*
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const attemptDataStr = JSON.stringify(data.attemptData || {});
         const [rows] = await executeQuery(query, [
@@ -195,7 +238,12 @@ class EvaluationTestAttempt {
             data.createdBy,
             resolvedUserId,
             data.isHandoverEligible ? 1 : 0,
-            data.passedDate || null
+            data.passedDate || null,
+            studentIsTemporary,
+            studentDeptId,
+            studentSectionId,
+            studentLineId,
+            studentSubSectionId
         ]);
         return new EvaluationTestAttempt(rows[0]);
     }
@@ -203,7 +251,7 @@ class EvaluationTestAttempt {
     static async findById(id) {
         const query = `
             SELECT a.*, t.title as testTitle, t.performDateCount, t.processType, t.contentStructure,
-                   u.userName, u.isTemporary
+                   u.userName, COALESCE(u.isTemporary, a.studentIsTemporary, 0) as isTemporary
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
             LEFT JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
@@ -243,20 +291,20 @@ class EvaluationTestAttempt {
     static async findAll() {
         const query = `
             SELECT a.*, t.title as testTitle, t.performDateCount,
-                   COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) as departmentId,
-                   COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) as sectionId,
-                   COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) as lineId,
-                   COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) as subSectionId,
-                   u.isTemporary, u.userName,
+                   COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
+                   COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
+                   COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,
+                   COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), a.studentSubSectionId) as subSectionId,
+                   COALESCE(u.isTemporary, a.studentIsTemporary, 0) as isTemporary, u.userName,
                    dept.name as departmentName, sec.name as sectionName,
                    l.name as lineName, ss.name as subSectionName
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
             LEFT JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
-            LEFT JOIN departments dept ON COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) = dept.id
-            LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) = sec.id
-            LEFT JOIN [lines] l ON COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) = l.id
-            LEFT JOIN sub_sections ss ON COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) = ss.id
+            LEFT JOIN departments dept ON COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) = dept.id
+            LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) = sec.id
+            LEFT JOIN [lines] l ON COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) = l.id
+            LEFT JOIN sub_sections ss ON COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), a.studentSubSectionId) = ss.id
             ORDER BY a.createdAt DESC
         `;
         const [rows] = await executeQuery(query);
@@ -275,20 +323,20 @@ class EvaluationTestAttempt {
     static async findByStudentId(studentId) {
         const query = `
             SELECT a.*, t.title as testTitle, t.performDateCount,
-                   COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) as departmentId,
-                   COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) as sectionId,
-                   COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) as lineId,
-                   COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) as subSectionId,
-                   u.isTemporary, u.userName,
+                   COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
+                   COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
+                   COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,
+                   COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), a.studentSubSectionId) as subSectionId,
+                   COALESCE(u.isTemporary, a.studentIsTemporary, 0) as isTemporary, u.userName,
                    dept.name as departmentName, sec.name as sectionName,
                    l.name as lineName, ss.name as subSectionName
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
             LEFT JOIN users u ON a.userId = u.id
-            LEFT JOIN departments dept ON COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END)) = dept.id
-            LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END)) = sec.id
-            LEFT JOIN [lines] l ON COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END)) = l.id
-            LEFT JOIN sub_sections ss ON COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)) = ss.id
+            LEFT JOIN departments dept ON COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) = dept.id
+            LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) = sec.id
+            LEFT JOIN [lines] l ON COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) = l.id
+            LEFT JOIN sub_sections ss ON COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), a.studentSubSectionId) = ss.id
             WHERE a.userId = ? OR (a.userId IS NULL AND a.employeeNo = (SELECT empId FROM users WHERE id = ?))
             ORDER BY a.createdAt DESC
         `;

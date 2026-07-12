@@ -335,9 +335,10 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             if (trainee && trainee.departmentId) {
                 const departmentId = trainee.departmentId;
                 const sectionId = trainee.sectionId || null;
+                const currentYear = new Date().getFullYear();
 
-                // 2. Load existing Skill Upgradation Plan
-                const plan = await SkillUpgradationPlan.findByHierarchy(departmentId, sectionId);
+                // 2. Load existing Skill Upgradation Plan for the current year
+                const plan = await SkillUpgradationPlan.findByHierarchy(departmentId, sectionId, currentYear);
                 let tableData = {};
                 let selectedLines = [];
 
@@ -355,6 +356,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
                     await SkillUpgradationPlan.upsert({
                         departmentId,
                         sectionId,
+                        year: currentYear,
                         selectedLines,
                         tableData,
                         userName: "System (Auto-Enroll)"

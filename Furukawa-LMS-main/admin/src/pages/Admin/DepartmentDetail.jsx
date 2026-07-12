@@ -41,6 +41,7 @@ import {
 } from "@tabler/icons-react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const DepartmentDetail = () => {
   const { departmentId } = useParams();
@@ -49,6 +50,7 @@ const DepartmentDetail = () => {
   
   const queryParams = useMemo(() => new URLSearchParams(search), [search]);
   const [activeTab, setActiveTab] = useState(queryParams.get("tab") || "overview");
+  const [logAction] = useLogActionMutation();
 
   // Pagination states
   const [progressPage, setProgressPage] = useState(1);
@@ -123,6 +125,14 @@ const DepartmentDetail = () => {
 
   const isLoading = departmentLoading;
   const anyError = departmentError || progressError || submissionsError || attemptsError;
+
+  React.useEffect(() => {
+    if (!department) return;
+    logAction({
+      action: "VIEW_DEPARTMENT_DETAIL",
+      details: { departmentId, departmentName: department.name, activeTab },
+    });
+  }, [departmentId, department?.name, activeTab]);
 
   const handleRefreshAll = () => {
     refetchDepartment();

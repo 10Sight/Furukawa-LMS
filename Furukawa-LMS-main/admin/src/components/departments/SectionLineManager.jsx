@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import UserAutocomplete from '../common/UserAutocomplete';
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const TEN_CYCLE_FORM_TYPES = [
     { id: 'form1', label: 'Logical (Form 1)' },
@@ -42,6 +43,7 @@ const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) =
     const [createLine, { isLoading: isCreating }] = useCreateLineMutation();
     const [updateLine, { isLoading: isUpdating }] = useUpdateLineMutation();
     const [deleteLine, { isLoading: isDeleting }] = useDeleteLineMutation();
+    const [logAction] = useLogActionMutation();
 
     const [newLineName, setNewLineName] = useState("");
     const [newLineUniCode, setNewLineUniCode] = useState("");
@@ -94,6 +96,18 @@ const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) =
                 description: newLineDescription,
                 tenCycleFormType: newLineTenCycleFormTypes.join(",")
             }).unwrap();
+            logAction({
+                action: "CREATE_LINE",
+                details: {
+                    departmentId,
+                    sectionId,
+                    name: newLineName,
+                    uniCode: newLineUniCode,
+                    lineLeaders: newLineLeaders,
+                    mentor: isMentorNA ? "N/A" : newLineMentor,
+                    requirement: parseInt(newLineRequirement) || 0,
+                },
+            });
             toast.success("Line created successfully");
             setNewLineName("");
             setNewLineUniCode("");
@@ -109,13 +123,17 @@ const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) =
         }
     };
 
-    const handleDeleteLine = async (lineId) => {
+    const handleDeleteLine = async (lineId, lineName) => {
         if (!window.confirm("Are you sure you want to delete this line?")) {
             return;
         }
 
         try {
             await deleteLine(lineId).unwrap();
+            logAction({
+                action: "DELETE_LINE",
+                details: { id: lineId, name: lineName },
+            });
             toast.success("Line deleted successfully");
         } catch (error) {
             toast.error(error.data?.message || "Failed to delete line");
@@ -152,6 +170,17 @@ const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) =
                 description: editDescription,
                 tenCycleFormType: editTenCycleFormTypes.join(",")
             }).unwrap();
+            logAction({
+                action: "UPDATE_LINE",
+                details: {
+                    id: editingLine.id || editingLine._id,
+                    name: editName,
+                    uniCode: editUniCode,
+                    lineLeaders: editLineLeaders,
+                    mentor: editIsMentorNA ? "N/A" : editLineMentor,
+                    requirement: parseInt(editRequirement) || 0,
+                },
+            });
             toast.success("Line updated successfully");
             setIsEditDialogOpen(false);
             setEditingLine(null);
@@ -483,7 +512,7 @@ const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) =
                                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-600" onClick={() => startEditing(line)}>
                                                     <IconEdit className="h-3.5 w-3.5" />
                                                 </Button>
-                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => handleDeleteLine(line.id || line._id)}>
+                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => handleDeleteLine(line.id || line._id, line.name)}>
                                                     {isDeleting ? <IconLoader className="h-3.5 w-3.5 animate-spin" /> : <IconTrash className="h-3.5 w-3.5" />}
                                                 </Button>
                                             </div>

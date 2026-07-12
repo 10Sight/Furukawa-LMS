@@ -29,6 +29,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const SubSectionManager = ({ lineId, sectionId }) => {
     const navigate = useNavigate();
@@ -37,6 +38,7 @@ const SubSectionManager = ({ lineId, sectionId }) => {
     const [createSubSection, { isLoading: isCreating }] = useCreateSubSectionMutation();
     const [updateSubSection, { isLoading: isUpdating }] = useUpdateSubSectionMutation();
     const [deleteSubSection, { isLoading: isDeleting }] = useDeleteSubSectionMutation();
+    const [logAction] = useLogActionMutation();
     const { data: activeConfigData } = useGetActiveConfigQuery();
     const activeLevels = activeConfigData?.data?.levels || [];
 
@@ -97,6 +99,17 @@ const SubSectionManager = ({ lineId, sectionId }) => {
                 minEfficiency: newMinEff !== "" ? parseFloat(newMinEff) : null,
                 maxEfficiency: newMaxEff !== "" ? parseFloat(newMaxEff) : null,
             }).unwrap();
+            logAction({
+                action: "CREATE_SUBSECTION",
+                details: {
+                    lineId,
+                    name: newName,
+                    description: newDescription,
+                    minimumRequiredLevel: newMinLevel === "none" ? null : newMinLevel,
+                    minEfficiency: newMinEff !== "" ? parseFloat(newMinEff) : null,
+                    maxEfficiency: newMaxEff !== "" ? parseFloat(newMaxEff) : null,
+                },
+            });
             toast.success("Sub-Section created successfully");
             setNewName("");
             setNewDescription("");
@@ -109,13 +122,17 @@ const SubSectionManager = ({ lineId, sectionId }) => {
         }
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (id, name) => {
         if (!window.confirm("Are you sure you want to delete this sub-section?")) {
             return;
         }
 
         try {
             await deleteSubSection(id).unwrap();
+            logAction({
+                action: "DELETE_SUBSECTION",
+                details: { id, name },
+            });
             toast.success("Sub-Section deleted successfully");
         } catch (error) {
             toast.error(error.data?.message || "Failed to delete sub-section");
@@ -147,6 +164,17 @@ const SubSectionManager = ({ lineId, sectionId }) => {
                 minEfficiency: editMinEff !== "" ? parseFloat(editMinEff) : null,
                 maxEfficiency: editMaxEff !== "" ? parseFloat(editMaxEff) : null,
             }).unwrap();
+            logAction({
+                action: "UPDATE_SUBSECTION",
+                details: {
+                    id: editingSubSection.id || editingSubSection._id,
+                    name: editName,
+                    description: editDescription,
+                    minimumRequiredLevel: editMinLevel === "none" ? null : editMinLevel,
+                    minEfficiency: editMinEff !== "" ? parseFloat(editMinEff) : null,
+                    maxEfficiency: editMaxEff !== "" ? parseFloat(editMaxEff) : null,
+                },
+            });
             toast.success("Sub-Section updated successfully");
             setIsEditDialogOpen(false);
             setEditingSubSection(null);
@@ -407,7 +435,7 @@ const SubSectionManager = ({ lineId, sectionId }) => {
                                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-600" onClick={() => startEditing(subSection)}>
                                                     <IconEdit className="h-3.5 w-3.5" />
                                                 </Button>
-                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => handleDelete(subSection.id || subSection._id)}>
+                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => handleDelete(subSection.id || subSection._id, subSection.name)}>
                                                     {isDeleting ? <IconLoader className="h-3.5 w-3.5 animate-spin" /> : <IconTrash className="h-3.5 w-3.5" />}
                                                 </Button>
                                             </div>

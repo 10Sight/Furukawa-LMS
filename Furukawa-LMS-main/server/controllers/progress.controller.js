@@ -12,6 +12,7 @@ import ThreeDayMonitoring from "../models/threeDayMonitoring.model.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import NotificationService from "../services/notification.service.js";
 import logger from "../logger/winston.logger.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -1189,6 +1190,10 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
         });
         logger.info(`[3Day] Created new sheet for sid: ${sid} by ${sheet.createdBy}`);
     }
+
+    const auditAction = targetStatus === "Draft" ? "SAVE_THREE_DAY_MONITORING_DRAFT" : "SUBMIT_THREE_DAY_MONITORING";
+    logAudit(req.user?.id, auditAction, { studentId: sid, status: targetStatus }, { resourceType: "ThreeDayMonitoring", resourceId: sheet.id, req })
+        .catch(err => console.error(`logAudit(${auditAction}) failed:`, err.message));
 
     // Trigger Email Notification
     NotificationService.sendFormReport("3-Day Monitoring Sheet", null, req.body, studentId)

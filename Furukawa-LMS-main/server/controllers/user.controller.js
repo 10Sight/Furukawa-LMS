@@ -2292,14 +2292,51 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   const offset = (page - 1) * limit;
 
-  let whereClauses = ["u.isTemporary = 1", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
   let params = [];
 
-  const status = req.query.status;
-  if (status === 'LEFT') {
-    whereClauses.push("u.status = 'LEFT'");
-  } else if (status === 'ACTIVE') {
-    whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
+  const activeTab = req.query.activeTab || 'all';
+
+  switch (activeTab) {
+    case 'today':
+      // Today's Entry: isTemporary=1, NOT LEFT, joiningDate = today
+      whereClauses.push("u.isTemporary = 1");
+      whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
+      whereClauses.push("CAST(u.joiningDate AS DATE) = CAST(GETDATE() AS DATE)");
+      break;
+
+    case 'all':
+      // Practical: isTemporary=1, NOT LEFT, joiningDate != today
+      whereClauses.push("u.isTemporary = 1");
+      whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
+      whereClauses.push("(u.joiningDate IS NULL OR CAST(u.joiningDate AS DATE) != CAST(GETDATE() AS DATE))");
+      break;
+
+    case 'handover-candidate':
+      // Handover: isTemporary=0 (flipped by handover approval), NOT LEFT
+      // Must exist in handover_sheets with APPROVE status
+      whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+      whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
+      whereClauses.push(`EXISTS (
+        SELECT 1
+        FROM handover_sheets hs
+        CROSS APPLY OPENJSON(hs.entries) as entry
+        WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+          AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+      )`);
+      break;
+
+    case 'left':
+      // Left: isTemporary=1, status=LEFT
+      whereClauses.push("u.isTemporary = 1");
+      whereClauses.push("u.status = 'LEFT'");
+      break;
+
+    default:
+      // Fallback: same as practical
+      whereClauses.push("u.isTemporary = 1");
+      whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
+      break;
   }
 
   if (req.query.search) {
@@ -2311,12 +2348,6 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
   if (req.query.gender && req.query.gender !== 'ALL') {
     whereClauses.push("u.gender = ?");
     params.push(req.query.gender);
-  }
-
-  if (req.query.today === 'true') {
-    const today = new Date().toISOString().split('T')[0];
-    whereClauses.push("CAST(u.createdAt AS DATE) = ?");
-    params.push(today);
   }
 
   const departmentId = normalizeParam(req.query.departmentId);
@@ -2363,7 +2394,7 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     SELECT
       SUM(CASE WHEN u.status != 'LEFT' OR u.status IS NULL THEN 1 ELSE 0 END) as total,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftTotal,
-      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND CAST(u.createdAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
+      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND CAST(u.joiningDate AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
     FROM users u

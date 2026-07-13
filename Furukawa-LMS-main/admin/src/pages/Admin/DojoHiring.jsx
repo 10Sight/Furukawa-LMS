@@ -786,12 +786,12 @@ const DojoHiring = () => {
     };
 
     const stats = [
-        { label: "Total Candidates", value: tempUsersData?.data?.total || 0, icon: IconUsers, color: "blue" },
-        { label: "Left Candidates", value: tempUsersData?.data?.leftTotal || 0, icon: IconUserMinus, color: "rose" },
         { label: "Today's Hiring", value: tempUsersData?.data?.todayJoined || 0, icon: IconCalendar, color: "emerald" },
+        { label: "Total Candidates / Practical", value: tempUsersData?.data?.total || 0, icon: IconUsers, color: "blue" },
+        { label: "Total Handover", value: tempUsersData?.data?.handoverCount || 0, icon: IconCircleCheck, color: "teal" },
+        { label: "Left Candidates", value: tempUsersData?.data?.leftTotal || 0, icon: IconUserMinus, color: "rose" },
         { label: "Male Candidates", value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
         { label: "Female Candidates", value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
-        { label: "Total Handover", value: tempUsersData?.data?.handoverCount || 0, icon: IconCircleCheck, color: "teal" },
     ];
 
     const getColorProps = (color) => {

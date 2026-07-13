@@ -194,7 +194,29 @@ const SixteenDayMonitoringSheet = ({
     };
 
     const didAdminChangeSavedValues = () => {
+        // Helper: returns true if a gridData key is auto-computed by the useEffect
+        // and should NOT trigger the admin edit verification prompt.
+        const isComputedGridKey = (key) => {
+            // Category-level totals and actual percentages (e.g., cat1_d1_total, cat1_eval_actual)
+            if (key.startsWith('cat')) return true;
+            // Summary table scores (e.g., summary_avg_score1, summary_weight_score1, summary_total_score)
+            if (key.startsWith('summary_')) return true;
+            // Row/cycle averages (e.g., row1_1_d1_avg, row1_2_d1_score_avg)
+            if (key.endsWith('_avg')) return true;
+            // Achievement percentages (e.g., row1_2_d1_achievement_0, row1_2_day_4_achievement)
+            if (key.includes('_achievement')) return true;
+            // Evaluation column values (e.g., row1_1_eval, row1_2_eval_target)
+            if (key.includes('_eval')) return true;
+            // Computed attendance average
+            if (key === 'attendance_total_score') return true;
+            return false;
+        };
+
         for (const key of Object.keys(originalGridData)) {
+            // Skip computed/derived cells — their values change automatically
+            // when new day data is added, which is not an "admin edit"
+            if (isComputedGridKey(key)) continue;
+
             const originalVal = originalGridData[key];
             if (originalVal !== undefined && originalVal !== null && originalVal.toString().trim() !== "") {
                 const currentVal = gridData[key];
@@ -203,7 +225,13 @@ const SixteenDayMonitoringSheet = ({
                 }
             }
         }
-        for (const key of Object.keys(originalHeaderInfo)) {
+
+        // Only check user-editable header fields.
+        // Excludes: status, checkedBy, verifiedBy, approvedBy, verifiedByEduCell,
+        // startDate, attemptNumber, employeeName, employeeCode, dept — these are
+        // system-managed or set by workflow buttons, not direct text edits.
+        const EDITABLE_HEADER_FIELDS = ['processName', 'handoverDate', 'trgResult', 'workingWith', 'lineLeaderName'];
+        for (const key of EDITABLE_HEADER_FIELDS) {
             const originalVal = originalHeaderInfo[key];
             if (originalVal !== undefined && originalVal !== null && originalVal.toString().trim() !== "") {
                 const currentVal = headerInfo[key];
@@ -212,6 +240,7 @@ const SixteenDayMonitoringSheet = ({
                 }
             }
         }
+
         if (feedbackRef?.current?.didAdminChangeSavedValues) {
             if (feedbackRef.current.didAdminChangeSavedValues()) {
                 return true;

@@ -45,6 +45,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
   const [selectedSubSectionId, setSelectedSubSectionId] = useState("all");
   const [selectedLevel, setSelectedLevel] = useState("all");
   const [selectedTestType, setSelectedTestType] = useState("all");
+  const [selectedQuizDeptId, setSelectedQuizDeptId] = useState("all");
   const [search, setSearch] = useState("");
 
   // Restrict department/section filters for CUSTOM role users to their assigned scope
@@ -85,10 +86,23 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
   const { data: deptsData, isLoading: deptsLoading } = useGetAllDepartmentsQuery({ limit: 1000 });
   const departments = deptsData?.data?.departments || [];
 
+  const uniqueDepartments = useMemo(() => {
+    const seenIds = new Set();
+    const seenNames = new Set();
+    return departments.filter(d => {
+      const idStr = String(d.id || d._id || '');
+      const nameStr = (d.name || '').trim().toLowerCase();
+      if (!idStr || seenIds.has(idStr) || seenNames.has(nameStr)) return false;
+      seenIds.add(idStr);
+      seenNames.add(nameStr);
+      return true;
+    });
+  }, [departments]);
+
   const assignableDepartments = useMemo(() => {
-    if (!isCustomRole) return departments;
-    return departments.filter((d) => assignedDepartments.includes(String(d.id)));
-  }, [departments, assignedDepartments, isCustomRole]);
+    if (!isCustomRole) return uniqueDepartments;
+    return uniqueDepartments.filter((d) => assignedDepartments.includes(String(d.id)));
+  }, [uniqueDepartments, assignedDepartments, isCustomRole]);
 
   const deptQueryId = selectedDeptId === "all" ? "" : selectedDeptId;
   const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(deptQueryId, { skip: !deptQueryId });
@@ -171,10 +185,11 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
     if (selectedSubSectionId !== "all") params.subSectionId = selectedSubSectionId;
     if (selectedLevel !== "all") params.level = selectedLevel;
     if (selectedTestType !== "all") params.testType = selectedTestType;
+    if (selectedQuizDeptId !== "all") params.quizDepartmentId = selectedQuizDeptId;
     if (search.trim()) params.search = search.trim();
     if (isDojo) params.isTemporary = true;
     return params;
-  }, [selectedDeptId, selectedSectionId, selectedLineId, selectedSubSectionId, selectedLevel, selectedTestType, search, isDojo]);
+  }, [selectedDeptId, selectedSectionId, selectedLineId, selectedSubSectionId, selectedLevel, selectedTestType, selectedQuizDeptId, search, isDojo]);
 
   const { data: attemptsData, isLoading: attemptsLoading, refetch } = useGetMonitoringAttemptsQuery(queryParams);
   const attempts = attemptsData?.data || [];
@@ -198,6 +213,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
     setSelectedSubSectionId("all");
     setSelectedLevel("all");
     setSelectedTestType("all");
+    setSelectedQuizDeptId("all");
     setSearch("");
   };
 
@@ -208,6 +224,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
     selectedSubSectionId !== "all" ||
     selectedLevel !== "all" ||
     selectedTestType !== "all" ||
+    selectedQuizDeptId !== "all" ||
     search.trim() !== "";
 
   // Helper: Display test type tag beautifully
@@ -323,8 +340,8 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
             </div>
           </div>
 
-          {/* Row 2: Test Level, Type, and Search */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Row 2: Test Level, Type, Test Paper Dept, and Search */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             {/* Level */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">Test Level</label>
@@ -356,6 +373,22 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
                   <SelectItem value="REGULAR">Regular (Standalone)</SelectItem>
                   <SelectItem value="DOJO">DOJO hiring</SelectItem>
                   <SelectItem value="THEORETICAL">Theoretical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Test Paper Department */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">Test Paper Dept</label>
+              <Select value={selectedQuizDeptId} onValueChange={setSelectedQuizDeptId}>
+                <SelectTrigger className="w-full h-10">
+                  <SelectValue placeholder="Select Test Paper Dept" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {uniqueDepartments.map((d) => (
+                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -426,6 +459,12 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
                   Type: {selectedTestType}
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => setSelectedTestType("all")} />
+                </Badge>
+              )}
+              {selectedQuizDeptId !== "all" && (
+                <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                  Test Dept: {departments.find(d => String(d.id) === selectedQuizDeptId)?.name || selectedQuizDeptId}
+                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => setSelectedQuizDeptId("all")} />
                 </Badge>
               )}
               {search && (

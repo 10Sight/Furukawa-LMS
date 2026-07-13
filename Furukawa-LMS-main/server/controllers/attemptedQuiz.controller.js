@@ -1267,7 +1267,7 @@ export const rejectExtraAttempt = asyncHandler(async (req, res) => {
 });
 
 export const getMonitoringAttempts = asyncHandler(async (req, res) => {
-    const { departmentId, sectionId, lineId, subSectionId, level, testType, search, isTemporary } = req.query;
+    const { departmentId, sectionId, lineId, subSectionId, level, testType, search, isTemporary, quizDepartmentId } = req.query;
     const isTemporaryQuery = isTemporary === 'true' || isTemporary === '1' || isTemporary === true;
 
     let sql = `
@@ -1393,6 +1393,15 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
     } else if (allowedDepts.length > 0) {
         sql += ` AND u_hier_resolved.resolvedDeptId IN (${allowedDepts.map(() => '?').join(',')})`;
         values.push(...allowedDepts);
+    }
+
+    if (quizDepartmentId && quizDepartmentId !== 'all') {
+        sql += ` AND (
+            q.departmentId LIKE ? 
+            OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+        )`;
+        values.push(`%"${quizDepartmentId}"%`);
+        values.push(String(quizDepartmentId));
     }
 
     if (sectionId) {

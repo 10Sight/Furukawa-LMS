@@ -62,6 +62,12 @@ class EvaluationTestAttempt {
         this.createdAt = data.createdAt;
         this.isHandoverEligible = data.isHandoverEligible;
         this.passedDate = data.passedDate;
+
+        this.studentIsTemporary = data.studentIsTemporary;
+        this.studentDeptId = data.studentDeptId;
+        this.studentSectionId = data.studentSectionId;
+        this.studentLineId = data.studentLineId;
+        this.studentSubSectionId = data.studentSubSectionId;
     }
 
     static async init() {
@@ -250,7 +256,7 @@ class EvaluationTestAttempt {
 
     static async findById(id) {
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount, t.processType, t.contentStructure,
+            SELECT a.*, t.title as testTitle, t.performDateCount, t.processType, t.contentStructure, t.departmentId as testDepartmentId,
                    u.userName, COALESCE(u.isTemporary, a.studentIsTemporary, 0) as isTemporary
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
@@ -290,7 +296,7 @@ class EvaluationTestAttempt {
 
     static async findAll() {
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount,
+            SELECT a.*, t.title as testTitle, t.performDateCount, t.departmentId as testDepartmentId,
                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,
@@ -322,7 +328,7 @@ class EvaluationTestAttempt {
 
     static async findByStudentId(studentId) {
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount,
+            SELECT a.*, t.title as testTitle, t.performDateCount, t.departmentId as testDepartmentId,
                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,

@@ -16,7 +16,8 @@ import {
     IconPrinter,
     IconDeviceFloppy,
     IconLoader2,
-    IconClipboardCheck
+    IconClipboardCheck,
+    IconMail
 } from "@tabler/icons-react";
 
 const getDynamicPerformDateCount = (attemptDataObj, performDatesArr, baseCount) => {
@@ -329,7 +330,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         });
     };
 
-    const handleSubmit = async () => {
+    const handleSubmit = async (triggerEmail = false) => {
         if (!traineeName.trim()) {
             alert("Please enter the Trainee Name.");
             return;
@@ -348,7 +349,8 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             attemptData: {
                 ...attemptData,
                 _performDates: performDates
-            }
+            },
+            triggerEmail
         };
 
         try {
@@ -362,7 +364,8 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                     attemptData: {
                         ...attemptData,
                         _performDates: performDates
-                    }
+                    },
+                    triggerEmail
                 }).unwrap();
                 alert("Student practical evaluation sheet updated successfully!");
             } else {
@@ -1005,18 +1008,32 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                         Print Preview / PDF
                     </Button>
                     {!isView && (
-                        <Button
-                            onClick={handleSubmit}
-                            disabled={isSubmitting}
-                            className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 font-semibold shadow-md shadow-blue-200"
-                        >
-                            {isSubmitting ? (
-                                <IconLoader2 className="h-4.5 w-4.5 animate-spin" />
-                            ) : (
-                                <IconDeviceFloppy className="h-4.5 w-4.5" />
-                            )}
-                            Submit DOJO Evaluation
-                        </Button>
+                        <>
+                            <Button
+                                onClick={() => handleSubmit(false)}
+                                disabled={isSubmitting}
+                                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 font-semibold shadow-md shadow-blue-200"
+                            >
+                                {isSubmitting ? (
+                                    <IconLoader2 className="h-4.5 w-4.5 animate-spin" />
+                                ) : (
+                                    <IconDeviceFloppy className="h-4.5 w-4.5" />
+                                )}
+                                Submit DOJO Evaluation
+                            </Button>
+                            <Button
+                                onClick={() => handleSubmit(true)}
+                                disabled={isSubmitting}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 font-semibold shadow-md shadow-emerald-200"
+                            >
+                                {isSubmitting ? (
+                                    <IconLoader2 className="h-4.5 w-4.5 animate-spin" />
+                                ) : (
+                                    <IconMail className="h-4.5 w-4.5" />
+                                )}
+                                Submit & Mail
+                            </Button>
+                        </>
                     )}
                 </div>
             </div>

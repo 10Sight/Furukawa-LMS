@@ -47,6 +47,7 @@ const EvaluationTestMonitoring = () => {
 
   // Filter States
   const [selectedDeptId, setSelectedDeptId] = useState("all");
+  const [selectedTestDeptId, setSelectedTestDeptId] = useState("all");
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -55,12 +56,30 @@ const EvaluationTestMonitoring = () => {
   const { data: deptsData } = useGetAllDepartmentsQuery({ limit: 1000 });
   const departments = deptsData?.data?.departments || [];
 
+  const uniqueDepartments = useMemo(() => {
+    const seenIds = new Set();
+    const seenNames = new Set();
+    return departments.filter(d => {
+      const idStr = String(d.id || d._id || '');
+      const nameStr = (d.name || '').trim().toLowerCase();
+      if (!idStr || seenIds.has(idStr) || seenNames.has(nameStr)) return false;
+      seenIds.add(idStr);
+      seenNames.add(nameStr);
+      return true;
+    });
+  }, [departments]);
+
   // Fetch attempts
   const { data: attemptsRes, isLoading: attemptsLoading, refetch } = useGetEvaluationTestAttemptsQuery();
   const rawAttempts = attemptsRes?.data || [];
 
   const handleDeptChange = (val) => {
     setSelectedDeptId(val);
+    setCurrentPage(1);
+  };
+
+  const handleTestDeptChange = (val) => {
+    setSelectedTestDeptId(val);
     setCurrentPage(1);
   };
 
@@ -83,12 +102,14 @@ const EvaluationTestMonitoring = () => {
 
   const handleResetAll = () => {
     setSelectedDeptId("all");
+    setSelectedTestDeptId("all");
     setSearch("");
     setCurrentPage(1);
   };
 
   const hasActiveFilters =
     selectedDeptId !== "all" ||
+    selectedTestDeptId !== "all" ||
     search.trim() !== "";
 
   // Compile dynamic filled column indicators
@@ -124,6 +145,10 @@ const EvaluationTestMonitoring = () => {
       if (selectedDeptId !== "all" && String(attempt.departmentId) !== selectedDeptId) {
         return false;
       }
+      // 1b. Test Paper Department Filter
+      if (selectedTestDeptId !== "all" && String(attempt.testDepartmentId) !== selectedTestDeptId) {
+        return false;
+      }
       // 2. Search Bar
       if (search.trim()) {
         const query = search.toLowerCase();
@@ -142,7 +167,7 @@ const EvaluationTestMonitoring = () => {
       }
       return true;
     });
-  }, [rawAttempts, selectedDeptId, search]);
+  }, [rawAttempts, selectedDeptId, selectedTestDeptId, search]);
 
   // Paginated attempts
   const paginatedAttempts = useMemo(() => {
@@ -182,7 +207,7 @@ const EvaluationTestMonitoring = () => {
           <CardDescription>Filter submitted evaluation sheets for temporary users by department and candidate/evaluator details.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Department */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Department</label>
@@ -192,7 +217,23 @@ const EvaluationTestMonitoring = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map((d) => (
+                  {uniqueDepartments.map((d) => (
+                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Test Paper Department */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Test Paper Dept</label>
+              <Select value={selectedTestDeptId} onValueChange={handleTestDeptChange}>
+                <SelectTrigger className="h-9 text-xs border-gray-200 rounded-lg">
+                  <SelectValue placeholder="All Departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {uniqueDepartments.map((d) => (
                     <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -231,6 +272,12 @@ const EvaluationTestMonitoring = () => {
                 <Badge variant="secondary" className="gap-1 pl-2.5 pr-1.5 py-1 bg-slate-100 text-slate-700 font-medium">
                   Dept: {departments.find(d => String(d.id) === selectedDeptId)?.name || selectedDeptId}
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-slate-200 rounded-full p-0.5" onClick={() => handleDeptChange("all")} />
+                </Badge>
+              )}
+              {selectedTestDeptId !== "all" && (
+                <Badge variant="secondary" className="gap-1 pl-2.5 pr-1.5 py-1 bg-slate-100 text-slate-700 font-medium">
+                  Test Dept: {departments.find(d => String(d.id) === selectedTestDeptId)?.name || selectedTestDeptId}
+                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-slate-200 rounded-full p-0.5" onClick={() => setSelectedTestDeptId("all")} />
                 </Badge>
               )}
               {search && (

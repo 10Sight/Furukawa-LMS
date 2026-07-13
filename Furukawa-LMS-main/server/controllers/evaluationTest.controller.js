@@ -123,7 +123,7 @@ export const deleteEvaluationTest = asyncHandler(async (req, res) => {
 
 // Student Evaluation Attempt APIs
 export const createEvaluationTestAttempt = asyncHandler(async (req, res) => {
-    const { testId, traineeName, employeeNo, educatorName, attemptData, createdBy: reqCreatedBy } = req.body;
+    const { testId, traineeName, employeeNo, educatorName, attemptData, createdBy: reqCreatedBy, triggerEmail } = req.body;
     const createdBy = reqCreatedBy || req.user?.fullName || req.user?.userName || "Admin";
 
     if (!testId) {
@@ -153,6 +153,21 @@ export const createEvaluationTestAttempt = asyncHandler(async (req, res) => {
     }, { resourceType: "EvaluationTestAttempt", resourceId: newAttempt.id, req }).catch(err =>
         console.error("logAudit(CREATE_EVALUATION_TEST_ATTEMPT) failed:", err.message)
     );
+
+    if (triggerEmail) {
+        try {
+            const NotificationService = (await import("../services/notification.service.js")).default;
+            await NotificationService.sendFormReport(
+                "Dojo Evaluation Sheet",
+                newAttempt.studentDeptId,
+                newAttempt,
+                newAttempt.userId,
+                newAttempt.studentSectionId
+            );
+        } catch (e) {
+            console.error("[EvaluationTestAttempt] Failed to trigger email notification:", e);
+        }
+    }
 
     res.status(201).json(
         new ApiResponse(201, newAttempt, "Evaluation test sheet submitted successfully")
@@ -189,7 +204,7 @@ export const getEvaluationTestAttemptsByTestId = asyncHandler(async (req, res) =
 
 export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { attemptData, traineeName, employeeNo, educatorName, createdBy } = req.body;
+    const { attemptData, traineeName, employeeNo, educatorName, createdBy, triggerEmail } = req.body;
 
     const existingAttempt = await EvaluationTestAttempt.findById(id);
     if (!existingAttempt) {
@@ -241,6 +256,21 @@ export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
         logAudit(req.user?.id, "UPDATE_EVALUATION_TEST_ATTEMPT", auditDetails, auditMeta).catch(err =>
             console.error("logAudit(UPDATE_EVALUATION_TEST_ATTEMPT) failed:", err.message)
         );
+    }
+
+    if (triggerEmail) {
+        try {
+            const NotificationService = (await import("../services/notification.service.js")).default;
+            await NotificationService.sendFormReport(
+                "Dojo Evaluation Sheet",
+                updatedAttempt.studentDeptId,
+                updatedAttempt,
+                updatedAttempt.userId,
+                updatedAttempt.studentSectionId
+            );
+        } catch (e) {
+            console.error("[EvaluationTestAttempt] Failed to trigger email notification:", e);
+        }
     }
 
     res.json(

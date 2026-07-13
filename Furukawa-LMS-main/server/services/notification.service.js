@@ -130,6 +130,54 @@ class NotificationService {
                 });
             }
 
+            if (formName === "Dojo Evaluation Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const reviewUrl = `${adminUrl}/admin/view-evaluation-attempt/${formData?.id}`;
+                const handoverEligible = formData?.isHandoverEligible;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <p>Dear Reviewer,</p>
+                        <p><strong>Sub:</strong> DOJO Evaluation Sheet submitted for review - ${deptName}</p>
+                        <p>A practical DOJO evaluation sheet has been submitted and requires your review.</p>
+
+                        <table style="border-collapse: collapse; margin: 20px 0;">
+                            <tr>
+                                <td style="padding: 6px 12px; font-weight: bold; color: #555;">Trainee</td>
+                                <td style="padding: 6px 12px;">${formData?.traineeName || "-"}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 12px; font-weight: bold; color: #555;">Employee No.</td>
+                                <td style="padding: 6px 12px;">${formData?.employeeNo || "-"}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 12px; font-weight: bold; color: #555;">Educator</td>
+                                <td style="padding: 6px 12px;">${formData?.educatorName || "-"}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 12px; font-weight: bold; color: #555;">Department</td>
+                                <td style="padding: 6px 12px;">${deptName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 12px; font-weight: bold; color: #555;">Handover Eligibility</td>
+                                <td style="padding: 6px 12px; color: ${handoverEligible ? '#008000' : '#cc0000'}; font-weight: bold;">
+                                    ${handoverEligible ? "Eligible" : "Not Yet Eligible"}
+                                </td>
+                            </tr>
+                        </table>
+
+                        <div style="margin: 25px 0;">
+                            <a href="${reviewUrl}"
+                               style="background-color: #059669; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                                Review & Submit
+                            </a>
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
+                    </div>
+                `;
+            }
 
             await sendMail(
                 toRecipients.join(','),

@@ -269,6 +269,8 @@ const SubSectionSelect = ({ recIndex, departmentId, sectionId, formData, onInput
                 onInputChange(recIndex, 'StationMC', val);
                 // Clear process when station/mc changes
                 onInputChange(recIndex, 'Process', "");
+                // Clear ReqSkill since it's derived from Process
+                onInputChange(recIndex, 'ReqSkill', "");
             }}
             disabled={!departmentId}
         >
@@ -299,11 +301,29 @@ const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, 
     const { data: machinesData, isLoading } = useGetMachinesBySubSectionQuery(subSectionId, { skip: !subSectionId });
     const machines = machinesData?.data || [];
 
+    // Auto-fill ReqSkill when machines load and Process is pre-selected but ReqSkill is empty
+    useEffect(() => {
+        const currentProcess = formData[`rec_${recIndex}_Process`];
+        const currentReqSkill = formData[`rec_${recIndex}_ReqSkill`];
+        if (currentProcess && !currentReqSkill && machines.length > 0) {
+            const machine = machines.find(m => m.name === currentProcess);
+            if (machine?.minimumRequiredLevel) {
+                onInputChange(recIndex, 'ReqSkill', machine.minimumRequiredLevel);
+            }
+        }
+    }, [machines, formData[`rec_${recIndex}_Process`], formData[`rec_${recIndex}_ReqSkill`], recIndex, onInputChange]);
+
     return (
         <select
             className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
             value={formData[`rec_${recIndex}_Process`] || ""}
-            onChange={(e) => onInputChange(recIndex, 'Process', e.target.value)}
+            onChange={(e) => {
+                const val = e.target.value;
+                onInputChange(recIndex, 'Process', val);
+                // Auto-set ReqSkill from the selected machine's minimumRequiredLevel
+                const selectedMachine = machines.find(m => m.name === val);
+                onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || "");
+            }}
             disabled={!subSectionId}
         >
             <option value="">{isLoading ? "Loading..." : "Select Process"}</option>
@@ -323,7 +343,7 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
     const { data: machinesData, isLoading } = useGetMachinesByLineQuery(lineId, { skip: !lineId });
     const machines = machinesData?.data || [];
 
-    // Auto-migrate old values (machine name only) to new format (subsection (machine))
+    // Auto-migrate old values (machine name only) to new format (subsection (machine)) AND set ReqSkill
     useEffect(() => {
         const currentValue = formData[`rec_${recIndex}_Process`];
         if (currentValue && machines.length > 0) {
@@ -333,33 +353,50 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
                 // If it's a exact match for machine name but not the new format, upgrade it
                 if (currentValue === machine.name && currentValue !== newDisplayName) {
                     onInputChange(recIndex, 'Process', newDisplayName);
+                    if (machine.minimumRequiredLevel) {
+                        onInputChange(recIndex, 'ReqSkill', machine.minimumRequiredLevel);
+                    }
                 }
             }
         }
     }, [machines, formData[`rec_${recIndex}_Process`], recIndex, onInputChange]);
 
+    // Auto-fill ReqSkill when machines load and Process is pre-selected but ReqSkill is empty
+    useEffect(() => {
+        const currentProcess = formData[`rec_${recIndex}_Process`];
+        const currentReqSkill = formData[`rec_${recIndex}_ReqSkill`];
+        if (currentProcess && !currentReqSkill && machines.length > 0) {
+            const machine = machines.find(m => {
+                const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
+                return displayName === currentProcess || m.name === currentProcess;
+            });
+            if (machine?.minimumRequiredLevel) {
+                onInputChange(recIndex, 'ReqSkill', machine.minimumRequiredLevel);
+            }
+        }
+    }, [machines, formData[`rec_${recIndex}_Process`], formData[`rec_${recIndex}_ReqSkill`], recIndex, onInputChange]);
+
     return (
         <select
             className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
             value={formData[`rec_${recIndex}_Process`] || ""}
-            onChange={(e) => onInputChange(recIndex, 'Process', e.target.value)}
+            onChange={(e) => {
+                const val = e.target.value;
+                onInputChange(recIndex, 'Process', val);
+                // Auto-set ReqSkill from the selected machine's minimumRequiredLevel
+                const selectedMachine = machines.find(m => {
+                    const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
+                    return displayName === val || m.name === val;
+                });
+                onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || "");
+            }}
             disabled={disabled || !lineId}
         >
             <option value="">{isLoading ? "Loading..." : "Select Process"}</option>
             {machines.map((m, idx) => {
                 const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
-                const currentValue = formData[`rec_${recIndex}_Process`] || "";
-
-                // For backward compatibility: if the saved value is just the machine name, 
-                // we want it to match the option with that machine name.
-                const isMatch = currentValue === displayName || currentValue === m.name;
-
                 return (
-                    <option
-                        key={m.id || m._id || idx}
-                        value={displayName}
-                    // Manual selection if it matches old format
-                    >
+                    <option key={m.id || m._id || idx} value={displayName}>
                         {displayName}
                     </option>
                 );
@@ -645,18 +682,14 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         disabled={isLocked}
                     />
                 </td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0">
-                    <select
-                        className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                <td rowSpan="5" className="border border-black py-0.5 px-0 text-center">
+                    <input
+                        type="text"
+                        className="w-full text-center bg-transparent outline-none h-7 text-[16px]"
                         value={formData[`rec_${recIndex}_ReqSkill`] || ""}
-                        onChange={(e) => handleInputChange(recIndex, 'ReqSkill', e.target.value)}
-                        disabled={isLocked}
-                    >
-                        <option value="">Req Skill</option>
-                        {(skillLevels || []).map((level, idx) => (
-                            <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
-                        ))}
-                    </select>
+                        placeholder="Auto"
+                        disabled
+                    />
                 </td>
 
                 <td rowSpan="5" className="border border-black p-0.5 min-w-[100px]">
@@ -2115,6 +2148,9 @@ const Daily5MRecording = () => {
                                                                     const leader = selectedLine?.lineLeader || "";
                                                                     handleInputChange(recIndex, 'FP_Leader', leader);
                                                                     handleInputChange(recIndex, 'FP_1', leader);
+                                                                    // Clear Process and ReqSkill on line change
+                                                                    handleInputChange(recIndex, 'Process', "");
+                                                                    handleInputChange(recIndex, 'ReqSkill', "");
                                                                 }}
                                                                 disabled={isLocked}
                                                             >
@@ -2188,18 +2224,15 @@ const Daily5MRecording = () => {
                                                             />
                                                         </td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" placeholder="Cur Skill" value={formData[`rec_${recIndex}_CurSkill`] || ""} onChange={(e) => handleInputChange(recIndex, 'CurSkill', e.target.value)} disabled={isLocked} /></td>
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_ReqSkill`] || ""}
-                                                                onChange={(e) => handleInputChange(recIndex, 'ReqSkill', e.target.value)}
-                                                                disabled={isLocked}
-                                                            >
-                                                                <option value="">Req Skill</option>
-                                                                {skillLevels.map((level, idx) => (
-                                                                    <option key={level.id || level._id || idx} value={level.name}>{level.name}</option>
-                                                                ))}
-                                                            </select></td>
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0 text-center">
+                                                             <input
+                                                                 type="text"
+                                                                 className="w-full text-center bg-transparent outline-none h-7 text-[16px]"
+                                                                 value={formData[`rec_${recIndex}_ReqSkill`] || ""}
+                                                                 placeholder="Auto"
+                                                                 disabled
+                                                             />
+                                                         </td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" placeholder="Deputed" value={formData[`rec_${recIndex}_Deputed`] || ""} onChange={(e) => handleInputChange(recIndex, 'Deputed', e.target.value)} disabled={isLocked} /></td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <UserAutocomplete

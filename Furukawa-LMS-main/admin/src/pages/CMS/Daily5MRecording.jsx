@@ -1753,16 +1753,41 @@ const Daily5MRecording = () => {
 
     const getCrimpingMandatoryFields = (i) => {
         const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
-        const retroFields = params.flatMap(p => [
-            { key: `rec_${i}_Retro_${p}_F`,  label: `Retro Standard ${p} (F)` },
-            { key: `rec_${i}_Retro_${p}_R`,  label: `Retro Standard ${p} (R)` },
-            { key: `rec_${i}_Result_${p}_F`, label: `Retro Result ${p} (F)` },
-            { key: `rec_${i}_Result_${p}_R`, label: `Retro Result ${p} (R)` },
-        ]);
-        const setupFields = params.flatMap(p => [
-            { key: `rec_${i}_Setup_${p}_F`, label: `Setup Verification ${p} (F)` },
-            { key: `rec_${i}_Setup_${p}_R`, label: `Setup Verification ${p} (R)` },
-        ]);
+        const retroFields = [];
+        const setupFields = [];
+
+        params.forEach(p => {
+            if (p === 'Visual') {
+                retroFields.push(
+                    { key: `rec_${i}_Retro_Visual_TQ`, label: "Retro Visual Total Qty" },
+                    { key: `rec_${i}_Retro_Visual_NG`, label: "Retro Visual NG Qty" }
+                );
+                setupFields.push(
+                    { key: `rec_${i}_Setup_Visual_OK`, label: "Setup Verification Visual" }
+                );
+            } else if (p === 'Length') {
+                retroFields.push(
+                    { key: `rec_${i}_Retro_Length_F`,  label: "Retro Standard Length (F)" },
+                    { key: `rec_${i}_Result_Length_F`, label: "Retro Result Length (F)" }
+                );
+                setupFields.push(
+                    { key: `rec_${i}_Setup_Length_F`, label: "Setup Verification Length (F)" },
+                    { key: `rec_${i}_Setup_Length_R`, label: "Setup Verification Length (R)" }
+                );
+            } else {
+                retroFields.push(
+                    { key: `rec_${i}_Retro_${p}_F`,  label: `Retro Standard ${p} (F)` },
+                    { key: `rec_${i}_Retro_${p}_R`,  label: `Retro Standard ${p} (R)` },
+                    { key: `rec_${i}_Result_${p}_F`, label: `Retro Result ${p} (F)` },
+                    { key: `rec_${i}_Result_${p}_R`, label: `Retro Result ${p} (R)` }
+                );
+                setupFields.push(
+                    { key: `rec_${i}_Setup_${p}_F`, label: `Setup Verification ${p} (F)` },
+                    { key: `rec_${i}_Setup_${p}_R`, label: `Setup Verification ${p} (R)` }
+                );
+            }
+        });
+
         return [
             { key: `rec_${i}_Date`,            label: "Date" },
             { key: `rec_${i}_StationMC`,       label: "Station M/C No" },

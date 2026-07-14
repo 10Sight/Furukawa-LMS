@@ -2,7 +2,7 @@ import axios from "axios";
 
 const ENV_BASE = import.meta?.env?.VITE_BASE_URL;
 const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
-export const BASE_URL = ENV_BASE || `http://${hostname}:5000`;
+export const BASE_URL = ENV_BASE || `http://${hostname}:3000`;
 // const BASE_URL = "https://swargaya-learning-management-system-3vcz.onrender.com";
 
 const axiosInstance = axios.create({ baseURL: BASE_URL, withCredentials: true });

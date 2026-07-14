@@ -27,6 +27,17 @@ async function resolveDepartmentId(idOrSlug) {
     return rows.length > 0 ? rows[0].id : null;
 }
 
+// Helper to resolve studentId (from ID, userName, empId or slug)
+async function resolveStudentId(studentId) {
+    if (!studentId) return null;
+    if (!isNaN(studentId) && !isNaN(parseFloat(studentId))) {
+        const [users] = await executeQuery("SELECT id FROM users WHERE id = ?", [studentId]);
+        if (users.length > 0) return users[0].id;
+    }
+    const [users] = await executeQuery("SELECT id FROM users WHERE userName = ? OR slug = ? OR empId = ?", [studentId, studentId, studentId]);
+    return users.length > 0 ? users[0].id : null;
+}
+
 // Helper to manual populate
 const populateDepartment = async (dept, fields = []) => {
     if (!dept) return null;
@@ -1627,8 +1638,11 @@ export const bulkDeleteHandoverSheets = asyncHandler(async (req, res) => {
 });
 
 export const getStudentHandoverHistory = asyncHandler(async (req, res) => {
-    const { studentId } = req.params;
-    if (!studentId) throw new ApiError("Student ID is required", 400);
+    const { studentId: rawStudentId } = req.params;
+    if (!rawStudentId) throw new ApiError("Student ID is required", 400);
+
+    const studentId = await resolveStudentId(rawStudentId);
+    if (!studentId) throw new ApiError("Student not found", 404);
 
     const [rows] = await executeQuery(`
         SELECT

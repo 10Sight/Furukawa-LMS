@@ -2819,10 +2819,25 @@ const Daily5MRecording = () => {
                     </Dialog>
 
                     {!viewMode && (
-                        <Button onClick={() => handleSaveRecord(null, { showPreview: true })} disabled={!selectedDepartment || loadingConfig || !hasEditPermission}>
-                            <IconClipboardList className="w-5 h-5 mr-2" />
-                            Save & Preview
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button 
+                                onClick={() => handleSaveRecord(null, { showPreview: false })} 
+                                disabled={!selectedDepartment || loadingConfig || !hasEditPermission}
+                                variant="outline"
+                                className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                            >
+                                <IconClipboardList className="w-5 h-5 mr-2" />
+                                Save Daily 5M
+                            </Button>
+                            <Button 
+                                onClick={() => handleSaveRecord(null, { showPreview: true })} 
+                                disabled={!selectedDepartment || loadingConfig || !hasEditPermission}
+                                className="bg-blue-600 hover:bg-blue-700"
+                            >
+                                <IconMail className="w-5 h-5 mr-2" />
+                                Submit & Mail Daily 5M
+                            </Button>
+                        </div>
                     )}
                     <Button onClick={() => setIsPrintDialogOpen(true)} variant="outline" disabled={!tableConfig}>
                         <IconPrinter className="w-5 h-5 mr-2" />

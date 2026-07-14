@@ -5,7 +5,7 @@ import { RefreshCcw, Server, Database, AlertTriangle, CheckCircle, XCircle, Cloc
 import { toast } from "sonner";
 
 const SystemMonitoring = () => {
-  const [refreshInterval, setRefreshInterval] = useState(50000); // 30 seconds
+  const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
   const [selectedTimePeriod, setSelectedTimePeriod] = useState('1h');
   const [autoRefresh, setAutoRefresh] = useState(true);
 
@@ -123,8 +123,8 @@ const SystemMonitoring = () => {
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
               className={`px-3 py-1 text-xs rounded-full font-medium ${autoRefresh
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-gray-100 text-gray-800'
+                ? 'bg-green-100 text-green-800'
+                : 'bg-gray-100 text-gray-800'
                 }`}
             >
               {autoRefresh ? 'ON' : 'OFF'}
@@ -224,27 +224,27 @@ const SystemMonitoring = () => {
           <div className="divide-y">
             {systemAlerts.data.alerts.map((alert, index) => (
               <div key={index} className={`p-4 ${alert.type === 'error' ? 'bg-red-50 border-l-4 border-red-400' :
-                  alert.type === 'warning' ? 'bg-yellow-50 border-l-4 border-yellow-400' :
-                    'bg-blue-50 border-l-4 border-blue-400'
+                alert.type === 'warning' ? 'bg-yellow-50 border-l-4 border-yellow-400' :
+                  'bg-blue-50 border-l-4 border-blue-400'
                 }`}>
                 <div className="flex items-start justify-between">
                   <div>
                     <p className={`font-medium ${alert.type === 'error' ? 'text-red-800' :
-                        alert.type === 'warning' ? 'text-yellow-800' :
-                          'text-blue-800'
+                      alert.type === 'warning' ? 'text-yellow-800' :
+                        'text-blue-800'
                       }`}>
                       {alert.title}
                     </p>
                     <p className={`text-sm ${alert.type === 'error' ? 'text-red-600' :
-                        alert.type === 'warning' ? 'text-yellow-600' :
-                          'text-blue-600'
+                      alert.type === 'warning' ? 'text-yellow-600' :
+                        'text-blue-600'
                       }`}>
                       {alert.message}
                     </p>
                   </div>
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${alert.type === 'error' ? 'bg-red-100 text-red-800' :
-                      alert.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-blue-100 text-blue-800'
+                    alert.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-blue-100 text-blue-800'
                     }`}>
                     {alert.type.toUpperCase()}
                   </span>
@@ -396,7 +396,7 @@ const SystemMonitoring = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Response Time</span>
                     <span className={`font-medium ${databaseMetrics.data.health.responseTime < 100 ? 'text-green-600' :
-                        databaseMetrics.data.health.responseTime < 500 ? 'text-yellow-600' : 'text-red-600'
+                      databaseMetrics.data.health.responseTime < 500 ? 'text-yellow-600' : 'text-red-600'
                       }`}>
                       {databaseMetrics.data.health.responseTime}ms
                     </span>

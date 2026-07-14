@@ -9,7 +9,7 @@ import logAudit from "../utils/auditLogger.js";
 // In-memory per-user/action throttle to avoid a DB round-trip on every client log call.
 // Bounded by (active users x distinct action identifiers), not by request volume, so it doesn't need eviction.
 const lastLoggedAt = new Map();
-const THROTTLE_WINDOW_MS = 5000;
+const THROTTLE_WINDOW_MS = 3000;
 const MAX_DETAILS_LENGTH = 2000;
 
 // Helper to populate user details

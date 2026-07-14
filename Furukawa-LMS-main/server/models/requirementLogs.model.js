@@ -44,7 +44,7 @@ const getValue = (obj, key) => {
 const getRequest = async (transactionOrPool = null) => {
     const activeConn = transactionOrPool || await poolPromise;
     const request = activeConn.request();
-    request.timeout = 500000;
+    request.timeout = 300000;
     return request;
 };
 

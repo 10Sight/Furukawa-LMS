@@ -7,11 +7,11 @@ import ENV from "../configs/env.config.js";
 // full 300s default under load, starving the pool. Standard queries now fail fast at 30s;
 // known long-running operations (PDF generation, bulk import/restore) opt into the
 // separate long-running pool below via `{ longRunning: true }`.
-const DEFAULT_REQUEST_TIMEOUT = 30000; // 30 seconds
-const LONG_RUNNING_REQUEST_TIMEOUT = 300000; // 5 minutes
+const DEFAULT_REQUEST_TIMEOUT = 50000; // 30 seconds
+const LONG_RUNNING_REQUEST_TIMEOUT = 500000; // 5 minutes
 const CONNECTION_TIMEOUT = 120000; // 120 seconds
 
-const LEAK_WARNING_THRESHOLD_MS = 30000; // flag connections/transactions held longer than this
+const LEAK_WARNING_THRESHOLD_MS = 50000; // flag connections/transactions held longer than this
 const LEAK_SCAN_INTERVAL_MS = 10000;
 
 const baseConfig = {
@@ -32,7 +32,7 @@ const dbConfig = {
     pool: {
         max: 20,
         min: 0,
-        idleTimeoutMillis: 30000
+        idleTimeoutMillis: 50000
     },
     options: {
         ...baseConfig.options,
@@ -48,7 +48,7 @@ const longRunningDbConfig = {
     pool: {
         max: 5,
         min: 0,
-        idleTimeoutMillis: 30000
+        idleTimeoutMillis: 50000
     },
     options: {
         ...baseConfig.options,

@@ -51,7 +51,7 @@ const AccessDenied = () => {
             xmlns="http://www.w3.org/2000/svg"
           >
             {/* Warning Rings */}
-            <circle cx="125" cy="125" r="110" stroke="#ef4444" strokeWidth="1" strokeDasharray="6 8" opacity="0.3" className="animate-spin duration-30000" />
+            <circle cx="125" cy="125" r="110" stroke="#ef4444" strokeWidth="1" strokeDasharray="6 8" opacity="0.3" className="animate-spin duration-50000" />
             <circle cx="125" cy="125" r="85" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.3" />
 
             {/* Glowing Red Warning Light behind Shield */}

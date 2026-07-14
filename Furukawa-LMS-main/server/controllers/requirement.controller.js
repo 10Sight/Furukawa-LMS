@@ -20,7 +20,7 @@ import { hasPermission } from "../middlewares/roleAuth.middleware.js";
 const executeSql = async (queryStr, params = [], transactionOrPool = null) => {
     const activeConn = transactionOrPool || await poolPromise;
     const request = activeConn.request();
-    request.timeout = 300000;
+    request.timeout = 500000;
 
     let formattedQuery = queryStr;
 

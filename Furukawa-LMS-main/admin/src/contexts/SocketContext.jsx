@@ -41,7 +41,7 @@ export const SocketProvider = ({ children }) => {
                     }
                 } else if (typeof window !== 'undefined') {
                     const { protocol, hostname } = window.location;
-                    socketUrl = `${protocol}//${hostname}:3000`;
+                    socketUrl = `${protocol}//${hostname}:5000`;
                 }
                 const newSocket = io(socketUrl, {
                     path: import.meta.env.VITE_SOCKET_PATH || '/socket.io',
@@ -164,7 +164,7 @@ export const SocketProvider = ({ children }) => {
                     if (data.userName) {
                         toast(`${data.userName} joined`, {
                             description: `Room: ${data.roomId}`,
-                            duration: 3000,
+                            duration: 5000,
                         });
                     }
                 });
@@ -173,7 +173,7 @@ export const SocketProvider = ({ children }) => {
                     if (data.userName) {
                         toast(`${data.userName} left`, {
                             description: `Room: ${data.roomId}`,
-                            duration: 3000,
+                            duration: 5000,
                         });
                     }
                 });

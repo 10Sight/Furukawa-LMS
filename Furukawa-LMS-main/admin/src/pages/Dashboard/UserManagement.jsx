@@ -20,7 +20,7 @@ import {
     Loader2
 } from "lucide-react";
 import axiosInstance from "@/Helper/axiosInstance";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import { usePrivileges } from "@/hooks/usePrivileges";
 
 const UserManagement = () => {

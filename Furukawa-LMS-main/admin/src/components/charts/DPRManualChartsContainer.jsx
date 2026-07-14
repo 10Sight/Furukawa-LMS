@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 import {
     Activity as IconActivity,
     Save as IconSave,

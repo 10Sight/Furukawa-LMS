@@ -108,6 +108,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
 
     const canApprove = hasPermission("dojo_evaluation_test:approve");
     const canConfirm = hasPermission("dojo_evaluation_test:confirm");
+    const canEditSubmitted = hasPermission("dojo_evaluation_test:edit_submitted");
 
     const isView = isViewMode || !!attemptId;
     const editAttemptId = searchParams.get("attemptId") || "";
@@ -785,7 +786,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                     <div className="border-b border-gray-300 pb-0.5 mb-0.5">{idx + 1}</div>
                                                     <div className="flex flex-col items-center gap-1 mt-0.5">
                                                         <span className="text-[7.5px] uppercase tracking-wider text-gray-500 font-bold block">Perform Date</span>
-                                                        {isView || isPrintMode || (isEdit && preFilledColumns[idx]) ? (
+                                                        {isView || isPrintMode || (isEdit && preFilledColumns[idx] && !canEditSubmitted) ? (
                                                             <span className="text-[9px] text-gray-800 font-bold font-mono px-1">
                                                                 {performDates[idx] ? new Date(performDates[idx]).toLocaleDateString("en-IN", {
                                                                     day: "2-digit",
@@ -864,7 +865,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
 
                                                         return (
                                                             <td key={colIdx} className="border-r border-black p-0 text-center align-middle w-16 h-10 bg-white">
-                                                                {(isView || (isEdit && preFilledColumns[colIdx])) ? (
+                                                                {(isView || (isEdit && preFilledColumns[colIdx] && !canEditSubmitted)) ? (
                                                                     <span className={`font-bold whitespace-nowrap ${cellColorClass}`}>
                                                                         {cellVal || "-"}
                                                                     </span>

@@ -212,6 +212,7 @@ const SYSTEM_PERMISSIONS = {
   DOJO_EVALUATION_TEST_APPROVE: "dojo_evaluation_test:approve",
   DOJO_EVALUATION_TEST_CONFIRM: "dojo_evaluation_test:confirm",
   DOJO_EVALUATION_TEST_VIEW: "dojo_evaluation_test:view",
+  DOJO_EVALUATION_TEST_EDIT_SUBMITTED: "dojo_evaluation_test:edit_submitted",
 
   // MPS Portal Management
   MPS_ATTENDANCE_READ: "mps_attendance:read",
@@ -598,7 +599,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE, name: "Take DOJO Evaluation Test", description: "Attempt and submit DOJO evaluation tests" },
         { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_APPROVE, name: "Approve DOJO Evaluation Test", description: "Approve submitted DOJO evaluation tests" },
         { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CONFIRM, name: "Confirm DOJO Evaluation Test", description: "Confirm/verify submitted DOJO evaluation tests" },
-        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW, name: "View DOJO Evaluation Test", description: "View list and details of DOJO evaluation tests and attempts" }
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW, name: "View DOJO Evaluation Test", description: "View list and details of DOJO evaluation tests and attempts" },
+        { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_EDIT_SUBMITTED, name: "Edit Submitted DOJO Evaluation Results", description: "Edit evaluation results and performance dates for columns already saved/submitted" }
       ],
       "MPS Portal": [
         { id: SYSTEM_PERMISSIONS.MPS_ATTENDANCE_READ, name: "View Attendance", description: "View attendance records and logs" },

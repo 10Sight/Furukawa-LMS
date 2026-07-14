@@ -58,12 +58,15 @@ import {
   IconLayout,
   IconGitBranch,
   IconGitCommit,
-  IconSettings
+  IconSettings,
+  IconHistory,
+  IconShieldCheck
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getMediaUrl } from "@/utils/mediaUtils";
 import { safeDateFormat, displayDate } from "@/utils/dateUtils";
+import axiosInstance from "@/Helper/axiosInstance";
 
 const safeLocaleDate = (dateValue) => {
   return displayDate(dateValue) || "—";
@@ -79,6 +82,7 @@ const TAB_VIEW_ACTIONS = {
   monitoring3: "VIEW_STUDENT_3DAY_MONITORING",
   monitoring16: "VIEW_STUDENT_16DAY_MONITORING",
   skillEvaluation: "VIEW_STUDENT_SKILL_EVALUATION",
+  handover: "VIEW_STUDENT_HANDOVER_HISTORY",
 };
 
 const StudentDetail = () => {
@@ -91,6 +95,10 @@ const StudentDetail = () => {
   // OJT State
   const [selectedOjtId, setSelectedOjtId] = useState(null);
   const [createOjtOpen, setCreateOjtOpen] = useState(false);
+
+  // Handover Sheet State
+  const [handoverHistory, setHandoverHistory] = useState([]);
+  const [handoverLoading, setHandoverLoading] = useState(false);
 
   // API Queries
   const {
@@ -158,6 +166,16 @@ const StudentDetail = () => {
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "handover" || !studentId) return;
+    setHandoverLoading(true);
+    axiosInstance
+      .get(`/api/departments/handover-sheet/student/${studentId}`)
+      .then((res) => setHandoverHistory(res.data?.data || []))
+      .catch(() => toast.error("Failed to load handover history"))
+      .finally(() => setHandoverLoading(false));
+  }, [activeTab, studentId]);
 
   const progressList = progressData?.data || [];
   const submissions = submissionsData?.data || [];
@@ -1011,6 +1029,7 @@ const StudentDetail = () => {
           <TabsTrigger value="monitoring3">3 Day Monitoring</TabsTrigger>
           <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
           <TabsTrigger value="skillEvaluation">Check Sheet of Skill Evaluation</TabsTrigger>
+          <TabsTrigger value="handover">Handover Sheet</TabsTrigger>
         </TabsList>
 
         <TabsContent value="monitoring16">
@@ -1594,6 +1613,70 @@ const StudentDetail = () => {
             employeeCode={student?.userName || student?.empId || student?.employeeId || ""}
           />
         </TabsContent>
+
+        <TabsContent value="handover" className="space-y-6 mt-6">
+          <Card className="border-slate-200 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50/50 py-3 border-b">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <IconHistory className="h-4 w-4" />
+                  Handover Sheet History
+                </CardTitle>
+                <Badge variant="outline" className="text-xs font-mono">{handoverHistory.length} entries</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {handoverLoading ? (
+                <div className="p-6 space-y-3">
+                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              ) : handoverHistory.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50/50">
+                      <TableHead className="text-xs font-bold">Date</TableHead>
+                      <TableHead className="text-xs font-bold">Department</TableHead>
+                      <TableHead className="text-xs font-bold">Section</TableHead>
+                      <TableHead className="text-xs font-bold">Marks</TableHead>
+                      <TableHead className="text-xs font-bold">Process</TableHead>
+                      <TableHead className="text-xs font-bold">Mentor</TableHead>
+                      <TableHead className="text-xs font-bold">Interview 1</TableHead>
+                      <TableHead className="text-xs font-bold">Interview 2</TableHead>
+                      <TableHead className="text-xs font-bold">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {handoverHistory.map((entry) => (
+                      <TableRow key={`${entry.id}-${entry.date}`} className="hover:bg-slate-50/50">
+                        <TableCell className="text-xs text-slate-600 whitespace-nowrap">
+                          {entry.date ? safeLocaleDate(entry.date) : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium">{entry.departmentName || "—"}</TableCell>
+                        <TableCell className="text-xs text-slate-500">{entry.sectionName || "—"}</TableCell>
+                        <TableCell className="text-xs">
+                          <Badge variant="outline" className="font-mono text-xs">{entry.marks ?? "—"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500">{entry.process || "—"}</TableCell>
+                        <TableCell className="text-xs text-slate-500">{entry.mentor || "—"}</TableCell>
+                        <TableCell className="text-xs text-slate-500">{entry.interview1 || "—"}</TableCell>
+                        <TableCell className="text-xs text-slate-500">{entry.interview2 || "—"}</TableCell>
+                        <TableCell>
+                          <HandoverStatusBadge status={entry.interviewStatus} actionBy={entry.statusActionBy} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                  <IconShieldCheck className="h-12 w-12 text-slate-200" />
+                  <p className="text-sm font-semibold text-slate-500">No handover entries found</p>
+                  <p className="text-xs text-slate-400">This employee has not appeared in any department's handover sheet yet.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Attempt Review Modal (admin editable) */}
@@ -1603,6 +1686,21 @@ const StudentDetail = () => {
         onClose={() => setAttemptModalOpen(false)}
         canEdit={true}
       />
+    </div>
+  );
+};
+
+const HandoverStatusBadge = ({ status, actionBy }) => {
+  if (!status) return <span className="text-slate-400 text-xs">Pending</span>;
+  const map = {
+    approved: { label: "Approved", cls: "bg-green-100 text-green-700 border-green-200" },
+    rejected: { label: "Rejected", cls: "bg-red-100 text-red-700 border-red-200" },
+  };
+  const cfg = map[status.toLowerCase()] || { label: status, cls: "bg-slate-100 text-slate-600" };
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 ${cfg.cls}`}>{cfg.label}</Badge>
+      {actionBy && <span className="text-[9px] text-slate-400 leading-none">{actionBy}</span>}
     </div>
   );
 };

@@ -341,6 +341,27 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
             return;
         }
 
+        for (let idx = 0; idx < performDateCount; idx++) {
+            if (performDates[idx] && performDates[idx].trim() !== "") {
+                const emptyQuestions = [];
+                precomputedBlocks.forEach(block => {
+                    (block.rows || []).forEach(row => {
+                        const cellVal = attemptData[row.qId]?.results?.[idx];
+                        if (!cellVal || cellVal.trim() === "") {
+                            emptyQuestions.push(row.qIndex);
+                        }
+                    });
+                });
+
+                if (emptyQuestions.length > 0) {
+                    alert(
+                        `Please fill all cells in Column ${idx + 1} (Perform Date: ${performDates[idx]}) before saving. Missing grades for checking item(s): ${emptyQuestions.join(", ")}.`
+                    );
+                    return;
+                }
+            }
+        }
+
         const payload = {
             testId: id,
             traineeName,

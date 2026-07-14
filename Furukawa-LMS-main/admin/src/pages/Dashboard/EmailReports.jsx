@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axiosInstance from '../../Helper/axiosInstance';
 import { useSelector } from 'react-redux';
 import { Mail, Plus, Trash2, FileSpreadsheet, CheckCircle2, Clock } from 'lucide-react';
-import { toast } from "react-hot-toast";
+import { toast } from "sonner";
 
 const EmailReports = () => {
     const { user } = useSelector((state) => state.auth);

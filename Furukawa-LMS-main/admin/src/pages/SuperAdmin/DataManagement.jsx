@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   useGetBackupHistoryQuery,
   useRestoreFromBackupMutation,
@@ -33,7 +34,7 @@ import {
   TrendingUp,
   Zap
 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { toast } from "sonner";
 
 const DataManagement = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -743,40 +744,63 @@ const DataManagement = () => {
       </div>
 
       {/* Restore Confirmation Modal */}
-      {showRestoreConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center mb-4">
-              <AlertTriangle className="h-6 w-6 text-yellow-600 mr-3" />
-              <h3 className="text-lg font-semibold text-gray-900">Confirm Restore</h3>
-            </div>
-            <p className="text-gray-600 mb-6">
-              This action will replace all current data with the backup data. This cannot be undone.
-              Are you sure you want to proceed?
-            </p>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowRestoreConfirm(null)}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleRestoreBackup(showRestoreConfirm)}
-                disabled={restoring}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
-                {restoring ? 'Restoring...' : 'Confirm Restore'}
-              </button>
-            </div>
+      {showRestoreConfirm && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+            onClick={() => !restoring && setShowRestoreConfirm(null)}
+          />
+          <div className="relative bg-white rounded-lg max-w-md w-full p-6 shadow-xl transform transition-all">
+            {restoring ? (
+              <div className="flex flex-col items-center justify-center py-6">
+                <div className="relative mb-4">
+                  <Database className="h-12 w-12 text-indigo-600 animate-pulse" />
+                  <Loader2 className="absolute -bottom-2 -right-2 h-6 w-6 text-indigo-600 animate-spin bg-white rounded-full p-0.5 shadow-sm" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Restoring Database</h3>
+                <p className="text-sm text-gray-500 text-center max-w-xs">
+                  Please wait while the system restores the database. This process may take a few moments. Do not refresh or close this page.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center mb-4">
+                  <AlertTriangle className="h-6 w-6 text-yellow-600 mr-3" />
+                  <h3 className="text-lg font-semibold text-gray-900">Confirm Restore</h3>
+                </div>
+                <p className="text-gray-600 mb-6">
+                  This action will replace all current data with the backup data. This cannot be undone.
+                  Are you sure you want to proceed?
+                </p>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowRestoreConfirm(null)}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleRestoreBackup(showRestoreConfirm)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Confirm Restore
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
+      {showDeleteConfirm && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+            onClick={() => !deleting && setShowDeleteConfirm(null)}
+          />
+          <div className="relative bg-white rounded-lg max-w-md w-full p-6 shadow-xl transform transition-all">
             <div className="flex items-center mb-4">
               <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
               <h3 className="text-lg font-semibold text-gray-900">Confirm Delete</h3>
@@ -800,7 +824,8 @@ const DataManagement = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

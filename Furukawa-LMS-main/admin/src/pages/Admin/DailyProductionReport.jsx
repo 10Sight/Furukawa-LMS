@@ -38,7 +38,7 @@ import {
     useLazyGetManpowerStatsQuery,
     useLazyGetBatchMachineAssignmentsQuery,
 } from "@/Redux/AllApi/DailyProductionReportApi";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import {
     Dialog,
     DialogContent,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useGetSystemHealthQuery, useGetSystemAlertsQuery, useGetServerMetricsQuery, useGetDatabaseMetricsQuery, useGetSystemPerformanceHistoryQuery } from "../../Redux/AllApi/SuperAdminApi";
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { RefreshCcw, Server, Database, AlertTriangle, CheckCircle, XCircle, Clock, Activity, Cpu, HardDrive, Users } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { toast } from "sonner";
 
 const SystemMonitoring = () => {
   const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds

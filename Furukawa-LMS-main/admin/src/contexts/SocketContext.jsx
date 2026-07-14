@@ -41,7 +41,7 @@ export const SocketProvider = ({ children }) => {
                     }
                 } else if (typeof window !== 'undefined') {
                     const { protocol, hostname } = window.location;
-                    socketUrl = `${protocol}//${hostname}:3000`;
+                    socketUrl = `${protocol}//${hostname}:5000`;
                 }
                 const newSocket = io(socketUrl, {
                     path: import.meta.env.VITE_SOCKET_PATH || '/socket.io',

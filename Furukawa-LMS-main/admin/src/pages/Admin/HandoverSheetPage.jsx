@@ -373,6 +373,21 @@ const HandoverSheetPage = () => {
         (authUser.departments?.length > 0) || authUser.departmentId ||
         (authUser.sections?.length > 0) || authUser.sectionId
     );
+    const isDeptSelectDisabled = isRestricted && assignableDepartments.length === 1;
+
+    // Keep the Dashboard and Monitoring department filters within the restricted user's
+    // assigned departments — mirrors the assignableDepartments gating used for creation above.
+    useEffect(() => {
+        if (isRestricted && assignableDepartments.length > 0 && !assignableDepartments.some(d => String(d.id || d._id) === dashDept)) {
+            setDashDept(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+        }
+    }, [isRestricted, assignableDepartments, dashDept]);
+
+    useEffect(() => {
+        if (isRestricted && assignableDepartments.length > 0 && !assignableDepartments.some(d => String(d.id || d._id) === monitorDept)) {
+            setMonitorDept(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+        }
+    }, [isRestricted, assignableDepartments, monitorDept]);
 
     // Auto-select the single available option when the create dialog opens for a restricted user
     useEffect(() => {
@@ -558,13 +573,19 @@ const HandoverSheetPage = () => {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-slate-500 uppercase">Department</Label>
-                                        <Select value={dashDept} onValueChange={(val) => { setDashDept(val); setDashSection('all'); }}>
+                                        <Select
+                                            value={dashDept}
+                                            onValueChange={(val) => { setDashDept(val); setDashSection('all'); }}
+                                            disabled={isDeptSelectDisabled}
+                                        >
                                             <SelectTrigger className="h-10 bg-white border-slate-200">
                                                 <SelectValue placeholder="All Departments" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="all">All Departments</SelectItem>
-                                                {departments.map((d) => (
+                                                {!isRestricted && (
+                                                    <SelectItem value="all">All Departments</SelectItem>
+                                                )}
+                                                {assignableDepartments.map((d) => (
                                                     <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -685,13 +706,19 @@ const HandoverSheetPage = () => {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-slate-500 uppercase">Department</Label>
-                                        <Select value={monitorDept} onValueChange={(val) => { setMonitorDept(val); setMonitorSection('all'); }}>
+                                        <Select
+                                            value={monitorDept}
+                                            onValueChange={(val) => { setMonitorDept(val); setMonitorSection('all'); }}
+                                            disabled={isDeptSelectDisabled}
+                                        >
                                             <SelectTrigger className="h-10 bg-white border-slate-200">
                                                 <SelectValue placeholder="All Departments" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="all">All Departments</SelectItem>
-                                                {departments.map((d) => (
+                                                {!isRestricted && (
+                                                    <SelectItem value="all">All Departments</SelectItem>
+                                                )}
+                                                {assignableDepartments.map((d) => (
                                                     <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -816,7 +843,7 @@ const HandoverSheetPage = () => {
                             <Select
                                 value={createDept}
                                 onValueChange={(val) => { setCreateDept(val); setCreateSection(""); }}
-                                disabled={isRestricted && assignableDepartments.length <= 1}
+                                disabled={isDeptSelectDisabled}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200">
                                     <SelectValue placeholder="Select Department" />

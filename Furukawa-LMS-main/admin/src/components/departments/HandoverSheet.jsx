@@ -423,7 +423,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
         }
     };
 
-    const hasContentChanged = () => {
+    const hasContentChanged = (excludeMentor = false) => {
         if (isNewSheet) return false;
         if (entries.length !== originalEntries.length) return true;
         for (let i = 0; i < entries.length; i++) {
@@ -437,7 +437,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                 entry.marks !== orig.marks ||
                 entry.department !== orig.department ||
                 entry.process !== orig.process ||
-                entry.mentor !== orig.mentor ||
+                (!excludeMentor && entry.mentor !== orig.mentor) ||
                 entry.interview1 !== orig.interview1 ||
                 entry.interview2 !== orig.interview2 ||
                 entry.departmentId !== orig.departmentId ||
@@ -466,8 +466,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                 toast.error("You do not have permission to edit a saved handover sheet.");
                 return;
             }
-            setPendingSubmitValue(isSubmit);
-            setIsRemarkDialogOpen(true);
+            if (hasContentChanged(true)) {
+                setPendingSubmitValue(isSubmit);
+                setIsRemarkDialogOpen(true);
+            } else {
+                executeSave(isSubmit);
+            }
         } else {
             executeSave(isSubmit);
         }

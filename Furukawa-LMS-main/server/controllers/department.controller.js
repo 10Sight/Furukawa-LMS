@@ -1209,7 +1209,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     );
 });
 
-const hasContentChanged = (oldSheet, newEntries, newMetadata) => {
+const hasContentChanged = (oldSheet, newEntries, newMetadata, excludeMentor = false) => {
     if (!oldSheet) return false;
     const oldEntries = oldSheet.entries || [];
     if (oldEntries.length !== (newEntries || []).length) return true;
@@ -1225,7 +1225,7 @@ const hasContentChanged = (oldSheet, newEntries, newMetadata) => {
             String(entry.marks || '') !== String(orig.marks || '') ||
             String(entry.department || '') !== String(orig.department || '') ||
             String(entry.process || '') !== String(orig.process || '') ||
-            String(entry.mentor || '') !== String(orig.mentor || '') ||
+            (!excludeMentor && String(entry.mentor || '') !== String(orig.mentor || '')) ||
             String(entry.interview1 || '') !== String(orig.interview1 || '') ||
             String(entry.interview2 || '') !== String(orig.interview2 || '') ||
             String(entry.departmentId || '') !== String(orig.departmentId || '') ||
@@ -1274,18 +1274,21 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
             if (!canEditSaved) {
                 throw new ApiError("You do not have permission to edit a saved handover sheet", 403);
             }
-            if (!remark || !remark.trim()) {
-                throw new ApiError("Remark is required when editing a saved handover sheet", 400);
+            const nonMentorChanged = hasContentChanged(sheet, entries, metadata, true);
+            if (nonMentorChanged) {
+                if (!remark || !remark.trim()) {
+                    throw new ApiError("Remark is required when editing a saved handover sheet", 400);
+                }
+
+                // Append remark to history
+                const remarksHistory = Array.isArray(sheet.remarksHistory) ? sheet.remarksHistory : [];
+                remarksHistory.push({
+                    userName: req.user?.fullName || req.user?.name || "System",
+                    remark: remark.trim(),
+                    createdAt: new Date().toISOString()
+                });
+                sheet.remarksHistory = remarksHistory;
             }
-            
-            // Append remark to history
-            const remarksHistory = Array.isArray(sheet.remarksHistory) ? sheet.remarksHistory : [];
-            remarksHistory.push({
-                userName: req.user?.fullName || req.user?.name || "System",
-                remark: remark.trim(),
-                createdAt: new Date().toISOString()
-            });
-            sheet.remarksHistory = remarksHistory;
         }
     }
 

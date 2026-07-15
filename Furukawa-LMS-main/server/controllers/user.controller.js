@@ -472,14 +472,13 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   if (req.query.ojtApprovedToday === "true") {
     whereClauses.push(`EXISTS (
-      SELECT 1 FROM on_job_trainings ojt
-      WHERE (
-        ojt.student = CAST(u.id AS NVARCHAR(50))
-        OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
-        OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
-      )
-      AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
-      AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+      SELECT 1 FROM OPENJSON(ISNULL(u.ojt, '[]'))
+      WITH (
+        result NVARCHAR(50) '$.result',
+        approvedAt DATETIME '$.approvedAt'
+      ) AS ojt_item
+      WHERE (ojt_item.result = 'Pass' OR ojt_item.result = 'Approved')
+        AND CAST(ojt_item.approvedAt AS DATE) = CAST(GETDATE() AS DATE)
     )`);
   }
 
@@ -1680,14 +1679,13 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
   if (req.query.ojtApprovedToday === "true") {
     whereClauses.push(`EXISTS (
-      SELECT 1 FROM on_job_trainings ojt
-      WHERE (
-        ojt.student = CAST(u.id AS NVARCHAR(50))
-        OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
-        OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
-      )
-      AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
-      AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+      SELECT 1 FROM OPENJSON(ISNULL(u.ojt, '[]'))
+      WITH (
+        result NVARCHAR(50) '$.result',
+        approvedAt DATETIME '$.approvedAt'
+      ) AS ojt_item
+      WHERE (ojt_item.result = 'Pass' OR ojt_item.result = 'Approved')
+        AND CAST(ojt_item.approvedAt AS DATE) = CAST(GETDATE() AS DATE)
     )`);
   }
 

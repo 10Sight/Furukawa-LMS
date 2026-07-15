@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { formatPaperSubTitle } from "@/utils/formatters";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import useTranslate from "@/hooks/useTranslate";
 import axiosInstance from "@/Helper/axiosInstance";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import { getMediaUrl } from "@/utils/mediaUtils";
 import { useSelector } from "react-redux";
 
 const TakeQuiz = () => {
+  const { t } = useTranslate();
   const { quizId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -47,6 +49,24 @@ const TakeQuiz = () => {
   const [error, setError] = useState(null);
   const [startTime, setStartTime] = useState(null);
   const [step, setStep] = useState("loading"); // loading, quiz, result
+
+  // Stable shuffled right-side options per matching question, so dropdown order
+  // doesn't mirror the left-side sequence and doesn't reshuffle on every re-render.
+  const shuffledRightOptions = useMemo(() => {
+    if (!quiz?.questions) return {};
+    const mapping = {};
+    quiz.questions.forEach((q, qIdx) => {
+      if (q.type === "matching" && q.pairs) {
+        const pairsCopy = [...q.pairs];
+        for (let i = pairsCopy.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pairsCopy[i], pairsCopy[j]] = [pairsCopy[j], pairsCopy[i]];
+        }
+        mapping[qIdx] = pairsCopy;
+      }
+    });
+    return mapping;
+  }, [quiz]);
 
   const { user: currentUser } = useSelector((state) => state.auth);
   const STORAGE_KEY = `fme_quiz_session_${quizId}_${currentUser?.id || currentUser?._id || 'guest'}`;
@@ -172,12 +192,13 @@ const TakeQuiz = () => {
   const passingMarks = Math.round(totalMarks * (quiz?.passingScore || 70) / 100);
 
   const getMarksOfEachQuestion = () => {
-    if (!quiz?.questions || quiz.questions.length === 0) return "1 Mark";
+    if (!quiz?.questions || quiz.questions.length === 0) return `1 ${t("takeQuiz.mark")}`;
     const marksList = [...new Set(quiz.questions.map(q => q.marks || 1))];
     if (marksList.length === 1) {
-      return `${marksList[0]} Mark${marksList[0] > 1 ? 's' : ''}`;
+      const markLabel = marksList[0] === 1 ? t("takeQuiz.mark") : t("takeQuiz.marks");
+      return `${marksList[0]} ${markLabel}`;
     }
-    return marksList.join(" + ") + " Marks";
+    return marksList.join(" + ") + ` ${t("takeQuiz.marks")}`;
   };
 
   const getCurrentQuarter = () => {
@@ -379,7 +400,7 @@ const TakeQuiz = () => {
         });
 
         if (unansweredQuestions.length > 0) {
-          alert(`Please attempt all questions before submitting the test paper.\nUnanswered questions: ${unansweredQuestions.join(", ")}`);
+          alert(t("takeQuiz.alert.unansweredQuestions") + unansweredQuestions.join(", "));
           return;
         }
       }
@@ -396,7 +417,7 @@ const TakeQuiz = () => {
           studentIdToSubmit = selectedStudent.id || selectedStudent._id;
         } else {
           if (!candidateName.trim()) {
-            alert("Please enter a Candidate Name");
+            alert(t("takeQuiz.alert.enterCandidateName"));
             setSubmitting(false);
             setTimerActive(quiz?.timeLimit ? true : false);
             return;
@@ -412,7 +433,7 @@ const TakeQuiz = () => {
 
         if (nameChanged || codeChanged) {
           if (!candidateName.trim()) {
-            alert("Please enter a Candidate Name");
+            alert(t("takeQuiz.alert.enterCandidateName"));
             setSubmitting(false);
             setTimerActive(quiz?.timeLimit ? true : false);
             return;
@@ -516,7 +537,7 @@ const TakeQuiz = () => {
 
   const handleContactInstructor = () => {
     // You could implement email functionality or modal here
-    alert("Please contact your instructor for assistance with this quiz.");
+    alert(t("takeQuiz.alert.contactInstructor"));
   };
 
   // Show error state first to prevent indefinite skeleton loops on load failures
@@ -527,17 +548,17 @@ const TakeQuiz = () => {
           <IconAlertCircle className="h-5 w-5" />
           <AlertDescription className="font-medium">
             <div className="space-y-1">
-              <div><strong>System Alert:</strong> {error}</div>
-              <div className="text-xs opacity-70">If this persists, please contact technical support.</div>
+              <div><strong>{t("takeQuiz.error.systemAlert")}</strong> {error}</div>
+              <div className="text-xs opacity-70">{t("takeQuiz.error.technicalSupportDesc")}</div>
             </div>
           </AlertDescription>
         </Alert>
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => navigate(-1)} className="h-12 px-6">
-            <IconArrowLeft size={18} className="mr-2" /> Go Back
+            <IconArrowLeft size={18} className="mr-2" /> {t("takeQuiz.btnGoBack")}
           </Button>
           <Button onClick={() => window.location.reload()} className="h-12 px-6 bg-gray-900 hover:bg-black text-white">
-            <IconRotateClockwise size={18} className="mr-2" /> Reload Page
+            <IconRotateClockwise size={18} className="mr-2" /> {t("takeQuiz.btnReload")}
           </Button>
         </div>
       </div>
@@ -618,24 +639,24 @@ const TakeQuiz = () => {
             <Button
               onClick={handleBackToCourse}
               className="px-4 py-2 h-10 shadow-xl border-2 border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2 font-bold text-sm rounded-xl no-print"
-              title="Cancel and Exit Test"
+              title={t("takeQuiz.tooltip.cancelAndExit")}
             >
               <IconArrowLeft size={18} />
-              <span className="hidden sm:inline">Cancel & Exit</span>
+              <span className="hidden sm:inline">{t("takeQuiz.btnCancelExit")}</span>
             </Button>
 
             <Button
               onClick={() => window.print()}
               className="px-4 py-2 h-10 shadow-xl border-2 border-black bg-white text-black hover:bg-gray-100 flex items-center gap-2 font-bold text-sm rounded-xl no-print"
-              title="Print Test Paper"
+              title={t("takeQuiz.tooltip.print")}
             >
               <IconPrinter size={18} />
-              <span className="hidden sm:inline">Print Paper</span>
+              <span className="hidden sm:inline">{t("takeQuiz.btnPrintPaper")}</span>
             </Button>
           </div>
           <div className="pointer-events-auto bg-white/90 backdrop-blur-sm p-3 rounded-xl border border-gray-200 shadow-xl w-48 sm:w-64">
             <div className="flex justify-between text-xs font-bold mb-1">
-              <span>PROGRESS</span>
+              <span>{t("takeQuiz.progress")}</span>
               <span>{Math.round((getAnsweredCount() / (quiz?.questions?.length || 1)) * 100)}%</span>
             </div>
             <Progress value={(getAnsweredCount() / (quiz?.questions?.length || 1)) * 100} className="h-2" />
@@ -659,7 +680,7 @@ const TakeQuiz = () => {
             {/* Title box */}
             <div className="col-span-6 border-r-[3px] border-black flex flex-col items-center justify-center py-4 bg-white text-center">
               <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight uppercase leading-none">
-                {quiz?.paperTitle || "SKILL EVALUATION TEST PAPER"}
+                {quiz?.paperTitle || t("takeQuiz.header.evaluationTestPaper")}
               </h1>
               <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
                 {formatPaperSubTitle(quiz?.paperSubTitle, quiz?.level, quiz?.isDojo, "New Manpower")}
@@ -669,19 +690,19 @@ const TakeQuiz = () => {
             {/* Doc control metadata box */}
             <div className="col-span-3 flex flex-col text-[10px] font-bold bg-white">
               <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">Doc.No.</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.docNo")}</div>
                 <div className="px-2 text-black">{quiz?.docNo || "TST-HR-02"}</div>
               </div>
               <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">REV 00</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.rev")}</div>
                 <div className="px-2 text-black">02</div>
               </div>
               <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">REV. DATE</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.revDate")}</div>
                 <div className="px-2">08.04.2021</div>
               </div>
               <div className="grid grid-cols-2 flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">ISSUE DATE</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.issueDate")}</div>
                 <div className="px-2">08.04.2021</div>
               </div>
             </div>
@@ -696,7 +717,7 @@ const TakeQuiz = () => {
             <div className="col-span-7 border-r-[3px] border-black p-4 space-y-3 bg-white">
               {/* Process Name */}
               <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">Process Name :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.processName")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold">
                   {quiz?.subSectionNames && quiz.subSectionNames.length > 0
                     ? quiz.subSectionNames.join(", ")
@@ -705,7 +726,7 @@ const TakeQuiz = () => {
               </div>
               {/* Candidate Name */}
               <div className="flex gap-2 items-center relative">
-                <span className="min-w-[120px] text-black">Candidate Name :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.candidateName")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold relative">
                   {canAdminister ? (
                     <div className="relative w-full">
@@ -718,7 +739,7 @@ const TakeQuiz = () => {
                           if (searchSuggestions.length > 0) setShowSuggestions(true);
                         }}
                         className="w-full bg-transparent focus:outline-none focus:ring-0 text-black border-none"
-                        placeholder="Type to search or enter manually..."
+                        placeholder={t("takeQuiz.phSearchOrManual")}
                         required
                       />
                       {showSuggestions && searchSuggestions.length > 0 && (
@@ -737,7 +758,7 @@ const TakeQuiz = () => {
                       )}
                       {isSearching && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 no-print">
-                          Searching...
+                          {t("takeQuiz.searching")}
                         </div>
                       )}
                     </div>
@@ -747,7 +768,7 @@ const TakeQuiz = () => {
                       value={candidateName}
                       onChange={(e) => handleCandidateNameChange(e.target.value)}
                       className="w-full bg-transparent focus:outline-none focus:ring-0 text-black border-none"
-                      placeholder="Enter candidate name..."
+                      placeholder={t("takeQuiz.phEnterCandidateName")}
                       required
                     />
                   )}
@@ -755,7 +776,7 @@ const TakeQuiz = () => {
               </div>
               {/* E.Code */}
               <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">E.Code :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.eCode")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-mono">
                   {canAdminister ? (
                     <input
@@ -763,7 +784,7 @@ const TakeQuiz = () => {
                       value={eCode}
                       onChange={(e) => handleECodeChange(e.target.value)}
                       className="w-full bg-transparent focus:outline-none focus:ring-0 text-black border-none"
-                      placeholder="Enter E.Code..."
+                      placeholder={t("takeQuiz.phEnterECode")}
                       required
                     />
                   ) : (
@@ -772,14 +793,14 @@ const TakeQuiz = () => {
                       value={eCode}
                       onChange={(e) => handleECodeChange(e.target.value)}
                       className="w-full bg-transparent focus:outline-none focus:ring-0 text-black border-none"
-                      placeholder="Enter E.Code..."
+                      placeholder={t("takeQuiz.phEnterECode")}
                     />
                   )}
                 </span>
               </div>
               {/* Department */}
               <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">Department :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.department")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
                   {(selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName) || "—"}
                 </span>
@@ -789,25 +810,25 @@ const TakeQuiz = () => {
             {/* Right box */}
             <div className="col-span-5 p-4 space-y-2 bg-white text-[11px]">
               <div className="flex gap-2 items-center">
-                <span className="text-black">Marks Of Each Question :</span>
+                <span className="text-black">{t("takeQuiz.meta.marksPerQ")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
                   {getMarksOfEachQuestion()}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Total Marks :</span>
+                <span className="text-black">{t("takeQuiz.meta.totalMarks")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {totalMarks} Marks
+                  {totalMarks} {t("takeQuiz.marks")}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Passing Marks Required :</span>
+                <span className="text-black">{t("takeQuiz.meta.passingMarks")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {passingMarks} Marks ({quiz?.passingScore || 70}%)
+                  {passingMarks} {t("takeQuiz.marks")} ({quiz?.passingScore || 70}%)
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Test Conducted By :</span>
+                <span className="text-black">{t("takeQuiz.meta.conductedBy")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
                   <input
                     type="text"
@@ -818,7 +839,7 @@ const TakeQuiz = () => {
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Test Date :</span>
+                <span className="text-black">{t("takeQuiz.meta.testDate")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
                   {new Date().toLocaleDateString('en-GB').replace(/\//g, '.')}
                 </span>
@@ -828,7 +849,7 @@ const TakeQuiz = () => {
 
           {/* PARAMETERS HEADER */}
           <div className="bg-gray-100/80 border-b-[3px] border-black p-3 font-bold uppercase text-lg tracking-wider text-center">
-            {quiz?.course?.title || quiz?.course?.name || quiz?.title || "THEORITICAL PARAMETERS"}
+            {quiz?.course?.title || quiz?.course?.name || quiz?.title || t("takeQuiz.header.theoreticalParams")}
           </div>
 
           {/* QUESTIONS TABLE */}
@@ -836,8 +857,8 @@ const TakeQuiz = () => {
             <Table className="border-collapse border-t-[3px] border-black">
               <TableHeader className="bg-gray-100">
                 <TableRow className="border-b-[3px] border-black hover:bg-gray-100">
-                  <TableHead className="w-[80px] border-r-[3px] border-black text-center font-bold text-black uppercase text-sm">S.No</TableHead>
-                  <TableHead className="font-bold text-black uppercase text-sm">Questions & Options</TableHead>
+                  <TableHead className="w-[80px] border-r-[3px] border-black text-center font-bold text-black uppercase text-sm">{t("takeQuiz.table.sNo")}</TableHead>
+                  <TableHead className="font-bold text-black uppercase text-sm">{t("takeQuiz.table.questionsOptions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -858,7 +879,7 @@ const TakeQuiz = () => {
                           )}
                         </div>
                         <span className="text-xs font-black text-gray-600 shrink-0 border border-gray-400 px-1.5 py-0.5 rounded uppercase tracking-wider bg-gray-50 leading-none mt-1">
-                          {question.marks || 1} {question.marks === 1 ? 'Mark' : 'Marks'}
+                          {question.marks || 1} {question.marks === 1 ? t("takeQuiz.mark") : t("takeQuiz.marks")}
                         </span>
                       </div>
 
@@ -922,10 +943,10 @@ const TakeQuiz = () => {
                       {/* Short Answer Fill-in-the-blank line */}
                       {question.type === "shortAnswer" && (
                         <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-3">
-                          <span className="text-sm font-black text-gray-800 shrink-0">Your Answer:</span>
+                          <span className="text-sm font-black text-gray-800 shrink-0">{t("takeQuiz.placeholder.yourAnswerLabel")}</span>
                           <input
                             type="text"
-                            placeholder="Type your answer here..."
+                            placeholder={t("takeQuiz.placeholder.typeAnswer")}
                             value={answers[questionIndex]?.text || ""}
                             onChange={(e) => handleAnswerChange(questionIndex, { text: e.target.value })}
                             className="flex-1 bg-transparent border-b-2 border-dashed border-black focus:border-blue-600 focus:outline-none py-1 font-bold text-base px-2 uppercase tracking-wide"
@@ -937,7 +958,7 @@ const TakeQuiz = () => {
                       {question.type === "matching" && (
                         <div className="pt-2 space-y-4">
                           <div className="bg-gray-50 border-2 border-black p-2 text-xs font-bold text-black uppercase tracking-wider">
-                            Select the matching right element for each left element below:
+                            {t("takeQuiz.matchingInstructions")}
                           </div>
                           <div className="space-y-4">
                             {(question.pairs || []).map((pair, pIdx) => {
@@ -981,8 +1002,8 @@ const TakeQuiz = () => {
                                       }}
                                       className="w-full h-11 px-3 border-2 border-black font-bold text-sm focus:outline-none focus:border-blue-600 bg-white"
                                     >
-                                      <option value="">-- Select Match --</option>
-                                      {(question.pairs || []).map((p, rIdx) => (
+                                      <option value="">{t("takeQuiz.placeholder.selectMatch")}</option>
+                                      {(shuffledRightOptions[questionIndex] || []).map((p, rIdx) => (
                                         <option key={rIdx} value={p.rightText}>
                                           {p.rightText} {p.rightTextSec ? ` (${p.rightTextSec})` : ''}
                                         </option>
@@ -1028,7 +1049,7 @@ const TakeQuiz = () => {
             className="h-11 px-8 border-2 border-gray-300 font-bold uppercase tracking-widest hover:bg-gray-50 text-gray-600 rounded-none transition-all"
           >
             <IconArrowLeft size={18} className="mr-2" />
-            Cancel & Exit
+            {t("takeQuiz.btnCancelExit")}
           </Button>
           <Button
             onClick={() => handleSubmit(false)}
@@ -1038,12 +1059,12 @@ const TakeQuiz = () => {
             {submitting ? (
               <div className="flex items-center gap-2">
                 <div className="size-4 animate-spin border-2 border-white/30 border-t-white rounded-full" />
-                Processing...
+                {t("takeQuiz.processing")}
               </div>
             ) : (
               <>
                 <IconDeviceFloppy size={20} className="mr-2" />
-                Submit Assessment
+                {t("takeQuiz.btnSubmit")}
               </>
             )}
           </Button>
@@ -1097,10 +1118,10 @@ const TakeQuiz = () => {
               {result.passed ? <IconCircleCheck size={40} /> : <IconAlertCircle size={40} />}
             </div>
             <CardTitle className={`text-3xl font-black mb-1 ${result.passed ? 'text-green-900' : 'text-red-900'}`}>
-              {result.passed ? 'CONGRATULATIONS!' : 'ASSESSMENT COMPLETED'}
+              {result.passed ? t("takeQuiz.result.congrats") : t("takeQuiz.result.completed")}
             </CardTitle>
             <CardDescription className="text-base font-medium text-gray-600 italic">
-              {result.passed ? "You've successfully cleared the test" : "Keep practicing and try again"}
+              {result.passed ? t("takeQuiz.result.successDesc") : t("takeQuiz.result.failDesc")}
             </CardDescription>
           </CardHeader>
 
@@ -1109,15 +1130,15 @@ const TakeQuiz = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white/80 backdrop-blur-sm p-4 rounded-xl text-center shadow-sm border border-white">
                 <div className={`text-3xl font-black mb-0.5 ${result.passed ? 'text-green-600' : 'text-red-600'}`}>{result.scorePercent}%</div>
-                <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">Accuracy</div>
+                <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">{t("takeQuiz.result.accuracy")}</div>
               </div>
               <div className="bg-white/80 backdrop-blur-sm p-4 rounded-xl text-center shadow-sm border border-white">
                 <div className="text-3xl font-black mb-0.5 text-gray-800">{result.score}/{result.totalMarks}</div>
-                <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">Total Points</div>
+                <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">{t("takeQuiz.result.totalPoints")}</div>
               </div>
               <div className="bg-white/80 backdrop-blur-sm p-4 rounded-xl text-center shadow-sm border border-white">
                 <div className="text-3xl font-black mb-0.5 text-blue-600">{Math.floor(result.timeTaken / 60)}m {result.timeTaken % 60}s</div>
-                <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">Time Taken</div>
+                <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">{t("takeQuiz.result.timeTaken")}</div>
               </div>
             </div>
 
@@ -1129,8 +1150,8 @@ const TakeQuiz = () => {
                     <IconLockOpen size={20} />
                   </div>
                   <div>
-                    <div className="font-bold text-sm">Next Module Unlocked!</div>
-                    <div className="text-xs opacity-90">Your learning path has been updated.</div>
+                    <div className="font-bold text-sm">{t("takeQuiz.result.nextModuleUnlocked")}</div>
+                    <div className="text-xs opacity-90">{t("takeQuiz.result.learningPathUpdated")}</div>
                   </div>
                 </div>
               )}
@@ -1141,8 +1162,8 @@ const TakeQuiz = () => {
                     <IconTrophy size={20} />
                   </div>
                   <div>
-                    <div className="font-bold text-sm">Level Promoted!</div>
-                    <div className="text-xs opacity-90">Congratulations! You've achieved {result.newLevel} status.</div>
+                    <div className="font-bold text-sm">{t("takeQuiz.result.levelPromoted")}</div>
+                    <div className="text-xs opacity-90">{t("takeQuiz.result.levelAchieved").replace("{newLevel}", result.newLevel)}</div>
                   </div>
                 </div>
               )}
@@ -1154,13 +1175,13 @@ const TakeQuiz = () => {
                 onClick={handleBackToCourse}
                 className="flex-1 h-12 bg-gray-900 text-white font-bold rounded-lg hover:bg-gray-800 transition-all text-sm uppercase tracking-wider"
               >
-                <IconArrowLeft size={18} className="mr-2" /> Exit Dashboard
+                <IconArrowLeft size={18} className="mr-2" /> {t("takeQuiz.btnExitDashboard")}
               </Button>
               <Button
                 onClick={() => window.print()}
                 className="flex-1 h-12 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all text-sm uppercase tracking-wider shadow-lg shadow-blue-200"
               >
-                <IconPrinter size={18} className="mr-2" /> Print Graded Sheet
+                <IconPrinter size={18} className="mr-2" /> {t("takeQuiz.btnPrintGraded")}
               </Button>
               {!result.passed && result.canRetry && (
                 <Button
@@ -1168,7 +1189,7 @@ const TakeQuiz = () => {
                   variant="outline"
                   className="flex-1 h-12 border-2 border-red-200 text-red-600 font-bold rounded-lg hover:bg-red-50 transition-all text-sm uppercase tracking-wider"
                 >
-                  <IconRotateClockwise size={18} className="mr-2" /> Attempt Again
+                  <IconRotateClockwise size={18} className="mr-2" /> {t("takeQuiz.btnAttemptAgain")}
                 </Button>
               )}
             </div>
@@ -1192,7 +1213,7 @@ const TakeQuiz = () => {
             {/* Title box */}
             <div className="col-span-6 border-r-[3px] border-black flex flex-col items-center justify-center py-4 bg-white text-center">
               <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight uppercase leading-none">
-                SKILL EVALUATION RESULT SHEET
+                {t("takeQuiz.header.evaluationResultSheet")}
               </h1>
               <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
                 {formatPaperSubTitle(quiz?.paperSubTitle, quiz?.level, quiz?.isDojo, "Graded Sheet")}
@@ -1202,19 +1223,19 @@ const TakeQuiz = () => {
             {/* Doc control metadata box */}
             <div className="col-span-3 flex flex-col text-[10px] font-bold bg-white">
               <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">Doc.No.</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.docNo")}</div>
                 <div className="px-2 text-black">{quiz?.docNo || "TST-HR-02"}</div>
               </div>
               <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">REV 00</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.rev")}</div>
                 <div className="px-2 text-black">02</div>
               </div>
               <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">REV. DATE</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.revDate")}</div>
                 <div className="px-2">08.04.2021</div>
               </div>
               <div className="grid grid-cols-2 flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">ISSUE DATE</div>
+                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.issueDate")}</div>
                 <div className="px-2">08.04.2021</div>
               </div>
             </div>
@@ -1230,7 +1251,7 @@ const TakeQuiz = () => {
             {/* Left box */}
             <div className="col-span-7 border-r-[3px] border-black p-4 space-y-3 bg-white">
               <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">Process Name :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.processName")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold">
                   {quiz?.subSectionNames && quiz.subSectionNames.length > 0
                     ? quiz.subSectionNames.join(", ")
@@ -1238,19 +1259,19 @@ const TakeQuiz = () => {
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">Candidate Name :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.candidateName")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold">
                   {candidateName || "—"}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">E.Code :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.eCode")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-mono">
                   {eCode || "—"}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">Department :</span>
+                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.department")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
                   {(selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName) || "—"}
                 </span>
@@ -1260,44 +1281,44 @@ const TakeQuiz = () => {
             {/* Right box */}
             <div className="col-span-5 p-4 space-y-2 bg-white text-[11px]">
               <div className="flex gap-2 items-center">
-                <span className="text-black">Marks Of Each Question :</span>
+                <span className="text-black">{t("takeQuiz.meta.marksPerQ")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
                   {getMarksOfEachQuestion()}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Total Marks :</span>
+                <span className="text-black">{t("takeQuiz.meta.totalMarks")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {result.totalMarks} Marks
+                  {result.totalMarks} {t("takeQuiz.marks")}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Passing Marks Required :</span>
+                <span className="text-black">{t("takeQuiz.meta.passingMarks")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {Math.round(result.totalMarks * (quiz?.passingScore || 70) / 100)} Marks ({quiz?.passingScore || 70}%)
+                  {Math.round(result.totalMarks * (quiz?.passingScore || 70) / 100)} {t("takeQuiz.marks")} ({quiz?.passingScore || 70}%)
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Marks Obtained :</span>
+                <span className="text-black">{t("takeQuiz.meta.marksObtained")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-black text-xs">
-                  {result.score} Marks ({result.scorePercent}%)
+                  {result.score} {t("takeQuiz.marks")} ({result.scorePercent}%)
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Result Status :</span>
+                <span className="text-black">{t("takeQuiz.meta.resultStatus")}</span>
                 <span className={`border-b border-dashed border-black flex-1 pb-0.5 text-center font-black text-xs uppercase ${result.passed ? 'text-green-600 animate-pulse' : 'text-red-600'
                   }`}>
-                  {result.passed ? 'PASS' : 'FAIL'}
+                  {result.passed ? t("takeQuiz.status.pass") : t("takeQuiz.status.fail")}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Test Conducted By :</span>
+                <span className="text-black">{t("takeQuiz.meta.conductedBy")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
                   {result.conductedBy || conductedBy || "—"}
                 </span>
               </div>
               <div className="flex gap-2 items-center">
-                <span className="text-black">Test Date :</span>
+                <span className="text-black">{t("takeQuiz.meta.testDate")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
                   {result.createdAt ? new Date(result.createdAt).toLocaleDateString('en-GB').replace(/\//g, '.') : new Date().toLocaleDateString('en-GB').replace(/\//g, '.')}
                 </span>
@@ -1307,7 +1328,7 @@ const TakeQuiz = () => {
 
           {/* PARAMETERS HEADER */}
           <div className="bg-gray-100/80 border-b-[3px] border-black p-3 font-bold uppercase text-lg tracking-wider text-center">
-            {quiz?.course?.title || quiz?.course?.name || quiz?.title || "THEORITICAL PARAMETERS REVIEW"}
+            {quiz?.course?.title || quiz?.course?.name || quiz?.title || t("takeQuiz.header.theoreticalParamsReview")}
           </div>
 
           {/* QUESTIONS TABLE */}
@@ -1315,8 +1336,8 @@ const TakeQuiz = () => {
             <Table className="border-collapse border-t-[3px] border-black">
               <TableHeader className="bg-gray-100">
                 <TableRow className="border-b-[3px] border-black hover:bg-gray-100">
-                  <TableHead className="w-[80px] border-r-[3px] border-black text-center font-bold text-black uppercase text-sm">S.No</TableHead>
-                  <TableHead className="font-bold text-black uppercase text-sm">Questions & Corrective Details</TableHead>
+                  <TableHead className="w-[80px] border-r-[3px] border-black text-center font-bold text-black uppercase text-sm">{t("takeQuiz.table.sNo")}</TableHead>
+                  <TableHead className="font-bold text-black uppercase text-sm">{t("takeQuiz.table.questionsCorrective")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1344,7 +1365,7 @@ const TakeQuiz = () => {
                               ? 'bg-green-100 border-green-300 text-green-800'
                               : 'bg-red-100 border-red-300 text-red-800'
                               }`}>
-                              Score: {detailedAnswer.marksObtained} / {detailedAnswer.totalMarks}
+                              {t("takeQuiz.score")}: {detailedAnswer.marksObtained} / {detailedAnswer.totalMarks}
                             </span>
                           </div>
                         </div>
@@ -1424,12 +1445,12 @@ const TakeQuiz = () => {
                         {question.type === "shortAnswer" && (
                           <div className="pt-2 space-y-2">
                             <div className="flex items-center gap-3">
-                              <span className="text-sm font-black text-gray-800 shrink-0">Your Answer:</span>
+                              <span className="text-sm font-black text-gray-800 shrink-0">{t("takeQuiz.placeholder.yourAnswerLabel")}</span>
                               <div className={`flex-1 border-b-2 py-1 font-bold text-base px-2 uppercase tracking-wide flex items-center justify-between ${detailedAnswer.isCorrect
                                 ? 'border-green-600 text-green-700 bg-green-50/20'
                                 : 'border-red-600 text-red-700 bg-red-50/20'
                                 }`}>
-                                <span>{detailedAnswer.userAnswer || "NO ANSWER"}</span>
+                                <span>{detailedAnswer.userAnswer || t("takeQuiz.result.noAnswer")}</span>
                                 {detailedAnswer.isCorrect ? (
                                   <IconCircleCheck size={18} className="text-green-600 shrink-0" />
                                 ) : (
@@ -1440,7 +1461,7 @@ const TakeQuiz = () => {
 
                             {!detailedAnswer.isCorrect && (
                               <div className="flex items-center gap-3 text-sm text-green-700 font-bold bg-green-50/50 p-2 border border-green-200">
-                                <span>Correct Answer:</span>
+                                <span>{t("takeQuiz.result.correctAnswer")}</span>
                                 <span className="uppercase tracking-wide">{detailedAnswer.correctAnswer}</span>
                                 {detailedAnswer.correctAnswerSec && (
                                   <span className="italic text-xs text-green-600">({detailedAnswer.correctAnswerSec})</span>
@@ -1454,7 +1475,7 @@ const TakeQuiz = () => {
                         {question.type === "matching" && (
                           <div className="pt-2 space-y-4">
                             <div className="bg-gray-50 border border-gray-300 p-2 text-xs font-bold text-gray-700 uppercase tracking-wider">
-                              Graded Matching Results:
+                              {t("takeQuiz.result.gradedMatching")}
                             </div>
 
                             {(() => {
@@ -1509,8 +1530,8 @@ const TakeQuiz = () => {
                                             : 'bg-red-50 border-red-300 text-red-950 font-bold'
                                             }`}>
                                             <div className="flex flex-col text-sm">
-                                              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Your Selection:</span>
-                                              <span>{userSelectedRight || "NO SELECTION"}</span>
+                                              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{t("takeQuiz.result.yourSelection")}</span>
+                                              <span>{userSelectedRight || t("takeQuiz.result.noSelection")}</span>
                                             </div>
                                             {isPairCorrect ? (
                                               <IconCircleCheck size={18} className="text-green-600 shrink-0" />
@@ -1521,7 +1542,7 @@ const TakeQuiz = () => {
 
                                           {!isPairCorrect && (
                                             <div className="p-2 bg-green-50 border border-green-200 text-green-800 text-xs font-bold rounded flex flex-col">
-                                              <span className="text-[9px] text-green-600 font-bold uppercase tracking-wider">Correct Match:</span>
+                                              <span className="text-[9px] text-green-600 font-bold uppercase tracking-wider">{t("takeQuiz.result.correctMatch")}</span>
                                               <span>{pair.rightText} {pair.rightTextSec ? ` (${pair.rightTextSec})` : ''}</span>
                                             </div>
                                           )}

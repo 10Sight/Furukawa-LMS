@@ -42,6 +42,10 @@ class Department {
         this.isDeleted = !!data.isDeleted;
         this.isReportingEnabled = !!data.isReportingEnabled;
 
+        this.daily5mApproverDeptId = data.daily5mApproverDeptId || null;
+        this.daily5mApproverSectionId = data.daily5mApproverSectionId || null;
+        this.daily5mApproverLineId = data.daily5mApproverLineId || null;
+
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -81,6 +85,18 @@ class Department {
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'isReportingEnabled')
                 BEGIN
                     ALTER TABLE departments ADD isReportingEnabled BIT DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverDeptId')
+                BEGIN
+                    ALTER TABLE departments ADD daily5mApproverDeptId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverSectionId')
+                BEGIN
+                    ALTER TABLE departments ADD daily5mApproverSectionId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverLineId')
+                BEGIN
+                    ALTER TABLE departments ADD daily5mApproverLineId INT NULL;
                 END
             END
         `;
@@ -162,7 +178,9 @@ class Department {
             "name", "uniCode", "slug", "course", "courses", "instructor",
             "students", "startDate", "endDate", "capacity", "status",
             "schedule", "notes", "statusUpdatedAt", "departmentQuiz",
-            "departmentAssignment", "isDeleted", "isReportingEnabled", "createdAt"
+            "departmentAssignment", "isDeleted", "isReportingEnabled",
+            "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
+            "createdAt"
         ];
 
 
@@ -306,7 +324,8 @@ class Department {
             "name", "uniCode", "slug", "course", "courses", "instructor",
             "students", "startDate", "endDate", "capacity", "status",
             "schedule", "notes", "statusUpdatedAt", "departmentQuiz",
-            "departmentAssignment", "isDeleted", "isReportingEnabled"
+            "departmentAssignment", "isDeleted", "isReportingEnabled",
+            "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

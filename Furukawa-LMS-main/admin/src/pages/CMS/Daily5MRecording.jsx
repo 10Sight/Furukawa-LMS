@@ -1093,7 +1093,34 @@ const Daily5MRecording = () => {
     // Segregation of Duties: User who filled/submitted the form CANNOT approve/reject it.
     // Even Admins are restricted from approving their own entries for audit integrity.
     const isSubmitter = authUser && submittedById && String(authUser.id || authUser._id) === String(submittedById);
-    const canApprove = hasApprovalPermission && !isSubmitter;
+
+    // Cross-department approval routing: if the source department has a configured
+    // approver dept/section/line, only users matching that routing (or admins, as an
+    // emergency override for routing only — self-approval above still always applies)
+    // may approve/reject its rows.
+    const currentDepartmentObj = departmentsData?.data?.departments?.find(
+        d => String(d._id || d.id) === String(selectedDepartment)
+    );
+    const routingDeptId = currentDepartmentObj?.daily5mApproverDeptId;
+    const routingSectionId = currentDepartmentObj?.daily5mApproverSectionId;
+    const routingLineId = currentDepartmentObj?.daily5mApproverLineId;
+    const matchesApprovalRouting = (() => {
+        if (!routingDeptId) return true;
+        if (isAdmin) return true;
+        const userDepts = [authUser?.departmentId, ...(Array.isArray(authUser?.departments) ? authUser.departments : [])].map(String);
+        if (!userDepts.includes(String(routingDeptId))) return false;
+        if (routingSectionId) {
+            const userSections = [authUser?.sectionId, ...(Array.isArray(authUser?.sections) ? authUser.sections : [])].map(String);
+            if (!userSections.includes(String(routingSectionId))) return false;
+        }
+        if (routingLineId) {
+            const userLines = [authUser?.lineId, ...(Array.isArray(authUser?.lines) ? authUser.lines : [])].map(String);
+            if (!userLines.includes(String(routingLineId))) return false;
+        }
+        return true;
+    })();
+
+    const canApprove = hasApprovalPermission && !isSubmitter && matchesApprovalRouting;
 
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
     const [isManagePeopleOpen, setIsManagePeopleOpen] = useState(false);

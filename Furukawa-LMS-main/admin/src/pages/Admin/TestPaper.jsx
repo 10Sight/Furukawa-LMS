@@ -32,6 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { useSelector } from "react-redux";
 import { se } from "date-fns/locale";
+import useTranslate from "@/hooks/useTranslate";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import AdminQuizMonitoring from "./QuizMonitoring";
 import CertificateTemplates from "./CertificateTemplates";
@@ -39,6 +40,7 @@ import CertificateTemplates from "./CertificateTemplates";
 const VALID_TEST_PAPER_TABS = ["testPaper", "testMonitoring", "certificateTemplates"];
 
 const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, skillUpgradation: forceSkillUpgradation }) => {
+  const { t } = useTranslate();
   const navigate = useNavigate();
   const currentUser = useSelector((state) => state.auth.user);
 
@@ -282,13 +284,13 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
   const [deleteQuiz] = useDeleteQuizMutation();
 
   const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this test paper? This action cannot be undone.")) {
+    if (window.confirm(t("testPaper.confirm.delete"))) {
       try {
         await deleteQuiz(id).unwrap();
-        toast.success("Test paper deleted successfully");
+        toast.success(t("testPaper.toast.deleteSuccess"));
         refetch();
       } catch (err) {
-        toast.error(err?.data?.message || "Failed to delete test paper");
+        toast.error(err?.data?.message || t("testPaper.toast.deleteFailed"));
       }
     }
   };
@@ -373,8 +375,8 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
         <IconFileText className="w-12 h-12 text-slate-300" />
-        <h2 className="text-2xl font-bold text-slate-900">Access Denied</h2>
-        <p className="text-slate-500 max-w-md">You do not have permission to view the Test Papers. Please contact your administrator.</p>
+        <h2 className="text-2xl font-bold text-slate-900">{t("testPaper.accessDenied.title")}</h2>
+        <p className="text-slate-500 max-w-md">{t("testPaper.accessDenied.desc")}</p>
       </div>
     );
   }
@@ -386,9 +388,9 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
         {/* Hero Section */}
         <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white py-12 px-8 mb-8 shadow-lg">
           <div className="max-w-6xl mx-auto">
-            <h1 className="text-4xl font-extrabold tracking-tight mb-2">DOJO Assessment Center</h1>
+            <h1 className="text-4xl font-extrabold tracking-tight mb-2">{t("testPaper.hero.dojoCenter")}</h1>
             <p className="text-blue-100 text-lg opacity-90">
-              Welcome, <span className="text-white font-semibold">{currentUser.fullName}</span>! Here are your assigned assessments for the hiring process.
+              {t("testPaper.hero.welcome", "Welcome, {name}! Here are your assigned assessments for the hiring process.").replace("{name}", currentUser.fullName)}
             </p>
           </div>
         </div>
@@ -396,12 +398,12 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
         <div className="max-w-6xl mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900">Available Assessments</h2>
-              <p className="text-slate-500">Complete these tests to proceed with your application.</p>
+              <h2 className="text-2xl font-bold text-slate-900">{t("testPaper.hero.available")}</h2>
+              <p className="text-slate-500">{t("testPaper.hero.availableDesc")}</p>
             </div>
             <Button variant="outline" onClick={() => refetch()} className="bg-white hover:bg-slate-50 shadow-sm border-slate-200">
               <IconRefresh className="h-4 w-4 mr-2 text-blue-600" />
-              Refresh List
+              {t("testPaper.refreshList")}
             </Button>
           </div>
 
@@ -411,11 +413,11 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[40%]">Assessment Name</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Questions</TableHead>
-                      <TableHead>Min. Score</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
+                      <TableHead className="w-[40%]">{t("testPaper.table.title")}</TableHead>
+                      <TableHead>{t("testPaper.table.duration")}</TableHead>
+                      <TableHead>{t("testPaper.table.questions")}</TableHead>
+                      <TableHead>{t("testPaper.table.minScore")}</TableHead>
+                      <TableHead className="text-right">{t("testPaper.table.actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -438,9 +440,9 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                 <div className="bg-slate-100 p-4 rounded-full mb-4">
                   <IconFileText className="h-10 w-10 text-slate-400" />
                 </div>
-                <h3 className="text-xl font-semibold text-slate-900 mb-2">No Assessments Assigned</h3>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">{t("testPaper.noAssessments")}</h3>
                 <p className="text-slate-500 max-w-sm">
-                  There are currently no assessments assigned to your profile. Please check back later or contact your supervisor.
+                  {t("testPaper.noAssessmentsDesc")}
                 </p>
               </CardContent>
             </Card>
@@ -449,11 +451,11 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
               <Table>
                 <TableHeader className="bg-slate-50">
                   <TableRow className="border-b border-slate-100 h-14">
-                    <TableHead className="pl-8 font-bold text-slate-900 text-sm uppercase tracking-wider">Assessment Name</TableHead>
-                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">Duration</TableHead>
-                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">Questions</TableHead>
-                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">Pass Score</TableHead>
-                    <TableHead className="pr-8 font-bold text-slate-900 text-sm uppercase tracking-wider text-right">Action</TableHead>
+                    <TableHead className="pl-8 font-bold text-slate-900 text-sm uppercase tracking-wider">{t("testPaper.table.title")}</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">{t("testPaper.table.duration")}</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">{t("testPaper.table.questions")}</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-sm uppercase tracking-wider text-center">{t("testPaper.table.passScore")}</TableHead>
+                    <TableHead className="pr-8 font-bold text-slate-900 text-sm uppercase tracking-wider text-right">{t("testPaper.table.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -469,21 +471,21 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                               {quiz.title}
                             </span>
                             <span className="text-sm text-slate-500 line-clamp-1 max-w-md">
-                              {quiz.description || "Assessment to evaluate skills for current position."}
+                              {quiz.description || t("testPaper.descriptionFallback", "Assessment to evaluate skills for current position.")}
                             </span>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1.5 font-semibold text-slate-700">
-                          <IconClock size={18} className="text-blue-500" />
-                          <span>{quiz.timeLimit || 0} Mins</span>
+                           <IconClock size={18} className="text-blue-500" />
+                          <span>{quiz.timeLimit || 0} {t("testPaper.mins")}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1.5 font-semibold text-slate-700">
                           <IconLayoutGrid size={18} className="text-blue-500" />
-                          <span>{quiz.questions?.length || 0} Items</span>
+                          <span>{quiz.questions?.length || 0} {t("testPaper.items")}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
@@ -497,7 +499,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                           onClick={() => navigate(`/student/quiz/${quiz._id}`)}
                         >
                           <IconPlayerPlay className="h-4 w-4 mr-2" />
-                          Start Test
+                          {t("testPaper.startTest")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -516,13 +518,13 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     <Tabs value={activeTestPaperTab} onValueChange={handleTestPaperTabChange} className="w-full space-y-6">
       <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
         <TabsTrigger value="testPaper" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
-          Test Paper
+          {t("testPaper.tabs.testPaper")}
         </TabsTrigger>
         <TabsTrigger value="testMonitoring" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
-          Test Monitoring
+          {t("testPaper.tabs.testMonitoring")}
         </TabsTrigger>
         <TabsTrigger value="certificateTemplates" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
-          Certificate Templates
+          {t("testPaper.tabs.certificateTemplates")}
         </TabsTrigger>
       </TabsList>
 
@@ -530,15 +532,15 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     <div className="space-y-6 p-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Test Papers</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t("testPaper.title")}</h1>
           <p className="text-muted-foreground mt-1">
-            Browse and manage test papers by department and section.
+            {t("testPaper.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => refetch()} className="gap-2">
             <IconRefresh className="h-4 w-4" />
-            Refresh
+            {t("testPaper.refresh")}
           </Button>
           {canManage && (
             <Button onClick={() => {
@@ -552,7 +554,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
               navigate(`${base}/add-test-paper${queryString ? `?${queryString}` : ""}`);
             }} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
               <IconFileText className="h-4 w-4" />
-              Create Test Paper
+              {t("testPaper.createTestPaper")}
             </Button>
           )}
         </div>
@@ -562,13 +564,13 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <IconFilter className="h-5 w-5 text-primary" />
-            <CardTitle className="text-lg">Filter Test Papers</CardTitle>
+            <CardTitle className="text-lg">{t("testPaper.filterTitle")}</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Department</label>
+              <label className="text-sm font-medium">{t("testPaper.lblDepartment")}</label>
               <Select
                 value={selectedDepartment}
                 onValueChange={(val) => {
@@ -580,11 +582,11 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                 disabled={!isAuthorizedToAccessAll && assignedDepartments.length === 1}
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Select Department" />
+                  <SelectValue placeholder={t("testPaper.phSelectDept")} />
                 </SelectTrigger>
                 <SelectContent>
                   {!isCustomRoleUser && (isAuthorizedToAccessAll || assignedDepartments.length !== 1) && (
-                    <SelectItem value="ALL">All Departments</SelectItem>
+                    <SelectItem value="ALL">{t("testPaper.optAllDepts")}</SelectItem>
                   )}
                   {departments.map((dept) => (
                     <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
@@ -596,7 +598,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Section</label>
+              <label className="text-sm font-medium">{t("testPaper.lblSection")}</label>
               <Select
                 value={selectedSection}
                 onValueChange={(val) => {
@@ -607,10 +609,10 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                 disabled={(!isAuthorizedToAccessAll && assignedSections.length === 1) || (selectedDepartment === "ALL" && assignedDepartments.length !== 1)}
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder={selectedDepartment === "ALL" ? "Select department first" : "Select Section"} />
+                  <SelectValue placeholder={selectedDepartment === "ALL" ? t("testPaper.phSelectDeptFirst") : t("testPaper.phSelectSection")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Sections</SelectItem>
+                  <SelectItem value="ALL">{t("testPaper.optAllSections")}</SelectItem>
                   {sections.map((sec) => (
                     <SelectItem key={sec.id} value={String(sec.id)}>
                       {sec.name} ({sec.category})
@@ -621,7 +623,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Line</label>
+              <label className="text-sm font-medium">{t("testPaper.lblLine")}</label>
               <Select
                 value={selectedLine}
                 onValueChange={(val) => {
@@ -633,12 +635,12 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={
                     selectedSection === "ALL" && selectedDepartment === "ALL"
-                      ? "Select section first"
-                      : "Select Line"
+                      ? t("testPaper.phSelectSecFirst")
+                      : t("testPaper.phSelectLine")
                   } />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Lines</SelectItem>
+                  <SelectItem value="ALL">{t("testPaper.optAllLines")}</SelectItem>
                   {lines.map((line) => (
                     <SelectItem key={line.id || line._id} value={String(line.id || line._id)}>
                       {line.name}
@@ -649,7 +651,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Sub-Section</label>
+              <label className="text-sm font-medium">{t("testPaper.lblSubSection")}</label>
               <Select
                 value={selectedSubSection}
                 onValueChange={setSelectedSubSection}
@@ -658,12 +660,12 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder={
                     selectedLine === "ALL" && selectedSection === "ALL"
-                      ? "Select line first"
-                      : "Select Sub-Section"
+                      ? t("testPaper.phSelectLineFirst")
+                      : t("testPaper.phSelectSubSec")
                   } />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Sub-Sections</SelectItem>
+                  <SelectItem value="ALL">{t("testPaper.optAllSubSecs")}</SelectItem>
                   {filteredSubSections.map((subSec) => (
                     <SelectItem key={subSec.id || subSec._id} value={String(subSec.id || subSec._id)}>
                       {subSec.name}
@@ -673,16 +675,16 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Level</label>
+              <label className="text-sm font-medium">{t("testPaper.lblLevel")}</label>
               <Select
                 value={selectedLevel}
                 onValueChange={setSelectedLevel}
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Select Level" />
+                  <SelectValue placeholder={t("testPaper.phSelectLevel")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Levels</SelectItem>
+                  <SelectItem value="ALL">{t("testPaper.optAllLevels")}</SelectItem>
                   <SelectItem value="L0">L0 (Dojo User)</SelectItem>
                   {activeLevels.map((lvl) => (
                     <SelectItem key={lvl.name} value={lvl.name}>
@@ -693,30 +695,30 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Test Type</label>
+              <label className="text-sm font-medium">{t("testPaper.lblTestType")}</label>
               <Select
                 value={selectedTestType}
                 onValueChange={setSelectedTestType}
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Select Type" />
+                  <SelectValue placeholder={t("testPaper.phSelectType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Types</SelectItem>
-                  <SelectItem value="dojo">Dojo Hiring</SelectItem>
-                  <SelectItem value="theoretical">Theoretical</SelectItem>
-                  <SelectItem value="multiskilling">Multi Skilling</SelectItem>
-                  <SelectItem value="practical">Practical</SelectItem>
+                  <SelectItem value="ALL">{t("testPaper.optAllTypes")}</SelectItem>
+                  <SelectItem value="dojo">{t("testPaper.badge.dojoHiring")}</SelectItem>
+                  <SelectItem value="theoretical">{t("testPaper.badge.theoretical")}</SelectItem>
+                  <SelectItem value="multiskilling">{t("testPaper.badge.multiSkilling")}</SelectItem>
+                  <SelectItem value="practical">{t("testPaper.badge.practical")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Search</label>
+              <label className="text-sm font-medium">{t("testPaper.lblSearch")}</label>
               <div className="relative">
                 <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search quiz title..."
+                  placeholder={t("testPaper.phSearch")}
                   className="pl-9 bg-background"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -726,7 +728,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
             <div className="flex items-end">
               <Button variant="ghost" onClick={handleReset} className="w-full text-muted-foreground hover:bg-slate-100">
-                Reset Filters
+                {t("testPaper.btnReset")}
               </Button>
             </div>
           </div>
@@ -738,13 +740,13 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
-                <TableHead className="font-semibold">Test Paper Title</TableHead>
-                <TableHead className="font-semibold">Target Sub-Section</TableHead>
-                <TableHead className="font-semibold">Test Type</TableHead>
-                <TableHead className="font-semibold">Course / Module</TableHead>
-                <TableHead className="font-semibold">Passing Criteria</TableHead>
-                <TableHead className="font-semibold">Total Marks</TableHead>
-                <TableHead className="font-semibold text-right">Actions</TableHead>
+                <TableHead className="font-semibold">{t("testPaper.table.title")}</TableHead>
+                <TableHead className="font-semibold">{t("testPaper.table.targetSubSec")}</TableHead>
+                <TableHead className="font-semibold">{t("testPaper.table.testType")}</TableHead>
+                <TableHead className="font-semibold">{t("testPaper.table.courseModule")}</TableHead>
+                <TableHead className="font-semibold">{t("testPaper.table.passingCriteria")}</TableHead>
+                <TableHead className="font-semibold">{t("testPaper.table.totalMarks")}</TableHead>
+                <TableHead className="font-semibold text-right">{t("testPaper.table.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -765,8 +767,8 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                   <TableCell colSpan={7} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
                       <IconFileText className="h-12 w-12 mb-3 opacity-20" />
-                      <p className="text-lg font-medium">No test papers found</p>
-                      <p className="text-sm">Try adjusting your filters or search term</p>
+                      <p className="text-lg font-medium">{t("testPaper.noTestPapersFound")}</p>
+                      <p className="text-sm">{t("testPaper.adjustFilters")}</p>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -783,7 +785,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                             {quiz.title}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {quiz.questions?.length || 0} Questions • {quiz.timeLimit || 0} mins
+                            {quiz.questions?.length || 0} {t("testPaper.questionsShort")} • {quiz.timeLimit || 0} {t("testPaper.minsShort")}
                           </span>
                         </div>
                       </TableCell>
@@ -805,7 +807,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                                 </div>
                               );
                             }
-                            return <span className="text-xs text-muted-foreground italic">No target</span>;
+                            return <span className="text-xs text-muted-foreground italic">{t("testPaper.noTarget")}</span>;
                           })()}
                         </div>
                       </TableCell>
@@ -813,22 +815,22 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                         <div className="flex flex-wrap gap-1">
                           {quiz.isDojo && (
                             <Badge className="bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100/50 text-[10px] font-semibold tracking-wider">
-                              Dojo Hiring
+                              {t("testPaper.badge.dojoHiring")}
                             </Badge>
                           )}
                           {quiz.isTheoretical && (
                             <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100/50 text-[10px] font-semibold tracking-wider">
-                              Theoretical
+                              {t("testPaper.badge.theoretical")}
                             </Badge>
                           )}
                           {quiz.isMultiSkilling && (
                             <Badge className="bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100/50 text-[10px] font-semibold tracking-wider">
-                              Multi Skilling
+                              {t("testPaper.badge.multiSkilling")}
                             </Badge>
                           )}
                           {!quiz.isDojo && !quiz.isTheoretical && !quiz.isMultiSkilling && (
                             <Badge variant="secondary" className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold tracking-wider">
-                              Practical
+                              {t("testPaper.badge.practical")}
                             </Badge>
                           )}
                         </div>
@@ -836,7 +838,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                       <TableCell className="align-middle">
                         <div className="flex flex-col gap-1">
                           <Badge variant="outline" className="w-fit font-normal text-[10px] uppercase tracking-wider">
-                            {quiz.course?.title || "No Course"}
+                            {quiz.course?.title || t("testPaper.noCourse")}
                           </Badge>
                           {quiz.module && (
                             <span className="text-xs text-muted-foreground italic">
@@ -849,12 +851,12 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                         <div className="flex flex-col gap-1 text-xs">
                           <div className="flex items-center gap-1.5 text-muted-foreground">
                             <IconClock size={14} className="text-slate-400" />
-                            <span className="font-medium text-slate-700">{quiz.passingScore}% ({passingMarks} Marks)</span>
+                            <span className="font-medium text-slate-700">{quiz.passingScore}% ({passingMarks} {t("testPaper.marks")})</span>
                           </div>
                           {quiz.issueCertificate && (
                             <div className="flex items-center gap-1.5 text-green-600 font-medium">
                               <IconCertificate size={14} />
-                              <span>Certificate</span>
+                              <span>{t("testPaper.certificate")}</span>
                             </div>
                           )}
                         </div>
@@ -862,7 +864,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                       <TableCell className="align-middle">
                         <div className="flex flex-col gap-1">
                           <span className="font-semibold text-foreground text-sm">
-                            {totalMarks} Marks
+                            {totalMarks} {t("testPaper.marks")}
                           </span>
                           {quiz.level && (
                             <Badge variant="outline" className="w-fit bg-teal-50 text-teal-700 border-teal-200 uppercase font-semibold text-[10px] tracking-wider py-0 px-1.5">
@@ -886,7 +888,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                             className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
                           >
                             <IconPlayerPlay className="h-4 w-4" />
-                            <span className="ml-2 font-semibold">Take Test</span>
+                            <span className="ml-2 font-semibold">{t("testPaper.btnTakeTest")}</span>
                           </Button>
 
                           {canEdit && (
@@ -898,10 +900,10 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                                 navigate(`${base}/edit-test-paper/${quiz._id}`);
                               }}
                               className="border-slate-200 hover:bg-slate-50 text-slate-700"
-                              title="Edit Test Paper"
+                              title={t("testPaper.tooltip.edit")}
                             >
                               <IconEdit className="h-4 w-4 mr-1.5" />
-                              Edit
+                              {t("testPaper.btnEdit")}
                             </Button>
                           )}
                           {canDelete && (
@@ -910,7 +912,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                               size="sm"
                               onClick={() => handleDelete(quiz._id)}
                               className="border-red-200 hover:bg-red-50 text-red-600 hover:text-red-700"
-                              title="Delete Test Paper"
+                              title={t("testPaper.tooltip.delete")}
                             >
                               <IconTrash className="h-4 w-4" />
                             </Button>

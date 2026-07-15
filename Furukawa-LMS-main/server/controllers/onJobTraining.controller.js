@@ -527,7 +527,7 @@ export const updateOnJobTraining = async (req, res, next) => {
                 try {
                     const shouldHaveBadge = isApproved && currentStudentIds.has(studentId);
 
-                    const [userRows] = await executeQuery("SELECT ojt FROM users WHERE id = ?", [studentId]);
+                    const [userRows] = await executeQuery("SELECT ojt, empId, userName FROM users WHERE id = ?", [studentId]);
                     if (userRows.length === 0) continue;
 
                     let ojtArray = [];
@@ -541,6 +541,22 @@ export const updateOnJobTraining = async (req, res, next) => {
                     const existingIdx = ojtArray.findIndex(item => String(item.ojtId) === String(id));
 
                     if (shouldHaveBadge) {
+                        // Use this student's own attendance row date as their approval date, so
+                        // eligibility tracks whatever day the trainer recorded/edited for them —
+                        // editing the row's date (or a fresh sheet) is how a trainer reopens
+                        // same-day quiz eligibility on a later day.
+                        const { empId: userEmpId, userName: userUserName } = userRows[0];
+                        const studentRow = (updatedOJT.attendanceRecords || []).find(r =>
+                            r.ecode && (r.ecode === userEmpId || r.ecode === userUserName)
+                        );
+
+                        let customApprovalDate = new Date();
+                        if (studentRow?.date && !isNaN(new Date(studentRow.date).getTime())) {
+                            customApprovalDate = new Date(studentRow.date);
+                        } else if (updatedOJT.trainingDate && !isNaN(new Date(updatedOJT.trainingDate).getTime())) {
+                            customApprovalDate = new Date(updatedOJT.trainingDate);
+                        }
+
                         const newEntry = {
                             ojtId: Number(id),
                             subSectionId: updatedOJT.subSection,
@@ -548,9 +564,7 @@ export const updateOnJobTraining = async (req, res, next) => {
                             sectionId: updatedOJT.section,
                             lineId: updatedOJT.line,
                             result: updatedOJT.result,
-                            // Preserve the original approval date for students already approved on this sheet;
-                            // only newly-approved students get today's date.
-                            approvedAt: existingIdx >= 0 ? ojtArray[existingIdx].approvedAt : new Date()
+                            approvedAt: customApprovalDate
                         };
 
                         if (existingIdx >= 0) {

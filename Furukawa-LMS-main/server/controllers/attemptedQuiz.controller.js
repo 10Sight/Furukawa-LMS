@@ -14,18 +14,20 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { checkModuleAccessForAssessments } from "../utils/moduleCompletion.js";
 import logAudit from "../utils/auditLogger.js";
 
-// Helper to check if a student has an OJT approved today
+// Helper to check if a student has an OJT approved for today, based on the per-student
+// approvedAt stored on users.ojt (set from that student's own attendance row date, not
+// the sheet's save/creation time — see onJobTraining.controller.js).
 const checkOjtApprovedToday = async (userId) => {
     const [rows] = await executeQuery(`
-        SELECT TOP 1 1 FROM on_job_trainings ojt
-        JOIN users u ON u.id = ?
-        WHERE (
-            ojt.student = CAST(u.id AS NVARCHAR(50))
-            OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
-            OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
-        )
-        AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
-        AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+        SELECT TOP 1 1
+        FROM users u
+        CROSS APPLY OPENJSON(ISNULL(u.ojt, '[]')) WITH (
+            result NVARCHAR(50) '$.result',
+            approvedAt DATETIME '$.approvedAt'
+        ) AS ojt_item
+        WHERE u.id = ?
+          AND (ojt_item.result = 'Pass' OR ojt_item.result = 'Approved')
+          AND CAST(ojt_item.approvedAt AS DATE) = CAST(GETDATE() AS DATE)
     `, [userId]);
     return rows.length > 0;
 };

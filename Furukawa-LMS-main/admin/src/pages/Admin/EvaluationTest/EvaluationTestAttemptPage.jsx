@@ -955,7 +955,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                             variant="ghost"
                             size="icon"
                             onClick={() => {
-                                if (isPrintModeUrl) navigate(fromPath);
+                                if (isPrintModeUrl) navigate(fromPath, { state: { from: grandFromPath } });
                                 else setIsPrintMode(false);
                             }}
                             className="hover:bg-gray-800 text-white hover:text-white"
@@ -1002,7 +1002,7 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                     <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => navigate(fromPath)}
+                        onClick={() => navigate(fromPath, { state: { from: grandFromPath } })}
                         className="h-9 w-9 border-gray-200 text-gray-600 hover:text-gray-800"
                     >
                         <IconArrowLeft className="h-5 w-5" />

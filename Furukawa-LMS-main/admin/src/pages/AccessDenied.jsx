@@ -29,7 +29,7 @@ const AccessDenied = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-950 to-black text-gray-100 flex flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Background ambient warning glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-red-600/10 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl pointer-events-none animate-pulse duration-5000"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl pointer-events-none animate-pulse duration-3000"></div>
 
       {/* Main Glassmorphic Card */}
       <div className="max-w-md w-full bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col items-center text-center relative z-10">
@@ -99,7 +99,7 @@ const AccessDenied = () => {
             <path d="M188 126 L196 138 C198 141 203 137 200 134 L192 122 Z" fill="#4d2f24" />
 
             {/* Glowing Shield & Padlock (Barrier on left side) */}
-            <g className="animate-bounce duration-5000">
+            <g className="animate-bounce duration-3000">
               {/* Outer Shield Outline */}
               <path d="M70 90 C100 90 110 100 110 130 C110 165 70 190 70 190 C70 190 30 165 30 130 C30 100 40 90 70 90 Z" fill="#ef4444" fillOpacity="0.1" stroke="#ef4444" strokeWidth="3" />
               {/* Inner Shield */}

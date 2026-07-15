@@ -20,6 +20,8 @@ import {
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
 import { useGetCoursesQuery } from "@/Redux/AllApi/CourseApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import {
   Table,
   TableBody,
@@ -88,6 +90,195 @@ import DepartmentStatusNotifications from "@/components/departments/DepartmentSt
 import { useLazyExportDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
+// Cascading Department -> Section -> Line picker used to configure which target
+// dept/section/line is authorized to approve this source department's Daily 5M records.
+const Daily5MRoutingFields = ({
+  idPrefix,
+  formData,
+  setFormData,
+  departments,
+  sections,
+  isLoadingSections,
+  lines,
+  isLoadingLines,
+}) => (
+  <div className="grid gap-3">
+    <div className="flex items-center justify-between">
+      <Label className="text-sm font-medium">Daily 5M Approver Routing</Label>
+      {formData.daily5mApproverDeptId && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs text-muted-foreground"
+          onClick={() =>
+            setFormData((prev) => ({
+              ...prev,
+              daily5mApproverDeptId: "",
+              daily5mApproverSectionId: "",
+              daily5mApproverLineId: "",
+            }))
+          }
+        >
+          Clear
+        </Button>
+      )}
+    </div>
+
+    <div className="grid gap-2">
+      <Label htmlFor={`${idPrefix}-approver-dept`}>Approver Department</Label>
+      <Select
+        value={formData.daily5mApproverDeptId ? String(formData.daily5mApproverDeptId) : ""}
+        onValueChange={(value) =>
+          setFormData((prev) => ({
+            ...prev,
+            daily5mApproverDeptId: value ? Number(value) : "",
+            daily5mApproverSectionId: "",
+            daily5mApproverLineId: "",
+          }))
+        }
+      >
+        <SelectTrigger id={`${idPrefix}-approver-dept`}>
+          <SelectValue placeholder="No routing (default rules apply)" />
+        </SelectTrigger>
+        <SelectContent>
+          {departments.length > 0 ? (
+            departments.map((d) => (
+              <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
+                {d.name}
+              </SelectItem>
+            ))
+          ) : (
+            <SelectItem value="none" disabled>
+              No departments available
+            </SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+    </div>
+
+    <div className="grid gap-2">
+      <Label htmlFor={`${idPrefix}-approver-section`}>Approver Section (Optional)</Label>
+      <Select
+        value={formData.daily5mApproverSectionId ? String(formData.daily5mApproverSectionId) : ""}
+        onValueChange={(value) =>
+          setFormData((prev) => ({
+            ...prev,
+            daily5mApproverSectionId: value ? Number(value) : "",
+            daily5mApproverLineId: "",
+          }))
+        }
+        disabled={!formData.daily5mApproverDeptId}
+      >
+        <SelectTrigger id={`${idPrefix}-approver-section`}>
+          <SelectValue placeholder={formData.daily5mApproverDeptId ? "Any section" : "Select department first"} />
+        </SelectTrigger>
+        <SelectContent>
+          {isLoadingSections ? (
+            <SelectItem value="loading" disabled>
+              Loading sections...
+            </SelectItem>
+          ) : sections.length > 0 ? (
+            sections.map((s) => (
+              <SelectItem key={s.id || s._id} value={String(s.id || s._id)}>
+                {s.name}
+              </SelectItem>
+            ))
+          ) : (
+            <SelectItem value="none" disabled>
+              No sections available
+            </SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+    </div>
+
+    <div className="grid gap-2">
+      <Label htmlFor={`${idPrefix}-approver-line`}>Approver Line (Optional)</Label>
+      <Select
+        value={formData.daily5mApproverLineId ? String(formData.daily5mApproverLineId) : ""}
+        onValueChange={(value) =>
+          setFormData((prev) => ({
+            ...prev,
+            daily5mApproverLineId: value ? Number(value) : "",
+          }))
+        }
+        disabled={!formData.daily5mApproverSectionId}
+      >
+        <SelectTrigger id={`${idPrefix}-approver-line`}>
+          <SelectValue placeholder={formData.daily5mApproverSectionId ? "Any line" : "Select section first"} />
+        </SelectTrigger>
+        <SelectContent>
+          {isLoadingLines ? (
+            <SelectItem value="loading" disabled>
+              Loading lines...
+            </SelectItem>
+          ) : lines.length > 0 ? (
+            lines.map((l) => (
+              <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>
+                {l.name}
+              </SelectItem>
+            ))
+          ) : (
+            <SelectItem value="none" disabled>
+              No lines available
+            </SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+    </div>
+  </div>
+);
+
+// Resolves and displays a department's configured Daily 5M approver routing (dept › section › line)
+// as a compact badge with a tooltip breakdown. Each row mounts its own instance so the section/line
+// name lookups only fire for departments that actually have routing configured.
+const Daily5MRoutingBadge = ({ department, allDepartments }) => {
+  const deptId = department.daily5mApproverDeptId;
+  const sectionId = department.daily5mApproverSectionId;
+  const lineId = department.daily5mApproverLineId;
+
+  const { data: sectionsData } = useGetSectionsByDepartmentQuery(deptId, { skip: !deptId || !sectionId });
+  const { data: linesData } = useGetLinesBySectionQuery(sectionId, { skip: !sectionId || !lineId });
+
+  if (!deptId) {
+    return (
+      <Badge variant="outline" className="text-muted-foreground text-xs whitespace-nowrap">
+        Not configured
+      </Badge>
+    );
+  }
+
+  const targetDeptName = allDepartments.find((d) => String(d.id || d._id) === String(deptId))?.name || `Dept #${deptId}`;
+  const targetSectionName = sectionId
+    ? (sectionsData?.data || []).find((s) => String(s.id || s._id) === String(sectionId))?.name
+    : null;
+  const targetLineName = lineId
+    ? (linesData?.data || []).find((l) => String(l.id || l._id) === String(lineId))?.name
+    : null;
+
+  const parts = [targetDeptName, targetSectionName, targetLineName].filter(Boolean);
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="secondary" className="text-xs cursor-default max-w-[170px] truncate block">
+            {parts.join(" › ")}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="flex flex-col gap-0.5 text-xs">
+            <span>Department: {targetDeptName}</span>
+            {targetSectionName && <span>Section: {targetSectionName}</span>}
+            {targetLineName && <span>Line: {targetLineName}</span>}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
 const Departments = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
@@ -112,6 +303,9 @@ const Departments = () => {
     endDate: "",
     capacity: 50,
     status: "UPCOMING",
+    daily5mApproverDeptId: "",
+    daily5mApproverSectionId: "",
+    daily5mApproverLineId: "",
   });
   const [formErrors, setFormErrors] = useState({});
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -218,6 +412,27 @@ const Departments = () => {
       refetchOnReconnect: false,
     }
   );
+
+  // All departments (unpaginated) — used both for the table's "5M Approver" column
+  // (resolving routing target names) and for the Approver Department dropdown in the
+  // Create/Edit dialogs, plus the cascading section/line lookups for whatever is selected.
+  const { data: allDepartmentsForRoutingData } = useGetAllDepartmentsQuery(
+    { page: 1, limit: 1000 },
+    { refetchOnFocus: false, refetchOnReconnect: false }
+  );
+  const allDepartmentsForRouting = allDepartmentsForRoutingData?.data?.departments || [];
+
+  const { data: routingSectionsData, isFetching: isLoadingRoutingSections } = useGetSectionsByDepartmentQuery(
+    formData.daily5mApproverDeptId,
+    { skip: !formData.daily5mApproverDeptId }
+  );
+  const routingSections = routingSectionsData?.data || [];
+
+  const { data: routingLinesData, isFetching: isLoadingRoutingLines } = useGetLinesBySectionQuery(
+    formData.daily5mApproverSectionId,
+    { skip: !formData.daily5mApproverSectionId }
+  );
+  const routingLines = routingLinesData?.data || [];
 
   const [createDepartment] = useCreateDepartmentMutation();
   const [updateDepartment] = useUpdateDepartmentMutation();
@@ -389,6 +604,9 @@ const Departments = () => {
       endDate: "",
       capacity: 50,
       status: "UPCOMING",
+      daily5mApproverDeptId: "",
+      daily5mApproverSectionId: "",
+      daily5mApproverLineId: "",
     });
     setFormErrors({});
     setSelectedStudents([]);
@@ -648,6 +866,9 @@ const Departments = () => {
         : "",
       capacity: department.capacity || 50,
       status: department.status || "UPCOMING",
+      daily5mApproverDeptId: department.daily5mApproverDeptId || "",
+      daily5mApproverSectionId: department.daily5mApproverSectionId || "",
+      daily5mApproverLineId: department.daily5mApproverLineId || "",
     });
     setSelectedCourses(deptCourses);
     setIsEditDialogOpen(true);
@@ -762,46 +983,6 @@ const Departments = () => {
     // OR if there is a route, navigate to it.
     // Based on typical patterns:
     navigate(`${department._id}`);
-  };
-
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      UPCOMING: {
-        variant: "secondary",
-        label: "Upcoming",
-        className: "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200"
-      },
-      ONGOING: {
-        variant: "default",
-        label: "Ongoing",
-        className: "bg-green-100 text-green-800 border-green-200 hover:bg-green-200"
-      },
-      COMPLETED: {
-        variant: "outline",
-        label: "Completed",
-        className: "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
-      },
-      CANCELLED: {
-        variant: "destructive",
-        label: "Cancelled",
-        className: "bg-red-100 text-red-800 border-red-200 hover:bg-red-200 font-medium"
-      },
-    };
-
-    const config = statusConfig[status] || {
-      variant: "outline",
-      label: status || 'Unknown',
-      className: "bg-yellow-100 text-yellow-800 border-yellow-200"
-    };
-
-    return (
-      <Badge
-        variant={config.variant}
-        className={config.className}
-      >
-        {config.label}
-      </Badge>
-    );
   };
 
   const clearFilters = () => {
@@ -1093,6 +1274,7 @@ const Departments = () => {
         </CardHeader>
 
         <CardContent className="p-0">
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -1100,7 +1282,7 @@ const Departments = () => {
                 <TableHead>Course</TableHead>
                 <TableHead>Trainer</TableHead>
                 <TableHead>Operators</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>5M Approver</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -1108,219 +1290,222 @@ const Departments = () => {
             <TableBody>
               {filteredDepartments.length > 0 ? (
                 <>
-                {filteredDepartments.map((department) => (
-                  <TableRow
-                    key={department._id}
-                    className="group hover:bg-muted/30"
-                    onClick={() => handleDepartmentClick(department)}
-                  >
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <div className="p-2 rounded-full bg-blue-100">
-                          <IconSchool className="h-5 w-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground">
-                            {department.name}
-                          </p>
-                          {department.uniCode && (
-                            <p className="text-xs text-muted-foreground">
-                              {department.uniCode}
+                  {filteredDepartments.map((department) => (
+                    <TableRow
+                      key={department._id}
+                      className="group hover:bg-muted/30"
+                      onClick={() => handleDepartmentClick(department)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center space-x-3">
+                          <div className="p-2 rounded-full bg-blue-100">
+                            <IconSchool className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground">
+                              {department.name}
                             </p>
+                            {department.uniCode && (
+                              <p className="text-xs text-muted-foreground">
+                                {department.uniCode}
+                              </p>
+                            )}
+                          </div>
+                          <IconExternalLink className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </TableCell>
+                      <TableCell>{getCourseInfo(department)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {getInstructorInfo(department)}
+                          {canUpdate && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openAssignInstructorDialog(department);
+                                    }}
+                                    className="h-7 w-7 p-0"
+                                  >
+                                    <IconPencil className="h-3 w-3" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Assign trainer</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           )}
                         </div>
-                        <IconExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </TableCell>
-                    <TableCell>{getCourseInfo(department)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getInstructorInfo(department)}
-                        {canUpdate && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className="flex items-center gap-1"
+                          >
+                            <IconUsers className="h-3 w-3" />
+                            {getStudentCount(department)}
+                            {department.capacity ? ` / ${department.capacity}` : ""}
+                          </Badge>
+
+                          {canManageStudents && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
                                 <Button
-                                  variant="ghost"
-                                  size="sm"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openAssignInstructorDialog(department);
                                   }}
-                                  className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  <IconPencil className="h-3 w-3" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Assign trainer</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className="flex items-center gap-1"
-                        >
-                          <IconUsers className="h-3 w-3" />
-                          {getStudentCount(department)} operators
-                        </Badge>
-
-                        {canManageStudents && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                }}
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <IconUserPlus className="h-3 w-3" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openManageStudentsDialog(department);
-                                }}
-                              >
-                                <IconUserPlus className="h-4 w-4 mr-2" />
-                                Manage Operators
-                              </DropdownMenuItem>
-
-                              {department.students && department.students.length > 0 && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <div className="max-h-48 overflow-y-auto">
-                                    {department.students.slice(0, 5).map((student) => (
-                                      <DropdownMenuItem
-                                        key={student._id}
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          handleRemoveStudent({ departmentId: department._id, studentId: student._id, studentName: student.fullName });
-                                        }}
-                                        className="text-red-600 focus:text-red-600"
-                                      >
-                                        <IconTrash className="h-4 w-4 mr-2" />
-                                        Remove {student.fullName}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  </div>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(department.status)}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="text-sm">
-                          {new Date(department.createdAt).toLocaleDateString()}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(department.createdAt).toLocaleTimeString()}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {canUpdate && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-7 w-7 p-0"
+                                >
+                                  <IconUserPlus className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openEditDialog(department);
+                                    openManageStudentsDialog(department);
                                   }}
-                                  className="h-8 w-8 p-0"
                                 >
-                                  <IconPencil className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Edit department</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
+                                  <IconUserPlus className="h-4 w-4 mr-2" />
+                                  Manage Operators
+                                </DropdownMenuItem>
 
-                        {canUpdate && department.status !== 'CANCELLED' && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedDepartment(department);
-                                    setIsCancelDepartmentDialogOpen(true);
-                                  }}
-                                  className="h-8 w-8 p-0 text-orange-600 hover:text-orange-800 hover:bg-orange-50"
-                                >
-                                  <IconX className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Cancel department</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-
-                        {canDelete && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openDeleteDialog(department);
-                                  }}
-                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
-                                >
-                                  <IconTrash className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Delete department</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {page < totalPages && (
-                  <TableRow ref={scrollSentinelRef}>
-                    <TableCell colSpan={7} className="text-center py-4">
-                      {isFetchingNextPage ? (
-                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                          <IconLoader className="h-4 w-4 animate-spin" />
-                          Loading more departments...
+                                {department.students && department.students.length > 0 && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <div className="max-h-48 overflow-y-auto">
+                                      {department.students.slice(0, 5).map((student) => (
+                                        <DropdownMenuItem
+                                          key={student._id}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleRemoveStudent({ departmentId: department._id, studentId: student._id, studentName: student.fullName });
+                                          }}
+                                          className="text-red-600 focus:text-red-600"
+                                        >
+                                          <IconTrash className="h-4 w-4 mr-2" />
+                                          Remove {student.fullName}
+                                        </DropdownMenuItem>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">&nbsp;</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )}
+                      </TableCell>
+                      <TableCell>
+                        <Daily5MRoutingBadge department={department} allDepartments={allDepartmentsForRouting} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm">
+                            {new Date(department.createdAt).toLocaleDateString()}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(department.createdAt).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end space-x-1">
+                          {canUpdate && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditDialog(department);
+                                    }}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <IconPencil className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Edit department</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+
+                          {canUpdate && department.status !== 'CANCELLED' && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedDepartment(department);
+                                      setIsCancelDepartmentDialogOpen(true);
+                                    }}
+                                    className="h-8 w-8 p-0 text-orange-600 hover:text-orange-800 hover:bg-orange-50"
+                                  >
+                                    <IconX className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Cancel department</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+
+                          {canDelete && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openDeleteDialog(department);
+                                    }}
+                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                  >
+                                    <IconTrash className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Delete department</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {page < totalPages && (
+                    <TableRow ref={scrollSentinelRef}>
+                      <TableCell colSpan={7} className="text-center py-4">
+                        {isFetchingNextPage ? (
+                          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                            <IconLoader className="h-4 w-4 animate-spin" />
+                            Loading more departments...
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">&nbsp;</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </>
               ) : (
                 <TableRow>
@@ -1350,6 +1535,7 @@ const Departments = () => {
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -1363,7 +1549,7 @@ const Departments = () => {
 
       {/* Create Department Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconPlus className="h-5 w-5" />
@@ -1374,32 +1560,34 @@ const Departments = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Department Name *</Label>
-              <Input
-                id="name"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="Enter department name"
-                className={
-                  formErrors.name ? "border-red-500 focus:border-red-500" : ""
-                }
-              />
-              {formErrors.name && (
-                <p className="text-sm text-red-600">{formErrors.name}</p>
-              )}
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Department Name *</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter department name"
+                  className={
+                    formErrors.name ? "border-red-500 focus:border-red-500" : ""
+                  }
+                />
+                {formErrors.name && (
+                  <p className="text-sm text-red-600">{formErrors.name}</p>
+                )}
+              </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="uniCode">UniCode (Unique)</Label>
-              <Input
-                id="uniCode"
-                name="uniCode"
-                value={formData.uniCode}
-                onChange={handleInputChange}
-                placeholder="Enter unique code"
-              />
+              <div className="grid gap-2">
+                <Label htmlFor="uniCode">UniCode (Unique)</Label>
+                <Input
+                  id="uniCode"
+                  name="uniCode"
+                  value={formData.uniCode}
+                  onChange={handleInputChange}
+                  placeholder="Enter unique code"
+                />
+              </div>
             </div>
 
             <div className="grid gap-2">
@@ -1466,42 +1654,57 @@ const Departments = () => {
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="instructorId">Trainer (Optional)</Label>
-              <Select
-                value={formData.instructorId ? String(formData.instructorId) : ""}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, instructorId: value ? Number(value) : "" })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an trainer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {instructorsLoading ? (
-                    <SelectItem value="loading" disabled>
-                      Loading Trainers...
-                    </SelectItem>
-                  ) : instructorsError ? (
-                    <SelectItem value="error" disabled>
-                      Error loading trainers
-                    </SelectItem>
-                  ) : instructors.length > 0 ? (
-                    instructors.map((instructor) => (
-                      <SelectItem key={instructor._id} value={String(instructor._id)}>
-                        {instructor.fullName} ({instructor.email})
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="instructorId">Trainer (Optional)</Label>
+                <Select
+                  value={formData.instructorId ? String(formData.instructorId) : ""}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, instructorId: value ? Number(value) : "" })
+                  }
+                >
+                  <SelectTrigger id="instructorId">
+                    <SelectValue placeholder="Select an trainer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {instructorsLoading ? (
+                      <SelectItem value="loading" disabled>
+                        Loading Trainers...
                       </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="none" disabled>
-                      No trainers available
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
+                    ) : instructorsError ? (
+                      <SelectItem value="error" disabled>
+                        Error loading trainers
+                      </SelectItem>
+                    ) : instructors.length > 0 ? (
+                      instructors.map((instructor) => (
+                        <SelectItem key={instructor._id} value={String(instructor._id)}>
+                          {instructor.fullName} ({instructor.email})
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        No trainers available
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="capacity">Capacity (Optional)</Label>
+                <Input
+                  id="capacity"
+                  name="capacity"
+                  type="number"
+                  min="1"
+                  value={formData.capacity}
+                  onChange={handleInputChange}
+                  placeholder="Enter capacity"
+                />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="startDate">Start Date (Optional)</Label>
                 <Input
@@ -1524,16 +1727,23 @@ const Departments = () => {
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="capacity">Capacity (Optional)</Label>
-              <Input
-                id="capacity"
-                name="capacity"
-                type="number"
-                min="1"
-                value={formData.capacity}
-                onChange={handleInputChange}
-                placeholder="Enter capacity"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t">
+              <div className="grid gap-2">
+                <Label className="text-sm font-medium">Source Department</Label>
+                <div className="rounded-md border bg-muted/20 p-3 space-y-1">
+                  <p className="text-sm font-medium">{formData.name || "Unnamed department"}</p>
+                  <p className="text-xs text-muted-foreground">{formData.uniCode || "No UniCode set"}</p>
+                </div>
+              </div>
+              <Daily5MRoutingFields
+                idPrefix="create"
+                formData={formData}
+                setFormData={setFormData}
+                departments={allDepartmentsForRouting}
+                sections={routingSections}
+                isLoadingSections={isLoadingRoutingSections}
+                lines={routingLines}
+                isLoadingLines={isLoadingRoutingLines}
               />
             </div>
           </div>
@@ -1561,7 +1771,7 @@ const Departments = () => {
 
       {/* Edit Department Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconPencil className="h-5 w-5" />
@@ -1570,26 +1780,28 @@ const Departments = () => {
             <DialogDescription>Update department information.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Department Name *</Label>
-              <Input
-                id="edit-name"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="Enter department name"
-              />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-name">Department Name *</Label>
+                <Input
+                  id="edit-name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter department name"
+                />
+              </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="edit-uniCode">UniCode</Label>
-              <Input
-                id="edit-uniCode"
-                name="uniCode"
-                value={formData.uniCode}
-                onChange={handleInputChange}
-                placeholder="Enter unique code"
-              />
+              <div className="grid gap-2">
+                <Label htmlFor="edit-uniCode">UniCode</Label>
+                <Input
+                  id="edit-uniCode"
+                  name="uniCode"
+                  value={formData.uniCode}
+                  onChange={handleInputChange}
+                  placeholder="Enter unique code"
+                />
+              </div>
             </div>
 
             <div className="grid gap-2">
@@ -1658,27 +1870,42 @@ const Departments = () => {
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="edit-status">Status</Label>
-              <Select
-                value={formData.status}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, status: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="UPCOMING">Upcoming</SelectItem>
-                  <SelectItem value="ONGOING">Ongoing</SelectItem>
-                  <SelectItem value="COMPLETED">Completed</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-status">Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, status: value })
+                  }
+                >
+                  <SelectTrigger id="edit-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UPCOMING">Upcoming</SelectItem>
+                    <SelectItem value="ONGOING">Ongoing</SelectItem>
+                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-capacity">Capacity</Label>
+                <Input
+                  id="edit-capacity"
+                  name="capacity"
+                  type="number"
+                  min="1"
+                  value={formData.capacity}
+                  onChange={handleInputChange}
+                  placeholder="Enter capacity"
+                />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="edit-startDate">Start Date</Label>
                 <Input
@@ -1701,16 +1928,24 @@ const Departments = () => {
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="edit-capacity">Capacity</Label>
-              <Input
-                id="edit-capacity"
-                name="capacity"
-                type="number"
-                min="1"
-                value={formData.capacity}
-                onChange={handleInputChange}
-                placeholder="Enter capacity"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t">
+              <div className="grid gap-2">
+                <Label className="text-sm font-medium">Source Department</Label>
+                <div className="rounded-md border bg-muted/20 p-3 space-y-1">
+                  <p className="text-sm font-medium">{selectedDepartment?.name}</p>
+                  <p className="text-xs text-muted-foreground">{selectedDepartment?.uniCode || "No UniCode set"}</p>
+                  <p className="text-xs text-muted-foreground">{getStudentCount(selectedDepartment)} operators</p>
+                </div>
+              </div>
+              <Daily5MRoutingFields
+                idPrefix="edit"
+                formData={formData}
+                setFormData={setFormData}
+                departments={allDepartmentsForRouting}
+                sections={routingSections}
+                isLoadingSections={isLoadingRoutingSections}
+                lines={routingLines}
+                isLoadingLines={isLoadingRoutingLines}
               />
             </div>
           </div>

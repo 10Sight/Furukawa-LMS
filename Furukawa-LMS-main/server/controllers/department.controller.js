@@ -159,7 +159,7 @@ export const getMyDepartments = asyncHandler(async (req, res) => {
 });
 
 export const createDepartment = asyncHandler(async (req, res) => {
-    const { name, uniCode, instructorId, courseIds, startDate, endDate, capacity } = req.body;
+    const { name, uniCode, instructorId, courseIds, startDate, endDate, capacity, daily5mApproverDeptId, daily5mApproverSectionId, daily5mApproverLineId } = req.body;
     if (!name) throw new ApiError("Department name is required", 400);
 
     if (uniCode) {
@@ -188,7 +188,10 @@ export const createDepartment = asyncHandler(async (req, res) => {
         students: [],
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
-        capacity: capacity ? parseInt(capacity) : null
+        capacity: capacity ? parseInt(capacity) : null,
+        daily5mApproverDeptId: daily5mApproverDeptId ? parseInt(daily5mApproverDeptId) : null,
+        daily5mApproverSectionId: daily5mApproverSectionId ? parseInt(daily5mApproverSectionId) : null,
+        daily5mApproverLineId: daily5mApproverLineId ? parseInt(daily5mApproverLineId) : null
     };
     let department = await Department.create(departmentData);
     department = await populateDepartment(department, ['instructor', 'courses', 'course']);
@@ -495,6 +498,9 @@ export const updateDepartment = asyncHandler(async (req, res) => {
     if (endDate) department.endDate = new Date(endDate);
     if (capacity) department.capacity = parseInt(capacity);
     if (req.body.isReportingEnabled !== undefined) department.isReportingEnabled = req.body.isReportingEnabled;
+    if (req.body.daily5mApproverDeptId !== undefined) department.daily5mApproverDeptId = req.body.daily5mApproverDeptId ? parseInt(req.body.daily5mApproverDeptId) : null;
+    if (req.body.daily5mApproverSectionId !== undefined) department.daily5mApproverSectionId = req.body.daily5mApproverSectionId ? parseInt(req.body.daily5mApproverSectionId) : null;
+    if (req.body.daily5mApproverLineId !== undefined) department.daily5mApproverLineId = req.body.daily5mApproverLineId ? parseInt(req.body.daily5mApproverLineId) : null;
     await department.save();
     const updated = await populateDepartment(department, ['instructor', 'courses', 'course']);
     res.json(new ApiResponse(200, updated, "Updated"));

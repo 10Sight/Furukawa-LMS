@@ -481,85 +481,6 @@ export const updateOnJobTraining = async (req, res, next) => {
             [...updateValues, id]
         );
 
-        // Sync to Student's ojt badges array in user table
-        if (result !== undefined) {
-            const ojtRecord = rows[0];
-            
-            // Gather all student IDs to sync
-            const studentIdsToSync = new Set();
-            
-            // Case A: Single student linked directly
-            if (ojtRecord.student) {
-                studentIdsToSync.add(ojtRecord.student);
-            }
-            
-            // Case B: Attendance records (group/record training sheet)
-            let attRecords = [];
-            try {
-                attRecords = typeof attendanceRecords === 'string' 
-                    ? JSON.parse(attendanceRecords) 
-                    : (attendanceRecords || parseJSON(ojtRecord.attendanceRecords, []));
-            } catch (e) {
-                attRecords = [];
-            }
-            
-            if (Array.isArray(attRecords) && attRecords.length > 0) {
-                const ecodes = attRecords.map(r => r.ecode).filter(Boolean);
-                if (ecodes.length > 0) {
-                    // Look up user IDs for these ecodes/usernames
-                    const placeholders = ecodes.map(() => "?").join(",");
-                    const [matchedUsers] = await executeQuery(
-                        `SELECT id FROM users WHERE empId IN (${placeholders}) OR userName IN (${placeholders})`,
-                        [...ecodes, ...ecodes]
-                    );
-                    matchedUsers.forEach(u => studentIdsToSync.add(u.id));
-                }
-            }
-            
-            // Perform the update for all identified students
-            for (const studentId of studentIdsToSync) {
-                try {
-                    const [userRows] = await executeQuery("SELECT ojt FROM users WHERE id = ?", [studentId]);
-                    if (userRows.length > 0) {
-                        let ojtArray = [];
-                        try {
-                            ojtArray = JSON.parse(userRows[0].ojt || "[]");
-                        } catch (e) {
-                            ojtArray = [];
-                        }
-                        if (!Array.isArray(ojtArray)) ojtArray = [];
-
-                        if (result === "Pass" || result === "Approved") {
-                            const existingIdx = ojtArray.findIndex(item => String(item.ojtId) === String(id));
-                            const newEntry = {
-                                ojtId: Number(id),
-                                subSectionId: ojtRecord.subSection,
-                                departmentId: ojtRecord.department,
-                                sectionId: ojtRecord.section,
-                                lineId: ojtRecord.line,
-                                result: result,
-                                approvedAt: new Date()
-                            };
-
-                            if (existingIdx >= 0) {
-                                ojtArray[existingIdx] = newEntry;
-                            } else {
-                                ojtArray.push(newEntry);
-                            }
-                        } else {
-                            // Reverted/Fail: Remove from user's ojt approvals
-                            ojtArray = ojtArray.filter(item => String(item.ojtId) !== String(id));
-                        }
-
-                        await executeQuery("UPDATE users SET ojt = ? WHERE id = ?", [JSON.stringify(ojtArray), studentId]);
-                        console.log(`[DEBUG] Successfully synced OJT ${id} result (${result}) to user ${studentId}'s ojt column.`);
-                    }
-                } catch (syncErr) {
-                    console.error(`[ERROR] Failed to sync OJT ${id} result to user ${studentId}:`, syncErr.message);
-                }
-            }
-        }
-
         // Fetch updated
         const [updatedRows] = await executeQuery("SELECT * FROM on_job_trainings WHERE id = ?", [id]);
         const updatedOJT = updatedRows[0];
@@ -569,6 +490,86 @@ export const updateOnJobTraining = async (req, res, next) => {
             updatedOJT.scoring = parseJSON(updatedOJT.scoring, null);
             updatedOJT.attendanceRecords = parseJSON(updatedOJT.attendanceRecords, []);
             updatedOJT.trainingLog = parseJSON(updatedOJT.trainingLog, []);
+        }
+
+        // Sync Student's ojt badges array in user table to reflect the current state of this sheet.
+        // Runs on every save (not just when `result` is in the payload) so that adding/removing
+        // attendees on a reused sheet keeps everyone's badge in sync.
+        if (updatedOJT) {
+            const isApproved = updatedOJT.result === "Pass" || updatedOJT.result === "Approved";
+
+            // Students currently on this sheet (single student + attendance records)
+            const currentStudentIds = new Set();
+            if (updatedOJT.student) currentStudentIds.add(String(updatedOJT.student));
+
+            const ecodes = (updatedOJT.attendanceRecords || []).map(r => r.ecode).filter(Boolean);
+            if (ecodes.length > 0) {
+                const placeholders = ecodes.map(() => "?").join(",");
+                const [matchedUsers] = await executeQuery(
+                    `SELECT id FROM users WHERE empId IN (${placeholders}) OR userName IN (${placeholders})`,
+                    [...ecodes, ...ecodes]
+                );
+                matchedUsers.forEach(u => currentStudentIds.add(String(u.id)));
+            }
+
+            // Students who already carry this sheet's badge (covers students removed since the last save)
+            const [previouslyLinkedUsers] = await executeQuery(
+                `SELECT u.id FROM users u
+                 CROSS APPLY OPENJSON(ISNULL(u.ojt, '[]')) WITH (ojtId INT '$.ojtId') AS item
+                 WHERE item.ojtId = ?`,
+                [Number(id)]
+            );
+            const previouslyLinkedIds = new Set(previouslyLinkedUsers.map(u => String(u.id)));
+
+            const studentIdsToProcess = new Set([...currentStudentIds, ...previouslyLinkedIds]);
+
+            for (const studentId of studentIdsToProcess) {
+                try {
+                    const shouldHaveBadge = isApproved && currentStudentIds.has(studentId);
+
+                    const [userRows] = await executeQuery("SELECT ojt FROM users WHERE id = ?", [studentId]);
+                    if (userRows.length === 0) continue;
+
+                    let ojtArray = [];
+                    try {
+                        ojtArray = JSON.parse(userRows[0].ojt || "[]");
+                    } catch (e) {
+                        ojtArray = [];
+                    }
+                    if (!Array.isArray(ojtArray)) ojtArray = [];
+
+                    const existingIdx = ojtArray.findIndex(item => String(item.ojtId) === String(id));
+
+                    if (shouldHaveBadge) {
+                        const newEntry = {
+                            ojtId: Number(id),
+                            subSectionId: updatedOJT.subSection,
+                            departmentId: updatedOJT.department,
+                            sectionId: updatedOJT.section,
+                            lineId: updatedOJT.line,
+                            result: updatedOJT.result,
+                            // Preserve the original approval date for students already approved on this sheet;
+                            // only newly-approved students get today's date.
+                            approvedAt: existingIdx >= 0 ? ojtArray[existingIdx].approvedAt : new Date()
+                        };
+
+                        if (existingIdx >= 0) {
+                            ojtArray[existingIdx] = newEntry;
+                        } else {
+                            ojtArray.push(newEntry);
+                        }
+                    } else if (existingIdx >= 0) {
+                        ojtArray.splice(existingIdx, 1);
+                    } else {
+                        continue;
+                    }
+
+                    await executeQuery("UPDATE users SET ojt = ? WHERE id = ?", [JSON.stringify(ojtArray), studentId]);
+                    console.log(`[DEBUG] Synced OJT ${id} badge (present=${shouldHaveBadge}) to user ${studentId}'s ojt column.`);
+                } catch (syncErr) {
+                    console.error(`[ERROR] Failed to sync OJT ${id} badge to user ${studentId}:`, syncErr.message);
+                }
+            }
         }
 
         // --- EMAIL NOTIFICATION TRIGGER ---

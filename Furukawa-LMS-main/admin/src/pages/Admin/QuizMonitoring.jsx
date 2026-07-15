@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
+import useTranslate from "@/hooks/useTranslate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 
 const AdminQuizMonitoring = ({ isDojo = false }) => {
+  const { t } = useTranslate();
   const navigate = useNavigate();
   const [deleteAttempt, { isLoading: isDeleting }] = useDeleteAttemptMutation();
   const [selectedDeptId, setSelectedDeptId] = useState("all");
@@ -195,13 +197,13 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
   const attempts = attemptsData?.data || [];
 
   const handleDeleteAttempt = async (id) => {
-    if (window.confirm("Are you sure you want to delete this test attempt? This action cannot be undone.")) {
+    if (window.confirm(t("testMonitoring.confirmDelete"))) {
       try {
         await deleteAttempt(id).unwrap();
-        toast.success("Test attempt deleted successfully");
+        toast.success(t("testMonitoring.toast.deleteSuccess"));
         refetch();
       } catch (error) {
-        toast.error(error?.data?.message || "Failed to delete test attempt");
+        toast.error(error?.data?.message || t("testMonitoring.toast.deleteFail"));
       }
     }
   };
@@ -229,9 +231,9 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
 
   // Helper: Display test type tag beautifully
   const getTestTypeBadge = (quiz) => {
-    if (quiz?.isDojo) return <Badge className="bg-purple-100 text-purple-700 border border-purple-200">DOJO</Badge>;
-    if (quiz?.isTheoretical) return <Badge className="bg-teal-100 text-teal-700 border border-teal-200">Theoretical</Badge>;
-    return <Badge className="bg-blue-100 text-blue-700 border border-blue-200">Regular</Badge>;
+    if (quiz?.isDojo) return <Badge className="bg-purple-100 text-purple-700 border border-purple-200">{t("testMonitoring.badge.dojo")}</Badge>;
+    if (quiz?.isTheoretical) return <Badge className="bg-teal-100 text-teal-700 border border-teal-200">{t("testMonitoring.badge.theoretical")}</Badge>;
+    return <Badge className="bg-blue-100 text-blue-700 border border-blue-200">{t("testMonitoring.badge.regular")}</Badge>;
   };
 
   return (
@@ -239,14 +241,14 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
       {/* Page Title */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Test & Evaluation Monitoring</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("testMonitoring.title")}</h1>
           <p className="text-muted-foreground text-sm">
-            Monitor, filter, and audit all submitted test papers across your production hierarchy
+            {t("testMonitoring.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()} className="h-9">
-            <IconRefresh className="h-4 w-4 mr-2" /> Refresh Data
+            <IconRefresh className="h-4 w-4 mr-2" /> {t("testMonitoring.btnRefresh")}
           </Button>
         </div>
       </div>
@@ -256,22 +258,22 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
         <CardHeader className="pb-4">
           <div className="flex items-center gap-2">
             <IconAdjustments className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base font-semibold">Hierarchy & Scope Filters</CardTitle>
+            <CardTitle className="text-base font-semibold">{t("testMonitoring.filters.title")}</CardTitle>
           </div>
-          <CardDescription>Narrow down test submissions by organizational locations and test specifications</CardDescription>
+          <CardDescription>{t("testMonitoring.filters.desc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Row 1: Production Hierarchy Cascade */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             {/* Department */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Department</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.deptLabel")}</label>
               <Select value={selectedDeptId} onValueChange={handleDeptChange} disabled={isDeptSelectDisabled}>
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Select Department" />
+                  <SelectValue placeholder={t("testMonitoring.filters.selectDept")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {!isDeptSelectDisabled && <SelectItem value="all">All Departments</SelectItem>}
+                  {!isDeptSelectDisabled && <SelectItem value="all">{t("testMonitoring.filters.allDepts")}</SelectItem>}
                   {assignableDepartments.map((d) => (
                     <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                   ))}
@@ -281,17 +283,17 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
 
             {/* Section */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Section</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.secLabel")}</label>
               <Select
                 value={selectedSectionId}
                 onValueChange={handleSectionChange}
                 disabled={selectedDeptId === "all" || isSectionSelectDisabled}
               >
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder={selectedDeptId === "all" ? "Select Department first" : "Select Section"} />
+                  <SelectValue placeholder={selectedDeptId === "all" ? t("testMonitoring.filters.selectDeptFirst") : t("testMonitoring.filters.selectSec")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {!isSectionSelectDisabled && <SelectItem value="all">All Sections</SelectItem>}
+                  {!isSectionSelectDisabled && <SelectItem value="all">{t("testMonitoring.filters.allSections")}</SelectItem>}
                   {assignableSections.map((s) => (
                     <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                   ))}
@@ -301,17 +303,17 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
 
             {/* Line */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Line</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.lineLabel")}</label>
               <Select
                 value={selectedLineId}
                 onValueChange={handleLineChange}
                 disabled={selectedSectionId === "all" && selectedDeptId === "all"}
               >
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Select Line" />
+                  <SelectValue placeholder={t("testMonitoring.filters.selectLine")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Lines</SelectItem>
+                  <SelectItem value="all">{t("testMonitoring.filters.allLines")}</SelectItem>
                   {lines.map((l) => (
                     <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
                   ))}
@@ -321,17 +323,17 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
 
             {/* Sub-Section */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Sub-Section</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.subSecLabel")}</label>
               <Select
                 value={selectedSubSectionId}
                 onValueChange={setSelectedSubSectionId}
                 disabled={selectedLineId === "all" && selectedSectionId === "all"}
               >
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Select Sub-Section" />
+                  <SelectValue placeholder={t("testMonitoring.filters.selectSubSec")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Sub-Sections</SelectItem>
+                  <SelectItem value="all">{t("testMonitoring.filters.allSubSecs")}</SelectItem>
                   {subSections.map((ss) => (
                     <SelectItem key={ss.id} value={String(ss.id)}>{ss.name}</SelectItem>
                   ))}
@@ -344,13 +346,13 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             {/* Level */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Test Level</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.levelLabel")}</label>
               <Select value={selectedLevel} onValueChange={setSelectedLevel}>
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Select Level" />
+                  <SelectValue placeholder={t("testMonitoring.filters.selectLevel")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Levels</SelectItem>
+                  <SelectItem value="all">{t("testMonitoring.filters.allLevels")}</SelectItem>
                   <SelectItem value="L0 (Dojo User)">L0 (Dojo User)</SelectItem>
                   {levels.map((lvl) => (
                     <SelectItem key={lvl.name || lvl} value={lvl.name || lvl}>
@@ -363,29 +365,29 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
 
             {/* Test Type */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Test Type</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.typeLabel")}</label>
               <Select value={selectedTestType} onValueChange={setSelectedTestType}>
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Select Test Type" />
+                  <SelectValue placeholder={t("testMonitoring.filters.selectType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="REGULAR">Regular (Standalone)</SelectItem>
-                  <SelectItem value="DOJO">DOJO hiring</SelectItem>
-                  <SelectItem value="THEORETICAL">Theoretical</SelectItem>
+                  <SelectItem value="all">{t("testMonitoring.filters.allTypes")}</SelectItem>
+                  <SelectItem value="REGULAR">{t("testMonitoring.filters.optRegular")}</SelectItem>
+                  <SelectItem value="DOJO">{t("testMonitoring.filters.optDojo")}</SelectItem>
+                  <SelectItem value="THEORETICAL">{t("testMonitoring.filters.optTheoretical")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {/* Test Paper Department */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Test Paper Dept</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.quizDeptLabel")}</label>
               <Select value={selectedQuizDeptId} onValueChange={setSelectedQuizDeptId}>
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Select Test Paper Dept" />
+                  <SelectValue placeholder={t("testMonitoring.filters.selectQuizDept")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
+                  <SelectItem value="all">{t("testMonitoring.filters.allDepts")}</SelectItem>
                   {uniqueDepartments.map((d) => (
                     <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                   ))}
@@ -395,11 +397,11 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
 
             {/* Smart Search by User/Test */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-600">Search Candidate or Test</label>
+              <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.searchLabel")}</label>
               <div className="relative">
                 <Input
                   className="w-full h-10 pl-9 pr-8"
-                  placeholder="Type name, E.Code, or test paper..."
+                  placeholder={t("testMonitoring.filters.searchPlaceholder")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -419,11 +421,11 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
           {/* Active Filter Badges */}
           {hasActiveFilters && (
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
-              <span className="text-xs font-semibold text-gray-500 mr-1">Active filters:</span>
+              <span className="text-xs font-semibold text-gray-500 mr-1">{t("testMonitoring.filters.activeFilters")}</span>
 
               {selectedDeptId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Dept: {departments.find(d => String(d.id) === selectedDeptId)?.name || selectedDeptId}
+                  {t("testMonitoring.filters.badgeDept")} {departments.find(d => String(d.id) === selectedDeptId)?.name || selectedDeptId}
                   {!isDeptSelectDisabled && (
                     <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => handleDeptChange("all")} />
                   )}
@@ -431,7 +433,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
               )}
               {selectedSectionId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Sec: {sections.find(s => String(s.id) === selectedSectionId)?.name || selectedSectionId}
+                  {t("testMonitoring.filters.badgeSec")} {sections.find(s => String(s.id) === selectedSectionId)?.name || selectedSectionId}
                   {!isSectionSelectDisabled && (
                     <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => handleSectionChange("all")} />
                   )}
@@ -439,37 +441,37 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
               )}
               {selectedLineId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Line: {allLines.find(l => String(l.id) === selectedLineId)?.name || selectedLineId}
+                  {t("testMonitoring.filters.badgeLine")} {allLines.find(l => String(l.id) === selectedLineId)?.name || selectedLineId}
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => handleLineChange("all")} />
                 </Badge>
               )}
               {selectedSubSectionId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Sub-Sec: {allSubSections.find(ss => String(ss.id) === selectedSubSectionId)?.name || selectedSubSectionId}
+                  {t("testMonitoring.filters.badgeSubSec")} {allSubSections.find(ss => String(ss.id) === selectedSubSectionId)?.name || selectedSubSectionId}
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => setSelectedSubSectionId("all")} />
                 </Badge>
               )}
               {selectedLevel !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Level: {selectedLevel}
+                  {t("testMonitoring.filters.badgeLevel")} {selectedLevel}
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => setSelectedLevel("all")} />
                 </Badge>
               )}
               {selectedTestType !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Type: {selectedTestType}
+                  {t("testMonitoring.filters.badgeType")} {selectedTestType}
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => setSelectedTestType("all")} />
                 </Badge>
               )}
               {selectedQuizDeptId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Test Dept: {departments.find(d => String(d.id) === selectedQuizDeptId)?.name || selectedQuizDeptId}
+                  {t("testMonitoring.filters.badgeTestDept")} {departments.find(d => String(d.id) === selectedQuizDeptId)?.name || selectedQuizDeptId}
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => setSelectedQuizDeptId("all")} />
                 </Badge>
               )}
               {search && (
                 <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-                  Search: "{search}"
+                  {t("testMonitoring.filters.badgeSearch")} "{search}"
                   <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-gray-200 rounded-full p-0.5" onClick={() => setSearch("")} />
                 </Badge>
               )}
@@ -480,7 +482,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
                 onClick={handleResetAll}
                 className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 ml-auto"
               >
-                Clear All
+                {t("testMonitoring.filters.clearAll")}
               </Button>
             </div>
           )}
@@ -503,13 +505,13 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
               <Table>
                 <TableHeader className="bg-gray-50/75">
                   <TableRow>
-                    <TableHead className="font-semibold text-gray-700 pl-6 py-4">Candidate</TableHead>
-                    <TableHead className="font-semibold text-gray-700 py-4">Test Paper Details</TableHead>
-                    <TableHead className="font-semibold text-gray-700 py-4">Hierarchy Station</TableHead>
-                    <TableHead className="font-semibold text-gray-700 py-4">Grading Score</TableHead>
-                    <TableHead className="font-semibold text-gray-700 py-4">Submitted At</TableHead>
-                    <TableHead className="font-semibold text-gray-700 py-4">Time Taken</TableHead>
-                    <TableHead className="font-semibold text-gray-700 text-center pr-6 py-4">Action</TableHead>
+                    <TableHead className="font-semibold text-gray-700 pl-6 py-4">{t("testMonitoring.table.candidate")}</TableHead>
+                    <TableHead className="font-semibold text-gray-700 py-4">{t("testMonitoring.table.details")}</TableHead>
+                    <TableHead className="font-semibold text-gray-700 py-4">{t("testMonitoring.table.hierarchy")}</TableHead>
+                    <TableHead className="font-semibold text-gray-700 py-4">{t("testMonitoring.table.score")}</TableHead>
+                    <TableHead className="font-semibold text-gray-700 py-4">{t("testMonitoring.table.submittedAt")}</TableHead>
+                    <TableHead className="font-semibold text-gray-700 py-4">{t("testMonitoring.table.timeTaken")}</TableHead>
+                    <TableHead className="font-semibold text-gray-700 text-center pr-6 py-4">{t("testMonitoring.table.action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -608,7 +610,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
                                 variant={attempt.status === "PASSED" ? "success" : "destructive"}
                                 className="text-[10px] font-semibold py-0.5 px-2 tracking-wide"
                               >
-                                {attempt.status === "PASSED" ? "PASS" : "FAIL"}
+                                {attempt.status === "PASSED" ? t("testMonitoring.badge.pass") : t("testMonitoring.badge.fail")}
                               </Badge>
                             </div>
                           </div>
@@ -631,7 +633,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
                         <TableCell className="py-4 text-xs text-gray-600">
                           <div className="flex items-center gap-1">
                             <IconClock className="h-3.5 w-3.5 text-gray-400" />
-                            <span>{attempt.timeTaken ? `${Math.round(attempt.timeTaken / 60)} min` : "N/A"}</span>
+                            <span>{attempt.timeTaken ? `${Math.round(attempt.timeTaken / 60)} ${t("testMonitoring.min")}` : t("testMonitoring.na")}</span>
                           </div>
                         </TableCell>
 
@@ -643,7 +645,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
                               variant="outline"
                               onClick={() => navigate(`/admin/quiz-monitoring/review/${attempt._id || attempt.id}`)}
                               className="h-8 w-8 p-0 border-gray-300 hover:bg-gray-50"
-                              title="Audit Graded test Sheet"
+                              title={t("testMonitoring.tooltip.audit")}
                             >
                               <IconEye className="h-4 w-4 text-gray-600" />
                             </Button>
@@ -653,7 +655,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
                               onClick={() => handleDeleteAttempt(attempt._id || attempt.id)}
                               disabled={isDeleting}
                               className="h-8 w-8 p-0 border-red-200 hover:bg-red-50 text-red-600 hover:text-red-700 disabled:opacity-50"
-                              title="Delete Test Attempt"
+                              title={t("testMonitoring.tooltip.delete")}
                             >
                               <IconTrash className="h-4 w-4" />
                             </Button>
@@ -670,13 +672,13 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
               <div className="w-16 h-16 bg-gray-50 rounded-full border border-dashed border-gray-300 flex items-center justify-center mx-auto mb-4">
                 <IconClipboardList className="h-8 w-8 text-gray-400" />
               </div>
-              <h3 className="text-base font-semibold text-gray-800">No test attempts found</h3>
+              <h3 className="text-base font-semibold text-gray-800">{t("testMonitoring.empty.title")}</h3>
               <p className="text-sm text-gray-500 max-w-sm mx-auto mt-1">
-                We couldn't find any test submissions matching your current active filters. Try adjustments or query another E.Code.
+                {t("testMonitoring.empty.desc")}
               </p>
               {hasActiveFilters && (
                 <Button variant="outline" size="sm" onClick={handleResetAll} className="mt-4 border-gray-300">
-                  Reset Active Filters
+                  {t("testMonitoring.empty.btnReset")}
                 </Button>
               )}
             </div>

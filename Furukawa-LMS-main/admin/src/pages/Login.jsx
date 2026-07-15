@@ -44,8 +44,8 @@ const Login = () => {
 
     // Redirect based on role
     const from = location.state?.from;
-    let targetPath = (from && from.pathname && from.pathname !== '/login') 
-      ? (from.pathname + (from.search || "")) 
+    let targetPath = (from && from.pathname && from.pathname !== '/login')
+      ? (from.pathname + (from.search || ""))
       : null;
 
     if (!targetPath) {
@@ -57,9 +57,9 @@ const Login = () => {
         const allowed = user.customRole?.allowedPages || [];
         const allowedPages = typeof allowed === 'string' ? JSON.parse(allowed) : allowed;
         const hasLandingAccess = allowedPages.includes('landing-page');
-        
+
         const layout = user.customRole?.targetLayout?.toLowerCase() || 'custom';
-        
+
         if (hasLandingAccess) {
           targetPath = '/';
         } else {
@@ -111,7 +111,7 @@ const Login = () => {
           <div className="text-center space-y-5 pt-12 pb-4 px-8">
             {/* Logo container */}
             <div className="flex justify-center">
-              <div className="w-full h-24 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center p-3">
+              <div className="w-full h-32 rounded-2xl flex items-center justify-center p-3">
                 <img
                   src="/fme_transparent.png"
                   alt="FURUKAWA Logo"

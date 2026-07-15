@@ -1,8 +1,44 @@
 import Daily5MRecord from "../models/daily5MRecord.model.js";
+import Department from "../models/department.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import NotificationService from "../services/notification.service.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
+
+// Segregation of Duties: can `actingUser` approve/reject a row filled by `rowSubmitterId` in `department`?
+// Self-approval is never allowed, even for admins. Cross-department routing (when configured on the
+// source department) restricts approval to users in the configured target dept/section/line, unless
+// the acting user is an admin (emergency override for routing only, not for self-approval).
+const canActOnRow = (actingUser, rowSubmitterId, department) => {
+    if (rowSubmitterId && String(actingUser.id) === String(rowSubmitterId)) {
+        return { allowed: false, reason: "You cannot approve or reject your own submission" };
+    }
+
+    if (department && department.daily5mApproverDeptId) {
+        if (actingUser.isAdmin) return { allowed: true };
+
+        const userDepts = [actingUser.departmentId, ...(Array.isArray(actingUser.departments) ? actingUser.departments : [])].map(String);
+        if (!userDepts.includes(String(department.daily5mApproverDeptId))) {
+            return { allowed: false, reason: "You are not authorized to approve or reject records for this department" };
+        }
+
+        if (department.daily5mApproverSectionId) {
+            const userSections = [actingUser.sectionId, ...(Array.isArray(actingUser.sections) ? actingUser.sections : [])].map(String);
+            if (!userSections.includes(String(department.daily5mApproverSectionId))) {
+                return { allowed: false, reason: "You are not authorized to approve or reject records for this section" };
+            }
+        }
+
+        if (department.daily5mApproverLineId) {
+            const userLines = [actingUser.lineId, ...(Array.isArray(actingUser.lines) ? actingUser.lines : [])].map(String);
+            if (!userLines.includes(String(department.daily5mApproverLineId))) {
+                return { allowed: false, reason: "You are not authorized to approve or reject records for this line" };
+            }
+        }
+    }
+
+    return { allowed: true };
+};
 
 // Create a new record
 export const create5MRecord = async (req, res, next) => {
@@ -17,15 +53,35 @@ export const create5MRecord = async (req, res, next) => {
         // Fetch the previous state of this session (if any) so we can detect row-level
         // approve/reject transitions caused by this save.
         let previousRecordData = null;
+        let previousSubmittedBy = null;
         if (sessionId) {
             const [existingRows] = await executeQuery(
-                `SELECT TOP 1 recordData FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt DESC`,
+                `SELECT TOP 1 recordData, submittedBy FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt DESC`,
                 [sessionId]
             );
             if (existingRows && existingRows.length > 0 && existingRows[0].recordData) {
                 previousRecordData = typeof existingRows[0].recordData === 'string'
                     ? JSON.parse(existingRows[0].recordData)
                     : existingRows[0].recordData;
+                previousSubmittedBy = existingRows[0].submittedBy;
+            }
+        }
+
+        // Server-side Segregation of Duties check: validate every row transitioning to
+        // APPROVED/REJECTED against the source department's configured approval routing.
+        // Self-approval is blocked for everyone, including admins; the routing check alone
+        // is bypassable by admins (see canActOnRow).
+        if (previousRecordData && recordData) {
+            const sourceDepartment = await Department.findById(departmentId);
+            for (let i = 0; i < 20; i++) {
+                const prevStatus = previousRecordData[`rec_${i}_RowStatus`];
+                const newStatus = recordData[`rec_${i}_RowStatus`];
+                if (newStatus && newStatus !== prevStatus && (newStatus === 'APPROVED' || newStatus === 'REJECTED')) {
+                    const { allowed, reason } = canActOnRow(req.user, previousSubmittedBy, sourceDepartment);
+                    if (!allowed) {
+                        return next(new ApiError(reason, 403));
+                    }
+                }
             }
         }
 

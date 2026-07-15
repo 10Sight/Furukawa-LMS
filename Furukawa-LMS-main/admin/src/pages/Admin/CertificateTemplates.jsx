@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
+import useTranslate from '@/hooks/useTranslate'
 import {
   useGetCertificateTemplatesQuery,
   useDeleteCertificateTemplateMutation,
@@ -46,7 +47,7 @@ import {
 import { toast } from 'sonner'
 
 const CertificateTemplates = () => {
-
+  const { t } = useTranslate()
   const navigate = useNavigate()
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -430,7 +431,7 @@ ${levelColors}
 
   const handleCreateTemplate = async () => {
     if (!formData.name.trim() || !formData.template.trim()) {
-      toast.error('Please fill in required fields: Name and Template')
+      toast.error(t('certificateTemplates.toast.requiredFields'))
       return
     }
 
@@ -444,7 +445,7 @@ ${levelColors}
       }).unwrap()
 
       if (result.success) {
-        toast.success('Template created successfully')
+        toast.success(t('certificateTemplates.toast.createSuccess'))
         setShowCreateDialog(false)
         setFormData({
           name: '',
@@ -455,28 +456,28 @@ ${levelColors}
         })
         refetch() // Refresh the list
       } else {
-        toast.error(result.message || 'Failed to create template')
+        toast.error(result.message || t('certificateTemplates.toast.createFail'))
       }
     } catch (error) {
       console.error('Create template error:', error)
-      toast.error(error?.data?.message || 'Failed to create template')
+      toast.error(error?.data?.message || t('certificateTemplates.toast.createFail'))
     }
   }
 
   const handleDeleteTemplate = async (templateId, templateName) => {
-    if (!confirm(`Are you sure you want to delete "${templateName}"?`)) return
+    if (!confirm(t('certificateTemplates.confirmDelete').replace('{name}', templateName))) return
 
     try {
       const result = await deleteTemplate(templateId).unwrap()
       if (result.success) {
-        toast.success('Template deleted successfully')
+        toast.success(t('certificateTemplates.toast.deleteSuccess'))
         refetch() // Refresh the list
       } else {
-        toast.error(result.message || 'Failed to delete template')
+        toast.error(result.message || t('certificateTemplates.toast.deleteFail'))
       }
     } catch (error) {
       console.error('Delete template error:', error)
-      toast.error(error?.data?.message || 'Failed to delete template')
+      toast.error(error?.data?.message || t('certificateTemplates.toast.deleteFail'))
     }
   }
 
@@ -484,21 +485,21 @@ ${levelColors}
     try {
       const result = await setDefaultTemplate(templateId).unwrap()
       if (result.success) {
-        toast.success('Default template updated successfully')
+        toast.success(t('certificateTemplates.toast.defaultSuccess'))
         refetch() // Refresh the list to update default status
       } else {
-        toast.error(result.message || 'Failed to set default template')
+        toast.error(result.message || t('certificateTemplates.toast.defaultFail'))
       }
     } catch (error) {
       console.error('Set default error:', error)
-      toast.error(error?.data?.message || 'Failed to set default template')
+      toast.error(error?.data?.message || t('certificateTemplates.toast.defaultFail'))
     }
   }
 
   const handlePreview = (template) => {
     try {
       if (!template?.template) {
-        toast.error('Template content is empty or invalid')
+        toast.error(t('certificateTemplates.toast.emptyTemplate'))
         return
       }
 
@@ -694,7 +695,7 @@ ${levelColors}
       setShowPreviewDialog(true)
     } catch (error) {
       console.error('Preview generation error:', error)
-      toast.error('Failed to generate preview. Please check the template format.')
+      toast.error(t('certificateTemplates.toast.previewFail'))
     }
   }
 
@@ -750,9 +751,9 @@ ${levelColors}
         <FileText className="h-4 w-4" />
         <AlertDescription>
           <div className="flex flex-col space-y-2">
-            <span>Failed to load certificate templates</span>
+            <span>{t("certificateTemplates.error.failedLoad")}</span>
             <span className="text-sm">
-              Error: {error?.data?.message || error?.message || 'Unknown error occurred'}
+              {t("certificateTemplates.error.prefix")}{error?.data?.message || error?.message || 'Unknown error occurred'}
             </span>
             <Button
               variant="outline"
@@ -760,7 +761,7 @@ ${levelColors}
               onClick={refetch}
               className="mt-2 w-fit"
             >
-              Retry
+              {t("certificateTemplates.error.retry")}
             </Button>
           </div>
         </AlertDescription>
@@ -775,10 +776,10 @@ ${levelColors}
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Award className="h-6 w-6" />
-            Certificate Templates
+            {t("certificateTemplates.title")}
           </h1>
           <p className="text-muted-foreground">
-            Manage certificate templates for course completion certificates
+            {t("certificateTemplates.subtitle")}
           </p>
         </div>
 
@@ -787,7 +788,7 @@ ${levelColors}
           setShowCreateDialog(true)
         }}>
           <Plus className="h-4 w-4 mr-2" />
-          Create Template
+          {t("certificateTemplates.btnCreate")}
         </Button>
 
         <Dialog
@@ -797,47 +798,47 @@ ${levelColors}
         >
           <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Create Certificate Template</DialogTitle>
+              <DialogTitle>{t("certificateTemplates.dialog.createTitle")}</DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <Label htmlFor="name">Template Name *</Label>
+                <Label htmlFor="name">{t("certificateTemplates.label.name")}</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Enter template name"
+                  placeholder={t("certificateTemplates.placeholder.name")}
                 />
               </div>
               <div>
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">{t("certificateTemplates.label.description")}</Label>
                 <Input
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Enter template description"
+                  placeholder={t("certificateTemplates.placeholder.description")}
                 />
               </div>
               <div>
-                <Label htmlFor="template">HTML Template *</Label>
+                <Label htmlFor="template">{t("certificateTemplates.label.html")}</Label>
                 <Textarea
                   id="template"
                   value={formData.template}
                   onChange={(e) => setFormData({ ...formData, template: e.target.value })}
-                  placeholder="Enter HTML template with placeholders"
+                  placeholder={t("certificateTemplates.placeholder.html")}
                   className="h-64 font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Use placeholders: {'{{studentName}}'}, {'{{courseName}}'}, {'{{departmentName}}'}, {'{{instructorName}}'}, {'{{level}}'}, {'{{grade}}'}, {'{{issueDate}}'}
+                  {t("certificateTemplates.placeholder.info")} {'{{studentName}}'}, {'{{courseName}}'}, {'{{departmentName}}'}, {'{{instructorName}}'}, {'{{level}}'}, {'{{grade}}'}, {'{{issueDate}}'}
                 </p>
               </div>
               <div>
-                <Label htmlFor="styles">CSS Styles</Label>
+                <Label htmlFor="styles">{t("certificateTemplates.label.css")}</Label>
                 <Textarea
                   id="styles"
                   value={formData.styles}
                   onChange={(e) => setFormData({ ...formData, styles: e.target.value })}
-                  placeholder="Enter CSS styles for the template"
+                  placeholder={t("certificateTemplates.placeholder.css")}
                   className="h-32 font-mono text-sm"
                 />
               </div>
@@ -850,7 +851,7 @@ ${levelColors}
                   className="rounded border-gray-300"
                 />
                 <Label htmlFor="isDefault" className="text-sm">
-                  Set as default template
+                  {t("certificateTemplates.checkbox.default")}
                 </Label>
               </div>
               <div className="flex justify-end space-x-2 pt-4">
@@ -859,13 +860,13 @@ ${levelColors}
                   onClick={() => setShowCreateDialog(false)}
                   disabled={isCreating}
                 >
-                  Cancel
+                  {t("certificateTemplates.btn.cancel")}
                 </Button>
                 <Button
                   onClick={handleCreateTemplate}
                   disabled={isCreating || !formData.name.trim() || !formData.template.trim()}
                 >
-                  {isCreating ? 'Creating...' : 'Create Template'}
+                  {isCreating ? t("certificateTemplates.btn.creating") : t("certificateTemplates.btn.create")}
                 </Button>
               </div>
             </div>
@@ -876,18 +877,18 @@ ${levelColors}
       {/* Templates Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Certificate Templates ({templates.length})</CardTitle>
+          <CardTitle>{t("certificateTemplates.table.title").replace("{count}", templates.length)}</CardTitle>
         </CardHeader>
         <CardContent>
           {templates.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t("certificateTemplates.table.name")}</TableHead>
+                  <TableHead>{t("certificateTemplates.table.description")}</TableHead>
+                  <TableHead>{t("certificateTemplates.table.status")}</TableHead>
+                  <TableHead>{t("certificateTemplates.table.created")}</TableHead>
+                  <TableHead className="text-right">{t("certificateTemplates.table.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -900,19 +901,19 @@ ${levelColors}
                         {template.isDefault && (
                           <Badge variant="secondary" className="ml-2">
                             <Star className="h-3 w-3 mr-1 fill-yellow-400" />
-                            Default
+                            {t("certificateTemplates.badge.default")}
                           </Badge>
                         )}
                       </div>
                     </TableCell>
                     <TableCell>
                       <p className="text-sm text-muted-foreground line-clamp-2 max-w-md">
-                        {template.description || 'No description provided'}
+                        {template.description || t("certificateTemplates.noDescription")}
                       </p>
                     </TableCell>
                     <TableCell>
                       <Badge variant={template.isActive ? "default" : "secondary"}>
-                        {template.isActive ? 'Active' : 'Inactive'}
+                        {template.isActive ? t("certificateTemplates.badge.active") : t("certificateTemplates.badge.inactive")}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -922,18 +923,18 @@ ${levelColors}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" className="h-8 w-8 p-0">
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{t("certificateTemplates.menu.open")}</span>
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handlePreview(template)}>
                             <Eye className="h-4 w-4 mr-2" />
-                            Preview
+                            {t("certificateTemplates.menu.preview")}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleCopyTemplate(template)}>
                             <Copy className="h-4 w-4 mr-2" />
-                            Duplicate
+                            {t("certificateTemplates.menu.duplicate")}
                           </DropdownMenuItem>
                           {!template.isDefault && (
                             <DropdownMenuItem
@@ -941,7 +942,7 @@ ${levelColors}
                               disabled={isSettingDefault}
                             >
                               <Star className="h-4 w-4 mr-2" />
-                              {isSettingDefault ? 'Setting...' : 'Set as Default'}
+                              {isSettingDefault ? t("certificateTemplates.menu.setting") : t("certificateTemplates.menu.setDefault")}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem
@@ -950,7 +951,7 @@ ${levelColors}
                             disabled={template.isDefault || isDeleting}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
-                            {isDeleting ? 'Deleting...' : 'Delete'}
+                            {isDeleting ? t("certificateTemplates.menu.deleting") : t("certificateTemplates.menu.delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -962,13 +963,13 @@ ${levelColors}
           ) : (
             <div className="text-center py-12">
               <Award className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">No Templates Found</h3>
+              <h3 className="text-lg font-medium mb-2">{t("certificateTemplates.empty.title")}</h3>
               <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Get started by creating your first certificate template for course completion certificates.
+                {t("certificateTemplates.empty.desc")}
               </p>
               <Button onClick={resetForm}>
                 <Plus className="h-4 w-4 mr-2" />
-                Create Your First Template
+                {t("certificateTemplates.empty.btn")}
               </Button>
             </div>
           )}
@@ -987,14 +988,14 @@ ${levelColors}
           {/* Modal Content */}
           <div className="relative w-full h-full max-w-[90vw] max-h-[90vh] bg-white/95 shadow-2xl rounded-xl overflow-hidden flex flex-col border border-white/20 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white/50 backdrop-blur-sm sticky top-0 z-10">
-              <h2 className="text-xl font-semibold text-gray-800">Certificate Preview</h2>
+              <h2 className="text-xl font-semibold text-gray-800">{t("certificateTemplates.preview.title")}</h2>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setShowPreviewDialog(false)}
                 className="hover:bg-gray-100 rounded-full h-8 w-8"
               >
-                <span className="sr-only">Close</span>
+                <span className="sr-only">{t("certificateTemplates.preview.srClose")}</span>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="24"
@@ -1022,7 +1023,7 @@ ${levelColors}
                   srcDoc={previewHtml}
                   className="w-full h-full border-0"
                   sandbox="allow-same-origin allow-scripts"
-                  title="Certificate Preview"
+                  title={t("certificateTemplates.preview.title")}
                   loading="eager"
                 />
               </div>
@@ -1033,7 +1034,7 @@ ${levelColors}
                 variant="outline"
                 onClick={() => setShowPreviewDialog(false)}
               >
-                Close Preview
+                {t("certificateTemplates.preview.close")}
               </Button>
             </div>
           </div>

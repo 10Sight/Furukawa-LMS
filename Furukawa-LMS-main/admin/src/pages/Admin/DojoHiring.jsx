@@ -87,6 +87,7 @@ import StatCard from "@/components/common/StatCard";
 import FilterBar from "@/components/common/FilterBar";
 import { useSelector } from "react-redux";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import useTranslate from "@/hooks/useTranslate";
 
 // Section tab component imports
 import TestPaper from "./TestPaper";
@@ -121,6 +122,7 @@ const formatDuration = (totalSeconds) => {
 };
 
 const DojoHiring = () => {
+    const { t, language } = useTranslate();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const currentUser = useSelector((state) => state.auth.user);
@@ -786,12 +788,12 @@ const DojoHiring = () => {
     };
 
     const stats = [
-        { label: "Today's Hiring", value: tempUsersData?.data?.todayJoined || 0, icon: IconCalendar, color: "emerald" },
-        { label: "Total Candidates / Practical", value: tempUsersData?.data?.total || 0, icon: IconUsers, color: "blue" },
-        { label: "Total Handover", value: tempUsersData?.data?.handoverCount || 0, icon: IconCircleCheck, color: "teal" },
-        { label: "Left Candidates", value: tempUsersData?.data?.leftTotal || 0, icon: IconUserMinus, color: "rose" },
-        { label: "Male Candidates", value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
-        { label: "Female Candidates", value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
+        { label: t("dojoHiring.stats.todayHiring"), value: tempUsersData?.data?.todayJoined || 0, icon: IconCalendar, color: "emerald" },
+        { label: t("dojoHiring.stats.totalCandidates"), value: tempUsersData?.data?.total || 0, icon: IconUsers, color: "blue" },
+        { label: t("dojoHiring.stats.totalHandover"), value: tempUsersData?.data?.handoverCount || 0, icon: IconCircleCheck, color: "teal" },
+        { label: t("dojoHiring.stats.leftCandidates"), value: tempUsersData?.data?.leftTotal || 0, icon: IconUserMinus, color: "rose" },
+        { label: t("dojoHiring.stats.maleCandidates"), value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
+        { label: t("dojoHiring.stats.femaleCandidates"), value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
     ];
 
     const getColorProps = (color) => {
@@ -866,19 +868,19 @@ const DojoHiring = () => {
             case "PRESENT":
                 return (
                     <Badge className="flex items-center gap-1 w-fit bg-emerald-50 text-emerald-700 border border-emerald-100 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
-                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Present
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {t("dojoHiring.status.present")}
                     </Badge>
                 );
             case "ON_LEAVE":
                 return (
                     <Badge className="flex items-center gap-1 w-fit bg-amber-50 text-amber-700 border border-amber-100 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
-                        <div className="h-1.5 w-1.5 rounded-full bg-amber-500" /> On Leave
+                        <div className="h-1.5 w-1.5 rounded-full bg-amber-500" /> {t("dojoHiring.status.onLeave")}
                     </Badge>
                 );
             case "LEFT":
                 return (
                     <Badge className="flex items-center gap-1 w-fit bg-rose-50 text-rose-700 border border-rose-100 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
-                        <div className="h-1.5 w-1.5 rounded-full bg-rose-500" /> Left
+                        <div className="h-1.5 w-1.5 rounded-full bg-rose-500" /> {t("dojoHiring.status.left")}
                     </Badge>
                 );
             default:
@@ -891,13 +893,13 @@ const DojoHiring = () => {
     };
 
     const genderOptions = [
-        { value: "ALL", label: "All Genders" },
-        { value: "MALE", label: "Male Only" },
-        { value: "FEMALE", label: "Female Only" },
+        { value: "ALL", label: t("dojoHiring.filter.allGenders") },
+        { value: "MALE", label: t("dojoHiring.filter.maleOnly") },
+        { value: "FEMALE", label: t("dojoHiring.filter.femaleOnly") },
     ];
 
     const deptOptions = [
-        { value: "ALL", label: "All Departments" },
+        { value: "ALL", label: t("dojoHiring.filter.allDepts") },
         ...departments.map((d) => ({ value: String(d.id || d._id), label: d.name })),
     ];
 
@@ -910,17 +912,24 @@ const DojoHiring = () => {
     const formatDateLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     const monthOptions = React.useMemo(() => {
-        const options = [{ value: "ALL", label: "All Time" }];
+        const options = [{ value: "ALL", label: t("dojoHiring.filter.allTime") }];
         const now = new Date();
+        const localeMap = {
+            ja: "ja-JP",
+            hi: "hi-IN",
+            zh: "zh-CN",
+            ru: "ru-RU",
+        };
+        const activeLocale = localeMap[language] || "en-US";
         for (let i = 0; i < 12; i++) {
             const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
             options.push({
                 value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-                label: d.toLocaleString("en-US", { month: "long", year: "numeric" }),
+                label: d.toLocaleString(activeLocale, { month: "long", year: "numeric" }),
             });
         }
         return options;
-    }, []);
+    }, [language, t]);
 
     const handleMonthChange = (value) => {
         if (value === "ALL") {
@@ -959,8 +968,8 @@ const DojoHiring = () => {
                 <div className="p-4 bg-red-50 rounded-full">
                     <IconPoint className="w-12 h-12 text-red-500" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900">Access Denied</h2>
-                <p className="text-slate-500 max-w-md">You do not have permission to view the DOJO Hiring module. Please contact your administrator if you believe this is an error.</p>
+                <h2 className="text-2xl font-bold text-slate-900">{t("dojoHiring.accessDenied.title", "Access Denied")}</h2>
+                <p className="text-slate-500 max-w-md">{t("dojoHiring.accessDenied.desc", "You do not have permission to view the DOJO Hiring module. Please contact your administrator if you believe this is an error.")}</p>
             </div>
         );
     }
@@ -979,35 +988,35 @@ const DojoHiring = () => {
                                 </div>
                             )}
                             <h3 className="text-lg font-bold text-slate-900">
-                                {importProgress.done ? "Import Complete" : "Importing Candidates..."}
+                                {importProgress.done ? t("dojoHiring.importProgress.titleComplete") : t("dojoHiring.importProgress.titleImporting")}
                             </h3>
                             <p className="text-sm text-muted-foreground">
                                 {importProgress.done
-                                    ? "Review the summary below and close when ready."
-                                    : "Please keep this tab open until the import finishes."}
+                                    ? t("dojoHiring.importProgress.descComplete")
+                                    : t("dojoHiring.importProgress.descImporting")}
                             </p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-xs text-slate-600 font-medium">Total Rows</div>
+                                <div className="text-xs text-slate-600 font-medium">{t("dojoHiring.importProgress.totalRows")}</div>
                                 <div className="text-xl font-bold text-slate-900">{importProgress.total}</div>
                             </div>
                             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2">
                                 <IconClock className="h-4 w-4 text-slate-500" />
                                 <div>
-                                    <div className="text-xs text-slate-600 font-medium">Time Elapsed</div>
+                                    <div className="text-xs text-slate-600 font-medium">{t("dojoHiring.importProgress.timeElapsed")}</div>
                                     <div className="text-sm font-bold text-slate-900">{formatDuration(importProgress.timeElapsed)}</div>
                                 </div>
                             </div>
                             {importProgress.done && (
                                 <>
                                     <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
-                                        <div className="text-xs text-green-700 font-medium">Succeeded</div>
+                                        <div className="text-xs text-green-700 font-medium">{t("dojoHiring.importProgress.succeeded")}</div>
                                         <div className="text-xl font-bold text-green-900">{importProgress.success}</div>
                                     </div>
                                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                                        <div className="text-xs text-red-700 font-medium">Failed</div>
+                                        <div className="text-xs text-red-700 font-medium">{t("dojoHiring.importProgress.failed")}</div>
                                         <div className="text-xl font-bold text-red-900">{importProgress.failed}</div>
                                     </div>
                                 </>
@@ -1018,7 +1027,7 @@ const DojoHiring = () => {
                             <div className="space-y-1.5">
                                 <h4 className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                                     <IconAlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                                    Skipped / Failed Rows ({importProgress.errors.length})
+                                    {t("dojoHiring.importProgress.skippedFailedRows")} ({importProgress.errors.length})
                                 </h4>
                                 <div className="max-h-32 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 space-y-1">
                                     {importProgress.errors.map((err, idx) => (
@@ -1032,7 +1041,7 @@ const DojoHiring = () => {
 
                         {importProgress.done && (
                             <Button onClick={closeImportOverlay} className="w-full">
-                                Done
+                                {t("dojoHiring.importProgress.btnDone")}
                             </Button>
                         )}
                     </div>
@@ -1042,12 +1051,12 @@ const DojoHiring = () => {
             <div className="p-6 space-y-6 animate-in fade-in duration-500 bg-slate-50/50 min-h-screen">
                 <Tabs value={dojoTab} onValueChange={handleDojoTabChange} className="w-full">
                     <TabsList className="no-print mb-6 flex flex-wrap gap-2 w-fit bg-slate-100 p-1.5 rounded-xl shadow-sm border border-slate-200">
-                        <TabsTrigger value="dojoHiring" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">DOJO Hiring</TabsTrigger>
-                        <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Test Paper</TabsTrigger>
-                        <TabsTrigger value="dojoEvaluationTest" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">DOJO Evaluation Test</TabsTrigger>
-                        <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Handover Sheet</TabsTrigger>
-                        <TabsTrigger value="sixteenDays" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">16 Days</TabsTrigger>
-                        <TabsTrigger value="course" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Course</TabsTrigger>
+                        <TabsTrigger value="dojoHiring" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.dojoHiring")}</TabsTrigger>
+                        <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.testPaper")}</TabsTrigger>
+                        <TabsTrigger value="dojoEvaluationTest" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.dojoEvaluationTest")}</TabsTrigger>
+                        <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.handoverSheet")}</TabsTrigger>
+                        <TabsTrigger value="sixteenDays" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.sixteenDays")}</TabsTrigger>
+                        <TabsTrigger value="course" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.course")}</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="dojoHiring" className="space-y-6">
@@ -1056,9 +1065,9 @@ const DojoHiring = () => {
                             <div>
                                 <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                     <IconUserPlus className="w-8 h-8 text-blue-600" />
-                                    DOJO Hiring Management
+                                    {t("dojoHiring.title")}
                                 </h1>
-                                <p className="text-slate-500 font-medium">Register and manage temporary candidates in the pipeline</p>
+                                <p className="text-slate-500 font-medium">{t("dojoHiring.subtitle")}</p>
                             </div>
                             <div className="flex gap-3">
                                 <Button
@@ -1067,7 +1076,7 @@ const DojoHiring = () => {
                                     className="border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-6 py-5 h-auto flex gap-2 items-center font-bold"
                                 >
                                     <IconDownload className="w-5 h-5" />
-                                    Export Excel
+                                    {t("dojoHiring.button.exportExcel")}
                                 </Button>
                                 {hasPermission("user:import_logs") && (
                                     <Button
@@ -1079,7 +1088,7 @@ const DojoHiring = () => {
                                         className="border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-6 py-5 h-auto flex gap-2 items-center font-bold"
                                     >
                                         <IconHistory className="w-5 h-5" />
-                                        Import Logs
+                                        {t("dojoHiring.button.importLogs")}
                                     </Button>
                                 )}
                                 {canCreate && (
@@ -1089,7 +1098,7 @@ const DojoHiring = () => {
                                         className="border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-6 py-5 h-auto flex gap-2 items-center font-bold"
                                     >
                                         <IconUpload className="w-5 h-5" />
-                                        Import Candidates
+                                        {t("dojoHiring.button.importCandidates")}
                                     </Button>
                                 )}
                                 {canCreate && (
@@ -1101,7 +1110,7 @@ const DojoHiring = () => {
                                         className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 py-5 h-auto shadow-lg shadow-blue-100 flex gap-2 items-center font-bold"
                                     >
                                         <IconPlus className="w-5 h-5" />
-                                        Add Candidate
+                                        {t("dojoHiring.button.addCandidate")}
                                     </Button>
                                 )}
                             </div>
@@ -1128,19 +1137,19 @@ const DojoHiring = () => {
                                         <TabsList className="bg-slate-100 p-1 rounded-xl h-11">
                                             {/* Today's Candidates */}
                                             <TabsTrigger value="today" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm cursor-pointer">
-                                                Today's Entry
+                                                {t("dojoHiring.tabs.todayEntry")}
                                             </TabsTrigger>
                                             {/* Practical Candidates */}
                                             <TabsTrigger value="all" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm cursor-pointer">
-                                                Practical
+                                                {t("dojoHiring.tabs.practical")}
                                             </TabsTrigger>
                                             {/* Handover Candidates */}
                                             <TabsTrigger value="handover-candidate" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm cursor-pointer">
-                                                Handover Candidates
+                                                {t("dojoHiring.tabs.handoverCandidates")}
                                             </TabsTrigger>
                                             {/* Left Candidates */}
                                             <TabsTrigger value="left" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm cursor-pointer">
-                                                Left Candidates
+                                                {t("dojoHiring.tabs.leftCandidates")}
                                             </TabsTrigger>
                                         </TabsList>
                                     </Tabs>
@@ -1150,14 +1159,14 @@ const DojoHiring = () => {
                                             value={deptFilter}
                                             onValueChange={setDeptFilter}
                                             options={deptOptions}
-                                            placeholder="Select Department"
+                                            placeholder={t("dojoHiring.filter.selectDept")}
                                             className="w-[180px]"
                                         />
                                         <FilterSelect
                                             value={genderFilter}
                                             onValueChange={setGenderFilter}
                                             options={genderOptions}
-                                            placeholder="Select Gender"
+                                            placeholder={t("dojoHiring.filter.selectGender")}
                                         />
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
@@ -1165,10 +1174,10 @@ const DojoHiring = () => {
                                                     <IconCalendar className="w-4 h-4 text-slate-500" />
                                                     <span>
                                                         {monthValue === "ALL"
-                                                            ? "Timeframe"
+                                                            ? t("dojoHiring.filter.timeframe")
                                                             : monthValue === "CUSTOM"
-                                                                ? "Custom"
-                                                                : monthOptions.find(o => o.value === monthValue)?.label || "Timeframe"
+                                                                ? t("dojoHiring.filter.custom")
+                                                                : monthOptions.find(o => o.value === monthValue)?.label || t("dojoHiring.filter.timeframe")
                                                         }
                                                     </span>
                                                 </Button>
@@ -1193,7 +1202,7 @@ const DojoHiring = () => {
                                                 className="h-8 w-[140px] border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
                                                 max={endDate || undefined}
                                             />
-                                            <span className="text-slate-400 text-xs font-bold">to</span>
+                                            <span className="text-slate-400 text-xs font-bold">{t("dojoHiring.filter.to")}</span>
                                             <Input
                                                 type="date"
                                                 value={endDate}
@@ -1207,7 +1216,7 @@ const DojoHiring = () => {
                                                     size="icon"
                                                     onClick={clearDateRange}
                                                     className="h-6 w-6 p-0 text-slate-400 hover:text-slate-700"
-                                                    title="Clear date range"
+                                                    title={t("dojoHiring.filter.clearDateRange")}
                                                 >
                                                     <IconX className="w-3.5 h-3.5" />
                                                 </Button>
@@ -1216,14 +1225,14 @@ const DojoHiring = () => {
                                         <SearchInput
                                             value={searchTerm}
                                             onChange={setSearchTerm}
-                                            placeholder="Search candidates..."
+                                            placeholder={t("dojoHiring.filter.searchPlaceholder")}
                                         />
                                     </div>
                                 </div>
                                 {selectedRows.size > 0 && (
                                     <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-2 mt-3">
                                         <span className="text-sm font-bold text-blue-800">
-                                            {selectedRows.size} candidate{selectedRows.size > 1 ? 's' : ''} selected
+                                            {selectedRows.size} {selectedRows.size > 1 ? t("dojoHiring.bulk.candidatesSelected") : t("dojoHiring.bulk.candidateSelected")}
                                         </span>
                                         <div className="flex gap-2">
                                             <Button
@@ -1233,7 +1242,7 @@ const DojoHiring = () => {
                                                 className="text-slate-600 border-slate-200 h-7 text-xs"
                                             >
                                                 <IconX className="w-3.5 h-3.5 mr-1" />
-                                                Deselect All
+                                                {t("dojoHiring.bulk.deselectAll")}
                                             </Button>
                                             {canDelete && (
                                                 <Button
@@ -1242,7 +1251,7 @@ const DojoHiring = () => {
                                                     className="bg-rose-600 hover:bg-rose-700 text-white h-7 text-xs gap-1"
                                                 >
                                                     <IconTrash className="w-3.5 h-3.5" />
-                                                    Delete Selected
+                                                    {t("dojoHiring.bulk.deleteSelected")}
                                                 </Button>
                                             )}
                                         </div>
@@ -1268,16 +1277,16 @@ const DojoHiring = () => {
                                                             aria-label="Select all"
                                                         />
                                                     </TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Candidate Name</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Employee ID / Card No</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Designation</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Department</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Section</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Status</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Contact Detail</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Joining Date</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">Leaving Date</TableHead>
-                                                    <TableHead className="pr-6 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">Actions</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.candidateName")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.empIdCardNo")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.designation")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.department")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.section")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">{t("dojoHiring.table.status")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.contactDetail")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.joiningDate")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.leavingDate")}</TableHead>
+                                                    <TableHead className="pr-6 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">{t("dojoHiring.table.actions")}</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -1295,7 +1304,7 @@ const DojoHiring = () => {
                                                                         });
                                                                     }}
                                                                     aria-label={`Select ${user.fullName}`}
-                                                                />
+                                                                 />
                                                             </TableCell>
                                                             <TableCell className="pl-6">
                                                                 <div className="flex items-center gap-3">
@@ -1317,7 +1326,7 @@ const DojoHiring = () => {
                                                                     </Badge>
                                                                     {user.idCard && (
                                                                         <div className="text-[10px] text-slate-500 font-mono font-medium pl-0.5">
-                                                                            Card: {user.idCard}
+                                                                            {t("dojoHiring.table.cardPrefix")}{user.idCard}
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -1344,9 +1353,9 @@ const DojoHiring = () => {
                                                                         {getStatusBadge(user.status)}
                                                                     </SelectTrigger>
                                                                     <SelectContent>
-                                                                        <SelectItem value="PRESENT">Present</SelectItem>
-                                                                        <SelectItem value="ON_LEAVE">On Leave</SelectItem>
-                                                                        <SelectItem value="LEFT">Left</SelectItem>
+                                                                        <SelectItem value="PRESENT">{t("dojoHiring.status.present")}</SelectItem>
+                                                                        <SelectItem value="ON_LEAVE">{t("dojoHiring.status.onLeave")}</SelectItem>
+                                                                        <SelectItem value="LEFT">{t("dojoHiring.status.left")}</SelectItem>
                                                                     </SelectContent>
                                                                 </Select>
                                                             </TableCell>
@@ -1388,7 +1397,7 @@ const DojoHiring = () => {
                                                                             size="sm"
                                                                             className="h-8 w-8 p-0 rounded-lg text-amber-600 hover:bg-amber-50"
                                                                             onClick={() => openEditModal(user)}
-                                                                            title="Edit Candidate"
+                                                                            title={t("dojoHiring.table.editCandidate")}
                                                                         >
                                                                             <IconPencil className="w-4 h-4" />
                                                                         </Button>
@@ -1402,7 +1411,7 @@ const DojoHiring = () => {
                                                                                 setUserToDelete(user);
                                                                                 setIsDeleteModalOpen(true);
                                                                             }}
-                                                                            title="Remove Candidate"
+                                                                            title={t("dojoHiring.table.removeCandidate")}
                                                                         >
                                                                             <IconTrash className="w-4 h-4" />
                                                                         </Button>
@@ -1417,8 +1426,8 @@ const DojoHiring = () => {
                                                             <div className="flex flex-col items-center gap-3 opacity-30">
                                                                 <IconUsers className="w-16 h-16" />
                                                                 <div className="space-y-1">
-                                                                    <p className="text-xl font-black text-slate-900 tracking-tight">No Candidates Found</p>
-                                                                    <p className="text-sm font-medium">Try adjusting your filters or search term</p>
+                                                                    <p className="text-xl font-black text-slate-900 tracking-tight">{t("dojoHiring.table.noCandidatesFound")}</p>
+                                                                    <p className="text-sm font-medium">{t("dojoHiring.table.adjustFilters")}</p>
                                                                 </div>
                                                             </div>
                                                         </TableCell>
@@ -1435,8 +1444,8 @@ const DojoHiring = () => {
                         {totalPages > 1 && (
                             <div className="flex flex-col items-center gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
                                 <p className="text-sm text-slate-500 font-medium">
-                                    Showing <span className="text-slate-900 font-bold">{allUsers.length}</span> of{" "}
-                                    <span className="text-slate-900 font-bold">{tempUsersData?.data?.totalUsers || 0}</span> candidates
+                                    {t("dojoHiring.pagination.showing")} <span className="text-slate-900 font-bold">{allUsers.length}</span> {t("dojoHiring.pagination.of")}{" "}
+                                    <span className="text-slate-900 font-bold">{tempUsersData?.data?.totalUsers || 0}</span> {t("dojoHiring.pagination.candidates")}
                                 </p>
                                 <div className="flex flex-wrap items-center justify-center gap-1">
                                     <Button
@@ -1446,7 +1455,7 @@ const DojoHiring = () => {
                                         onClick={() => setCurrentPage(currentPage - 1)}
                                         className="rounded-lg border-slate-200"
                                     >
-                                        Previous
+                                        {t("dojoHiring.pagination.previous")}
                                     </Button>
                                     {getPageNumbers().map((page, idx) =>
                                         page === "..." ? (
@@ -1475,11 +1484,11 @@ const DojoHiring = () => {
                                         onClick={() => setCurrentPage(currentPage + 1)}
                                         className="rounded-lg border-slate-200"
                                     >
-                                        Next
+                                        {t("dojoHiring.pagination.next")}
                                     </Button>
                                 </div>
                                 <form onSubmit={handleGoToPage} className="flex items-center gap-2">
-                                    <span className="text-sm text-muted-foreground">Go to page</span>
+                                    <span className="text-sm text-muted-foreground">{t("dojoHiring.pagination.goToPage")}</span>
                                     <Input
                                         type="number"
                                         min={1}
@@ -1490,7 +1499,7 @@ const DojoHiring = () => {
                                         placeholder={String(currentPage)}
                                     />
                                     <Button type="submit" variant="outline" size="sm">
-                                        Go
+                                        {t("dojoHiring.pagination.go")}
                                     </Button>
                                 </form>
                             </div>
@@ -1524,30 +1533,30 @@ const DojoHiring = () => {
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2 text-2xl">
                                 {selectedUser ? <IconPencil className="h-6 w-6 text-amber-600" /> : <IconUserPlus className="h-6 w-6 text-blue-600" />}
-                                {selectedUser ? "Update Candidate Details" : "Onboard Temporary Candidate"}
+                                {selectedUser ? t("dojoHiring.modal.updateTitle") : t("dojoHiring.modal.createTitle")}
                             </DialogTitle>
                             <DialogDescription>
-                                Enter candidate details to generate system ID and hiring profile. Fields marked with * are required.
+                                {t("dojoHiring.modal.description")}
                             </DialogDescription>
                         </DialogHeader>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 py-4">
                             {/* Identification Section */}
                             <div className="md:col-span-2">
-                                <h3 className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">Identification</h3>
+                                <h3 className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">{t("dojoHiring.modal.secIdentification")}</h3>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="fullName">Full Candidate Name *</Label>
+                                <Label htmlFor="fullName">{t("dojoHiring.modal.lblFullName")}</Label>
                                 <Input
                                     id="fullName"
                                     name="fullName"
                                     value={formData.fullName}
                                     onChange={handleInputChange}
-                                    placeholder="Full Name"
+                                    placeholder={t("dojoHiring.modal.lblFullName").replace(" *", "")}
                                 />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="empId">Employee Code *</Label>
+                                <Label htmlFor="empId">{t("dojoHiring.modal.lblEmpCode")}</Label>
                                 <Input
                                     id="empId"
                                     name="empId"
@@ -1557,7 +1566,7 @@ const DojoHiring = () => {
                                 />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="idCard">Card No</Label>
+                                <Label htmlFor="idCard">{t("dojoHiring.modal.lblCardNo")}</Label>
                                 <Input
                                     id="idCard"
                                     name="idCard"
@@ -1569,35 +1578,35 @@ const DojoHiring = () => {
 
                             {/* Profile Section */}
                             <div className="md:col-span-2 mt-2">
-                                <h3 className="text-sm font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">Personal Profile</h3>
+                                <h3 className="text-sm font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">{t("dojoHiring.modal.secPersonalProfile")}</h3>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="fatherHusbandName">Father / Husband Name</Label>
-                                <Input id="fatherHusbandName" name="fatherHusbandName" value={formData.fatherHusbandName} onChange={handleInputChange} placeholder="Name" />
+                                <Label htmlFor="fatherHusbandName">{t("dojoHiring.modal.lblFatherHusbandName")}</Label>
+                                <Input id="fatherHusbandName" name="fatherHusbandName" value={formData.fatherHusbandName} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblFatherHusbandName")} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="gender">Gender</Label>
+                                <Label htmlFor="gender">{t("dojoHiring.modal.lblGender")}</Label>
                                 <Select value={formData.gender} onValueChange={(val) => handleSelectChange('gender', val)}>
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select Gender" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.lblGender")} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="MALE">Male</SelectItem>
-                                        <SelectItem value="FEMALE">Female</SelectItem>
-                                        <SelectItem value="OTHER">Other</SelectItem>
+                                        <SelectItem value="MALE">{t("dojoHiring.filter.maleOnly").replace(" Only", "")}</SelectItem>
+                                        <SelectItem value="FEMALE">{t("dojoHiring.filter.femaleOnly").replace(" Only", "")}</SelectItem>
+                                        <SelectItem value="OTHER">{t("charts.other")}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="status">Onboarding Status</Label>
+                                <Label htmlFor="status">{t("dojoHiring.modal.lblOnboardingStatus")}</Label>
                                 <Select value={formData.status} onValueChange={(val) => handleSelectChange('status', val)}>
                                     <SelectTrigger className="font-bold text-slate-700">
-                                        <SelectValue placeholder="Select Status" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.lblOnboardingStatus")} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="PRESENT" className="text-emerald-600 font-bold">Present</SelectItem>
-                                        <SelectItem value="ON_LEAVE" className="text-amber-600 font-bold">On Leave</SelectItem>
-                                        <SelectItem value="LEFT" className="text-rose-600 font-bold">Left</SelectItem>
+                                        <SelectItem value="PRESENT" className="text-emerald-600 font-bold">{t("dojoHiring.status.present")}</SelectItem>
+                                        <SelectItem value="ON_LEAVE" className="text-amber-600 font-bold">{t("dojoHiring.status.onLeave")}</SelectItem>
+                                        <SelectItem value="LEFT" className="text-rose-600 font-bold">{t("dojoHiring.status.left")}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -1605,7 +1614,7 @@ const DojoHiring = () => {
                             {formData.status === "LEFT" && (
                                 <>
                                     <div className="grid gap-2">
-                                        <Label htmlFor="leavingDate">Date of Leaving</Label>
+                                        <Label htmlFor="leavingDate">{t("dojoHiring.modal.lblLeavingDate")}</Label>
                                         <Input
                                             id="leavingDate"
                                             type="date"
@@ -1615,16 +1624,18 @@ const DojoHiring = () => {
                                         />
                                     </div>
                                     <div className="grid gap-2">
-                                        <Label htmlFor="reasonOfLeaving">Reason of Leaving</Label>
+                                        <Label htmlFor="reasonOfLeaving">{t("dojoHiring.modal.lblReasonOfLeaving")}</Label>
                                         <Select value={leavingReasonOption} onValueChange={handleLeavingReasonSelect}>
                                             <SelectTrigger id="reasonOfLeaving">
-                                                <SelectValue placeholder="Select Reason" />
+                                                <SelectValue placeholder={t("dojoHiring.modal.phSelectReason")} />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {LEAVING_REASONS.map((reason) => (
-                                                    <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                                                    <SelectItem key={reason} value={reason}>
+                                                        {t("dojoHiring.leavingReason." + reason.replace(/\s+/g, ""), reason)}
+                                                    </SelectItem>
                                                 ))}
-                                                <SelectItem value="Other">Other</SelectItem>
+                                                <SelectItem value="Other">{t("dojoHiring.leavingReason.other")}</SelectItem>
                                             </SelectContent>
                                         </Select>
                                         {leavingReasonOption === "Other" && (
@@ -1632,7 +1643,7 @@ const DojoHiring = () => {
                                                 id="customReasonOfLeaving"
                                                 value={customLeavingReason}
                                                 onChange={handleCustomLeavingReasonChange}
-                                                placeholder="Please specify the reason"
+                                                placeholder={t("dojoHiring.modal.phSpecifyReason")}
                                                 rows={3}
                                             />
                                         )}
@@ -1640,36 +1651,36 @@ const DojoHiring = () => {
                                 </>
                             )}
                             <div className="grid gap-2">
-                                <Label htmlFor="designation">Designation</Label>
+                                <Label htmlFor="designation">{t("dojoHiring.modal.lblDesignation")}</Label>
                                 <Input id="designation" name="designation" value={formData.designation} onChange={handleInputChange} placeholder="Trainee / Operator" />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="dob">Date of Birth</Label>
+                                <Label htmlFor="dob">{t("dojoHiring.modal.lblDob")}</Label>
                                 <Input id="dob" type="date" name="dob" value={formData.dob} onChange={handleInputChange} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="education">Education</Label>
-                                <Input id="education" name="education" value={formData.education} onChange={handleInputChange} placeholder="Qualification" />
+                                <Label htmlFor="education">{t("dojoHiring.modal.lblEducation")}</Label>
+                                <Input id="education" name="education" value={formData.education} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblEducation")} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="joiningDate">Date of Joining</Label>
+                                <Label htmlFor="joiningDate">{t("dojoHiring.modal.lblJoiningDate")}</Label>
                                 <Input id="joiningDate" type="date" name="joiningDate" value={formData.joiningDate} onChange={handleInputChange} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="expectedHandover">Expected Handover Date</Label>
+                                <Label htmlFor="expectedHandover">{t("dojoHiring.modal.lblExpectedHandover")}</Label>
                                 <Input id="expectedHandover" type="date" name="expectedHandover" value={formData.expectedHandover} onChange={handleInputChange} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="contractorId">Contractor</Label>
+                                <Label htmlFor="contractorId">{t("dojoHiring.modal.lblContractor")}</Label>
                                 <Select
                                     value={formData.contractorId || "none"}
                                     onValueChange={(val) => setFormData(prev => ({ ...prev, contractorId: val === "none" ? "" : val }))}
                                 >
                                     <SelectTrigger id="contractorId">
-                                        <SelectValue placeholder="Select contractor (optional)" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.phSelectContractor")} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="none">None</SelectItem>
+                                        <SelectItem value="none">{t("dojoHiring.modal.optNone")}</SelectItem>
                                         {contractorsList.map((c) => (
                                             <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                                         ))}
@@ -1679,38 +1690,38 @@ const DojoHiring = () => {
 
                             {/* Contact Section */}
                             <div className="md:col-span-2 mt-2">
-                                <h3 className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">Contact & Address</h3>
+                                <h3 className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">{t("dojoHiring.modal.secContactAddress")}</h3>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="phoneNumber">Mobile Number</Label>
+                                <Label htmlFor="phoneNumber">{t("dojoHiring.modal.lblMobileNo")}</Label>
                                 <Input id="phoneNumber" name="phoneNumber" value={formData.phoneNumber} onChange={handleInputChange} placeholder="10 digit number" />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Email (Optional)</Label>
+                                <Label htmlFor="email">{t("dojoHiring.modal.lblEmail")}</Label>
                                 <Input id="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="email@example.com" />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="district">District</Label>
-                                <Input id="district" name="district" value={formData.district} onChange={handleInputChange} placeholder="District" />
+                                <Label htmlFor="district">{t("dojoHiring.modal.lblDistrict")}</Label>
+                                <Input id="district" name="district" value={formData.district} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblDistrict")} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="state">State</Label>
-                                <Input id="state" name="state" value={formData.state} onChange={handleInputChange} placeholder="State" />
+                                <Label htmlFor="state">{t("dojoHiring.modal.lblState")}</Label>
+                                <Input id="state" name="state" value={formData.state} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblState")} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="busRoute">Bus Route</Label>
-                                <Input id="busRoute" name="busRoute" value={formData.busRoute} onChange={handleInputChange} placeholder="Route Name" />
+                                <Label htmlFor="busRoute">{t("dojoHiring.modal.lblBusRoute")}</Label>
+                                <Input id="busRoute" name="busRoute" value={formData.busRoute} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblBusRoute")} />
                             </div>
 
                             {/* Deployment Section */}
                             <div className="md:col-span-2 mt-2">
-                                <h3 className="text-sm font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">Deployment (Optional)</h3>
+                                <h3 className="text-sm font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">{t("dojoHiring.modal.secDeployment")}</h3>
                             </div>
                             <div className="grid gap-2">
-                                <Label>Department</Label>
+                                <Label>{t("dojoHiring.modal.lblDepartment")}</Label>
                                 <Select value={formData.departmentId} onValueChange={(val) => handleSelectChange('departmentId', val)}>
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select Department" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.lblDepartment")} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {departments.map(d => <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>)}
@@ -1718,10 +1729,10 @@ const DojoHiring = () => {
                                 </Select>
                             </div>
                             <div className="grid gap-2">
-                                <Label>Section</Label>
+                                <Label>{t("dojoHiring.modal.lblSection")}</Label>
                                 <Select value={formData.sectionId} onValueChange={(val) => handleSelectChange('sectionId', val)} disabled={!formData.departmentId}>
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select Section" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.lblSection")} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {sections.map(s => <SelectItem key={s.id || s._id} value={String(s.id || s._id)}>{s.name}</SelectItem>)}
@@ -1729,10 +1740,10 @@ const DojoHiring = () => {
                                 </Select>
                             </div>
                             <div className="grid gap-2">
-                                <Label>Line</Label>
+                                <Label>{t("dojoHiring.modal.lblLine")}</Label>
                                 <Select value={formData.lineId} onValueChange={(val) => handleSelectChange('lineId', val)} disabled={!formData.sectionId}>
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select Line" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.lblLine")} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {lines.map(l => <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>)}
@@ -1740,15 +1751,15 @@ const DojoHiring = () => {
                                 </Select>
                             </div>
                             <div className="grid gap-2">
-                                <Label>Candidate Status</Label>
+                                <Label>{t("dojoHiring.modal.lblCandidateStatus")}</Label>
                                 <Select value={formData.status} onValueChange={(val) => handleSelectChange('status', val)}>
                                     <SelectTrigger className="border-slate-200">
-                                        <SelectValue placeholder="Select Status" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.lblCandidateStatus")} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="PRESENT">Present</SelectItem>
-                                        <SelectItem value="ON_LEAVE">On Leave</SelectItem>
-                                        <SelectItem value="LEFT">Left</SelectItem>
+                                        <SelectItem value="PRESENT">{t("dojoHiring.status.present")}</SelectItem>
+                                        <SelectItem value="ON_LEAVE">{t("dojoHiring.status.onLeave")}</SelectItem>
+                                        <SelectItem value="LEFT">{t("dojoHiring.status.left")}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -1759,7 +1770,7 @@ const DojoHiring = () => {
                                 variant="outline"
                                 onClick={closeModal}
                             >
-                                Cancel
+                                {t("dojoHiring.modal.btnCancel")}
                             </Button>
                             <Button
                                 onClick={handleSubmit}
@@ -1767,7 +1778,7 @@ const DojoHiring = () => {
                                 className={`${selectedUser ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'} text-white gap-2`}
                             >
                                 {(isCreating || isUpdating) ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconCheck className="h-4 w-4" />}
-                                {isCreating ? "Registering..." : isUpdating ? "Updating..." : selectedUser ? "Update Details" : "Register Operator"}
+                                {isCreating ? t("dojoHiring.modal.btnRegistering") : isUpdating ? t("dojoHiring.modal.btnUpdating") : selectedUser ? t("dojoHiring.modal.btnUpdateDetails") : t("dojoHiring.modal.btnRegisterOperator")}
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -1779,14 +1790,14 @@ const DojoHiring = () => {
                             <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
                                 <IconAlertCircle className="w-6 h-6 text-red-600" />
                             </div>
-                            <DialogTitle className="text-center text-xl font-bold">Remove Candidate?</DialogTitle>
+                            <DialogTitle className="text-center text-xl font-bold">{t("dojoHiring.deleteModal.title")}</DialogTitle>
                             <DialogDescription className="text-center">
-                                Are you sure you want to remove <span className="font-bold text-slate-900">{userToDelete?.fullName}</span> from the hiring pipeline? This action cannot be undone.
+                                {t("dojoHiring.deleteModal.msgPart1")}<span className="font-bold text-slate-900">{userToDelete?.fullName}</span>{t("dojoHiring.deleteModal.msgPart2")}
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter className="flex gap-2 sm:justify-center mt-4">
                             <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)} className="flex-1">
-                                Cancel
+                                {t("dojoHiring.modal.btnCancel")}
                             </Button>
                             <Button
                                 variant="destructive"
@@ -1795,7 +1806,7 @@ const DojoHiring = () => {
                                 className="flex-1 gap-2"
                             >
                                 {isDeleting ? <IconLoader className="w-4 h-4 animate-spin" /> : <IconTrash className="w-4 h-4" />}
-                                {isDeleting ? "Removing..." : "Remove"}
+                                {isDeleting ? t("dojoHiring.deleteModal.btnRemoving") : t("dojoHiring.deleteModal.btnRemove")}
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -1813,14 +1824,14 @@ const DojoHiring = () => {
                             <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
                                 <IconAlertCircle className="w-6 h-6 text-red-600" />
                             </div>
-                            <DialogTitle className="text-center text-xl font-bold">Mark as Left</DialogTitle>
+                            <DialogTitle className="text-center text-xl font-bold">{t("dojoHiring.leftConfirmModal.title")}</DialogTitle>
                             <DialogDescription className="text-center">
-                                Please provide the leaving details before confirming this status change.
+                                {t("dojoHiring.leftConfirmModal.description")}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 mt-2">
                             <div className="grid gap-2">
-                                <Label htmlFor="leftConfirmDate">Date of Leaving</Label>
+                                <Label htmlFor="leftConfirmDate">{t("dojoHiring.modal.lblLeavingDate")}</Label>
                                 <Input
                                     id="leftConfirmDate"
                                     type="date"
@@ -1829,23 +1840,25 @@ const DojoHiring = () => {
                                 />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="leftConfirmReason">Reason of Leaving</Label>
+                                <Label htmlFor="leftConfirmReason">{t("dojoHiring.modal.lblReasonOfLeaving")}</Label>
                                 <Select value={leftConfirmReason} onValueChange={setLeftConfirmReason}>
                                     <SelectTrigger id="leftConfirmReason">
-                                        <SelectValue placeholder="Select Reason" />
+                                        <SelectValue placeholder={t("dojoHiring.modal.phSelectReason")} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {LEAVING_REASONS.map((reason) => (
-                                            <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                                            <SelectItem key={reason} value={reason}>
+                                                {t("dojoHiring.leavingReason." + reason.replace(/\s+/g, ""), reason)}
+                                            </SelectItem>
                                         ))}
-                                        <SelectItem value="Other">Other</SelectItem>
+                                        <SelectItem value="Other">{t("dojoHiring.leavingReason.other")}</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 {leftConfirmReason === "Other" && (
                                     <Textarea
                                         value={leftConfirmCustomReason}
                                         onChange={(e) => setLeftConfirmCustomReason(e.target.value)}
-                                        placeholder="Please specify the reason"
+                                        placeholder={t("dojoHiring.modal.phSpecifyReason")}
                                         rows={3}
                                     />
                                 )}
@@ -1860,7 +1873,7 @@ const DojoHiring = () => {
                                 }}
                                 className="flex-1"
                             >
-                                Cancel
+                                {t("dojoHiring.modal.btnCancel")}
                             </Button>
                             <Button
                                 variant="destructive"
@@ -1869,7 +1882,7 @@ const DojoHiring = () => {
                                 className="flex-1 gap-2"
                             >
                                 {isLeftConfirmSubmitting && <IconLoader className="w-4 h-4 animate-spin" />}
-                                Confirm
+                                {t("dojoHiring.leftConfirmModal.btnConfirm")}
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -1882,15 +1895,15 @@ const DojoHiring = () => {
                                 <IconAlertCircle className="w-6 h-6 text-red-600" />
                             </div>
                             <DialogTitle className="text-center text-xl font-bold">
-                                Remove {selectedRows.size} Candidate{selectedRows.size > 1 ? 's' : ''}?
+                                {t("dojoHiring.bulkDeleteModal.title")}
                             </DialogTitle>
                             <DialogDescription className="text-center">
-                                Are you sure you want to remove <span className="font-bold text-slate-900">{selectedRows.size}</span> selected candidate{selectedRows.size > 1 ? 's' : ''} from the hiring pipeline? This action cannot be undone.
+                                {t("dojoHiring.bulkDeleteModal.msgPart1")}<span className="font-bold text-slate-900">{selectedRows.size}</span>{t("dojoHiring.bulkDeleteModal.msgPart2")}
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter className="flex gap-2 sm:justify-center mt-4">
                             <Button variant="outline" onClick={() => setIsBulkDeleteOpen(false)} className="flex-1">
-                                Cancel
+                                {t("dojoHiring.modal.btnCancel")}
                             </Button>
                             <Button
                                 variant="destructive"
@@ -1899,7 +1912,7 @@ const DojoHiring = () => {
                                 className="flex-1 gap-2"
                             >
                                 {isDeleting ? <IconLoader className="w-4 h-4 animate-spin" /> : <IconTrash className="w-4 h-4" />}
-                                {isDeleting ? "Removing..." : "Remove All"}
+                                {isDeleting ? t("dojoHiring.deleteModal.btnRemoving") : t("dojoHiring.bulkDeleteModal.btnRemoveAll")}
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -1910,10 +1923,10 @@ const DojoHiring = () => {
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
                                 <IconUpload className="h-5 w-5 text-blue-600" />
-                                Import Candidates
+                                {t("dojoHiring.importModal.title")}
                             </DialogTitle>
                             <DialogDescription>
-                                Upload an Excel file to register temporary candidates in bulk.
+                                {t("dojoHiring.importModal.description")}
                             </DialogDescription>
                         </DialogHeader>
 
@@ -1922,10 +1935,10 @@ const DojoHiring = () => {
                                 <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-3">
                                     <h4 className="font-bold text-blue-900 flex items-center gap-2 text-sm">
                                         <IconInfoCircle className="h-4 w-4" />
-                                        Format Instructions
+                                        {t("dojoHiring.importModal.instructionsTitle")}
                                     </h4>
                                     <p className="text-xs text-blue-800 font-medium">
-                                        Your Excel file must contain these column headers:
+                                        {t("dojoHiring.importModal.instructionsDesc")}
                                     </p>
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-blue-700 font-mono bg-white/50 p-2 rounded-lg">
                                         <span>- Employee Code *</span>
@@ -1945,12 +1958,12 @@ const DojoHiring = () => {
                                         <span>- Status</span>
                                     </div>
                                     <p className="text-[10px] text-blue-600 italic">
-                                        * Required fields. Manual Employee Code will be used as login ID.
+                                        {t("dojoHiring.importModal.instructionsNote")}
                                     </p>
                                 </div>
 
                                 <div className="flex flex-col gap-3">
-                                    <h4 className="font-bold text-slate-800 text-sm">Step 1: Download Template</h4>
+                                    <h4 className="font-bold text-slate-800 text-sm">{t("dojoHiring.importModal.step1Title")}</h4>
                                     <Button
                                         variant="outline"
                                         onClick={handleDownloadTemplate}
@@ -1958,14 +1971,14 @@ const DojoHiring = () => {
                                     >
                                         <IconDownload className="h-5 w-5 text-slate-600" />
                                         <div className="text-left">
-                                            <div className="font-bold text-sm">Download Excel Template</div>
-                                            <div className="text-[10px] text-slate-500 font-medium">Includes sample data and correct headers</div>
+                                            <div className="font-bold text-sm">{t("dojoHiring.importModal.btnDownloadTemplate")}</div>
+                                            <div className="text-[10px] text-slate-500 font-medium">{t("dojoHiring.importModal.downloadDesc")}</div>
                                         </div>
                                     </Button>
                                 </div>
 
                                 <div className="flex flex-col gap-3">
-                                    <h4 className="font-bold text-slate-800 text-sm">Step 2: Upload Filled File</h4>
+                                    <h4 className="font-bold text-slate-800 text-sm">{t("dojoHiring.importModal.step2Title")}</h4>
                                     <input
                                         type="file"
                                         ref={fileInputRef}
@@ -1981,8 +1994,8 @@ const DojoHiring = () => {
                                             <IconUpload className="h-5 w-5" />
                                         </div>
                                         <div className="text-left">
-                                            <div className="font-bold text-sm">Select Excel File</div>
-                                            <div className="text-[10px] text-blue-100 font-medium">Supports .xlsx and .xls formats</div>
+                                            <div className="font-bold text-sm">{t("dojoHiring.importModal.btnSelectFile")}</div>
+                                            <div className="text-[10px] text-blue-100 font-medium">{t("dojoHiring.importModal.selectFileDesc")}</div>
                                         </div>
                                     </Button>
                                 </div>

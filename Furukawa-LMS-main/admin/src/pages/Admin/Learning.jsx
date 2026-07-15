@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ChevronRight,
   Search,
   Plus,
   ArrowRight,
@@ -136,7 +135,11 @@ const Learning = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {comparisons.map((item) => (
-                    <tr key={item.id} className="hover:bg-blue-50/20 transition-colors group">
+                    <tr
+                      key={item.id}
+                      className="hover:bg-blue-50/20 transition-colors group cursor-pointer"
+                      onClick={() => navigate(`/admin/learning/${item.id}`)}
+                    >
                       <td className="px-6 py-4 text-sm font-bold text-blue-600">#{item.id}</td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
@@ -163,20 +166,14 @@ const Learning = () => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={() => navigate(`/admin/learning/${item.id}`)}
-                            className="h-9 w-9 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                            title="View Details"
-                          >
-                            <ChevronRight className="w-5 h-5" />
-                          </Button>
                           {canUpdate && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => navigate(`/admin/learning/edit/${item.id}`)}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/admin/learning/edit/${item.id}`);
+                              }}
                               className="h-9 w-9 text-gray-400 hover:text-amber-600 hover:bg-amber-50"
                               title="Edit"
                             >
@@ -184,10 +181,13 @@ const Learning = () => {
                             </Button>
                           )}
                           {canDelete && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handleDelete(item.id)}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(item.id);
+                              }}
                               className="h-9 w-9 text-gray-400 hover:text-rose-600 hover:bg-rose-50"
                               title="Delete"
                             >

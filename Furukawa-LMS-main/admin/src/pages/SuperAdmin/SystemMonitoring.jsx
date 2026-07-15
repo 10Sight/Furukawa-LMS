@@ -8,24 +8,24 @@ const SystemMonitoring = () => {
   const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
   const [selectedTimePeriod, setSelectedTimePeriod] = useState('1h');
   const [autoRefresh, setAutoRefresh] = useState(true);
-  
+
   // API queries
   const { data: systemHealth, isLoading: healthLoading, error: healthError, refetch: refetchHealth } = useGetSystemHealthQuery(undefined, {
     pollingInterval: autoRefresh ? refreshInterval : 0,
   });
-  
+
   const { data: systemAlerts, isLoading: alertsLoading, refetch: refetchAlerts } = useGetSystemAlertsQuery(undefined, {
     pollingInterval: autoRefresh ? refreshInterval : 0,
   });
-  
+
   const { data: serverMetrics, isLoading: metricsLoading, refetch: refetchMetrics } = useGetServerMetricsQuery(undefined, {
     pollingInterval: autoRefresh ? refreshInterval : 0,
   });
-  
+
   const { data: databaseMetrics, isLoading: dbLoading, refetch: refetchDatabase } = useGetDatabaseMetricsQuery(undefined, {
     pollingInterval: autoRefresh ? refreshInterval : 0,
   });
-  
+
   const { data: performanceHistory, isLoading: perfLoading, refetch: refetchPerformance } = useGetSystemPerformanceHistoryQuery({ period: selectedTimePeriod }, {
     pollingInterval: autoRefresh ? refreshInterval * 2 : 0, // Less frequent for history
   });
@@ -94,7 +94,7 @@ const SystemMonitoring = () => {
     const days = Math.floor(seconds / (24 * 60 * 60));
     const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
     const minutes = Math.floor((seconds % (60 * 60)) / 60);
-    
+
     if (days > 0) {
       return `${days}d ${hours}h ${minutes}m`;
     } else if (hours > 0) {
@@ -122,11 +122,10 @@ const SystemMonitoring = () => {
             <label className="text-sm font-medium text-gray-700">Auto-refresh:</label>
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`px-3 py-1 text-xs rounded-full font-medium ${
-                autoRefresh
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
+              className={`px-3 py-1 text-xs rounded-full font-medium ${autoRefresh
+                ? 'bg-green-100 text-green-800'
+                : 'bg-gray-100 text-gray-800'
+                }`}
             >
               {autoRefresh ? 'ON' : 'OFF'}
             </button>
@@ -224,33 +223,29 @@ const SystemMonitoring = () => {
           </div>
           <div className="divide-y">
             {systemAlerts.data.alerts.map((alert, index) => (
-              <div key={index} className={`p-4 ${
-                alert.type === 'error' ? 'bg-red-50 border-l-4 border-red-400' :
+              <div key={index} className={`p-4 ${alert.type === 'error' ? 'bg-red-50 border-l-4 border-red-400' :
                 alert.type === 'warning' ? 'bg-yellow-50 border-l-4 border-yellow-400' :
-                'bg-blue-50 border-l-4 border-blue-400'
-              }`}>
+                  'bg-blue-50 border-l-4 border-blue-400'
+                }`}>
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className={`font-medium ${
-                      alert.type === 'error' ? 'text-red-800' :
+                    <p className={`font-medium ${alert.type === 'error' ? 'text-red-800' :
                       alert.type === 'warning' ? 'text-yellow-800' :
-                      'text-blue-800'
-                    }`}>
+                        'text-blue-800'
+                      }`}>
                       {alert.title}
                     </p>
-                    <p className={`text-sm ${
-                      alert.type === 'error' ? 'text-red-600' :
+                    <p className={`text-sm ${alert.type === 'error' ? 'text-red-600' :
                       alert.type === 'warning' ? 'text-yellow-600' :
-                      'text-blue-600'
-                    }`}>
+                        'text-blue-600'
+                      }`}>
                       {alert.message}
                     </p>
                   </div>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    alert.type === 'error' ? 'bg-red-100 text-red-800' :
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${alert.type === 'error' ? 'bg-red-100 text-red-800' :
                     alert.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-blue-100 text-blue-800'
-                  }`}>
+                      'bg-blue-100 text-blue-800'
+                    }`}>
                     {alert.type.toUpperCase()}
                   </span>
                 </div>
@@ -280,15 +275,15 @@ const SystemMonitoring = () => {
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                     style={{ width: `${serverMetrics.data.memory.heapUsagePercent}%` }}
                   ></div>
                 </div>
                 <div className="text-center text-sm font-medium text-gray-700">
                   {serverMetrics.data.memory.heapUsagePercent}% Used
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4 mt-4 text-xs">
                   <div>
                     <p className="text-gray-600">RSS</p>
@@ -368,7 +363,7 @@ const SystemMonitoring = () => {
                   ))}
                 </div>
               </div>
-              
+
               {/* Connection Info */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Connection Info</h4>
@@ -393,17 +388,16 @@ const SystemMonitoring = () => {
                   </div>
                 </div>
               </div>
-              
+
               {/* Health Status */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Health Status</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Response Time</span>
-                    <span className={`font-medium ${
-                      databaseMetrics.data.health.responseTime < 100 ? 'text-green-600' :
+                    <span className={`font-medium ${databaseMetrics.data.health.responseTime < 100 ? 'text-green-600' :
                       databaseMetrics.data.health.responseTime < 500 ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
+                      }`}>
                       {databaseMetrics.data.health.responseTime}ms
                     </span>
                   </div>
@@ -454,13 +448,13 @@ const SystemMonitoring = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={performanceHistory.data.dataPoints}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="timestamp" 
+                      <XAxis
+                        dataKey="timestamp"
                         tick={{ fontSize: 12 }}
                         tickFormatter={(value) => new Date(value).toLocaleTimeString()}
                       />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip 
+                      <Tooltip
                         labelFormatter={(value) => new Date(value).toLocaleString()}
                         formatter={(value) => [`${value} MB`, 'Memory']}
                       />
@@ -469,7 +463,7 @@ const SystemMonitoring = () => {
                   </ResponsiveContainer>
                 </div>
               </div>
-              
+
               {/* System Activity */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">System Activity</h4>
@@ -477,13 +471,13 @@ const SystemMonitoring = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={performanceHistory.data.dataPoints}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="timestamp" 
+                      <XAxis
+                        dataKey="timestamp"
                         tick={{ fontSize: 12 }}
                         tickFormatter={(value) => new Date(value).toLocaleTimeString()}
                       />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip 
+                      <Tooltip
                         labelFormatter={(value) => new Date(value).toLocaleString()}
                       />
                       <Area type="monotone" dataKey="activities" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
@@ -515,7 +509,7 @@ const SystemMonitoring = () => {
             <Users className="h-8 w-8 text-blue-600" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -527,7 +521,7 @@ const SystemMonitoring = () => {
             <AlertTriangle className="h-8 w-8 text-red-600" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -539,7 +533,7 @@ const SystemMonitoring = () => {
             <Database className="h-8 w-8 text-green-600" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex items-center justify-between">
             <div>

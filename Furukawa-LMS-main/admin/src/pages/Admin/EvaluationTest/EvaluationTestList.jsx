@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
     useGetEvaluationTestsQuery,
@@ -41,9 +41,25 @@ import EvaluationTestMonitoring from "./EvaluationTestMonitoring";
 const EvaluationTestList = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const subTabParam = searchParams.get("subTab");
+    const [activeSubTab, setActiveSubTab] = useState(subTabParam || "evaluationTest");
     const [searchTerm, setSearchTerm] = useState("");
     const [deleteId, setDeleteId] = useState(null);
     const [selectedDepartment, setSelectedDepartment] = useState("all");
+
+    useEffect(() => {
+        setActiveSubTab(subTabParam || "evaluationTest");
+    }, [subTabParam]);
+
+    const handleSubTabChange = (value) => {
+        setActiveSubTab(value);
+        setSearchParams((prev) => {
+            const params = new URLSearchParams(prev);
+            params.set("subTab", value);
+            return params;
+        });
+    };
 
     // Permission checking
     const currentUser = useSelector((state) => state.auth.user);
@@ -85,7 +101,7 @@ const EvaluationTestList = () => {
     };
 
     return (
-        <Tabs defaultValue="evaluationTest" className="w-full space-y-6 animate-in fade-in duration-300">
+        <Tabs value={activeSubTab} onValueChange={handleSubTabChange} className="w-full space-y-6 animate-in fade-in duration-300">
             <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
                 <TabsTrigger value="evaluationTest" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
                     Evaluation Test Templates

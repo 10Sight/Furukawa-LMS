@@ -212,6 +212,23 @@ export const departmentApi = createApi({
             }),
             invalidatesTags: ['Department'],
         }),
+
+        getDojoHiringConfigs: builder.query({
+            query: () => ({
+                url: "/api/departments/dojo-hiring/configs",
+                method: "GET",
+            }),
+            providesTags: ['Department'],
+        }),
+
+        saveDojoHiringConfig: builder.mutation({
+            query: (config) => ({
+                url: "/api/departments/dojo-hiring/config",
+                method: "POST",
+                data: config
+            }),
+            invalidatesTags: ['Department'],
+        }),
     }),
 });
 
@@ -238,4 +255,6 @@ export const {
     useGetHandoverSheetsMonitoringQuery,
     useDeleteHandoverSheetMutation,
     useBulkDeleteHandoverSheetsMutation,
+    useGetDojoHiringConfigsQuery,
+    useSaveDojoHiringConfigMutation,
 } = departmentApi;

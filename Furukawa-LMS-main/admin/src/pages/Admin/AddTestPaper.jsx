@@ -75,7 +75,10 @@ const AddTestPaper = () => {
     if (!currentUser) return false;
     if (currentUser.role === "SUPERADMIN" || currentUser.role === "ADMIN") return true;
     const userPermissions = currentUser.customRole?.permissions || [];
-    return userPermissions.includes("test_paper:access_all");
+    return (
+      userPermissions.includes("test_paper:access_all") ||
+      userPermissions.includes("dojo:all_test_department")
+    );
   }, [currentUser]);
 
   // Helper: normalise an ID that may be a primitive or an object with id/_id

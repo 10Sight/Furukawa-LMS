@@ -41,7 +41,9 @@ import {
     getStudentHandoverHistory,
     getHandoverSheetsMonitoring,
     deleteHandoverSheet,
-    bulkDeleteHandoverSheets
+    bulkDeleteHandoverSheets,
+    getDojoHiringConfigs,
+    saveDojoHiringConfig
 } from "../controllers/department.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
@@ -118,5 +120,9 @@ router.post("/handover-sheet/config/save", verifyJWT, authorizeRole([SYSTEM_PERM
 router.get("/handover-sheet/history/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetHistory);
 router.post("/handover-sheet/pdf/send", verifyJWT, sendHandoverPDF);
 router.get("/handover-sheet/student/:studentId", verifyJWT, getStudentHandoverHistory);
+
+// Dojo Hiring Configs
+router.get("/dojo-hiring/configs", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getDojoHiringConfigs);
+router.post("/dojo-hiring/config", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE]), saveDojoHiringConfig);
 
 export default router;

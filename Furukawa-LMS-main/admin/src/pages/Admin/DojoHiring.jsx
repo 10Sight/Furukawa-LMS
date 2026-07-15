@@ -95,6 +95,7 @@ import EvaluationTestList from "./EvaluationTest/EvaluationTestList";
 import HandoverSheetPage from "./HandoverSheetPage";
 import SixteenDayMonitoring from "./SixteenDayMonitoring";
 import Course from "./Course";
+import DojoHiringConfig from "./DojoHiringConfig";
 
 const LEAVING_REASONS = [
     "Employee not response",
@@ -1057,6 +1058,9 @@ const DojoHiring = () => {
                         <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.handoverSheet")}</TabsTrigger>
                         <TabsTrigger value="sixteenDays" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.sixteenDays")}</TabsTrigger>
                         <TabsTrigger value="course" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">{t("dojoHiring.tabs.course")}</TabsTrigger>
+                        {canUpdate && (
+                            <TabsTrigger value="dojoHiringConfig" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm">Dojo Hiring Configuration</TabsTrigger>
+                        )}
                     </TabsList>
 
                     <TabsContent value="dojoHiring" className="space-y-6">
@@ -1525,6 +1529,12 @@ const DojoHiring = () => {
                     <TabsContent value="course" className="space-y-6">
                         <Course />
                     </TabsContent>
+
+                    {canUpdate && (
+                        <TabsContent value="dojoHiringConfig" className="space-y-6">
+                            <DojoHiringConfig />
+                        </TabsContent>
+                    )}
                 </Tabs>
 
                 {/* Registration/Edit Modal */}

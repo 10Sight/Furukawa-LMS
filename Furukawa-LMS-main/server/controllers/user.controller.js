@@ -348,6 +348,18 @@ const toIdList = (val) => {
   return String(normalized).split(',').map(id => id.trim()).filter(Boolean);
 };
 
+// Accepts a JSON-array string (as sent from the frontend), a plain array, or a
+// comma-separated string, and returns a flat list of non-empty id strings.
+const parseIdArray = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(v => v !== null && v !== undefined && v !== '').map(String);
+  try {
+    const parsed = JSON.parse(val);
+    if (Array.isArray(parsed)) return parsed.filter(v => v !== null && v !== undefined && v !== '').map(String);
+  } catch (e) { /* not JSON, fall through */ }
+  return toIdList(val);
+};
+
 // Returns a SQL WHERE fragment (no extra params) for assignment-level filtering.
 // Relies on the aliases produced by getHierarchyJoinSQL being present in the query.
 const buildAssignmentClause = (assignmentStatus, assignmentType) => {
@@ -1580,6 +1592,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
+  let params = [];
   if (req.query.ignoreShutter !== "true") {
     whereClauses.push(
       "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
@@ -1605,6 +1618,17 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   const isDojoVal = req.query.isDojo === "true" || req.query.isDojo === true;
   if (isDojoVal) {
     whereClauses.push("(u.isTemporary = 1)");
+    const quizTargetSections = parseIdArray(req.query.quizTargetSections);
+    const quizTargetDepts = parseIdArray(req.query.quizTargetDepts);
+    if (quizTargetSections.length) {
+      const ph = quizTargetSections.map(() => "?").join(",");
+      whereClauses.push(`u.targetSectionId IN (${ph})`);
+      params.push(...quizTargetSections);
+    } else if (quizTargetDepts.length) {
+      const ph = quizTargetDepts.map(() => "?").join(",");
+      whereClauses.push(`u.targetDeptId IN (${ph})`);
+      params.push(...quizTargetDepts);
+    }
   } else {
     if (req.query.includeTemporary === "true") {
       whereClauses.push("((u.isTemporary = 0 OR u.isTemporary IS NULL) OR u.isTemporary = 1)");
@@ -1618,7 +1642,6 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       }
     }
   }
-  let params = [];
   if (req.query.search) {
     const t = `%${req.query.search}%`;
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");

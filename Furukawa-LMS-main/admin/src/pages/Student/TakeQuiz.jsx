@@ -112,7 +112,9 @@ const TakeQuiz = () => {
         limit,
         includeTemporary: "true",
         isDojo: quiz?.isDojo ? "true" : undefined,
-        ojtApprovedToday: !quiz?.isDojo ? "true" : undefined
+        ojtApprovedToday: !quiz?.isDojo ? "true" : undefined,
+        quizTargetDepts: quiz?.isDojo ? JSON.stringify(quiz?.targetDeptId || []) : undefined,
+        quizTargetSections: quiz?.isDojo ? JSON.stringify(quiz?.targetSectionId || []) : undefined
       }
     });
     return response.data?.data?.users || [];

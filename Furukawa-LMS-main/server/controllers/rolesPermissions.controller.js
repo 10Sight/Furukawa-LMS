@@ -179,6 +179,7 @@ const SYSTEM_PERMISSIONS = {
   TEST_PAPER_IS_HANDOVER: "test_paper:is_handover",
   TEST_PAPER_IS_THEORETICAL: "test_paper:is_theoretical",
   TEST_PAPER_IS_MULTI_SKILLING: "test_paper:is_multi_skilling",
+  DOJO_ALL_TEST_DEPARTMENT: "dojo:all_test_department",
 
   // Learning Management
   LEARNING_READ: "learning:read",
@@ -566,7 +567,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_DOJO, name: "Toggle Is Dojo Quiz", description: "Allows marking test papers as Dojo quizzes" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER, name: "Toggle Is Handover Quiz", description: "Allows marking test papers as Handover quizzes" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_THEORETICAL, name: "Toggle Is Theoretical Quiz", description: "Allows marking test papers as Theoretical quizzes" },
-        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING, name: "Toggle Is Multi Skilling Quiz", description: "Allows marking test papers as Multi Skilling quizzes" }
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING, name: "Toggle Is Multi Skilling Quiz", description: "Allows marking test papers as Multi Skilling quizzes" },
+        { id: SYSTEM_PERMISSIONS.DOJO_ALL_TEST_DEPARTMENT, name: "DOJO Access All Test Departments", description: "Unlocks all departments/sections on the Add/Edit Test Paper screens, bypassing the assigned department restriction" }
       ],
       "Learning Management": [
         { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Learning Dashboard", description: "View the learning management dashboard and statistics" },

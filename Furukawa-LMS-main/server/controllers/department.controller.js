@@ -1087,7 +1087,16 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     // Compute eligible users for autocomplete on every request when date is present
     let eligibleUsers = [];
     if (date) {
+        // Department-level dojo hiring config (falls back to generic isDojo/isHandover flags when unset)
+        const dojoConfig = await Department.findById(departmentId);
+        const isSpecificDept = !!dojoConfig?.isDojoSpecificDept;
+
         // Source 1: Legacy — users who passed a handover quiz on this date
+        const quizFilterSql = dojoConfig?.dojoHandoverQuizId
+            ? "q.id = ?"
+            : "q.isHandover = 1 AND q.isDojo = 1";
+        const quizFilterParams = dojoConfig?.dojoHandoverQuizId ? [dojoConfig.dojoHandoverQuizId] : [];
+
         const [passedUsers] = await executeQuery(`
                 SELECT DISTINCT
                     u.id as studentId,
@@ -1109,13 +1118,12 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 LEFT JOIN machines st ON u.targetStationId = st.id
                 WHERE u.isTemporary = 1
                   AND u.targetDeptId = ?
-                  AND q.isHandover = 1
-                  AND q.isDojo = 1
+                  AND ${quizFilterSql}
                   AND (aq.status = 'PASSED' OR aq.status = 'PASS')
                   AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
                   AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
                   AND (u.status IS NULL OR u.status != 'LEFT')
-            `, [departmentId, date]);
+            `, [departmentId, ...quizFilterParams, date]);
 
         const quizSuggested = passedUsers.map(user => {
             let marksPercent = "0%";
@@ -1130,6 +1138,9 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
         });
 
         // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
+        const evalFilterSql = dojoConfig?.dojoEligibilityEvaluationId ? "AND eta.testId = ?" : "";
+        const evalFilterParams = dojoConfig?.dojoEligibilityEvaluationId ? [dojoConfig.dojoEligibilityEvaluationId] : [];
+
         const [evalUsers] = await executeQuery(`
                 SELECT DISTINCT
                     u.id as studentId,
@@ -1170,9 +1181,10 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 WHERE eta.isHandoverEligible = 1
                   AND CAST(eta.passedDate AS DATE) = CAST(? AS DATE)
                   AND u.targetDeptId = ?
+                  ${evalFilterSql}
                   AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
                   AND (u.status IS NULL OR u.status != 'LEFT')
-            `, [date, departmentId]);
+            `, [date, departmentId, ...evalFilterParams]);
 
         const evalSuggested = evalUsers.map(user => {
             let marks = "100%";
@@ -1191,6 +1203,44 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
         quizSuggested.forEach(e => mergedMap.set(e.studentId, e));
         evalSuggested.forEach(e => mergedMap.set(e.studentId, e));
         eligibleUsers = [...mergedMap.values()];
+
+        // Interview1/Interview2 prefill — only computed for departments flagged as "specific"
+        if (isSpecificDept && eligibleUsers.length > 0) {
+            const interview1Map = new Map();
+            const interview2Map = new Map();
+
+            if (dojoConfig.dojoInterviewQuizId) {
+                const [interviewQuizRows] = await executeQuery(`
+                    SELECT u2.id as studentId, aq.status
+                    FROM attempted_quizzes aq
+                    JOIN users u2 ON (CAST(u2.id AS NVARCHAR(255)) = aq.student OR u2.userName = aq.student)
+                    WHERE aq.quiz = ?
+                    ORDER BY aq.completedAt ASC
+                `, [String(dojoConfig.dojoInterviewQuizId)]);
+                interviewQuizRows.forEach(r => {
+                    interview1Map.set(String(r.studentId), (r.status === 'PASSED' || r.status === 'PASS') ? 'OK' : 'CROSS');
+                });
+            }
+
+            if (dojoConfig.dojoInterviewEvaluationId) {
+                const [interviewEvalRows] = await executeQuery(`
+                    SELECT userId as studentId, isHandoverEligible
+                    FROM evaluation_test_attempts
+                    WHERE testId = ?
+                `, [dojoConfig.dojoInterviewEvaluationId]);
+                interviewEvalRows.forEach(r => {
+                    interview2Map.set(String(r.studentId), r.isHandoverEligible ? 'OK' : 'CROSS');
+                });
+            }
+
+            eligibleUsers = eligibleUsers.map(u => ({
+                ...u,
+                interview1: interview1Map.get(String(u.studentId)) || "",
+                interview2: interview2Map.get(String(u.studentId)) || "",
+            }));
+        } else {
+            eligibleUsers = eligibleUsers.map(u => ({ ...u, interview1: "NA", interview2: "NA" }));
+        }
     }
 
     if (!sheet) {
@@ -1473,6 +1523,56 @@ export const saveHandoverSheetConfig = asyncHandler(async (req, res) => {
 
     return res.status(200).json(
         new ApiResponse(200, saved, "Configuration saved successfully")
+    );
+});
+
+const DOJO_HIRING_CONFIG_FIELDS = [
+    "dojoMandatoryQuizId", "dojoHandoverQuizId", "dojoInterviewQuizId",
+    "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId", "isDojoSpecificDept"
+];
+
+export const getDojoHiringConfigs = asyncHandler(async (req, res) => {
+    const [rows] = await executeQuery(`
+        SELECT id, name, dojoMandatoryQuizId, dojoHandoverQuizId, dojoInterviewQuizId,
+               dojoEligibilityEvaluationId, dojoInterviewEvaluationId, isDojoSpecificDept
+        FROM departments
+        WHERE (isDeleted IS NULL OR isDeleted = 0)
+        ORDER BY name
+    `);
+
+    return res.status(200).json(
+        new ApiResponse(200, rows, "Dojo hiring configs fetched successfully")
+    );
+});
+
+export const saveDojoHiringConfig = asyncHandler(async (req, res) => {
+    const departmentId = await resolveDepartmentId(req.body.departmentId);
+    if (!departmentId) throw new ApiError("Department ID is required", 400);
+
+    const department = await Department.findById(departmentId);
+    if (!department) throw new ApiError("Department not found", 404);
+
+    const values = DOJO_HIRING_CONFIG_FIELDS.map((field) => {
+        const val = req.body[field];
+        if (field === "isDojoSpecificDept") return val ? 1 : 0;
+        return val === undefined || val === null || val === "" ? null : val;
+    });
+
+    await executeQuery(
+        `UPDATE departments SET ${DOJO_HIRING_CONFIG_FIELDS.map((f) => `${f} = ?`).join(", ")} WHERE id = ?`,
+        [...values, departmentId]
+    );
+
+    logAudit(req.user?.id, "SAVE_DOJO_HIRING_CONFIG", {
+        departmentId,
+        ...DOJO_HIRING_CONFIG_FIELDS.reduce((acc, f, i) => ({ ...acc, [f]: values[i] }), {}),
+    }, { resourceType: "DojoHiringConfig", resourceId: departmentId, req }).catch(err =>
+        console.error("logAudit(SAVE_DOJO_HIRING_CONFIG) failed:", err.message)
+    );
+
+    const updated = await Department.findById(departmentId);
+    return res.status(200).json(
+        new ApiResponse(200, updated, "Dojo hiring config saved successfully")
     );
 });
 

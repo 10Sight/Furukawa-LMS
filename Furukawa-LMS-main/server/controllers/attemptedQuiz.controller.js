@@ -61,6 +61,29 @@ const resolveStudentSnapshot = async (userId) => {
     return snapshot;
 };
 
+// Dojo quizzes can be restricted to candidates from specific target sections/departments.
+// Sections take precedence over departments when both are configured; if neither is
+// configured, every temporary candidate is eligible. Non-temporary candidates and
+// non-Dojo quizzes are never gated by this check.
+const checkDojoTargetAccess = (quiz, candidate) => {
+    if (!quiz?.isDojo || !candidate?.isTemporary) return { allowed: true };
+
+    const targetSections = (Array.isArray(quiz.targetSectionId) ? quiz.targetSectionId : []).filter(id => id !== null && id !== undefined && id !== '');
+    const targetDepts = (Array.isArray(quiz.targetDeptId) ? quiz.targetDeptId : []).filter(id => id !== null && id !== undefined && id !== '');
+
+    if (targetSections.length > 0) {
+        const allowed = targetSections.some(id => String(id) === String(candidate.targetSectionId));
+        return allowed ? { allowed: true } : { allowed: false, reason: "Access Denied: This Dojo quiz is restricted to candidates from specific sections." };
+    }
+
+    if (targetDepts.length > 0) {
+        const allowed = targetDepts.some(id => String(id) === String(candidate.targetDeptId));
+        return allowed ? { allowed: true } : { allowed: false, reason: "Access Denied: This Dojo quiz is restricted to candidates from specific departments." };
+    }
+
+    return { allowed: true };
+};
+
 // Helper for population
 const populateAttempt = async (attempt) => {
     if (!attempt) return null;
@@ -553,6 +576,24 @@ export const startQuiz = asyncHandler(async (req, res) => {
         }
     }
 
+    // Dojo Target Department/Section Gating (temporary candidates only)
+    if (quiz.isDojo && !isAdminOrTrainer && isTemporaryCandidate) {
+        const targetCheck = checkDojoTargetAccess(quiz, req.user);
+        if (!targetCheck.allowed) {
+            return res.json(new ApiResponse(200, {
+                canAttempt: false,
+                reason: targetCheck.reason,
+                quiz: {
+                    _id: quiz.id,
+                    title: quiz.title,
+                    course: quiz.course,
+                    module: quiz.module,
+                    level: quiz.level
+                }
+            }, "Dojo quiz target department/section restricted"));
+        }
+    }
+
     // OJT Gating for non-Dojo Quizzes (isDojo === false or not set)
     if (!quiz.isDojo && !isAdminOrTrainer && isTemporaryCandidate) {
         let isOjtApproved = false;
@@ -679,6 +720,8 @@ export const startQuiz = asyncHandler(async (req, res) => {
         isDojo: quiz.isDojo,
         isHandover: quiz.isHandover,
         isTheoretical: quiz.isTheoretical,
+        targetDeptId: quiz.targetDeptId,
+        targetSectionId: quiz.targetSectionId,
         conductedBy: quiz.conductedBy || "Education Cell",
         paperTitle: quiz.paperTitle || null,
         paperSubTitle: quiz.paperSubTitle || null,
@@ -847,7 +890,7 @@ export const submitQuiz = asyncHandler(async (req, res) => {
 
     // Fetch resolved candidate details to include in response
     const [candidateRows] = await executeQuery(
-        "SELECT id, fullName, empId, userName, isTemporary FROM users WHERE id = ?",
+        "SELECT id, fullName, empId, userName, isTemporary, targetDeptId, targetSectionId FROM users WHERE id = ?",
         [userId]
     );
     const attemptedByUser = candidateRows[0] || null;
@@ -865,6 +908,13 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     // Populate needed
     if (quiz.course) quiz.course = await Course.findById(quiz.course);
     if (quiz.module) quiz.module = await Module.findById(quiz.module);
+
+    // Dojo Target Department/Section Gating — checked against the resolved candidate
+    // (attemptedByUser), never req.user, since trainers frequently submit on behalf of someone else.
+    const dojoTargetCheck = checkDojoTargetAccess(quiz, attemptedByUser);
+    if (!dojoTargetCheck.allowed) {
+        throw new ApiError(dojoTargetCheck.reason, 403);
+    }
 
     // OJT Daily Gating for Multi-Skilling and Skill Upgradation Quizzes on submit
     const isMultiOrUpgradation = !!quiz.isMultiSkilling || !!quiz.skillUpgradation;

@@ -367,7 +367,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
             lineId: user.lineId || user.targetLineId || null,
             subSectionId: user.subSectionId || user.targetSubSectionId || null,
             stationId: user.stationId || user.targetStationId || null,
-            process: processWithLine
+            process: processWithLine,
+            interview1: user.interview1 ?? newEntries[index].interview1 ?? "",
+            interview2: user.interview2 ?? newEntries[index].interview2 ?? "",
         };
         setEntries(newEntries);
     };

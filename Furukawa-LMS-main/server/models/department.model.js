@@ -46,6 +46,13 @@ class Department {
         this.daily5mApproverSectionId = data.daily5mApproverSectionId || null;
         this.daily5mApproverLineId = data.daily5mApproverLineId || null;
 
+        this.dojoMandatoryQuizId = data.dojoMandatoryQuizId || null;
+        this.dojoHandoverQuizId = data.dojoHandoverQuizId || null;
+        this.dojoInterviewQuizId = data.dojoInterviewQuizId || null;
+        this.dojoEligibilityEvaluationId = data.dojoEligibilityEvaluationId || null;
+        this.dojoInterviewEvaluationId = data.dojoInterviewEvaluationId || null;
+        this.isDojoSpecificDept = !!data.isDojoSpecificDept;
+
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -97,6 +104,38 @@ class Department {
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverLineId')
                 BEGIN
                     ALTER TABLE departments ADD daily5mApproverLineId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoMandatoryQuizId')
+                BEGIN
+                    ALTER TABLE departments ADD dojoMandatoryQuizId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoHandoverQuizId')
+                BEGIN
+                    ALTER TABLE departments ADD dojoHandoverQuizId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoInterviewQuizId')
+                BEGIN
+                    ALTER TABLE departments ADD dojoInterviewQuizId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoEligibilityEvaluationId')
+                BEGIN
+                    ALTER TABLE departments ADD dojoEligibilityEvaluationId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoInterviewEvaluationId')
+                BEGIN
+                    ALTER TABLE departments ADD dojoInterviewEvaluationId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'isDojoSpecificDept')
+                BEGIN
+                    ALTER TABLE departments ADD isDojoSpecificDept BIT DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_dojoHandoverQuizId' AND object_id = OBJECT_ID('departments'))
+                BEGIN
+                    CREATE INDEX idx_dojoHandoverQuizId ON departments(dojoHandoverQuizId);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_dojoEligibilityEvaluationId' AND object_id = OBJECT_ID('departments'))
+                BEGIN
+                    CREATE INDEX idx_dojoEligibilityEvaluationId ON departments(dojoEligibilityEvaluationId);
                 END
             END
         `;
@@ -180,6 +219,8 @@ class Department {
             "schedule", "notes", "statusUpdatedAt", "departmentQuiz",
             "departmentAssignment", "isDeleted", "isReportingEnabled",
             "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
+            "dojoMandatoryQuizId", "dojoHandoverQuizId", "dojoInterviewQuizId",
+            "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId", "isDojoSpecificDept",
             "createdAt"
         ];
 
@@ -325,7 +366,9 @@ class Department {
             "students", "startDate", "endDate", "capacity", "status",
             "schedule", "notes", "statusUpdatedAt", "departmentQuiz",
             "departmentAssignment", "isDeleted", "isReportingEnabled",
-            "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId"
+            "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
+            "dojoMandatoryQuizId", "dojoHandoverQuizId", "dojoInterviewQuizId",
+            "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId", "isDojoSpecificDept"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

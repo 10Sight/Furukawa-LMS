@@ -147,23 +147,6 @@ const DojoHiring = () => {
         return currentUser?.customRole?.permissions?.includes(permission);
     };
 
-    const isAdmin = currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN" || currentUser?.isAdmin;
-
-    const assignedDepartments = React.useMemo(() => {
-        const ids = [];
-        if (Array.isArray(currentUser?.departments)) {
-            currentUser.departments.forEach((d) => {
-                const id = d && typeof d === "object" ? (d.id || d._id) : d;
-                if (id) ids.push(String(id));
-            });
-        }
-        if (currentUser?.departmentId) ids.push(String(currentUser.departmentId));
-        return [...new Set(ids)];
-    }, [currentUser]);
-
-    const isUserRestricted = !isAdmin && assignedDepartments.length > 0;
-    const isDeptFilterDisabled = isUserRestricted && assignedDepartments.length === 1;
-
     const canRead = hasPermission("dojo_hiring:read");
     const canCreate = hasPermission("dojo_hiring:create");
     const canUpdate = hasPermission("dojo_hiring:update");
@@ -209,13 +192,7 @@ const DojoHiring = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [activeTab, setActiveTab] = useState("all");
     const [genderFilter, setGenderFilter] = useState("ALL");
-    const [deptFilter, setDeptFilter] = useState(() => (isUserRestricted ? assignedDepartments[0] : "ALL"));
-
-    useEffect(() => {
-        if (isUserRestricted && !assignedDepartments.includes(deptFilter)) {
-            setDeptFilter(assignedDepartments[0]);
-        }
-    }, [isUserRestricted, assignedDepartments, deptFilter]);
+    const [deptFilter, setDeptFilter] = useState("ALL");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
 
@@ -922,10 +899,8 @@ const DojoHiring = () => {
     ];
 
     const deptOptions = [
-        ...(isUserRestricted ? [] : [{ value: "ALL", label: t("dojoHiring.filter.allDepts") }]),
-        ...departments
-            .filter((d) => !isUserRestricted || assignedDepartments.includes(String(d.id || d._id)))
-            .map((d) => ({ value: String(d.id || d._id), label: d.name })),
+        { value: "ALL", label: t("dojoHiring.filter.allDepts") },
+        ...departments.map((d) => ({ value: String(d.id || d._id), label: d.name })),
     ];
 
     const hasDateRangeFilter = startDate || endDate;
@@ -1186,7 +1161,6 @@ const DojoHiring = () => {
                                             options={deptOptions}
                                             placeholder={t("dojoHiring.filter.selectDept")}
                                             className="w-[180px]"
-                                            disabled={isDeptFilterDisabled}
                                         />
                                         <FilterSelect
                                             value={genderFilter}

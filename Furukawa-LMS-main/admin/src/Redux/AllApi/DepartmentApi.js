@@ -63,7 +63,7 @@ export const departmentApi = createApi({
                 return { search, status };
             },
             merge: (currentCache, newData, { arg }) => {
-                if (!arg || arg.page === 1) {
+                if (!arg?.page || arg.page === 1) {
                     return newData;
                 }
                 currentCache.data.departments.push(...newData.data.departments);

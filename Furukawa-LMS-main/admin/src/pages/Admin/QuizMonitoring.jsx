@@ -56,7 +56,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
   const isCustomRole = currentUser?.role === "CUSTOM" && !isAdmin && !isDojo;
 
   const assignedDepartments = useMemo(() => {
-    if (!isCustomRole) return [];
+    if (isAdmin) return [];
     const ids = [];
     if (Array.isArray(currentUser?.departments)) {
       currentUser.departments.forEach((d) => {
@@ -66,7 +66,11 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
     }
     if (currentUser?.departmentId) ids.push(String(currentUser.departmentId));
     return [...new Set(ids)];
-  }, [currentUser, isCustomRole]);
+  }, [currentUser, isAdmin]);
+
+  // Broader restriction check (unlike isCustomRole, this also applies inside the Dojo Hiring
+  // context) used to lock down the Test Paper Dept filter specifically.
+  const isUserRestricted = !isAdmin && assignedDepartments.length > 0;
 
   const assignedSections = useMemo(() => {
     if (!isCustomRole) return [];
@@ -105,6 +109,13 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
     if (!isCustomRole) return uniqueDepartments;
     return uniqueDepartments.filter((d) => assignedDepartments.includes(String(d.id)));
   }, [uniqueDepartments, assignedDepartments, isCustomRole]);
+
+  const assignableQuizDepartments = useMemo(() => {
+    if (!isUserRestricted) return uniqueDepartments;
+    return uniqueDepartments.filter((d) => assignedDepartments.includes(String(d.id)));
+  }, [uniqueDepartments, assignedDepartments, isUserRestricted]);
+
+  const isQuizDeptSelectDisabled = isUserRestricted && assignedDepartments.length === 1;
 
   const deptQueryId = selectedDeptId === "all" ? "" : selectedDeptId;
   const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(deptQueryId, { skip: !deptQueryId });
@@ -177,6 +188,12 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
       setSelectedSectionId(assignedSections[0]);
     }
   }, [isSectionSelectDisabled, assignedSections, selectedSectionId]);
+
+  useEffect(() => {
+    if (isUserRestricted && !assignedDepartments.includes(selectedQuizDeptId)) {
+      setSelectedQuizDeptId(assignedDepartments[0]);
+    }
+  }, [isUserRestricted, assignedDepartments, selectedQuizDeptId]);
 
   // 2. Fetch Attempts based on filters
   const queryParams = useMemo(() => {
@@ -382,13 +399,15 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
             {/* Test Paper Department */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">{t("testMonitoring.filters.quizDeptLabel")}</label>
-              <Select value={selectedQuizDeptId} onValueChange={setSelectedQuizDeptId}>
+              <Select value={selectedQuizDeptId} onValueChange={setSelectedQuizDeptId} disabled={isQuizDeptSelectDisabled}>
                 <SelectTrigger className="w-full h-10">
                   <SelectValue placeholder={t("testMonitoring.filters.selectQuizDept")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">{t("testMonitoring.filters.allDepts")}</SelectItem>
-                  {uniqueDepartments.map((d) => (
+                  {!isUserRestricted && (
+                    <SelectItem value="all">{t("testMonitoring.filters.allDepts")}</SelectItem>
+                  )}
+                  {assignableQuizDepartments.map((d) => (
                     <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                   ))}
                 </SelectContent>

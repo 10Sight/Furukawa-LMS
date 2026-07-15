@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,34 @@ const EvaluationTestMonitoring = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Restrict the Test Paper Dept filter for non-admin users assigned to specific departments.
+  // The trainee Department filter stays unrestricted so restricted users can still monitor
+  // all temporary users' evaluation test attempts.
+  const currentUser = useSelector((state) => state.auth.user);
+  const isAdmin = currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN" || currentUser?.isAdmin;
+
+  const assignedDepartments = useMemo(() => {
+    if (isAdmin) return [];
+    const ids = [];
+    if (Array.isArray(currentUser?.departments)) {
+      currentUser.departments.forEach((d) => {
+        const id = d && typeof d === "object" ? (d.id || d._id) : d;
+        if (id) ids.push(String(id));
+      });
+    }
+    if (currentUser?.departmentId) ids.push(String(currentUser.departmentId));
+    return [...new Set(ids)];
+  }, [currentUser, isAdmin]);
+
+  const isUserRestricted = !isAdmin && assignedDepartments.length > 0;
+  const isTestDeptSelectDisabled = isUserRestricted && assignedDepartments.length === 1;
+
+  useEffect(() => {
+    if (isUserRestricted && !assignedDepartments.includes(selectedTestDeptId)) {
+      setSelectedTestDeptId(assignedDepartments[0]);
+    }
+  }, [isUserRestricted, assignedDepartments, selectedTestDeptId]);
+
   // 1. Fetch organizational departments
   const { data: deptsData } = useGetAllDepartmentsQuery({ limit: 1000 });
   const departments = deptsData?.data?.departments || [];
@@ -68,6 +97,11 @@ const EvaluationTestMonitoring = () => {
       return true;
     });
   }, [departments]);
+
+  const assignableTestDepartments = useMemo(() => {
+    if (!isUserRestricted) return uniqueDepartments;
+    return uniqueDepartments.filter((d) => assignedDepartments.includes(String(d.id)));
+  }, [uniqueDepartments, assignedDepartments, isUserRestricted]);
 
   // Fetch attempts
   const { data: attemptsRes, isLoading: attemptsLoading, refetch } = useGetEvaluationTestAttemptsQuery();
@@ -227,13 +261,15 @@ const EvaluationTestMonitoring = () => {
             {/* Test Paper Department */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Test Paper Dept</label>
-              <Select value={selectedTestDeptId} onValueChange={handleTestDeptChange}>
+              <Select value={selectedTestDeptId} onValueChange={handleTestDeptChange} disabled={isTestDeptSelectDisabled}>
                 <SelectTrigger className="h-9 text-xs border-gray-200 rounded-lg">
                   <SelectValue placeholder="All Departments" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {uniqueDepartments.map((d) => (
+                  {!isUserRestricted && (
+                    <SelectItem value="all">All Departments</SelectItem>
+                  )}
+                  {assignableTestDepartments.map((d) => (
                     <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                   ))}
                 </SelectContent>

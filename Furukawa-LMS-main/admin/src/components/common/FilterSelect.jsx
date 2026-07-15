@@ -14,9 +14,10 @@ const FilterSelect = ({
   placeholder = "Select filter",
   icon: Icon,
   className = "w-[140px]",
+  disabled = false,
 }) => {
   return (
-    <Select value={value} onValueChange={onValueChange}>
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger className={className}>
         <div className="flex items-center gap-2">
           {Icon && <Icon className="h-4 w-4" />}

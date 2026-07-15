@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
@@ -46,7 +46,6 @@ const EvaluationTestList = () => {
     const [activeSubTab, setActiveSubTab] = useState(subTabParam || "evaluationTest");
     const [searchTerm, setSearchTerm] = useState("");
     const [deleteId, setDeleteId] = useState(null);
-    const [selectedDepartment, setSelectedDepartment] = useState("all");
 
     useEffect(() => {
         setActiveSubTab(subTabParam || "evaluationTest");
@@ -69,6 +68,31 @@ const EvaluationTestList = () => {
     };
     const canCreate = hasPermission("dojo_evaluation_test:create");
 
+    const isAdmin = currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN" || currentUser?.isAdmin;
+
+    const assignedDepartments = useMemo(() => {
+        const ids = [];
+        if (Array.isArray(currentUser?.departments)) {
+            currentUser.departments.forEach((d) => {
+                const id = d && typeof d === "object" ? (d.id || d._id) : d;
+                if (id) ids.push(String(id));
+            });
+        }
+        if (currentUser?.departmentId) ids.push(String(currentUser.departmentId));
+        return [...new Set(ids)];
+    }, [currentUser]);
+
+    const isUserRestricted = !isAdmin && assignedDepartments.length > 0;
+    const isDeptSelectDisabled = isUserRestricted && assignedDepartments.length === 1;
+
+    const [selectedDepartment, setSelectedDepartment] = useState(() => (isUserRestricted ? assignedDepartments[0] : "all"));
+
+    useEffect(() => {
+        if (isUserRestricted && !assignedDepartments.includes(selectedDepartment)) {
+            setSelectedDepartment(assignedDepartments[0]);
+        }
+    }, [isUserRestricted, assignedDepartments, selectedDepartment]);
+
     // RTK Query hooks
     const { data: response, isLoading, isError, refetch } = useGetEvaluationTestsQuery(
         selectedDepartment !== "all" ? { departmentId: selectedDepartment } : undefined
@@ -76,6 +100,10 @@ const EvaluationTestList = () => {
     const [deleteEvaluationTest, { isLoading: isDeleting }] = useDeleteEvaluationTestMutation();
     const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
     const departments = departmentsData?.data?.departments || [];
+    const assignableDepartments = useMemo(() => {
+        if (!isUserRestricted) return departments;
+        return departments.filter((d) => assignedDepartments.includes(String(d.id)));
+    }, [departments, assignedDepartments, isUserRestricted]);
 
     const testPapers = response?.data || [];
 
@@ -143,13 +171,15 @@ const EvaluationTestList = () => {
                                 <CardDescription>View, edit, print, or delete practical DOJO evaluation templates.</CardDescription>
                             </div>
                             <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                                <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+                                <Select value={selectedDepartment} onValueChange={setSelectedDepartment} disabled={isDeptSelectDisabled}>
                                     <SelectTrigger className="w-full sm:w-52 h-9 text-xs border-gray-200 rounded-lg">
                                         <SelectValue placeholder="All Departments" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All Departments</SelectItem>
-                                        {departments.map((d) => (
+                                        {!isUserRestricted && (
+                                            <SelectItem value="all">All Departments</SelectItem>
+                                        )}
+                                        {assignableDepartments.map((d) => (
                                             <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                                         ))}
                                     </SelectContent>

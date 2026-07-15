@@ -135,6 +135,11 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
         return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
     }, [sections, authUser, canAccessAll]);
 
+    const isRestricted = !canAccessAll && authUser && (
+        (authUser.departments?.length > 0) || authUser.departmentId
+    );
+    const isDeptSelectDisabled = isRestricted && assignableDepartments.length === 1;
+
     const handleAfterMonitoringSave = async (status) => {
         await feedbackRef.current?.saveFeedback();
         if (status === 'Submitted') {
@@ -243,6 +248,15 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
         }
     }, [isEmployee, isSelectionLocked, authUser, assignableDepartments, paramStudentId, studentId, paramStudentData]);
 
+    // Restricted users can't fall back to "ALL" (that option is hidden for them) — keep dept
+    // pinned to one of their assigned departments.
+    useEffect(() => {
+        if (!isRestricted || assignableDepartments.length === 0) return;
+        if (!assignableDepartments.some(d => String(d.id || d._id) === String(dept))) {
+            setDept(String(assignableDepartments[0].id || assignableDepartments[0]._id));
+        }
+    }, [isRestricted, assignableDepartments, dept]);
+
     const selectedStudent = useMemo(() => {
         const student = monitoringList.find(s => String(s._id || s.id) === String(studentId));
         if (!student && isEmployee && String(authUser?._id || authUser?.id) === String(studentId)) {
@@ -348,11 +362,13 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                 <Select
                                     value={String(dept)}
                                     onValueChange={(val) => { setDept(val); setSection(""); setLine(""); setStudentId(""); setActiveDept(""); }}
-                                    disabled={(isSelectionLocked && !!authUser?.departmentId) || (!isAdmin && assignableDepartments.length <= 1 && !!dept && dept !== "ALL")}
+                                    disabled={(isSelectionLocked && !!authUser?.departmentId) || isDeptSelectDisabled || (!isAdmin && assignableDepartments.length <= 1 && !!dept && dept !== "ALL")}
                                 >
                                     <SelectTrigger className="h-10 bg-white border-slate-200"><SelectValue placeholder="All Departments" /></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="ALL">All Departments</SelectItem>
+                                        {!isRestricted && (
+                                            <SelectItem value="ALL">All Departments</SelectItem>
+                                        )}
                                         {assignableDepartments.map((d) => (
                                             <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>{d.name}</SelectItem>
                                         ))}

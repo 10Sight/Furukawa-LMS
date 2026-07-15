@@ -98,14 +98,27 @@ class EvaluationTest {
 
     static async findAll(filters = {}) {
         let query = `
-            SELECT et.*, d.name as departmentName
+            SELECT ${filters.limit ? `TOP ${parseInt(filters.limit, 10)}` : ''} et.*, d.name as departmentName
             FROM evaluation_tests et
             LEFT JOIN departments d ON et.departmentId = d.id
         `;
+        const conditions = [];
         const params = [];
         if (filters.departmentId !== undefined && filters.departmentId !== null) {
-            query += " WHERE et.departmentId = ?";
+            if (filters.includeUnscoped) {
+                // Also include tests with no department set (treated as available to any department)
+                conditions.push("(et.departmentId IS NULL OR et.departmentId = ?)");
+            } else {
+                conditions.push("et.departmentId = ?");
+            }
             params.push(filters.departmentId);
+        }
+        if (filters.search) {
+            conditions.push("et.title LIKE ?");
+            params.push(`%${filters.search}%`);
+        }
+        if (conditions.length > 0) {
+            query += ` WHERE ${conditions.join(" AND ")}`;
         }
         query += " ORDER BY et.createdAt DESC";
 

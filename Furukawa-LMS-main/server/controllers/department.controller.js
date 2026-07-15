@@ -1090,12 +1090,16 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
         // Department-level dojo hiring config (falls back to generic isDojo/isHandover flags when unset)
         const dojoConfig = await Department.findById(departmentId);
         const isSpecificDept = !!dojoConfig?.isDojoSpecificDept;
+        const handoverQuizIds = dojoConfig?.dojoHandoverQuizId || [];
+        const eligibilityEvalIds = dojoConfig?.dojoEligibilityEvaluationId || [];
+        const interviewQuizIds = dojoConfig?.dojoInterviewQuizId || [];
+        const interviewEvalIds = dojoConfig?.dojoInterviewEvaluationId || [];
 
-        // Source 1: Legacy — users who passed a handover quiz on this date
-        const quizFilterSql = dojoConfig?.dojoHandoverQuizId
-            ? "q.id = ?"
+        // Source 1: Legacy — users who passed ANY of the department's configured handover quizzes on this date
+        const quizFilterSql = handoverQuizIds.length > 0
+            ? "EXISTS (SELECT 1 FROM OPENJSON(?) WHERE CAST(value AS INT) = q.id)"
             : "q.isHandover = 1 AND q.isDojo = 1";
-        const quizFilterParams = dojoConfig?.dojoHandoverQuizId ? [dojoConfig.dojoHandoverQuizId] : [];
+        const quizFilterParams = handoverQuizIds.length > 0 ? [JSON.stringify(handoverQuizIds)] : [];
 
         const [passedUsers] = await executeQuery(`
                 SELECT DISTINCT
@@ -1138,8 +1142,10 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
         });
 
         // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
-        const evalFilterSql = dojoConfig?.dojoEligibilityEvaluationId ? "AND eta.testId = ?" : "";
-        const evalFilterParams = dojoConfig?.dojoEligibilityEvaluationId ? [dojoConfig.dojoEligibilityEvaluationId] : [];
+        const evalFilterSql = eligibilityEvalIds.length > 0
+            ? "AND EXISTS (SELECT 1 FROM OPENJSON(?) WHERE CAST(value AS INT) = eta.testId)"
+            : "";
+        const evalFilterParams = eligibilityEvalIds.length > 0 ? [JSON.stringify(eligibilityEvalIds)] : [];
 
         const [evalUsers] = await executeQuery(`
                 SELECT DISTINCT
@@ -1209,27 +1215,33 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
             const interview1Map = new Map();
             const interview2Map = new Map();
 
-            if (dojoConfig.dojoInterviewQuizId) {
+            if (interviewQuizIds.length > 0) {
                 const [interviewQuizRows] = await executeQuery(`
                     SELECT u2.id as studentId, aq.status
                     FROM attempted_quizzes aq
                     JOIN users u2 ON (CAST(u2.id AS NVARCHAR(255)) = aq.student OR u2.userName = aq.student)
-                    WHERE aq.quiz = ?
+                    WHERE aq.quiz IN (SELECT CAST(value AS NVARCHAR(50)) FROM OPENJSON(?))
                     ORDER BY aq.completedAt ASC
-                `, [String(dojoConfig.dojoInterviewQuizId)]);
+                `, [JSON.stringify(interviewQuizIds)]);
                 interviewQuizRows.forEach(r => {
-                    interview1Map.set(String(r.studentId), (r.status === 'PASSED' || r.status === 'PASS') ? 'OK' : 'CROSS');
+                    const passed = r.status === 'PASSED' || r.status === 'PASS';
+                    // A later PASSED attempt should not be downgraded by an earlier CROSS on a different paper
+                    if (passed || interview1Map.get(String(r.studentId)) !== 'OK') {
+                        interview1Map.set(String(r.studentId), passed ? 'OK' : 'CROSS');
+                    }
                 });
             }
 
-            if (dojoConfig.dojoInterviewEvaluationId) {
+            if (interviewEvalIds.length > 0) {
                 const [interviewEvalRows] = await executeQuery(`
                     SELECT userId as studentId, isHandoverEligible
                     FROM evaluation_test_attempts
-                    WHERE testId = ?
-                `, [dojoConfig.dojoInterviewEvaluationId]);
+                    WHERE testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
+                `, [JSON.stringify(interviewEvalIds)]);
                 interviewEvalRows.forEach(r => {
-                    interview2Map.set(String(r.studentId), r.isHandoverEligible ? 'OK' : 'CROSS');
+                    if (r.isHandoverEligible || interview2Map.get(String(r.studentId)) !== 'OK') {
+                        interview2Map.set(String(r.studentId), r.isHandoverEligible ? 'OK' : 'CROSS');
+                    }
                 });
             }
 
@@ -1526,10 +1538,11 @@ export const saveHandoverSheetConfig = asyncHandler(async (req, res) => {
     );
 });
 
-const DOJO_HIRING_CONFIG_FIELDS = [
+const DOJO_HIRING_CONFIG_ARRAY_FIELDS = [
     "dojoMandatoryQuizId", "dojoHandoverQuizId", "dojoInterviewQuizId",
-    "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId", "isDojoSpecificDept"
+    "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId"
 ];
+const DOJO_HIRING_CONFIG_FIELDS = [...DOJO_HIRING_CONFIG_ARRAY_FIELDS, "isDojoSpecificDept"];
 
 export const getDojoHiringConfigs = asyncHandler(async (req, res) => {
     const [rows] = await executeQuery(`
@@ -1540,8 +1553,25 @@ export const getDojoHiringConfigs = asyncHandler(async (req, res) => {
         ORDER BY name
     `);
 
+    const parsed = rows.map((row) => {
+        const out = { ...row };
+        DOJO_HIRING_CONFIG_ARRAY_FIELDS.forEach((field) => {
+            if (typeof row[field] === 'string' && row[field].trim() !== '') {
+                try {
+                    const val = JSON.parse(row[field]);
+                    out[field] = Array.isArray(val) ? val : [val];
+                } catch (e) {
+                    out[field] = [];
+                }
+            } else {
+                out[field] = [];
+            }
+        });
+        return out;
+    });
+
     return res.status(200).json(
-        new ApiResponse(200, rows, "Dojo hiring configs fetched successfully")
+        new ApiResponse(200, parsed, "Dojo hiring configs fetched successfully")
     );
 });
 
@@ -1553,9 +1583,10 @@ export const saveDojoHiringConfig = asyncHandler(async (req, res) => {
     if (!department) throw new ApiError("Department not found", 404);
 
     const values = DOJO_HIRING_CONFIG_FIELDS.map((field) => {
+        if (field === "isDojoSpecificDept") return req.body[field] ? 1 : 0;
         const val = req.body[field];
-        if (field === "isDojoSpecificDept") return val ? 1 : 0;
-        return val === undefined || val === null || val === "" ? null : val;
+        const arr = Array.isArray(val) ? val.filter((v) => v !== null && v !== undefined && v !== "") : [];
+        return JSON.stringify(arr);
     });
 
     await executeQuery(
@@ -1565,7 +1596,7 @@ export const saveDojoHiringConfig = asyncHandler(async (req, res) => {
 
     logAudit(req.user?.id, "SAVE_DOJO_HIRING_CONFIG", {
         departmentId,
-        ...DOJO_HIRING_CONFIG_FIELDS.reduce((acc, f, i) => ({ ...acc, [f]: values[i] }), {}),
+        ...DOJO_HIRING_CONFIG_FIELDS.reduce((acc, f) => ({ ...acc, [f]: req.body[f] }), {}),
     }, { resourceType: "DojoHiringConfig", resourceId: departmentId, req }).catch(err =>
         console.error("logAudit(SAVE_DOJO_HIRING_CONFIG) failed:", err.message)
     );

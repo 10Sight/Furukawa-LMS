@@ -5,8 +5,8 @@ import {
     useGetDojoHiringConfigsQuery,
     useSaveDojoHiringConfigMutation,
 } from "@/Redux/AllApi/DepartmentApi";
-import { useGetAllQuizzesQuery } from "@/Redux/AllApi/QuizApi";
-import { useGetEvaluationTestsQuery } from "@/Redux/AllApi/EvaluationTestApi";
+import { useLazyGetAllQuizzesQuery } from "@/Redux/AllApi/QuizApi";
+import { useLazyGetEvaluationTestsQuery } from "@/Redux/AllApi/EvaluationTestApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     Table,
@@ -16,12 +16,12 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import ServerSearchMultiSelect from "@/components/common/ServerSearchMultiSelect";
 import {
     IconSettings,
     IconDeviceFloppy,
@@ -38,30 +38,37 @@ import {
     IconAlertCircle,
 } from "@tabler/icons-react";
 
-const NONE_VALUE = "none";
+const ARRAY_FIELDS = [
+    "dojoMandatoryQuizId", "dojoHandoverQuizId", "dojoInterviewQuizId",
+    "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId",
+];
+
+const toIdArray = (val) => (Array.isArray(val) ? val.map(String) : []);
 
 const toRowState = (dept) => ({
-    dojoMandatoryQuizId: dept.dojoMandatoryQuizId ? String(dept.dojoMandatoryQuizId) : NONE_VALUE,
-    dojoHandoverQuizId: dept.dojoHandoverQuizId ? String(dept.dojoHandoverQuizId) : NONE_VALUE,
-    dojoInterviewQuizId: dept.dojoInterviewQuizId ? String(dept.dojoInterviewQuizId) : NONE_VALUE,
-    dojoEligibilityEvaluationId: dept.dojoEligibilityEvaluationId ? String(dept.dojoEligibilityEvaluationId) : NONE_VALUE,
-    dojoInterviewEvaluationId: dept.dojoInterviewEvaluationId ? String(dept.dojoInterviewEvaluationId) : NONE_VALUE,
+    dojoMandatoryQuizId: toIdArray(dept.dojoMandatoryQuizId),
+    dojoHandoverQuizId: toIdArray(dept.dojoHandoverQuizId),
+    dojoInterviewQuizId: toIdArray(dept.dojoInterviewQuizId),
+    dojoEligibilityEvaluationId: toIdArray(dept.dojoEligibilityEvaluationId),
+    dojoInterviewEvaluationId: toIdArray(dept.dojoInterviewEvaluationId),
     isDojoSpecificDept: !!dept.isDojoSpecificDept,
 });
+
+const sortedJoin = (arr) => [...(arr || [])].sort().join(",");
 
 const rowsEqual = (a, b) => {
     if (!a || !b) return a === b;
     return (
-        a.dojoMandatoryQuizId === b.dojoMandatoryQuizId &&
-        a.dojoHandoverQuizId === b.dojoHandoverQuizId &&
-        a.dojoInterviewQuizId === b.dojoInterviewQuizId &&
-        a.dojoEligibilityEvaluationId === b.dojoEligibilityEvaluationId &&
-        a.dojoInterviewEvaluationId === b.dojoInterviewEvaluationId &&
+        ARRAY_FIELDS.every((f) => sortedJoin(a[f]) === sortedJoin(b[f])) &&
         a.isDojoSpecificDept === b.isDojoSpecificDept
     );
 };
 
-const isConfigured = (dept) => !!(dept.dojoHandoverQuizId || dept.dojoEligibilityEvaluationId);
+const isConfigured = (dept) =>
+    toIdArray(dept.dojoHandoverQuizId).length > 0 || toIdArray(dept.dojoEligibilityEvaluationId).length > 0;
+
+const unwrapQuizzes = (data) => data?.data?.quizzes || [];
+const unwrapEvaluations = (data) => data?.data || [];
 
 const DojoHiringConfig = () => {
     const currentUser = useSelector((state) => state.auth.user);
@@ -72,14 +79,9 @@ const DojoHiringConfig = () => {
     const canUpdate = hasPermission("dojo_hiring:update");
 
     const { data: configsResponse, isLoading: isLoadingConfigs, refetch } = useGetDojoHiringConfigsQuery();
-    const { data: quizzesResponse } = useGetAllQuizzesQuery({ isDojo: true, limit: 100 });
-    const { data: evaluationTestsResponse } = useGetEvaluationTestsQuery();
     const [saveDojoHiringConfig] = useSaveDojoHiringConfigMutation();
 
     const departments = useMemo(() => configsResponse?.data || [], [configsResponse]);
-    const dojoQuizzes = useMemo(() => quizzesResponse?.data?.quizzes || [], [quizzesResponse]);
-    const handoverQuizzes = useMemo(() => dojoQuizzes.filter((q) => q.isHandover), [dojoQuizzes]);
-    const evaluationTests = useMemo(() => evaluationTestsResponse?.data || [], [evaluationTestsResponse]);
 
     const [rows, setRows] = useState({});
     // Last known-good saved values per department. Used (instead of the raw query
@@ -131,11 +133,11 @@ const DojoHiringConfig = () => {
         try {
             await saveDojoHiringConfig({
                 departmentId: deptId,
-                dojoMandatoryQuizId: row.dojoMandatoryQuizId === NONE_VALUE ? null : row.dojoMandatoryQuizId,
-                dojoHandoverQuizId: row.dojoHandoverQuizId === NONE_VALUE ? null : row.dojoHandoverQuizId,
-                dojoInterviewQuizId: row.dojoInterviewQuizId === NONE_VALUE ? null : row.dojoInterviewQuizId,
-                dojoEligibilityEvaluationId: row.dojoEligibilityEvaluationId === NONE_VALUE ? null : row.dojoEligibilityEvaluationId,
-                dojoInterviewEvaluationId: row.dojoInterviewEvaluationId === NONE_VALUE ? null : row.dojoInterviewEvaluationId,
+                dojoMandatoryQuizId: row.dojoMandatoryQuizId,
+                dojoHandoverQuizId: row.dojoHandoverQuizId,
+                dojoInterviewQuizId: row.dojoInterviewQuizId,
+                dojoEligibilityEvaluationId: row.dojoEligibilityEvaluationId,
+                dojoInterviewEvaluationId: row.dojoInterviewEvaluationId,
                 isDojoSpecificDept: row.isDojoSpecificDept,
             }).unwrap();
             toast.success("Dojo hiring config saved");
@@ -157,51 +159,6 @@ const DojoHiringConfig = () => {
     }, [departments, searchTerm]);
 
     const configuredCount = useMemo(() => departments.filter(isConfigured).length, [departments]);
-
-    const evaluationsFor = (deptId) =>
-        evaluationTests.filter((t) => !t.departmentId || String(t.departmentId) === String(deptId));
-
-    const QuizSelect = ({ deptId, field, options, placeholder = "Select test paper" }) => (
-        <Select
-            value={rows[deptId]?.[field] || NONE_VALUE}
-            onValueChange={(value) => updateRow(deptId, field, value)}
-            disabled={!canUpdate}
-        >
-            <SelectTrigger className="w-full min-w-[170px] h-9 bg-white cursor-pointer disabled:cursor-not-allowed">
-                <SelectValue placeholder={placeholder} />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value={NONE_VALUE} className="cursor-pointer">None</SelectItem>
-                {options.map((q) => (
-                    <SelectItem key={q.id} value={String(q.id)} className="cursor-pointer">{q.title}</SelectItem>
-                ))}
-                {options.length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-slate-400">No test papers available</div>
-                )}
-            </SelectContent>
-        </Select>
-    );
-
-    const EvaluationSelect = ({ deptId, field, options }) => (
-        <Select
-            value={rows[deptId]?.[field] || NONE_VALUE}
-            onValueChange={(value) => updateRow(deptId, field, value)}
-            disabled={!canUpdate}
-        >
-            <SelectTrigger className="w-full min-w-[170px] h-9 bg-white cursor-pointer disabled:cursor-not-allowed">
-                <SelectValue placeholder="Select evaluation" />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value={NONE_VALUE} className="cursor-pointer">None</SelectItem>
-                {options.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)} className="cursor-pointer">{t.title}</SelectItem>
-                ))}
-                {options.length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-slate-400">No evaluations available</div>
-                )}
-            </SelectContent>
-        </Select>
-    );
 
     const NotRequiredPill = () => (
         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
@@ -263,7 +220,7 @@ const DojoHiringConfig = () => {
                             Dojo Hiring Configuration
                         </CardTitle>
                         <p className="text-sm text-slate-500 font-medium mt-1.5 max-w-2xl">
-                            Map each department to the test papers and evaluation tests that govern mandatory training, handover marks and interviews.
+                            Map each department to the test papers and evaluation tests that govern mandatory training, handover marks and interviews. A candidate is eligible once they pass any one of the papers selected for a field.
                         </p>
                     </div>
                     <Badge
@@ -310,7 +267,6 @@ const DojoHiringConfig = () => {
                         const dirty = isRowDirty(dept);
                         const justSaved = justSavedId === dept.id;
                         const isSpecific = row.isDojoSpecificDept;
-                        const deptEvaluations = evaluationsFor(dept.id);
                         return (
                             <div
                                 key={dept.id}
@@ -345,16 +301,40 @@ const DojoHiringConfig = () => {
                                     <div className="space-y-2">
                                         <div>
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">Mandatory</label>
-                                            <QuizSelect deptId={dept.id} field="dojoMandatoryQuizId" options={dojoQuizzes} />
+                                            <ServerSearchMultiSelect
+                                                selectedIds={row.dojoMandatoryQuizId}
+                                                onChange={(ids) => updateRow(dept.id, "dojoMandatoryQuizId", ids)}
+                                                useSearchQuery={useLazyGetAllQuizzesQuery}
+                                                fixedParams={{ isDojo: true }}
+                                                disabled={!canUpdate}
+                                                placeholder="Select test papers"
+                                                unwrapResults={unwrapQuizzes}
+                                            />
                                         </div>
                                         <div>
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">Handover Marks</label>
-                                            <QuizSelect deptId={dept.id} field="dojoHandoverQuizId" options={handoverQuizzes} />
+                                            <ServerSearchMultiSelect
+                                                selectedIds={row.dojoHandoverQuizId}
+                                                onChange={(ids) => updateRow(dept.id, "dojoHandoverQuizId", ids)}
+                                                useSearchQuery={useLazyGetAllQuizzesQuery}
+                                                fixedParams={{ isDojo: true, isHandover: true }}
+                                                disabled={!canUpdate}
+                                                placeholder="Select test papers"
+                                                unwrapResults={unwrapQuizzes}
+                                            />
                                         </div>
                                         <div>
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">1st Interview</label>
                                             {isSpecific ? (
-                                                <QuizSelect deptId={dept.id} field="dojoInterviewQuizId" options={dojoQuizzes} />
+                                                <ServerSearchMultiSelect
+                                                    selectedIds={row.dojoInterviewQuizId}
+                                                    onChange={(ids) => updateRow(dept.id, "dojoInterviewQuizId", ids)}
+                                                    useSearchQuery={useLazyGetAllQuizzesQuery}
+                                                    fixedParams={{ isDojo: true }}
+                                                    disabled={!canUpdate}
+                                                    placeholder="Select test papers"
+                                                    unwrapResults={unwrapQuizzes}
+                                                />
                                             ) : <NotRequiredPill />}
                                         </div>
                                     </div>
@@ -367,12 +347,28 @@ const DojoHiringConfig = () => {
                                     <div className="space-y-2">
                                         <div>
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">Handover Eligibility</label>
-                                            <EvaluationSelect deptId={dept.id} field="dojoEligibilityEvaluationId" options={deptEvaluations} />
+                                            <ServerSearchMultiSelect
+                                                selectedIds={row.dojoEligibilityEvaluationId}
+                                                onChange={(ids) => updateRow(dept.id, "dojoEligibilityEvaluationId", ids)}
+                                                useSearchQuery={useLazyGetEvaluationTestsQuery}
+                                                fixedParams={{}}
+                                                disabled={!canUpdate}
+                                                placeholder="Select evaluations"
+                                                unwrapResults={unwrapEvaluations}
+                                            />
                                         </div>
                                         <div>
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">2nd Interview</label>
                                             {isSpecific ? (
-                                                <EvaluationSelect deptId={dept.id} field="dojoInterviewEvaluationId" options={deptEvaluations} />
+                                                <ServerSearchMultiSelect
+                                                    selectedIds={row.dojoInterviewEvaluationId}
+                                                    onChange={(ids) => updateRow(dept.id, "dojoInterviewEvaluationId", ids)}
+                                                    useSearchQuery={useLazyGetEvaluationTestsQuery}
+                                                    fixedParams={{}}
+                                                    disabled={!canUpdate}
+                                                    placeholder="Select evaluations"
+                                                    unwrapResults={unwrapEvaluations}
+                                                />
                                             ) : <NotRequiredPill />}
                                         </div>
                                     </div>
@@ -443,7 +439,6 @@ const DojoHiringConfig = () => {
                                 const dirty = isRowDirty(dept);
                                 const justSaved = justSavedId === dept.id;
                                 const isSpecific = row.isDojoSpecificDept;
-                                const deptEvaluations = evaluationsFor(dept.id);
                                 return (
                                     <TableRow
                                         key={dept.id}
@@ -464,22 +459,62 @@ const DojoHiringConfig = () => {
                                             </div>
                                         </TableCell>
                                         <TableCell className="border-l border-slate-50">
-                                            <QuizSelect deptId={dept.id} field="dojoMandatoryQuizId" options={dojoQuizzes} />
+                                            <ServerSearchMultiSelect
+                                                selectedIds={row.dojoMandatoryQuizId}
+                                                onChange={(ids) => updateRow(dept.id, "dojoMandatoryQuizId", ids)}
+                                                useSearchQuery={useLazyGetAllQuizzesQuery}
+                                                fixedParams={{ isDojo: true }}
+                                                disabled={!canUpdate}
+                                                placeholder="Select test papers"
+                                                unwrapResults={unwrapQuizzes}
+                                            />
                                         </TableCell>
                                         <TableCell>
-                                            <QuizSelect deptId={dept.id} field="dojoHandoverQuizId" options={handoverQuizzes} />
+                                            <ServerSearchMultiSelect
+                                                selectedIds={row.dojoHandoverQuizId}
+                                                onChange={(ids) => updateRow(dept.id, "dojoHandoverQuizId", ids)}
+                                                useSearchQuery={useLazyGetAllQuizzesQuery}
+                                                fixedParams={{ isDojo: true, isHandover: true }}
+                                                disabled={!canUpdate}
+                                                placeholder="Select test papers"
+                                                unwrapResults={unwrapQuizzes}
+                                            />
                                         </TableCell>
                                         <TableCell>
                                             {isSpecific ? (
-                                                <QuizSelect deptId={dept.id} field="dojoInterviewQuizId" options={dojoQuizzes} />
+                                                <ServerSearchMultiSelect
+                                                    selectedIds={row.dojoInterviewQuizId}
+                                                    onChange={(ids) => updateRow(dept.id, "dojoInterviewQuizId", ids)}
+                                                    useSearchQuery={useLazyGetAllQuizzesQuery}
+                                                    fixedParams={{ isDojo: true }}
+                                                    disabled={!canUpdate}
+                                                    placeholder="Select test papers"
+                                                    unwrapResults={unwrapQuizzes}
+                                                />
                                             ) : <NotRequiredPill />}
                                         </TableCell>
                                         <TableCell className="border-l border-slate-50">
-                                            <EvaluationSelect deptId={dept.id} field="dojoEligibilityEvaluationId" options={deptEvaluations} />
+                                            <ServerSearchMultiSelect
+                                                selectedIds={row.dojoEligibilityEvaluationId}
+                                                onChange={(ids) => updateRow(dept.id, "dojoEligibilityEvaluationId", ids)}
+                                                useSearchQuery={useLazyGetEvaluationTestsQuery}
+                                                fixedParams={{}}
+                                                disabled={!canUpdate}
+                                                placeholder="Select evaluations"
+                                                unwrapResults={unwrapEvaluations}
+                                            />
                                         </TableCell>
                                         <TableCell>
                                             {isSpecific ? (
-                                                <EvaluationSelect deptId={dept.id} field="dojoInterviewEvaluationId" options={deptEvaluations} />
+                                                <ServerSearchMultiSelect
+                                                    selectedIds={row.dojoInterviewEvaluationId}
+                                                    onChange={(ids) => updateRow(dept.id, "dojoInterviewEvaluationId", ids)}
+                                                    useSearchQuery={useLazyGetEvaluationTestsQuery}
+                                                    fixedParams={{}}
+                                                    disabled={!canUpdate}
+                                                    placeholder="Select evaluations"
+                                                    unwrapResults={unwrapEvaluations}
+                                                />
                                             ) : <NotRequiredPill />}
                                         </TableCell>
                                         <TableCell className="text-center">

@@ -46,11 +46,24 @@ class Department {
         this.daily5mApproverSectionId = data.daily5mApproverSectionId || null;
         this.daily5mApproverLineId = data.daily5mApproverLineId || null;
 
-        this.dojoMandatoryQuizId = data.dojoMandatoryQuizId || null;
-        this.dojoHandoverQuizId = data.dojoHandoverQuizId || null;
-        this.dojoInterviewQuizId = data.dojoInterviewQuizId || null;
-        this.dojoEligibilityEvaluationId = data.dojoEligibilityEvaluationId || null;
-        this.dojoInterviewEvaluationId = data.dojoInterviewEvaluationId || null;
+        const parseIdArray = (val) => {
+            if (Array.isArray(val)) return val;
+            if (typeof val === 'string' && val.trim() !== '') {
+                try {
+                    const parsed = JSON.parse(val);
+                    return Array.isArray(parsed) ? parsed : [parsed];
+                } catch (e) {
+                    return [];
+                }
+            }
+            if (val === null || val === undefined || val === '') return [];
+            return [val];
+        };
+        this.dojoMandatoryQuizId = parseIdArray(data.dojoMandatoryQuizId);
+        this.dojoHandoverQuizId = parseIdArray(data.dojoHandoverQuizId);
+        this.dojoInterviewQuizId = parseIdArray(data.dojoInterviewQuizId);
+        this.dojoEligibilityEvaluationId = parseIdArray(data.dojoEligibilityEvaluationId);
+        this.dojoInterviewEvaluationId = parseIdArray(data.dojoInterviewEvaluationId);
         this.isDojoSpecificDept = !!data.isDojoSpecificDept;
 
         this.createdAt = data.createdAt;
@@ -107,35 +120,27 @@ class Department {
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoMandatoryQuizId')
                 BEGIN
-                    ALTER TABLE departments ADD dojoMandatoryQuizId INT NULL;
+                    ALTER TABLE departments ADD dojoMandatoryQuizId NVARCHAR(MAX) NULL;
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoHandoverQuizId')
                 BEGIN
-                    ALTER TABLE departments ADD dojoHandoverQuizId INT NULL;
+                    ALTER TABLE departments ADD dojoHandoverQuizId NVARCHAR(MAX) NULL;
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoInterviewQuizId')
                 BEGIN
-                    ALTER TABLE departments ADD dojoInterviewQuizId INT NULL;
+                    ALTER TABLE departments ADD dojoInterviewQuizId NVARCHAR(MAX) NULL;
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoEligibilityEvaluationId')
                 BEGIN
-                    ALTER TABLE departments ADD dojoEligibilityEvaluationId INT NULL;
+                    ALTER TABLE departments ADD dojoEligibilityEvaluationId NVARCHAR(MAX) NULL;
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoInterviewEvaluationId')
                 BEGIN
-                    ALTER TABLE departments ADD dojoInterviewEvaluationId INT NULL;
+                    ALTER TABLE departments ADD dojoInterviewEvaluationId NVARCHAR(MAX) NULL;
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'isDojoSpecificDept')
                 BEGIN
                     ALTER TABLE departments ADD isDojoSpecificDept BIT DEFAULT 0;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_dojoHandoverQuizId' AND object_id = OBJECT_ID('departments'))
-                BEGIN
-                    CREATE INDEX idx_dojoHandoverQuizId ON departments(dojoHandoverQuizId);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_dojoEligibilityEvaluationId' AND object_id = OBJECT_ID('departments'))
-                BEGIN
-                    CREATE INDEX idx_dojoEligibilityEvaluationId ON departments(dojoEligibilityEvaluationId);
                 END
             END
         `;
@@ -152,6 +157,23 @@ class Department {
             `);
 
             await migrationHelper.ensureColumnType("departments", "instructor", "NVARCHAR(MAX)");
+
+            // Dojo hiring config fields moved from single INT to NVARCHAR(MAX) JSON arrays (multi-select
+            // support). Drop the indexes created for the old INT columns first — an index on the column
+            // blocks the ALTER, and NVARCHAR(MAX) can't carry a plain B-tree index anyway.
+            await executeQuery(`
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_dojoHandoverQuizId' AND object_id = OBJECT_ID('departments'))
+                    DROP INDEX idx_dojoHandoverQuizId ON departments
+            `);
+            await executeQuery(`
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_dojoEligibilityEvaluationId' AND object_id = OBJECT_ID('departments'))
+                    DROP INDEX idx_dojoEligibilityEvaluationId ON departments
+            `);
+            await migrationHelper.ensureColumnType("departments", "dojoMandatoryQuizId", "NVARCHAR(MAX)");
+            await migrationHelper.ensureColumnType("departments", "dojoHandoverQuizId", "NVARCHAR(MAX)");
+            await migrationHelper.ensureColumnType("departments", "dojoInterviewQuizId", "NVARCHAR(MAX)");
+            await migrationHelper.ensureColumnType("departments", "dojoEligibilityEvaluationId", "NVARCHAR(MAX)");
+            await migrationHelper.ensureColumnType("departments", "dojoInterviewEvaluationId", "NVARCHAR(MAX)");
         } catch (error) {
             logger.error("Failed to initialize Department table", error);
         }
@@ -231,7 +253,7 @@ class Department {
 
         const values = fields.map(field => {
             let val = data[field];
-            if (['courses', 'students', 'schedule'].includes(field)) {
+            if (['courses', 'students', 'schedule', 'dojoMandatoryQuizId', 'dojoHandoverQuizId', 'dojoInterviewQuizId', 'dojoEligibilityEvaluationId', 'dojoInterviewEvaluationId'].includes(field)) {
                 return JSON.stringify(val || []);
             }
             if (val === undefined) return null;
@@ -374,8 +396,8 @@ class Department {
         const setClause = fields.map(field => `${field} = ?`).join(", ");
         const values = fields.map(field => {
             let val = this[field];
-            if (['courses', 'students', 'schedule'].includes(field)) {
-                return JSON.stringify(val);
+            if (['courses', 'students', 'schedule', 'dojoMandatoryQuizId', 'dojoHandoverQuizId', 'dojoInterviewQuizId', 'dojoEligibilityEvaluationId', 'dojoInterviewEvaluationId'].includes(field)) {
+                return JSON.stringify(val || []);
             }
             return val;
         });

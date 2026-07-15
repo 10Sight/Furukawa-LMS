@@ -42,7 +42,7 @@ export const quizApi = createApi({
         }),
 
         getAllQuizzes: builder.query({
-            query: ({ page = 1, limit = 20, search = "", courseId, departmentId, sectionId, isDojo, isMultiSkilling, skillUpgradation } = {}) => ({
+            query: ({ page = 1, limit = 20, search = "", courseId, departmentId, includeUnscoped, sectionId, isDojo, isHandover, isMultiSkilling, skillUpgradation } = {}) => ({
                 url: "/api/quizzes",
                 method: "GET",
                 params: {
@@ -51,8 +51,10 @@ export const quizApi = createApi({
                     search,
                     ...(courseId && { courseId }),
                     ...(departmentId && { departmentId }),
+                    ...(includeUnscoped !== undefined && { includeUnscoped }),
                     ...(sectionId && { sectionId }),
                     ...(isDojo !== undefined && { isDojo }),
+                    ...(isHandover !== undefined && { isHandover }),
                     ...(isMultiSkilling !== undefined && { isMultiSkilling }),
                     ...(skillUpgradation !== undefined && { skillUpgradation })
                 }
@@ -170,6 +172,7 @@ export const quizApi = createApi({
 export const {
     useCreateQuizMutation,
     useGetAllQuizzesQuery,
+    useLazyGetAllQuizzesQuery,
     useGetQuizByIdQuery,
     useUpdateQuizMutation,
     useDeleteQuizMutation,

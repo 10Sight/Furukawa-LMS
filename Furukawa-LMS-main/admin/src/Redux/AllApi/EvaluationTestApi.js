@@ -103,6 +103,7 @@ export const EvaluationTestApi = createApi({
 
 export const {
     useGetEvaluationTestsQuery,
+    useLazyGetEvaluationTestsQuery,
     useGetEvaluationTestByIdQuery,
     useCreateEvaluationTestMutation,
     useUpdateEvaluationTestMutation,

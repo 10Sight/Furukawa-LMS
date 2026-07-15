@@ -196,6 +196,11 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         params.push(req.query.isDojo === 'true' || req.query.isDojo === '1' || req.query.isDojo === true ? 1 : 0);
     }
 
+    if (req.query.isHandover !== undefined) {
+        whereClauses.push("COALESCE(q.isHandover, 0) = ?");
+        params.push(req.query.isHandover === 'true' || req.query.isHandover === '1' || req.query.isHandover === true ? 1 : 0);
+    }
+
     // Restrict quiz visibility for custom role users (non-student, non-admin) without access_all
     if (req.user && req.user.role !== 'STUDENT' && !req.user.isTemporary) {
         const isSuperAdminOrAdmin = req.user.role === 'SUPERADMIN' || req.user.role === 'ADMIN';
@@ -266,7 +271,15 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
         params.push(req.query.courseId);
     }
     if (req.query.departmentId) {
-        whereClauses.push("EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)");
+        if (req.query.includeUnscoped === 'true') {
+            // Also include quizzes with no department set (available to any department)
+            whereClauses.push(`(
+                q.departmentId IS NULL OR q.departmentId = '[]' OR q.departmentId = ''
+                OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
+            )`);
+        } else {
+            whereClauses.push("EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)");
+        }
         params.push(req.query.departmentId);
     }
     if (req.query.sectionId) {

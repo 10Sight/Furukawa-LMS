@@ -40,11 +40,14 @@ export const createEvaluationTest = asyncHandler(async (req, res) => {
 });
 
 export const getAllEvaluationTests = asyncHandler(async (req, res) => {
-    const { departmentId } = req.query;
+    const { departmentId, search, limit, includeUnscoped } = req.query;
     const filters = {};
     if (departmentId !== undefined && departmentId !== null && departmentId !== '') {
         filters.departmentId = parseInt(departmentId, 10);
     }
+    if (includeUnscoped === 'true') filters.includeUnscoped = true;
+    if (search) filters.search = search;
+    if (limit) filters.limit = Math.min(parseInt(limit, 10) || 50, 100);
 
     const tests = await EvaluationTest.findAll(filters);
     res.json(

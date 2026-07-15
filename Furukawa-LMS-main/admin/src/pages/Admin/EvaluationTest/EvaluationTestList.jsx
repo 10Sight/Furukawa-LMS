@@ -99,7 +99,23 @@ const EvaluationTestList = () => {
     );
     const [deleteEvaluationTest, { isLoading: isDeleting }] = useDeleteEvaluationTestMutation();
     const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
-    const departments = departmentsData?.data?.departments || [];
+    const rawDepartments = departmentsData?.data?.departments || [];
+
+    // The API can return duplicate department rows (same id, or same name under a different id) —
+    // dedupe before it reaches the Select, otherwise a single department appears twice in the list.
+    const departments = useMemo(() => {
+        const seenIds = new Set();
+        const seenNames = new Set();
+        return rawDepartments.filter((d) => {
+            const idStr = String(d.id || d._id || '');
+            const nameStr = (d.name || '').trim().toLowerCase();
+            if (!idStr || seenIds.has(idStr) || seenNames.has(nameStr)) return false;
+            seenIds.add(idStr);
+            seenNames.add(nameStr);
+            return true;
+        });
+    }, [rawDepartments]);
+
     const assignableDepartments = useMemo(() => {
         if (!isUserRestricted) return departments;
         return departments.filter((d) => assignedDepartments.includes(String(d.id)));

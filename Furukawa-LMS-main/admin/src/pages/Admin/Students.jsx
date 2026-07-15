@@ -3346,7 +3346,16 @@ const Students = () => {
               <Label htmlFor="status">Status</Label>
               <Select
                 value={formData.status}
-                onValueChange={(value) => setFormData({ ...formData, status: value })}
+                onValueChange={(value) => {
+                  const updatedData = { ...formData, status: value };
+                  if (value !== "LEFT") {
+                    updatedData.leavingDate = "";
+                    updatedData.reasonOfLeaving = "";
+                    setLeavingReasonOption("");
+                    setCustomLeavingReason("");
+                  }
+                  setFormData(updatedData);
+                }}
                 disabled={!hasPermission("user:change_status")}
               >
                 <SelectTrigger>
@@ -3849,7 +3858,16 @@ const Students = () => {
               <Label htmlFor="edit-status">Status</Label>
               <Select
                 value={formData.status}
-                onValueChange={(value) => setFormData({ ...formData, status: value })}
+                onValueChange={(value) => {
+                  const updatedData = { ...formData, status: value };
+                  if (value !== "LEFT") {
+                    updatedData.leavingDate = "";
+                    updatedData.reasonOfLeaving = "";
+                    setLeavingReasonOption("");
+                    setCustomLeavingReason("");
+                  }
+                  setFormData(updatedData);
+                }}
                 disabled={!hasPermission("user:change_status")}
               >
                 <SelectTrigger>

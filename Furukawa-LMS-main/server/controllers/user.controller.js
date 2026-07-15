@@ -1025,6 +1025,12 @@ export const updateUser = asyncHandler(async (req, res) => {
     data.leavingDate = new Date().toISOString().split('T')[0];
   }
 
+  // Reset leaving details if status is changed from LEFT to an active status (like PRESENT or ON_LEAVE)
+  if (data.status !== undefined && data.status !== "LEFT" && oldUser.status === "LEFT") {
+    data.leavingDate = null;
+    data.reasonOfLeaving = null;
+  }
+
   const cleanId = (val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);
 
   // Clean IDs in request data

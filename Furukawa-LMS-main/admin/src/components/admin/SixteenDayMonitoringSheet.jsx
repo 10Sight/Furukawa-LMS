@@ -116,11 +116,13 @@ const SixteenDayMonitoringSheet = ({
     onAfterSave = null,
     feedbackRef = null,
 }) => {
+    const combinedDept = (name, section) => [name, section].filter(Boolean).join(" / ");
+
     const [headerInfo, setHeaderInfo] = useState({
         employeeName: studentName || "",
         employeeCode: employeeCode || "",
         processName: "",
-        dept: sectionName || departmentName || "",
+        dept: combinedDept(departmentName, sectionName),
         handoverDate: "",
         trgResult: "",
         workingWith: "",
@@ -258,7 +260,7 @@ const SixteenDayMonitoringSheet = ({
                     employeeName: "",
                     employeeCode: "",
                     processName: "",
-                    dept: sectionName || departmentName || "",
+                    dept: combinedDept(departmentName, sectionName),
                     handoverDate: "",
                     trgResult: "",
                     workingWith: "",
@@ -298,7 +300,7 @@ const SixteenDayMonitoringSheet = ({
                         employeeName: record.employeeName || studentName || "",
                         employeeCode: record.employeeCode || employeeCode || "",
                         processName: record.processName || progressData.processName || "",
-                        dept: record.dept || sectionName || departmentName || "",
+                        dept: record.dept || combinedDept(departmentName, sectionName),
                         handoverDate: record.handoverDate || "",
                         trgResult: record.trgResult || "",
                         workingWith: record.workingWith || "",
@@ -338,10 +340,10 @@ const SixteenDayMonitoringSheet = ({
                 } else {
                     const header = response.data.data?.headerInfo || {};
                     const newHeader = {
-                        employeeName: studentName || "",
-                        employeeCode: employeeCode || "",
+                        employeeName: header.employeeName || studentName || "",
+                        employeeCode: header.employeeCode || employeeCode || "",
                         processName: progressData.processName || "",
-                        dept: sectionName || departmentName || "",
+                        dept: header.dept || combinedDept(departmentName, sectionName),
                         handoverDate: header.handoverDate || "",
                         trgResult: header.trgResult || "",
                         workingWith: "",

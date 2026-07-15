@@ -470,8 +470,10 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                 studentId={studentId}
                                 studentName={selectedStudent?.fullName}
                                 employeeCode={selectedStudent?.empId}
+                                departmentName={selectedStudent?.departmentName || selectedStudent?.deptName || ""}
+                                sectionName={selectedStudent?.sectionName || ""}
                                 departmentId={activeDept || (dept !== "ALL" ? dept : "")}
-                                sectionId={section || 0}
+                                sectionId={Number(selectedStudent?.sectionId) || Number(section) || 0}
                                 readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
                                 initialForceNewAttempt={forceNewAttempt}
                                 onAfterSave={handleAfterMonitoringSave}

@@ -37,10 +37,13 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
 
     let query = `
         SELECT
-            u.id, u.fullName, u.empId, u.avatar,
+            u.id, u.fullName, u.empId, u.avatar, u.departmentId, u.sectionId,
+            d.name as departmentName, s.name as sectionName,
             m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.verifiedByEduCell, m.updatedAt, m.attemptNumber, m.startDate, m.gridData, m.adminRemarksHistory,
             stats.totalAttempts, stats.rejectedCount
         FROM users u
+        LEFT JOIN departments d ON u.departmentId = d.id
+        LEFT JOIN sections s ON u.sectionId = s.id
         LEFT JOIN (
             SELECT studentId, status, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, updatedAt, attemptNumber, startDate, gridData, adminRemarksHistory,
                    ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
@@ -147,11 +150,27 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
 
     const handoverInfo = handoverRows.length > 0 ? handoverRows[0] : null;
 
+    // Resolve the candidate's current name, code, and dept/section from the users table
+    const [userRows] = await executeQuery(`
+        SELECT u.fullName, u.empId, d.name as departmentName, s.name as sectionName
+        FROM users u
+        LEFT JOIN departments d ON u.departmentId = d.id
+        LEFT JOIN sections s ON u.sectionId = s.id
+        WHERE u.id = ?
+    `, [sid]);
+    const student = userRows.length > 0 ? userRows[0] : null;
+    const resolvedDept = student
+        ? [student.departmentName, student.sectionName].filter(Boolean).join(" / ")
+        : "";
+
     if (!data) {
         return res.status(200).json(
-            new ApiResponse(200, { 
+            new ApiResponse(200, {
                 isNew: true,
-                headerInfo: { 
+                headerInfo: {
+                    employeeName: student?.fullName || "",
+                    employeeCode: student?.empId || "",
+                    dept: resolvedDept,
                     trgResult: handoverInfo?.marks || "",
                     handoverDate: handoverInfo?.handoverDate ? handoverInfo.handoverDate.split('T')[0] : ""
                 }
@@ -159,12 +178,21 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
         );
     }
 
-    // If existing record has empty fields, auto-fill them from handover sheet
+    // If existing record has empty fields, auto-fill them from handover sheet / user record
     if (!data.trgResult && handoverInfo?.marks) {
         data.trgResult = handoverInfo.marks;
     }
     if (!data.handoverDate && handoverInfo?.handoverDate) {
         data.handoverDate = handoverInfo.handoverDate.split('T')[0];
+    }
+    if (!data.employeeName && student?.fullName) {
+        data.employeeName = student.fullName;
+    }
+    if (!data.employeeCode && student?.empId) {
+        data.employeeCode = student.empId;
+    }
+    if (!data.dept && resolvedDept) {
+        data.dept = resolvedDept;
     }
 
     return res.status(200).json(

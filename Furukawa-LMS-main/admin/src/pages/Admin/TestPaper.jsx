@@ -171,7 +171,22 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
 
   // Fetch Departments
   const { data: departmentsData, isLoading: departmentsLoading } = useGetAllDepartmentsQuery({ limit: 1000 });
-  const allDepartments = departmentsData?.data?.departments || [];
+  const rawAllDepartments = departmentsData?.data?.departments || [];
+
+  // The API can return duplicate department rows (same id, or same name under a different id) —
+  // dedupe before it reaches the Select, otherwise a single department appears twice in the list.
+  const allDepartments = useMemo(() => {
+    const seenIds = new Set();
+    const seenNames = new Set();
+    return rawAllDepartments.filter(dept => {
+      const idStr = String(dept._id || dept.id || '');
+      const nameStr = (dept.name || '').trim().toLowerCase();
+      if (!idStr || seenIds.has(idStr) || seenNames.has(nameStr)) return false;
+      seenIds.add(idStr);
+      seenNames.add(nameStr);
+      return true;
+    });
+  }, [rawAllDepartments]);
 
   // Filter departments to only those assigned to the current user (if restricted)
   const departments = useMemo(() => {

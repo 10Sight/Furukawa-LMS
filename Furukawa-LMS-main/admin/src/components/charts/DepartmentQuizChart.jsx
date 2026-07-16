@@ -54,6 +54,14 @@ const FilterSelect = ({ label, placeholder, value, onChange, items, disabled, al
 
 const formatDateLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+// Default under-the-hood date range (current month), used when both inputs are left blank.
+const getDefaultDateRange = () => {
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { startDate: formatDateLocal(firstOfMonth), endDate: formatDateLocal(lastOfMonth) };
+};
+
 const DepartmentQuizChart = ({ dateRange }) => {
     const { t } = useTranslate();
     const [filters, setFilters] = useState({ departmentId: '', sectionId: '' });
@@ -130,10 +138,16 @@ const DepartmentQuizChart = ({ dateRange }) => {
         setEndDate(dateRange?.endDate || '');
     };
 
+    /* ── Falls back to the current month when both visible inputs are left blank ── */
+    const { startDate: apiStartDate, endDate: apiEndDate } = useMemo(
+        () => (!startDate && !endDate) ? getDefaultDateRange() : { startDate, endDate },
+        [startDate, endDate]
+    );
+
     /* ── API: chart data ── */
     const { data: statsData, isLoading, error } = useGetDepartmentQuizStatsQuery({
-        startDate,
-        endDate,
+        startDate: apiStartDate,
+        endDate:   apiEndDate,
         departmentId: filters.departmentId,
         sectionId:    filters.sectionId,
     });
@@ -397,7 +411,7 @@ const DepartmentQuizChart = ({ dateRange }) => {
                 ) : (
                     <>
                         <HighchartsReact
-                            key={`${filters.departmentId}-${filters.sectionId}-${startDate}-${endDate}`}
+                            key={`${filters.departmentId}-${filters.sectionId}-${apiStartDate}-${apiEndDate}`}
                             highcharts={Highcharts}
                             options={chartOptions}
                         />

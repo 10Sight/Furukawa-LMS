@@ -12,7 +12,7 @@ import {
 import { format, subDays, startOfMonth, endOfMonth, startOfDay, endOfDay, subMonths } from 'date-fns';
 
 const DashboardDateFilter = ({ onFilterChange }) => {
-    const [selectedLabel, setSelectedLabel] = useState('This Month');
+    const [selectedLabel, setSelectedLabel] = useState('All Time');
     
     const applyFilter = (label, start, end) => {
         setSelectedLabel(label);
@@ -32,10 +32,10 @@ const DashboardDateFilter = ({ onFilterChange }) => {
         { label: 'All Time', getValue: () => ['', ''] }
     ];
 
-    // Initialize with This Month on mount
+    // Initialize with All Time on mount — no default date range shown or applied
     useEffect(() => {
-        const thisMonth = filters.find(f => f.label === 'This Month').getValue();
-        applyFilter('This Month', thisMonth[0], thisMonth[1]);
+        const allTime = filters.find(f => f.label === 'All Time').getValue();
+        applyFilter('All Time', allTime[0], allTime[1]);
     }, []);
 
     return (

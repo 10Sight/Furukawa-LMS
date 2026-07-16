@@ -26,25 +26,7 @@ const _now = new Date();
 const CURRENT_YEAR = _now.getFullYear();
 const MONTH_END = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-const toApiDates = (timeframe, rawStart, rawEnd) => {
-    if (!rawStart || !rawEnd) return { startDate: '', endDate: '' };
-    if (timeframe === 'monthly') {
-        const [ey, em] = rawEnd.split('-').map(Number);
-        const lastDay = new Date(ey, em, 0).getDate();
-        return { startDate: `${rawStart}-01`, endDate: `${rawEnd}-${String(lastDay).padStart(2, '0')}` };
-    }
-    if (timeframe === 'yearly') {
-        return { startDate: `${rawStart}-01-01`, endDate: `${rawEnd}-12-31` };
-    }
-    return { startDate: rawStart, endDate: rawEnd };
-};
-
-const INPUT_CONFIG = {
-    daily: { type: 'date', min: '2020-01-01', max: MONTH_END, placeholder: 'YYYY-MM-DD' },
-    monthly: { type: 'month', min: '2020-01', max: `${CURRENT_YEAR}-12`, placeholder: 'YYYY-MM' },
-    yearly: { type: 'number', min: 2020, max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
-};
-
+// Default under-the-hood date range per timeframe, used when the visible inputs are left blank.
 const getDefaultDates = (timeframe) => {
     const now = new Date();
     if (timeframe === 'daily') {
@@ -68,12 +50,36 @@ const getDefaultDates = (timeframe) => {
     };
 };
 
+// Falls back to the timeframe's default range when the visible inputs are left blank.
+const toApiDates = (timeframe, rawStart, rawEnd) => {
+    if (!rawStart || !rawEnd) {
+        const defaults = getDefaultDates(timeframe);
+        rawStart = rawStart || defaults.rawStart;
+        rawEnd = rawEnd || defaults.rawEnd;
+    }
+    if (timeframe === 'monthly') {
+        const [ey, em] = rawEnd.split('-').map(Number);
+        const lastDay = new Date(ey, em, 0).getDate();
+        return { startDate: `${rawStart}-01`, endDate: `${rawEnd}-${String(lastDay).padStart(2, '0')}` };
+    }
+    if (timeframe === 'yearly') {
+        return { startDate: `${rawStart}-01-01`, endDate: `${rawEnd}-12-31` };
+    }
+    return { startDate: rawStart, endDate: rawEnd };
+};
+
+const INPUT_CONFIG = {
+    daily: { type: 'date', min: '2020-01-01', max: MONTH_END, placeholder: 'YYYY-MM-DD' },
+    monthly: { type: 'month', min: '2020-01', max: `${CURRENT_YEAR}-12`, placeholder: 'YYYY-MM' },
+    yearly: { type: 'number', min: 2020, max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
+};
+
 const UserStatusDistributionChart = () => {
     const { t } = useTranslate();
     const [viewType, setViewType] = useState('bar'); // 'pie' or 'bar'
     const [timeframe, setTimeframe] = useState('daily');
-    const [rawStart, setRawStart] = useState(() => getDefaultDates('daily').rawStart);
-    const [rawEnd, setRawEnd] = useState(() => getDefaultDates('daily').rawEnd);
+    const [rawStart, setRawStart] = useState('');
+    const [rawEnd, setRawEnd] = useState('');
     const [selectedDepts, setSelectedDepts] = useState([]);
 
     const { data: deptsData } = useGetAllDepartmentsQuery();
@@ -109,17 +115,15 @@ const UserStatusDistributionChart = () => {
             : `${selectedDepts.length} ${t('nav.departments')}`;
 
     const handleTimeframeChange = (tf) => {
-        const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
         setTimeframe(tf);
-        setRawStart(s);
-        setRawEnd(e);
+        setRawStart('');
+        setRawEnd('');
     };
 
     const handleReset = () => {
-        const { rawStart: s, rawEnd: e } = getDefaultDates('daily');
         setTimeframe('daily');
-        setRawStart(s);
-        setRawEnd(e);
+        setRawStart('');
+        setRawEnd('');
         setSelectedDepts([]);
     };
 

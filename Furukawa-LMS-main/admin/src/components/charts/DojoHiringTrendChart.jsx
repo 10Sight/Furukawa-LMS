@@ -17,10 +17,38 @@ const CURRENT_YEAR = _now.getFullYear();
 const TODAY        = _now.toISOString().split('T')[0];
 const MONTH_END    = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
 
+// Default under-the-hood date range per timeframe, used when the visible inputs are left blank.
+const getDefaultDates = (timeframe) => {
+    const now = new Date();
+    if (timeframe === 'daily') {
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        return {
+            rawStart: firstOfMonth.toISOString().split('T')[0],
+            rawEnd:   lastOfMonth.toISOString().split('T')[0],
+        };
+    }
+    if (timeframe === 'monthly') {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        return {
+            rawStart: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}`,
+            rawEnd:   `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+        };
+    }
+    return {
+        rawStart: String(now.getFullYear() - 4),
+        rawEnd:   String(now.getFullYear()),
+    };
+};
+
 // Convert raw filter inputs to ISO date strings for the API.
-// Returns empty strings when either end is missing — backend falls back to its default window.
+// Falls back to the timeframe's default range when the visible inputs are left blank.
 const toApiDates = (timeframe, rawStart, rawEnd) => {
-    if (!rawStart || !rawEnd) return { startDate: '', endDate: '' };
+    if (!rawStart || !rawEnd) {
+        const defaults = getDefaultDates(timeframe);
+        rawStart = rawStart || defaults.rawStart;
+        rawEnd   = rawEnd   || defaults.rawEnd;
+    }
 
     if (timeframe === 'monthly') {
         // rawStart/rawEnd are "YYYY-MM" from <input type="month">
@@ -105,35 +133,12 @@ const INPUT_CONFIG = {
     yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1,        placeholder: 'YYYY' },
 };
 
-const getDefaultDates = (timeframe) => {
-    const now = new Date();
-    if (timeframe === 'daily') {
-        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        return {
-            rawStart: firstOfMonth.toISOString().split('T')[0],
-            rawEnd:   lastOfMonth.toISOString().split('T')[0],
-        };
-    }
-    if (timeframe === 'monthly') {
-        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-        return {
-            rawStart: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}`,
-            rawEnd:   `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
-        };
-    }
-    return {
-        rawStart: String(now.getFullYear() - 4),
-        rawEnd:   String(now.getFullYear()),
-    };
-};
-
 const DojoHiringTrendChart = () => {
     const { t, language } = useTranslate();
     const [viewMode,     setViewMode]     = useState('total');
     const [timeframe,    setTimeframe]    = useState('daily');
-    const [rawStart,     setRawStart]     = useState(() => getDefaultDates('daily').rawStart);
-    const [rawEnd,       setRawEnd]       = useState(() => getDefaultDates('daily').rawEnd);
+    const [rawStart,     setRawStart]     = useState('');
+    const [rawEnd,       setRawEnd]       = useState('');
     const [selectedDepts, setSelectedDepts] = useState([]);
 
     const { data: deptsData } = useGetAllDepartmentsQuery();
@@ -172,17 +177,15 @@ const DojoHiringTrendChart = () => {
     const totalFemale  = femaleSeries.reduce((a, b) => a + b, 0);
 
     const handleTimeframeChange = (tf) => {
-        const { rawStart: s, rawEnd: e } = getDefaultDates(tf);
         setTimeframe(tf);
-        setRawStart(s);
-        setRawEnd(e);
+        setRawStart('');
+        setRawEnd('');
     };
 
     const handleReset = () => {
-        const { rawStart: s, rawEnd: e } = getDefaultDates('daily');
         setTimeframe('daily');
-        setRawStart(s);
-        setRawEnd(e);
+        setRawStart('');
+        setRawEnd('');
         setSelectedDepts([]);
         setViewMode('total');
     };

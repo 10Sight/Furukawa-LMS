@@ -1033,10 +1033,25 @@ export const updateUser = asyncHandler(async (req, res) => {
     "contractor", "contractorId", "expectedHandover",
     "customRoleId", "currentLevel", "currentSkill", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
-    "departments", "stations", "sections", "lines", "subSections", "shiftSchedule"
+    "departments", "stations", "sections", "lines", "subSections", "shiftSchedule", "dojoShift"
   ];
 
   const oldUser = rows[0];
+
+  // Shift scheduling is not allowed for temporary users. Only block when the
+  // schedule is actually being changed -- every save from the edit form carries
+  // the user's current (possibly unchanged) shiftSchedule along with it, so a
+  // presence check alone would block every unrelated edit to a temp user.
+  if (data.shiftSchedule !== undefined) {
+    const willBeTemporary = data.isTemporary !== undefined ? !!data.isTemporary : !!oldUser.isTemporary;
+    if (willBeTemporary) {
+      const newScheduleStr = JSON.stringify(data.shiftSchedule || {});
+      const oldScheduleStr = JSON.stringify(parseJSON(oldUser.shiftSchedule, {}));
+      if (newScheduleStr !== oldScheduleStr) {
+        throw new ApiError("Shift scheduling is not allowed for temporary users", 400);
+      }
+    }
+  }
 
   // Enforce permission to change status
   if (data.status !== undefined && data.status !== oldUser.status) {

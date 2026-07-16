@@ -415,7 +415,7 @@ export const dojoRegister = asyncHandler(async (req, res) => {
     fullName, userName, password, email, phoneNumber, unit,
     gender, dob, education, district, state, pin, busRoute, contractor, designation,
     departmentId, sectionId, expectedHandover, fatherHusbandName, empId, idCard, joiningDate,
-    shiftSchedule
+    shiftSchedule, dojoShift
   } = req.body;
 
   if (!fullName || !empId || !unit) {
@@ -457,6 +457,7 @@ export const dojoRegister = asyncHandler(async (req, res) => {
     fatherHusbandName: fatherHusbandName || null,
     joiningDate: joiningDate || null,
     shiftSchedule: shiftSchedule || null,
+    dojoShift: dojoShift || null,
     isEmployee: true,
     isTemporary: true,
     status: "PRESENT",

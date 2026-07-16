@@ -1499,6 +1499,7 @@ export const importDojoUsers = async (req, res) => {
                     state: getRowVal(row, ["State"]),
                     pin: getRowVal(row, ["PIN", "Pincode", "Pin Code"]),
                     busRoute: getRowVal(row, ["Bus Route"]),
+                    dojoShift: getRowVal(row, ["Dojo Shift", "Shift"])?.toString().trim().toUpperCase(),
                 };
 
 
@@ -1563,6 +1564,7 @@ export const importDojoUsers = async (req, res) => {
                     unit: "UNIT_1",
                     expectedHandover: normalizedRow.expectedHandover || null,
                     contractor: normalizedRow.contractor || null,
+                    dojoShift: ["A", "B", "C", "G"].includes(normalizedRow.dojoShift) ? normalizedRow.dojoShift : null,
                 };
 
                 const newUser = await User.create(userData);
@@ -1630,6 +1632,7 @@ export const downloadDojoImportTemplate = async (req, res) => {
                 "E-Mail ID": "subhash@example.com",
                 "Mobile No": "9876543210",
                 "Status": "PRESENT",
+                "Shift": "A",
             },
         ];
 

@@ -205,7 +205,7 @@ const DojoHiring = () => {
         education: "", email: "", phoneNumber: "", district: "", state: "",
         pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
         leavingDate: "", reasonOfLeaving: "", contractor: "", expectedHandover: "",
-        shiftSchedule: {}
+        shiftSchedule: {}, dojoShift: ""
     });
 
     const [isShiftDialogOpen, setIsShiftDialogOpen] = useState(false);
@@ -318,6 +318,10 @@ const DojoHiring = () => {
 
     const handleSaveStudentShift = async () => {
         if (!shiftStudent) return;
+        if (shiftStudent.isTemporary === 1 || shiftStudent.isTemporary === true || String(shiftStudent.isTemporary) === '1') {
+            toast.error("Shift scheduling is not allowed for temporary users");
+            return;
+        }
         try {
             const cleanedSchedule = Object.fromEntries(
                 Object.entries(shiftScheduleDraft).filter(([, v]) => v !== "REMOVE")
@@ -361,6 +365,12 @@ const DojoHiring = () => {
                     empId: formData.empId,
                     contractorId: formData.contractorId ? Number(formData.contractorId) : null,
                 };
+                const isTemp = selectedUser.isTemporary === 1 || selectedUser.isTemporary === true || String(selectedUser.isTemporary) === '1';
+                if (isTemp) {
+                    // Temp users don't use shiftSchedule (they use dojoShift instead), and
+                    // the backend rejects shiftSchedule updates for temp users outright.
+                    delete payload.shiftSchedule;
+                }
                 await updateUser(payload).unwrap();
                 toast.success("Employee details updated successfully");
                 logAction({
@@ -380,6 +390,8 @@ const DojoHiring = () => {
                     userName: formData.empId,
                     contractorId: formData.contractorId ? Number(formData.contractorId) : null,
                 };
+                // New candidates are always temporary and use dojoShift instead of shiftSchedule.
+                delete payload.shiftSchedule;
                 await dojoRegister(payload).unwrap();
                 toast.success("Temporary employee registered successfully");
                 logAction({
@@ -722,6 +734,7 @@ const DojoHiring = () => {
                 { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
                 { header: "Contractor", key: "contractor", width: 20 },
                 { header: "Expected Handover Date", key: "expectedHandover", width: 20 },
+                { header: "Dojo Shift", key: "dojoShift", width: 15 },
             ];
 
             allCandidates.forEach((candidate) => {
@@ -751,6 +764,7 @@ const DojoHiring = () => {
                     reasonOfLeaving: candidate.reasonOfLeaving || "",
                     contractor: candidate.contractor || "",
                     expectedHandover: safeDateFormat(candidate.expectedHandover, "yyyy-MM-dd"),
+                    dojoShift: candidate.dojoShift || "",
                 });
             });
 
@@ -813,7 +827,8 @@ const DojoHiring = () => {
             expectedHandover: user.expectedHandover ? String(user.expectedHandover).substring(0, 10) : "",
             shiftSchedule: typeof user.shiftSchedule === 'string'
                 ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
-                : (user.shiftSchedule || {})
+                : (user.shiftSchedule || {}),
+            dojoShift: user.dojoShift || ""
         });
 
         const existingReason = user.reasonOfLeaving || "";
@@ -838,7 +853,7 @@ const DojoHiring = () => {
             education: "", email: "", phoneNumber: "", district: "", state: "",
             pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
             leavingDate: "", reasonOfLeaving: "", contractor: "", contractorId: "", expectedHandover: "",
-            shiftSchedule: {}
+            shiftSchedule: {}, dojoShift: ""
         });
         setLeavingReasonOption("");
         setCustomLeavingReason("");
@@ -1422,12 +1437,16 @@ const DojoHiring = () => {
                                                             </TableCell>
                                                             <TableCell className="text-center">
                                                                 {(() => {
+                                                                    const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                                                                    if (user.isTemporary === 1 || user.isTemporary === true || String(user.isTemporary) === '1') {
+                                                                        if (!user.dojoShift) return <span className="text-slate-400 text-xs">—</span>;
+                                                                        return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[user.dojoShift] || "bg-slate-50 text-slate-600 border-slate-200"}`}>{user.dojoShift}</span>;
+                                                                    }
                                                                     const schedule = typeof user.shiftSchedule === 'string'
                                                                         ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
                                                                         : (user.shiftSchedule || {});
                                                                     const scheduledShift = schedule[todayKey];
                                                                     if (!scheduledShift) return <span className="text-slate-400 text-xs">—</span>;
-                                                                    const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
                                                                     return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[scheduledShift] || "bg-slate-50 text-slate-600 border-slate-200"}`}>{scheduledShift}</span>;
                                                                 })()}
                                                             </TableCell>
@@ -1474,7 +1493,7 @@ const DojoHiring = () => {
                                                                             <IconPencil className="w-4 h-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canUpdate && (
+                                                                    {canUpdate && (user.isTemporary !== 1 && user.isTemporary !== true && String(user.isTemporary) !== '1') && (
                                                                         <Button
                                                                             variant="ghost"
                                                                             size="sm"
@@ -1858,6 +1877,24 @@ const DojoHiring = () => {
                                         <SelectItem value="PRESENT">{t("dojoHiring.status.present")}</SelectItem>
                                         <SelectItem value="ON_LEAVE">{t("dojoHiring.status.onLeave")}</SelectItem>
                                         <SelectItem value="LEFT">{t("dojoHiring.status.left")}</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>{t("dojoHiring.modal.lblShift")}</Label>
+                                <Select
+                                    value={formData.dojoShift || "none"}
+                                    onValueChange={(val) => setFormData(prev => ({ ...prev, dojoShift: val === "none" ? "" : val }))}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder={t("dojoHiring.modal.lblShift")} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">{t("dojoHiring.modal.optNone")}</SelectItem>
+                                        <SelectItem value="A">A</SelectItem>
+                                        <SelectItem value="B">B</SelectItem>
+                                        <SelectItem value="C">C</SelectItem>
+                                        <SelectItem value="G">G</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

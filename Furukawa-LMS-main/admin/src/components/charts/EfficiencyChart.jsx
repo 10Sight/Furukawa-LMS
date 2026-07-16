@@ -13,6 +13,7 @@ const PRESENT_STATUSES = new Set(['Present', 'Late', 'Half Day']);
 const ATTENDANCE_COLORS = { 'Present': 'blue', 'Absent': 'red', 'Late': '#f59e0b', 'Half Day': '#8b5cf6' };
 const getAttendanceColor = (status, idx) => ATTENDANCE_COLORS[status] || SHIFT_COLORS[idx % SHIFT_COLORS.length];
 const ATT_BAR_COLORS = { 'Total Efficiency': '#f59e0b', 'Present Efficiency': 'blue', 'Absent Efficiency': 'red', 'Min Efficiency': '#386641', 'Max Efficiency': '#a855f7' };
+// Colors for bars
 const getAttBarColor = (name) => {
     if (!name) return '#8b5cf6';
     if (name.includes('Min')) return '#386641';
@@ -21,6 +22,7 @@ const getAttBarColor = (name) => {
     if (name.includes('Absent')) return 'red';
     return '#8b5cf6';
 };
+// Frozen Legend
 const FrozenLegend = ({ minEffVisible, allUsersColor = "#f59e0b", allUsersLabel, presentLabel, absentLabel }) => {
     const { t } = useTranslate();
     return (
@@ -176,21 +178,21 @@ const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, all
         const allAvg = getAvg(g.allArr);
         const total = g.allArr.length;
         let presAvg = total ? Math.round((getSum(g.presArr) / total) * 100) / 100 : 0;
-        let absAvg  = total ? Math.round((getSum(g.absArr)  / total) * 100) / 100 : 0;
+        let absAvg = total ? Math.round((getSum(g.absArr) / total) * 100) / 100 : 0;
         const tAll = total;
         const item = { id: g.id, name: g.name, displayName: g.name, allEfficiency: allAvg, presEfficiency: presAvg, absEfficiency: absAvg, allTotal: allAvg, presTotal: presAvg, absTotal: absAvg };
         if (isMulti) {
             effectiveShifts.forEach(s => {
                 const sd = g.shiftData[s] || { allArr: [], presArr: [], absArr: [] };
                 const sA = getAvg(sd.allArr);
-                const sP  = total > 0 ? Math.round((getSum(sd.presArr) / total) * 100) / 100 : 0;
-                const sAb = total > 0 ? Math.round((getSum(sd.absArr)  / total) * 100) / 100 : 0;
-                item[`all_${s}`]      = tAll > 0 ? (sd.allArr.length / tAll) * sA : 0;
-                item[`pres_${s}`]     = sP;
-                item[`abs_${s}`]      = sAb;
+                const sP = total > 0 ? Math.round((getSum(sd.presArr) / total) * 100) / 100 : 0;
+                const sAb = total > 0 ? Math.round((getSum(sd.absArr) / total) * 100) / 100 : 0;
+                item[`all_${s}`] = tAll > 0 ? (sd.allArr.length / tAll) * sA : 0;
+                item[`pres_${s}`] = sP;
+                item[`abs_${s}`] = sAb;
                 item[`allLabel_${s}`] = sA;
                 item[`presLabel_${s}`] = sP;
-                item[`absLabel_${s}`]  = sAb;
+                item[`absLabel_${s}`] = sAb;
             });
         }
         return item;
@@ -823,7 +825,7 @@ const EfficiencyChart = () => {
         const totalCount = opsAll5.length;
         const tAll = totalCount ? getAvg(allEffs) : 0;
         const tPres = totalCount ? Math.round((getSum(presEffs) / totalCount) * 100) / 100 : 0;
-        const tAbs  = totalCount ? Math.round((getSum(absEffs)  / totalCount) * 100) / 100 : 0;
+        const tAbs = totalCount ? Math.round((getSum(absEffs) / totalCount) * 100) / 100 : 0;
 
         if (tMin != null) {
             items.push({

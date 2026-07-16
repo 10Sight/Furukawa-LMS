@@ -96,6 +96,7 @@ import HandoverSheetPage from "./HandoverSheetPage";
 import SixteenDayMonitoring from "./SixteenDayMonitoring";
 import Course from "./Course";
 import DojoHiringConfig from "./DojoHiringConfig";
+import ShiftScheduler from "@/components/admin/ShiftScheduler";
 
 const LEAVING_REASONS = [
     "Employee not response",
@@ -203,8 +204,14 @@ const DojoHiring = () => {
         departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
         education: "", email: "", phoneNumber: "", district: "", state: "",
         pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
-        leavingDate: "", reasonOfLeaving: "", contractor: "", expectedHandover: ""
+        leavingDate: "", reasonOfLeaving: "", contractor: "", expectedHandover: "",
+        shiftSchedule: {}
     });
+
+    const [isShiftDialogOpen, setIsShiftDialogOpen] = useState(false);
+    const [shiftStudent, setShiftStudent] = useState(null);
+    const [shiftScheduleDraft, setShiftScheduleDraft] = useState({});
+    const todayKey = format(new Date(), "yyyy-MM-dd");
 
     const location = useLocation();
     useEffect(() => {
@@ -272,11 +279,56 @@ const DojoHiring = () => {
     };
 
     const handleSelectChange = (name, value) => {
-        setFormData(prev => ({ ...prev, [name]: value }));
-        if (name === 'departmentId') setFormData(prev => ({ ...prev, sectionId: "", lineId: "", subSectionId: "", stationId: "" }));
-        if (name === 'sectionId') setFormData(prev => ({ ...prev, lineId: "", subSectionId: "", stationId: "" }));
-        if (name === 'lineId') setFormData(prev => ({ ...prev, subSectionId: "", stationId: "" }));
-        if (name === 'subSectionId') setFormData(prev => ({ ...prev, stationId: "" }));
+        setFormData(prev => {
+            const updated = { ...prev, [name]: value };
+            if (name === 'status' && value !== 'LEFT') {
+                updated.leavingDate = "";
+                updated.reasonOfLeaving = "";
+            }
+            if (name === 'departmentId') {
+                updated.sectionId = "";
+                updated.lineId = "";
+                updated.subSectionId = "";
+                updated.stationId = "";
+            }
+            if (name === 'sectionId') {
+                updated.lineId = "";
+                updated.subSectionId = "";
+                updated.stationId = "";
+            }
+            if (name === 'lineId') {
+                updated.subSectionId = "";
+                updated.stationId = "";
+            }
+            if (name === 'subSectionId') {
+                updated.stationId = "";
+            }
+            return updated;
+        });
+    };
+
+    const handleOpenShiftDialog = (student) => {
+        const resolved = typeof student.shiftSchedule === 'string'
+            ? (() => { try { return JSON.parse(student.shiftSchedule); } catch (e) { return {}; } })()
+            : (student.shiftSchedule || {});
+        setShiftStudent(student);
+        setShiftScheduleDraft(resolved);
+        setIsShiftDialogOpen(true);
+    };
+
+    const handleSaveStudentShift = async () => {
+        if (!shiftStudent) return;
+        try {
+            const cleanedSchedule = Object.fromEntries(
+                Object.entries(shiftScheduleDraft).filter(([, v]) => v !== "REMOVE")
+            );
+            await updateUser({ id: shiftStudent.id, shiftSchedule: cleanedSchedule }).unwrap();
+            toast.success("Shift schedule saved!");
+            setIsShiftDialogOpen(false);
+            refetch();
+        } catch (error) {
+            toast.error(error?.data?.message || "Failed to save shift schedule");
+        }
     };
 
     const handleLeavingReasonSelect = (value) => {
@@ -758,7 +810,10 @@ const DojoHiring = () => {
             reasonOfLeaving: user.reasonOfLeaving || "",
             contractor: user.contractor || "",
             contractorId: user.contractorId ? String(user.contractorId) : "",
-            expectedHandover: user.expectedHandover ? String(user.expectedHandover).substring(0, 10) : ""
+            expectedHandover: user.expectedHandover ? String(user.expectedHandover).substring(0, 10) : "",
+            shiftSchedule: typeof user.shiftSchedule === 'string'
+                ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+                : (user.shiftSchedule || {})
         });
 
         const existingReason = user.reasonOfLeaving || "";
@@ -782,7 +837,8 @@ const DojoHiring = () => {
             departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
             education: "", email: "", phoneNumber: "", district: "", state: "",
             pin: "", busRoute: "", unit: "UNIT_1", status: "PRESENT",
-            leavingDate: "", reasonOfLeaving: "", contractor: "", contractorId: "", expectedHandover: ""
+            leavingDate: "", reasonOfLeaving: "", contractor: "", contractorId: "", expectedHandover: "",
+            shiftSchedule: {}
         });
         setLeavingReasonOption("");
         setCustomLeavingReason("");
@@ -1287,6 +1343,7 @@ const DojoHiring = () => {
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.department")}</TableHead>
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.section")}</TableHead>
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">{t("dojoHiring.table.status")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">{t("dojoHiring.table.scheduledShift")}</TableHead>
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.contactDetail")}</TableHead>
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.joiningDate")}</TableHead>
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.leavingDate")}</TableHead>
@@ -1363,6 +1420,17 @@ const DojoHiring = () => {
                                                                     </SelectContent>
                                                                 </Select>
                                                             </TableCell>
+                                                            <TableCell className="text-center">
+                                                                {(() => {
+                                                                    const schedule = typeof user.shiftSchedule === 'string'
+                                                                        ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+                                                                        : (user.shiftSchedule || {});
+                                                                    const scheduledShift = schedule[todayKey];
+                                                                    if (!scheduledShift) return <span className="text-slate-400 text-xs">—</span>;
+                                                                    const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
+                                                                    return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[scheduledShift] || "bg-slate-50 text-slate-600 border-slate-200"}`}>{scheduledShift}</span>;
+                                                                })()}
+                                                            </TableCell>
                                                             <TableCell>
                                                                 <div className="space-y-1 text-xs">
                                                                     <div className="flex items-center gap-2 text-slate-600 font-bold">
@@ -1406,6 +1474,17 @@ const DojoHiring = () => {
                                                                             <IconPencil className="w-4 h-4" />
                                                                         </Button>
                                                                     )}
+                                                                    {canUpdate && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-8 w-8 p-0 rounded-lg text-indigo-600 hover:bg-indigo-50"
+                                                                            onClick={() => handleOpenShiftDialog(user)}
+                                                                            title="Shift Schedule"
+                                                                        >
+                                                                            <IconCalendar className="w-4 h-4" />
+                                                                        </Button>
+                                                                    )}
                                                                     {canDelete && (
                                                                         <Button
                                                                             variant="ghost"
@@ -1426,7 +1505,7 @@ const DojoHiring = () => {
                                                     ))
                                                 ) : (
                                                     <TableRow>
-                                                        <TableCell colSpan={11} className="text-center py-32">
+                                                        <TableCell colSpan={12} className="text-center py-32">
                                                             <div className="flex flex-col items-center gap-3 opacity-30">
                                                                 <IconUsers className="w-16 h-16" />
                                                                 <div className="space-y-1">
@@ -1609,7 +1688,12 @@ const DojoHiring = () => {
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="status">{t("dojoHiring.modal.lblOnboardingStatus")}</Label>
-                                <Select value={formData.status} onValueChange={(val) => handleSelectChange('status', val)}>
+                                <Select value={formData.status} onValueChange={(val) => {
+                                    handleSelectChange('status', val);
+                                    if(val !== 'LEFT') {
+                                        setFormData(prev => ({...prev, leavingDate: '', reasonOfLeaving: ''}));
+                                    }
+                                }}>
                                     <SelectTrigger className="font-bold text-slate-700">
                                         <SelectValue placeholder={t("dojoHiring.modal.lblOnboardingStatus")} />
                                     </SelectTrigger>
@@ -1721,6 +1805,10 @@ const DojoHiring = () => {
                             <div className="grid gap-2">
                                 <Label htmlFor="busRoute">{t("dojoHiring.modal.lblBusRoute")}</Label>
                                 <Input id="busRoute" name="busRoute" value={formData.busRoute} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblBusRoute")} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="pin">{t("dojoHiring.modal.lblPin")}</Label>
+                                <Input id="pin" name="pin" value={formData.pin} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblPin")} />
                             </div>
 
                             {/* Deployment Section */}
@@ -2011,6 +2099,41 @@ const DojoHiring = () => {
                                 </div>
                             </div>
                         </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Shift Schedule Dialog */}
+                <Dialog open={isShiftDialogOpen} onOpenChange={setIsShiftDialogOpen}>
+                    <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <IconCalendar className="h-5 w-5 text-indigo-600" />
+                                {t("dojoHiring.shiftDialog.title")}
+                                {shiftStudent && (
+                                    <span className="text-sm font-normal text-slate-500 ml-1">— {shiftStudent.fullName}</span>
+                                )}
+                            </DialogTitle>
+                            <DialogDescription>
+                                {t("dojoHiring.shiftDialog.description")}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-2">
+                            <ShiftScheduler
+                                schedule={shiftScheduleDraft}
+                                onChange={setShiftScheduleDraft}
+                            />
+                        </div>
+                        <DialogFooter className="gap-2">
+                            <Button variant="outline" onClick={() => setIsShiftDialogOpen(false)}>
+                                {t("dojoHiring.modal.btnCancel")}
+                            </Button>
+                            <Button
+                                onClick={handleSaveStudentShift}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                            >
+                                {t("dojoHiring.shiftDialog.btnSave")}
+                            </Button>
+                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
 

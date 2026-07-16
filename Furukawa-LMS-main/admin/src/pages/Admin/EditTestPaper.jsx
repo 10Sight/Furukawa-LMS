@@ -44,7 +44,7 @@ const EditTestPaper = () => {
   const { quizId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const { data: quizResponse, isFetching: quizFetching } = useGetQuizByIdQuery(quizId);
   const [updateQuiz, { isLoading: isSaving }] = useUpdateQuizMutation();
   const [logAction] = useLogActionMutation();
@@ -60,7 +60,7 @@ const EditTestPaper = () => {
     if (!currentUser) return false;
     if (currentUser.role === "SUPERADMIN" || currentUser.isAdmin) return true;
     if (currentUser.role === "INSTRUCTOR" || currentUser.isTrainer) return true;
-    
+
     const userPermissions = currentUser.customRole?.permissions || [];
     return userPermissions.includes(permissionKey);
   }, [currentUser]);
@@ -104,7 +104,7 @@ const EditTestPaper = () => {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    scope: "standalone", 
+    scope: "standalone",
     passingScore: 70,
     timeLimit: 30,
     attemptsAllowed: 0,
@@ -116,6 +116,7 @@ const EditTestPaper = () => {
     subSectionId: [],
     level: "",
     isDojo: false,
+    isHandover: false,
     targetDeptId: [],
     targetSectionId: [],
 
@@ -162,6 +163,7 @@ const EditTestPaper = () => {
         subSectionId: Array.isArray(q.subSectionId) ? q.subSectionId.map(String) : [],
         level: q.level || "",
         isDojo: !!q.isDojo,
+        isHandover: !!q.isHandover,
         targetDeptId: Array.isArray(q.targetDeptId) ? q.targetDeptId.map(String) : (q.targetDeptId ? [String(q.targetDeptId)] : []),
         targetSectionId: Array.isArray(q.targetSectionId) ? q.targetSectionId.map(String) : (q.targetSectionId ? [String(q.targetSectionId)] : []),
 
@@ -202,7 +204,7 @@ const EditTestPaper = () => {
 
   // Fetch all departments and sections to show options
   const { data: allDepartmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
-  
+
   // Create comma separated string for section query
   const selectedDeptIds = formData.departmentId.join(',');
   const { data: allSectionsData } = useGetSectionsByDepartmentQuery(selectedDeptIds, {
@@ -263,10 +265,10 @@ const EditTestPaper = () => {
   }, [allLinesData, formData.sectionId]);
 
   const subSectionOptions = React.useMemo(() => {
-    const allSubSections = Array.isArray(allSubSectionsData?.data) 
-      ? allSubSectionsData.data 
+    const allSubSections = Array.isArray(allSubSectionsData?.data)
+      ? allSubSectionsData.data
       : (allSubSectionsData?.data?.subSections || []);
-      
+
     if (formData.lineId.length > 0) {
       return allSubSections.filter(s => formData.lineId.includes(String(s.lineId))).map(s => ({ value: String(s.id), label: s.name, level: s.minimumRequiredLevel }));
     }
@@ -279,20 +281,20 @@ const EditTestPaper = () => {
       const updated = current.includes(id)
         ? current.filter(item => item !== id)
         : [...current, id];
-        
+
       let nextState = { ...prev, [field]: updated };
-      
+
       // Auto-set level if subSectionId is updated
       if (field === 'subSectionId') {
-          if (updated.length > 0) {
-              const lastSelected = updated[updated.length - 1];
-              const subSec = subSectionOptions.find(s => s.value === lastSelected);
-              if (subSec && subSec.level) {
-                  nextState.level = subSec.level;
-              }
-          } else {
-              nextState.level = "";
+        if (updated.length > 0) {
+          const lastSelected = updated[updated.length - 1];
+          const subSec = subSectionOptions.find(s => s.value === lastSelected);
+          if (subSec && subSec.level) {
+            nextState.level = subSec.level;
           }
+        } else {
+          nextState.level = "";
+        }
       }
       return nextState;
     });
@@ -646,6 +648,7 @@ const EditTestPaper = () => {
         subSectionId: formData.subSectionId,
         level: formData.level || undefined,
         isDojo: formData.isDojo,
+        isHandover: formData.isHandover,
         targetDeptId: formData.targetDeptId,
         targetSectionId: formData.targetSectionId,
 
@@ -1025,8 +1028,8 @@ const EditTestPaper = () => {
                   value={formData.level || "none"}
                   onValueChange={(val) => {
                     const nextLevel = val === "none" ? "" : val;
-                    setFormData(prev => ({ 
-                      ...prev, 
+                    setFormData(prev => ({
+                      ...prev,
                       level: nextLevel,
                       ...(nextLevel === "L0 (Dojo User)" ? { isDojo: true } : {})
                     }));
@@ -1221,6 +1224,30 @@ const EditTestPaper = () => {
                   </Select>
                 </div>
               )}
+
+              {hasButtonPermission("test_paper:is_handover") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="isHandover">Is Handover Quiz? *</Label>
+                  <Select
+                    key={formData.isHandover ? "yes" : "no"}
+                    value={formData.isHandover ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isHandover: value === "yes",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1247,14 +1274,14 @@ const EditTestPaper = () => {
                       <span className="font-semibold text-lg text-gray-700">Question {qIndex + 1}</span>
                       <Badge className={
                         qType === 'mcq' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                        qType === 'shortAnswer' ? 'bg-green-100 text-green-700 hover:bg-green-200' :
-                        'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                          qType === 'shortAnswer' ? 'bg-green-100 text-green-700 hover:bg-green-200' :
+                            'bg-purple-100 text-purple-700 hover:bg-purple-200'
                       }>
                         {qType === 'mcq' ? 'Multiple Choice' :
-                         qType === 'shortAnswer' ? 'Short Written' : 'Matching Pair'}
+                          qType === 'shortAnswer' ? 'Short Written' : 'Matching Pair'}
                       </Badge>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <Select
                         value={qType}

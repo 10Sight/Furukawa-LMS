@@ -436,7 +436,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     </div>
                 </div>
 
-                <div className="w-full max-h-[70vh] overflow-auto border border-slate-200 rounded-lg themed-scrollbar">
+                <div className="w-full max-w-full max-h-[calc(100vh-340px)] overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar">
                     <table className="w-full min-w-[2600px] border-separate border-spacing-0 text-sm table-auto">
                         <thead className="bg-slate-100 text-slate-700">
                             {/* Group headers row */}

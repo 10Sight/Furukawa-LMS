@@ -293,7 +293,7 @@ const SkillUpgradationWrapper = () => {
 
             {/* Training Plan Sheet */}
             {dept && section ? (
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4 w-full max-w-full overflow-hidden">
                     {selectedPlan ? (
                         <div className="space-y-4">
                             <div className="flex items-center justify-between no-print">

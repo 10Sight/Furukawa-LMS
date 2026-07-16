@@ -139,6 +139,21 @@
   background-color: #64748b;
 }
 
+/* Dark mode scrollbar support */
+.dark .themed-scrollbar {
+  scrollbar-color: #4b5563 #1e293b;
+}
+.dark .themed-scrollbar::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+.dark .themed-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #4b5563;
+  border: 2px solid #1e293b;
+}
+.dark .themed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #6b7280;
+}
+
 @media print {
   .no-print,
   .fixed:not(.print-visible),

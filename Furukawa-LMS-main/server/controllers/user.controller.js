@@ -2352,19 +2352,25 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
 
   const activeTab = req.query.activeTab || 'all';
 
+  // Current date in Asia/Kolkata, formatted as YYYY-MM-DD, so "today" matches
+  // India local time regardless of the DB server's own timezone (e.g. UTC).
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
   switch (activeTab) {
     case 'today':
       // Today's Entry: isTemporary=1, NOT LEFT, joiningDate = today
       whereClauses.push("u.isTemporary = 1");
       whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
-      whereClauses.push("CAST(u.joiningDate AS DATE) = CAST(GETDATE() AS DATE)");
+      whereClauses.push("CAST(u.joiningDate AS DATE) = ?");
+      params.push(todayStr);
       break;
 
     case 'all':
       // Practical: isTemporary=1, NOT LEFT, joiningDate != today
       whereClauses.push("u.isTemporary = 1");
       whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
-      whereClauses.push("(u.joiningDate IS NULL OR CAST(u.joiningDate AS DATE) != CAST(GETDATE() AS DATE))");
+      whereClauses.push("(u.joiningDate IS NULL OR CAST(u.joiningDate AS DATE) != ?)");
+      params.push(todayStr);
       break;
 
     case 'handover-candidate':
@@ -2391,6 +2397,8 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
       // Fallback: same as practical
       whereClauses.push("u.isTemporary = 1");
       whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
+      whereClauses.push("(u.joiningDate IS NULL OR CAST(u.joiningDate AS DATE) != ?)");
+      params.push(todayStr);
       break;
   }
 
@@ -2447,15 +2455,15 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
 
   const [statsData] = await executeQuery(`
     SELECT
-      SUM(CASE WHEN u.status != 'LEFT' OR u.status IS NULL THEN 1 ELSE 0 END) as total,
+      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND (u.joiningDate IS NULL OR CAST(u.joiningDate AS DATE) != ?) THEN 1 ELSE 0 END) as total,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftTotal,
-      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND CAST(u.joiningDate AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as todayJoined,
+      SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND CAST(u.joiningDate AS DATE) = ? THEN 1 ELSE 0 END) as todayJoined,
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
     FROM users u
     ${hierarchyJoinSQL}
     ${statsWhereSQL}
-  `, statsParams);
+  `, [todayStr, todayStr, ...statsParams]);
 
   let handoverWhereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)", "(u.status != 'LEFT' OR u.status IS NULL)"];
   let handoverParams = [];

@@ -209,6 +209,14 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         return baseCount;
     }, [attemptData, performDates, activeTemplate, isView, isEdit]);
 
+    // Whether every active perform-date column has a date filled in.
+    // Gates the final "Submit & Mail" action and Approve/Reject sign-offs,
+    // which should only be available once the full evaluation is complete.
+    const allPerformDatesFilled = React.useMemo(() => {
+        if (!performDates || performDates.length < performDateCount) return false;
+        return performDates.slice(0, performDateCount).every(date => date && typeof date === "string" && date.trim() !== "");
+    }, [performDates, performDateCount]);
+
     // Populate data in View Mode or Edit Mode from database attempt record.
     // Uses initCount computed directly from raw server data to avoid circular dependency
     // with the performDateCount useMemo above.
@@ -582,14 +590,16 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("approved", "APPROVED")}
-                                                    className="bg-green-600 hover:bg-green-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
+                                                    disabled={!allPerformDatesFilled}
+                                                    className="bg-green-600 hover:bg-green-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer disabled:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
                                                     Approve
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("approved", "REJECTED")}
-                                                    className="bg-red-600 hover:bg-red-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
+                                                    disabled={!allPerformDatesFilled}
+                                                    className="bg-red-600 hover:bg-red-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer disabled:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
                                                     Reject
                                                 </button>
@@ -623,14 +633,16 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("confirmed", "APPROVED")}
-                                                    className="bg-green-600 hover:bg-green-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
+                                                    disabled={!allPerformDatesFilled}
+                                                    className="bg-green-600 hover:bg-green-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer disabled:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
                                                     Approve
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => handleApprovalClick("confirmed", "REJECTED")}
-                                                    className="bg-red-600 hover:bg-red-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer"
+                                                    disabled={!allPerformDatesFilled}
+                                                    className="bg-red-600 hover:bg-red-700 text-white text-[8px] font-extrabold px-1 py-0.5 rounded shadow-sm transition-colors border-0 cursor-pointer disabled:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
                                                     Reject
                                                 </button>
@@ -1045,8 +1057,8 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                             </Button>
                             <Button
                                 onClick={() => handleSubmit(true)}
-                                disabled={isSubmitting}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 font-semibold shadow-md shadow-emerald-200"
+                                disabled={isSubmitting || !allPerformDatesFilled}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 font-semibold shadow-md shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isSubmitting ? (
                                     <IconLoader2 className="h-4.5 w-4.5 animate-spin" />

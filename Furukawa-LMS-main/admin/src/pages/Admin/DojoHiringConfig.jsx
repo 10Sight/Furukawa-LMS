@@ -185,11 +185,10 @@ const DojoHiringConfig = () => {
                     size="sm"
                     disabled={!canUpdate || savingId === dept.id || !dirty}
                     onClick={() => handleSave(dept.id)}
-                    className={`h-9 px-3 gap-1.5 font-bold transition-colors cursor-pointer disabled:cursor-not-allowed ${
-                        justSaved
-                            ? "bg-emerald-600 hover:bg-emerald-600 text-white"
-                            : "bg-blue-600 hover:bg-blue-700 text-white disabled:bg-slate-200 disabled:text-slate-400"
-                    }`}
+                    className={`h-9 px-3 gap-1.5 font-bold transition-colors cursor-pointer disabled:cursor-not-allowed ${justSaved
+                        ? "bg-emerald-600 hover:bg-emerald-600 text-white"
+                        : "bg-blue-600 hover:bg-blue-700 text-white disabled:bg-slate-200 disabled:text-slate-400"
+                        }`}
                 >
                     {savingId === dept.id ? (
                         <IconLoader className="w-4 h-4 animate-spin" />
@@ -270,13 +269,12 @@ const DojoHiringConfig = () => {
                         return (
                             <div
                                 key={dept.id}
-                                className={`rounded-xl border p-4 space-y-4 transition-colors duration-500 ${
-                                    justSaved
-                                        ? "border-emerald-300 bg-emerald-50/50"
-                                        : dirty
-                                            ? "border-amber-300 bg-amber-50/40"
-                                            : "border-slate-100 bg-slate-50/60"
-                                }`}
+                                className={`rounded-xl border p-4 space-y-4 transition-colors duration-500 ${justSaved
+                                    ? "border-emerald-300 bg-emerald-50/50"
+                                    : dirty
+                                        ? "border-amber-300 bg-amber-50/40"
+                                        : "border-slate-100 bg-slate-50/60"
+                                    }`}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex items-center gap-2">
@@ -407,11 +405,11 @@ const DojoHiringConfig = () => {
                                 <TableHead rowSpan={2} className="align-bottom text-right">Actions</TableHead>
                             </TableRow>
                             <TableRow className="hover:bg-transparent">
-                                <TableHead className="border-l border-slate-100 font-medium">Mandatory</TableHead>
+                                <TableHead className="border-l border-slate-100 font-medium">Safety (HR)</TableHead>
                                 <TableHead className="font-medium">Handover Marks</TableHead>
-                                <TableHead className="font-medium">1st Interview</TableHead>
-                                <TableHead className="border-l border-slate-100 font-medium">Eligibility</TableHead>
-                                <TableHead className="font-medium">2nd Interview</TableHead>
+                                <TableHead className="font-medium">1st Interview (Safety)</TableHead>
+                                <TableHead className="border-l border-slate-100 font-medium">Evaluation (HR)</TableHead>
+                                <TableHead className="font-medium">2nd Interview (Safety)</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -442,9 +440,8 @@ const DojoHiringConfig = () => {
                                 return (
                                     <TableRow
                                         key={dept.id}
-                                        className={`transition-colors duration-500 ${
-                                            justSaved ? "bg-emerald-50/60" : dirty ? "bg-amber-50/50" : undefined
-                                        }`}
+                                        className={`transition-colors duration-500 ${justSaved ? "bg-emerald-50/60" : dirty ? "bg-amber-50/50" : undefined
+                                            }`}
                                     >
                                         <TableCell className="font-bold text-slate-800">
                                             <div className="flex items-center gap-2">

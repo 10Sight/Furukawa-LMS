@@ -1201,6 +1201,30 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
             });
 
             // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
+            // Build OUTER APPLY quiz filter: use configured handoverQuizIds if available, else fallback
+            let legacyEvalOuterApplyFilter;
+            let legacyEvalOuterApplyParams = [];
+            if (handoverQuizIds.length > 0) {
+                // Admin explicitly selected specific test papers — match by quiz ID directly
+                legacyEvalOuterApplyFilter = `AND q2.id IN (SELECT CAST(value AS INT) FROM OPENJSON(?))`;
+                legacyEvalOuterApplyParams = [JSON.stringify(handoverQuizIds)];
+            } else {
+                // Fallback: any isDojo + isHandover quiz, loosened to allow NULL targetDeptId/targetSectionId
+                legacyEvalOuterApplyFilter = `
+                          AND (
+                              q2.targetDeptId IS NULL
+                              OR (ISJSON(q2.targetDeptId) > 0 AND EXISTS (SELECT 1 FROM OPENJSON(q2.targetDeptId) WHERE CAST(value AS INT) = u.targetDeptId))
+                              OR (ISJSON(q2.targetDeptId) = 0 AND q2.targetDeptId = CAST(u.targetDeptId AS NVARCHAR(50)))
+                          )
+                          AND (
+                              q2.targetSectionId IS NULL
+                              OR (ISJSON(q2.targetSectionId) > 0 AND (q2.targetSectionId = '[]' OR EXISTS (SELECT 1 FROM OPENJSON(q2.targetSectionId) WHERE CAST(value AS INT) = u.targetSectionId)))
+                              OR (ISJSON(q2.targetSectionId) = 0 AND q2.targetSectionId = CAST(u.targetSectionId AS NVARCHAR(50)))
+                          )
+                          AND q2.isDojo = 1
+                          AND q2.isHandover = 1`;
+            }
+
             const [evalUsers] = await executeQuery(`
                     SELECT DISTINCT
                         u.id as studentId,
@@ -1224,17 +1248,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                         FROM attempted_quizzes aq2
                         JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
                         WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
-                          AND (
-                              (ISJSON(q2.targetDeptId) > 0 AND EXISTS (SELECT 1 FROM OPENJSON(q2.targetDeptId) WHERE CAST(value AS INT) = u.targetDeptId))
-                              OR (ISJSON(q2.targetDeptId) = 0 AND q2.targetDeptId = CAST(u.targetDeptId AS NVARCHAR(50)))
-                          )
-                          AND (
-                              (ISJSON(q2.targetSectionId) > 0 AND (q2.targetSectionId = '[]' OR EXISTS (SELECT 1 FROM OPENJSON(q2.targetSectionId) WHERE CAST(value AS INT) = u.targetSectionId)))
-                              OR (ISJSON(q2.targetSectionId) = 0 AND q2.targetSectionId = CAST(u.targetSectionId AS NVARCHAR(50)))
-                              OR (q2.targetSectionId IS NULL AND u.targetSectionId IS NULL)
-                          )
-                          AND q2.isDojo = 1
-                          AND q2.isHandover = 1
+                          ${legacyEvalOuterApplyFilter}
                           AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
                         ORDER BY aq2.completedAt DESC
                     ) tp
@@ -1243,7 +1257,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                       AND u.targetDeptId = ?
                       AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
                       AND (u.status IS NULL OR u.status != 'LEFT')
-                `, [date, departmentId]);
+                `, [...legacyEvalOuterApplyParams, date, departmentId]);
 
             const evalSuggested = evalUsers.map(user => {
                 let marks = "100%";
@@ -1290,6 +1304,30 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 queryParams.push(date);
             }
 
+            // Build OUTER APPLY quiz filter: use configured handoverQuizIds if available, else fallback
+            let strictOuterApplyFilter;
+            let strictOuterApplyParams = [];
+            if (handoverQuizIds.length > 0) {
+                // Admin explicitly selected specific test papers — match by quiz ID directly
+                strictOuterApplyFilter = `AND q2.id IN (SELECT CAST(value AS INT) FROM OPENJSON(?))`;
+                strictOuterApplyParams = [JSON.stringify(handoverQuizIds)];
+            } else {
+                // Fallback: any isDojo + isHandover quiz, loosened to allow NULL targetDeptId/targetSectionId
+                strictOuterApplyFilter = `
+                          AND (
+                              q2.targetDeptId IS NULL
+                              OR (ISJSON(q2.targetDeptId) > 0 AND EXISTS (SELECT 1 FROM OPENJSON(q2.targetDeptId) WHERE CAST(value AS INT) = u.targetDeptId))
+                              OR (ISJSON(q2.targetDeptId) = 0 AND q2.targetDeptId = CAST(u.targetDeptId AS NVARCHAR(50)))
+                          )
+                          AND (
+                              q2.targetSectionId IS NULL
+                              OR (ISJSON(q2.targetSectionId) > 0 AND (q2.targetSectionId = '[]' OR EXISTS (SELECT 1 FROM OPENJSON(q2.targetSectionId) WHERE CAST(value AS INT) = u.targetSectionId)))
+                              OR (ISJSON(q2.targetSectionId) = 0 AND q2.targetSectionId = CAST(u.targetSectionId AS NVARCHAR(50)))
+                          )
+                          AND q2.isDojo = 1
+                          AND q2.isHandover = 1`;
+            }
+
             const [evalUsers] = await executeQuery(`
                     SELECT DISTINCT
                         u.id as studentId,
@@ -1313,17 +1351,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                         FROM attempted_quizzes aq2
                         JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
                         WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
-                          AND (
-                              (ISJSON(q2.targetDeptId) > 0 AND EXISTS (SELECT 1 FROM OPENJSON(q2.targetDeptId) WHERE CAST(value AS INT) = u.targetDeptId))
-                              OR (ISJSON(q2.targetDeptId) = 0 AND q2.targetDeptId = CAST(u.targetDeptId AS NVARCHAR(50)))
-                          )
-                          AND (
-                              (ISJSON(q2.targetSectionId) > 0 AND (q2.targetSectionId = '[]' OR EXISTS (SELECT 1 FROM OPENJSON(q2.targetSectionId) WHERE CAST(value AS INT) = u.targetSectionId)))
-                              OR (ISJSON(q2.targetSectionId) = 0 AND q2.targetSectionId = CAST(u.targetSectionId AS NVARCHAR(50)))
-                              OR (q2.targetSectionId IS NULL AND u.targetSectionId IS NULL)
-                          )
-                          AND q2.isDojo = 1
-                          AND q2.isHandover = 1
+                          ${strictOuterApplyFilter}
                           AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
                         ORDER BY aq2.completedAt DESC
                     ) tp
@@ -1335,7 +1363,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                       AND eta1.testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
                       ${dateCondition}
                       ${interviewJoinSql}
-                `, queryParams);
+                `, [...strictOuterApplyParams, ...queryParams]);
 
             eligibleUsers = evalUsers.map(user => {
                 let marks = "N/A";

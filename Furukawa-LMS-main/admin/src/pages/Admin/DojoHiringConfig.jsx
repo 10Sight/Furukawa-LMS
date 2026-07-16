@@ -301,6 +301,7 @@ const DojoHiringConfig = () => {
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">Mandatory</label>
                                             <ServerSearchMultiSelect
                                                 selectedIds={row.dojoMandatoryQuizId}
+                                                disabledIds={[...(row.dojoHandoverQuizId || []), ...(row.dojoInterviewQuizId || [])]}
                                                 onChange={(ids) => updateRow(dept.id, "dojoMandatoryQuizId", ids)}
                                                 useSearchQuery={useLazyGetAllQuizzesQuery}
                                                 fixedParams={{ isDojo: true }}
@@ -313,6 +314,7 @@ const DojoHiringConfig = () => {
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">Handover Marks</label>
                                             <ServerSearchMultiSelect
                                                 selectedIds={row.dojoHandoverQuizId}
+                                                disabledIds={[...(row.dojoMandatoryQuizId || []), ...(row.dojoInterviewQuizId || [])]}
                                                 onChange={(ids) => updateRow(dept.id, "dojoHandoverQuizId", ids)}
                                                 useSearchQuery={useLazyGetAllQuizzesQuery}
                                                 fixedParams={{ isDojo: true, isHandover: true }}
@@ -326,6 +328,7 @@ const DojoHiringConfig = () => {
                                             {isSpecific ? (
                                                 <ServerSearchMultiSelect
                                                     selectedIds={row.dojoInterviewQuizId}
+                                                    disabledIds={[...(row.dojoMandatoryQuizId || []), ...(row.dojoHandoverQuizId || [])]}
                                                     onChange={(ids) => updateRow(dept.id, "dojoInterviewQuizId", ids)}
                                                     useSearchQuery={useLazyGetAllQuizzesQuery}
                                                     fixedParams={{ isDojo: true }}
@@ -347,6 +350,7 @@ const DojoHiringConfig = () => {
                                             <label className="text-xs font-medium text-slate-500 mb-1 block">Handover Eligibility</label>
                                             <ServerSearchMultiSelect
                                                 selectedIds={row.dojoEligibilityEvaluationId}
+                                                disabledIds={row.dojoInterviewEvaluationId || []}
                                                 onChange={(ids) => updateRow(dept.id, "dojoEligibilityEvaluationId", ids)}
                                                 useSearchQuery={useLazyGetEvaluationTestsQuery}
                                                 fixedParams={{}}
@@ -360,6 +364,7 @@ const DojoHiringConfig = () => {
                                             {isSpecific ? (
                                                 <ServerSearchMultiSelect
                                                     selectedIds={row.dojoInterviewEvaluationId}
+                                                    disabledIds={row.dojoEligibilityEvaluationId || []}
                                                     onChange={(ids) => updateRow(dept.id, "dojoInterviewEvaluationId", ids)}
                                                     useSearchQuery={useLazyGetEvaluationTestsQuery}
                                                     fixedParams={{}}
@@ -458,6 +463,7 @@ const DojoHiringConfig = () => {
                                         <TableCell className="border-l border-slate-50">
                                             <ServerSearchMultiSelect
                                                 selectedIds={row.dojoMandatoryQuizId}
+                                                disabledIds={[...(row.dojoHandoverQuizId || []), ...(row.dojoInterviewQuizId || [])]}
                                                 onChange={(ids) => updateRow(dept.id, "dojoMandatoryQuizId", ids)}
                                                 useSearchQuery={useLazyGetAllQuizzesQuery}
                                                 fixedParams={{ isDojo: true }}
@@ -469,6 +475,7 @@ const DojoHiringConfig = () => {
                                         <TableCell>
                                             <ServerSearchMultiSelect
                                                 selectedIds={row.dojoHandoverQuizId}
+                                                disabledIds={[...(row.dojoMandatoryQuizId || []), ...(row.dojoInterviewQuizId || [])]}
                                                 onChange={(ids) => updateRow(dept.id, "dojoHandoverQuizId", ids)}
                                                 useSearchQuery={useLazyGetAllQuizzesQuery}
                                                 fixedParams={{ isDojo: true, isHandover: true }}
@@ -481,6 +488,7 @@ const DojoHiringConfig = () => {
                                             {isSpecific ? (
                                                 <ServerSearchMultiSelect
                                                     selectedIds={row.dojoInterviewQuizId}
+                                                    disabledIds={[...(row.dojoMandatoryQuizId || []), ...(row.dojoHandoverQuizId || [])]}
                                                     onChange={(ids) => updateRow(dept.id, "dojoInterviewQuizId", ids)}
                                                     useSearchQuery={useLazyGetAllQuizzesQuery}
                                                     fixedParams={{ isDojo: true }}
@@ -493,6 +501,7 @@ const DojoHiringConfig = () => {
                                         <TableCell className="border-l border-slate-50">
                                             <ServerSearchMultiSelect
                                                 selectedIds={row.dojoEligibilityEvaluationId}
+                                                disabledIds={row.dojoInterviewEvaluationId || []}
                                                 onChange={(ids) => updateRow(dept.id, "dojoEligibilityEvaluationId", ids)}
                                                 useSearchQuery={useLazyGetEvaluationTestsQuery}
                                                 fixedParams={{}}
@@ -505,6 +514,7 @@ const DojoHiringConfig = () => {
                                             {isSpecific ? (
                                                 <ServerSearchMultiSelect
                                                     selectedIds={row.dojoInterviewEvaluationId}
+                                                    disabledIds={row.dojoEligibilityEvaluationId || []}
                                                     onChange={(ids) => updateRow(dept.id, "dojoInterviewEvaluationId", ids)}
                                                     useSearchQuery={useLazyGetEvaluationTestsQuery}
                                                     fixedParams={{}}

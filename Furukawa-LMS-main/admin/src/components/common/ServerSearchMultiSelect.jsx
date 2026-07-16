@@ -19,6 +19,7 @@ const defaultUnwrap = (data) => data?.data?.quizzes || data?.data || [];
  */
 const ServerSearchMultiSelect = ({
     selectedIds = [],
+    disabledIds = [],
     onChange,
     useSearchQuery,
     fixedParams = {},
@@ -76,6 +77,7 @@ const ServerSearchMultiSelect = ({
     }, [data]);
 
     const toggleId = (id) => {
+        if (disabledIds?.includes(id)) return;
         if (selectedIds.includes(id)) {
             onChange(selectedIds.filter((v) => v !== id));
         } else {
@@ -155,15 +157,21 @@ const ServerSearchMultiSelect = ({
                     )}
                     {options.map((option) => {
                         const id = getOptionId(option);
+                        const isDisabled = disabledIds?.includes(id);
                         return (
                             <label
                                 key={id}
-                                className="flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-slate-50 cursor-pointer text-sm"
+                                className={`flex items-center gap-2 px-1.5 py-1.5 rounded text-sm ${
+                                    disabled || isDisabled
+                                        ? "opacity-50 cursor-not-allowed"
+                                        : "hover:bg-slate-50 cursor-pointer"
+                                }`}
                             >
                                 <Checkbox
                                     checked={selectedIds.includes(id)}
                                     onCheckedChange={() => toggleId(id)}
-                                    className="cursor-pointer"
+                                    disabled={disabled || isDisabled}
+                                    className="cursor-pointer disabled:cursor-not-allowed"
                                 />
                                 <span className="truncate">{getOptionLabel(option)}</span>
                             </label>

@@ -279,6 +279,228 @@ const Daily5MRoutingBadge = ({ department, allDepartments }) => {
   );
 };
 
+// Skill Matrix footer signatures are signed off independently by three roles (QA, Safety, Process),
+// each typically owned by a different team, so — unlike Daily 5M's single routing target — routing
+// is configured per role. See shared/skillMatrixRouting.js for the resolution/enforcement rule this
+// UI must stay in sync with.
+const SKILL_MATRIX_ROLES = [
+  { key: "Qa", label: "QA" },
+  { key: "Safety", label: "Safety" },
+  { key: "Process", label: "Process" },
+];
+
+// Cascading Department -> Section -> Line picker for one Skill Matrix signature role's approval
+// routing. Mirrors Daily5MRoutingFields but keyed by `role` (e.g. "Qa") so the same component
+// renders once per role instead of needing three near-identical copies.
+const SkillMatrixRoutingFields = ({
+  idPrefix,
+  role,
+  roleLabel,
+  formData,
+  setFormData,
+  departments,
+  sections,
+  isLoadingSections,
+  lines,
+  isLoadingLines,
+}) => {
+  const deptField = `skillMatrixApprover${role}DeptId`;
+  const sectionField = `skillMatrixApprover${role}SectionId`;
+  const lineField = `skillMatrixApprover${role}LineId`;
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">{roleLabel} Approver Routing</Label>
+        {formData[deptField] && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs text-muted-foreground"
+            onClick={() =>
+              setFormData((prev) => ({
+                ...prev,
+                [deptField]: "",
+                [sectionField]: "",
+                [lineField]: "",
+              }))
+            }
+          >
+            Clear
+          </Button>
+        )}
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor={`${idPrefix}-${role}-approver-dept`}>Approver Department</Label>
+        <Select
+          value={formData[deptField] ? String(formData[deptField]) : ""}
+          onValueChange={(value) =>
+            setFormData((prev) => ({
+              ...prev,
+              [deptField]: value ? Number(value) : "",
+              [sectionField]: "",
+              [lineField]: "",
+            }))
+          }
+        >
+          <SelectTrigger id={`${idPrefix}-${role}-approver-dept`}>
+            <SelectValue placeholder="No routing (anyone with access may sign)" />
+          </SelectTrigger>
+          <SelectContent>
+            {departments.length > 0 ? (
+              departments.map((d) => (
+                <SelectItem key={d.id || d._id} value={String(d.id || d._id)}>
+                  {d.name}
+                </SelectItem>
+              ))
+            ) : (
+              <SelectItem value="none" disabled>
+                No departments available
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor={`${idPrefix}-${role}-approver-section`}>Approver Section (Optional)</Label>
+        <Select
+          value={formData[sectionField] ? String(formData[sectionField]) : ""}
+          onValueChange={(value) =>
+            setFormData((prev) => ({
+              ...prev,
+              [sectionField]: value ? Number(value) : "",
+              [lineField]: "",
+            }))
+          }
+          disabled={!formData[deptField]}
+        >
+          <SelectTrigger id={`${idPrefix}-${role}-approver-section`}>
+            <SelectValue placeholder={formData[deptField] ? "Any section" : "Select department first"} />
+          </SelectTrigger>
+          <SelectContent>
+            {isLoadingSections ? (
+              <SelectItem value="loading" disabled>
+                Loading sections...
+              </SelectItem>
+            ) : sections.length > 0 ? (
+              sections.map((s) => (
+                <SelectItem key={s.id || s._id} value={String(s.id || s._id)}>
+                  {s.name}
+                </SelectItem>
+              ))
+            ) : (
+              <SelectItem value="none" disabled>
+                No sections available
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor={`${idPrefix}-${role}-approver-line`}>Approver Line (Optional)</Label>
+        <Select
+          value={formData[lineField] ? String(formData[lineField]) : ""}
+          onValueChange={(value) =>
+            setFormData((prev) => ({
+              ...prev,
+              [lineField]: value ? Number(value) : "",
+            }))
+          }
+          disabled={!formData[sectionField]}
+        >
+          <SelectTrigger id={`${idPrefix}-${role}-approver-line`}>
+            <SelectValue placeholder={formData[sectionField] ? "Any line" : "Select section first"} />
+          </SelectTrigger>
+          <SelectContent>
+            {isLoadingLines ? (
+              <SelectItem value="loading" disabled>
+                Loading lines...
+              </SelectItem>
+            ) : lines.length > 0 ? (
+              lines.map((l) => (
+                <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>
+                  {l.name}
+                </SelectItem>
+              ))
+            ) : (
+              <SelectItem value="none" disabled>
+                No lines available
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+};
+
+// Resolves and displays one Skill Matrix signature role's configured routing (dept › section › line)
+// as a compact badge with a tooltip breakdown. A separate component (rather than a loop inside
+// SkillMatrixRoutingBadge) so each role's section/line name lookups are independent hook instances.
+const SkillMatrixRoleBadge = ({ department, allDepartments, role, roleLabel }) => {
+  const deptId = department[`skillMatrixApprover${role}DeptId`];
+  const sectionId = department[`skillMatrixApprover${role}SectionId`];
+  const lineId = department[`skillMatrixApprover${role}LineId`];
+
+  const { data: sectionsData } = useGetSectionsByDepartmentQuery(deptId, { skip: !deptId || !sectionId });
+  const { data: linesData } = useGetLinesBySectionQuery(sectionId, { skip: !sectionId || !lineId });
+
+  if (!deptId) {
+    return (
+      <Badge variant="outline" className="text-muted-foreground text-[10px] whitespace-nowrap">
+        {roleLabel}: Not configured
+      </Badge>
+    );
+  }
+
+  const targetDeptName = allDepartments.find((d) => String(d.id || d._id) === String(deptId))?.name || `Dept #${deptId}`;
+  const targetSectionName = sectionId
+    ? (sectionsData?.data || []).find((s) => String(s.id || s._id) === String(sectionId))?.name
+    : null;
+  const targetLineName = lineId
+    ? (linesData?.data || []).find((l) => String(l.id || l._id) === String(lineId))?.name
+    : null;
+
+  const parts = [targetDeptName, targetSectionName, targetLineName].filter(Boolean);
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="secondary" className="text-[10px] cursor-default max-w-[170px] truncate block">
+            {roleLabel}: {parts.join(" › ")}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="flex flex-col gap-0.5 text-xs">
+            <span>{roleLabel} approver department: {targetDeptName}</span>
+            {targetSectionName && <span>Section: {targetSectionName}</span>}
+            {targetLineName && <span>Line: {targetLineName}</span>}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
+const SkillMatrixRoutingBadge = ({ department, allDepartments }) => (
+  <div className="flex flex-col items-start gap-1">
+    {SKILL_MATRIX_ROLES.map((role) => (
+      <SkillMatrixRoleBadge
+        key={role.key}
+        department={department}
+        allDepartments={allDepartments}
+        role={role.key}
+        roleLabel={role.label}
+      />
+    ))}
+  </div>
+);
+
 const Departments = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
@@ -306,7 +528,21 @@ const Departments = () => {
     daily5mApproverDeptId: "",
     daily5mApproverSectionId: "",
     daily5mApproverLineId: "",
+    skillMatrixApproverQaDeptId: "",
+    skillMatrixApproverQaSectionId: "",
+    skillMatrixApproverQaLineId: "",
+    skillMatrixApproverSafetyDeptId: "",
+    skillMatrixApproverSafetySectionId: "",
+    skillMatrixApproverSafetyLineId: "",
+    skillMatrixApproverProcessDeptId: "",
+    skillMatrixApproverProcessSectionId: "",
+    skillMatrixApproverProcessLineId: "",
   });
+  // Which routing target the "Daily 5M Approver Routing" fields currently edit: "dept" for the
+  // department-wide fields in `formData` above, or a section id to edit/override that section's
+  // own routing (falls back to department-level routing when unset — see shared/daily5mRouting.js).
+  const [selectedSourceSectionId, setSelectedSourceSectionId] = useState("dept");
+  const [sectionRoutings, setSectionRoutings] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [activeTab, setActiveTab] = useState("all");
@@ -422,17 +658,116 @@ const Departments = () => {
   );
   const allDepartmentsForRouting = allDepartmentsForRoutingData?.data?.departments || [];
 
+  // Sections belonging to the department being edited — populates the "Source Section" dropdown
+  // and seeds `sectionRoutings` below with whatever routing each section already has configured.
+  const { data: sourceSectionsData, isFetching: isLoadingSourceSections } = useGetSectionsByDepartmentQuery(
+    selectedDepartment?.id || selectedDepartment?._id,
+    { skip: !isEditDialogOpen || !selectedDepartment }
+  );
+  const sourceSections = sourceSectionsData?.data || [];
+
+  useEffect(() => {
+    if (!isEditDialogOpen || !sourceSectionsData?.data) return;
+    const initial = {};
+    sourceSectionsData.data.forEach((s) => {
+      const sectionId = String(s.id || s._id);
+      initial[sectionId] = {
+        daily5mApproverDeptId: s.daily5mApproverDeptId || "",
+        daily5mApproverSectionId: s.daily5mApproverSectionId || "",
+        daily5mApproverLineId: s.daily5mApproverLineId || "",
+        skillMatrixApproverQaDeptId: s.skillMatrixApproverQaDeptId || "",
+        skillMatrixApproverQaSectionId: s.skillMatrixApproverQaSectionId || "",
+        skillMatrixApproverQaLineId: s.skillMatrixApproverQaLineId || "",
+        skillMatrixApproverSafetyDeptId: s.skillMatrixApproverSafetyDeptId || "",
+        skillMatrixApproverSafetySectionId: s.skillMatrixApproverSafetySectionId || "",
+        skillMatrixApproverSafetyLineId: s.skillMatrixApproverSafetyLineId || "",
+        skillMatrixApproverProcessDeptId: s.skillMatrixApproverProcessDeptId || "",
+        skillMatrixApproverProcessSectionId: s.skillMatrixApproverProcessSectionId || "",
+        skillMatrixApproverProcessLineId: s.skillMatrixApproverProcessLineId || "",
+      };
+    });
+    setSectionRoutings(initial);
+  }, [isEditDialogOpen, sourceSectionsData]);
+
+  const EMPTY_ROUTING = {
+    daily5mApproverDeptId: "", daily5mApproverSectionId: "", daily5mApproverLineId: "",
+    skillMatrixApproverQaDeptId: "", skillMatrixApproverQaSectionId: "", skillMatrixApproverQaLineId: "",
+    skillMatrixApproverSafetyDeptId: "", skillMatrixApproverSafetySectionId: "", skillMatrixApproverSafetyLineId: "",
+    skillMatrixApproverProcessDeptId: "", skillMatrixApproverProcessSectionId: "", skillMatrixApproverProcessLineId: "",
+  };
+
+  // The Daily5MRoutingFields/SkillMatrixRoutingFields components just read/write formData's
+  // *ApproverDeptId/SectionId/LineId fields; this wrapper redirects those reads/writes to either the
+  // department-level `formData` fields or the selected section's entry in `sectionRoutings`, so the
+  // same components work for both without changes.
+  const activeRoutingValue = selectedSourceSectionId === "dept"
+    ? formData
+    : (sectionRoutings[selectedSourceSectionId] || EMPTY_ROUTING);
+
+  const setActiveRoutingValue = (updater) => {
+    if (selectedSourceSectionId === "dept") {
+      setFormData(updater);
+    } else {
+      setSectionRoutings((prev) => {
+        const current = prev[selectedSourceSectionId] || EMPTY_ROUTING;
+        const next = typeof updater === "function" ? updater(current) : updater;
+        return { ...prev, [selectedSourceSectionId]: next };
+      });
+    }
+  };
+
   const { data: routingSectionsData, isFetching: isLoadingRoutingSections } = useGetSectionsByDepartmentQuery(
-    formData.daily5mApproverDeptId,
-    { skip: !formData.daily5mApproverDeptId }
+    activeRoutingValue.daily5mApproverDeptId,
+    { skip: !activeRoutingValue.daily5mApproverDeptId }
   );
   const routingSections = routingSectionsData?.data || [];
 
   const { data: routingLinesData, isFetching: isLoadingRoutingLines } = useGetLinesBySectionQuery(
-    formData.daily5mApproverSectionId,
-    { skip: !formData.daily5mApproverSectionId }
+    activeRoutingValue.daily5mApproverSectionId,
+    { skip: !activeRoutingValue.daily5mApproverSectionId }
   );
   const routingLines = routingLinesData?.data || [];
+
+  // One cascading section/line query pair per Skill Matrix signature role — all three roles' fields
+  // are shown at once (unlike Daily 5M's single set above), so each needs its own live lookup.
+  const { data: routingSectionsQaData, isFetching: isLoadingRoutingSectionsQa } = useGetSectionsByDepartmentQuery(
+    activeRoutingValue.skillMatrixApproverQaDeptId,
+    { skip: !activeRoutingValue.skillMatrixApproverQaDeptId }
+  );
+  const routingSectionsQa = routingSectionsQaData?.data || [];
+  const { data: routingLinesQaData, isFetching: isLoadingRoutingLinesQa } = useGetLinesBySectionQuery(
+    activeRoutingValue.skillMatrixApproverQaSectionId,
+    { skip: !activeRoutingValue.skillMatrixApproverQaSectionId }
+  );
+  const routingLinesQa = routingLinesQaData?.data || [];
+
+  const { data: routingSectionsSafetyData, isFetching: isLoadingRoutingSectionsSafety } = useGetSectionsByDepartmentQuery(
+    activeRoutingValue.skillMatrixApproverSafetyDeptId,
+    { skip: !activeRoutingValue.skillMatrixApproverSafetyDeptId }
+  );
+  const routingSectionsSafety = routingSectionsSafetyData?.data || [];
+  const { data: routingLinesSafetyData, isFetching: isLoadingRoutingLinesSafety } = useGetLinesBySectionQuery(
+    activeRoutingValue.skillMatrixApproverSafetySectionId,
+    { skip: !activeRoutingValue.skillMatrixApproverSafetySectionId }
+  );
+  const routingLinesSafety = routingLinesSafetyData?.data || [];
+
+  const { data: routingSectionsProcessData, isFetching: isLoadingRoutingSectionsProcess } = useGetSectionsByDepartmentQuery(
+    activeRoutingValue.skillMatrixApproverProcessDeptId,
+    { skip: !activeRoutingValue.skillMatrixApproverProcessDeptId }
+  );
+  const routingSectionsProcess = routingSectionsProcessData?.data || [];
+  const { data: routingLinesProcessData, isFetching: isLoadingRoutingLinesProcess } = useGetLinesBySectionQuery(
+    activeRoutingValue.skillMatrixApproverProcessSectionId,
+    { skip: !activeRoutingValue.skillMatrixApproverProcessSectionId }
+  );
+  const routingLinesProcess = routingLinesProcessData?.data || [];
+
+  const skillMatrixRoutingQueryData = {
+    Qa: { sections: routingSectionsQa, isLoadingSections: isLoadingRoutingSectionsQa, lines: routingLinesQa, isLoadingLines: isLoadingRoutingLinesQa },
+    Safety: { sections: routingSectionsSafety, isLoadingSections: isLoadingRoutingSectionsSafety, lines: routingLinesSafety, isLoadingLines: isLoadingRoutingLinesSafety },
+    Process: { sections: routingSectionsProcess, isLoadingSections: isLoadingRoutingSectionsProcess, lines: routingLinesProcess, isLoadingLines: isLoadingRoutingLinesProcess },
+  };
 
   const [createDepartment] = useCreateDepartmentMutation();
   const [updateDepartment] = useUpdateDepartmentMutation();
@@ -607,10 +942,21 @@ const Departments = () => {
       daily5mApproverDeptId: "",
       daily5mApproverSectionId: "",
       daily5mApproverLineId: "",
+      skillMatrixApproverQaDeptId: "",
+      skillMatrixApproverQaSectionId: "",
+      skillMatrixApproverQaLineId: "",
+      skillMatrixApproverSafetyDeptId: "",
+      skillMatrixApproverSafetySectionId: "",
+      skillMatrixApproverSafetyLineId: "",
+      skillMatrixApproverProcessDeptId: "",
+      skillMatrixApproverProcessSectionId: "",
+      skillMatrixApproverProcessLineId: "",
     });
     setFormErrors({});
     setSelectedStudents([]);
     setSelectedCourses([]);
+    setSelectedSourceSectionId("dept");
+    setSectionRoutings({});
   };
 
   const handleCreateDepartment = async () => {
@@ -658,11 +1004,28 @@ const Departments = () => {
       }
 
       setIsSubmitting(true);
+      const sectionRoutingsPayload = Object.entries(sectionRoutings).map(([sectionId, routing]) => ({
+        sectionId: Number(sectionId),
+        daily5mApproverDeptId: routing.daily5mApproverDeptId || null,
+        daily5mApproverSectionId: routing.daily5mApproverSectionId || null,
+        daily5mApproverLineId: routing.daily5mApproverLineId || null,
+        skillMatrixApproverQaDeptId: routing.skillMatrixApproverQaDeptId || null,
+        skillMatrixApproverQaSectionId: routing.skillMatrixApproverQaSectionId || null,
+        skillMatrixApproverQaLineId: routing.skillMatrixApproverQaLineId || null,
+        skillMatrixApproverSafetyDeptId: routing.skillMatrixApproverSafetyDeptId || null,
+        skillMatrixApproverSafetySectionId: routing.skillMatrixApproverSafetySectionId || null,
+        skillMatrixApproverSafetyLineId: routing.skillMatrixApproverSafetyLineId || null,
+        skillMatrixApproverProcessDeptId: routing.skillMatrixApproverProcessDeptId || null,
+        skillMatrixApproverProcessSectionId: routing.skillMatrixApproverProcessSectionId || null,
+        skillMatrixApproverProcessLineId: routing.skillMatrixApproverProcessLineId || null,
+      }));
+
       await updateDepartment({
         id: selectedDepartment.id || selectedDepartment._id,
         data: {
           ...formData,
           courseIds: selectedCourses,
+          sectionRoutings: sectionRoutingsPayload,
         },
       }).unwrap();
 
@@ -848,6 +1211,8 @@ const Departments = () => {
   const openEditDialog = (department) => {
     if (!canUpdate) return;
     setSelectedDepartment(department);
+    setSelectedSourceSectionId("dept");
+    setSectionRoutings({});
     // Handle legacy course vs courses array - Normalize to strings
     const deptCourses = department.courses && department.courses.length > 0
       ? department.courses.map(c => String(c._id || c.id))
@@ -869,6 +1234,15 @@ const Departments = () => {
       daily5mApproverDeptId: department.daily5mApproverDeptId || "",
       daily5mApproverSectionId: department.daily5mApproverSectionId || "",
       daily5mApproverLineId: department.daily5mApproverLineId || "",
+      skillMatrixApproverQaDeptId: department.skillMatrixApproverQaDeptId || "",
+      skillMatrixApproverQaSectionId: department.skillMatrixApproverQaSectionId || "",
+      skillMatrixApproverQaLineId: department.skillMatrixApproverQaLineId || "",
+      skillMatrixApproverSafetyDeptId: department.skillMatrixApproverSafetyDeptId || "",
+      skillMatrixApproverSafetySectionId: department.skillMatrixApproverSafetySectionId || "",
+      skillMatrixApproverSafetyLineId: department.skillMatrixApproverSafetyLineId || "",
+      skillMatrixApproverProcessDeptId: department.skillMatrixApproverProcessDeptId || "",
+      skillMatrixApproverProcessSectionId: department.skillMatrixApproverProcessSectionId || "",
+      skillMatrixApproverProcessLineId: department.skillMatrixApproverProcessLineId || "",
     });
     setSelectedCourses(deptCourses);
     setIsEditDialogOpen(true);
@@ -1275,266 +1649,270 @@ const Departments = () => {
 
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="w-[220px]">Department Name</TableHead>
-                <TableHead>Course</TableHead>
-                <TableHead>Trainer</TableHead>
-                <TableHead>Operators</TableHead>
-                <TableHead>5M Approver</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredDepartments.length > 0 ? (
-                <>
-                  {filteredDepartments.map((department) => (
-                    <TableRow
-                      key={department._id}
-                      className="group hover:bg-muted/30"
-                      onClick={() => handleDepartmentClick(department)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center space-x-3">
-                          <div className="p-2 rounded-full bg-blue-100">
-                            <IconSchool className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">
-                              {department.name}
-                            </p>
-                            {department.uniCode && (
-                              <p className="text-xs text-muted-foreground">
-                                {department.uniCode}
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="w-[220px]">Department Name</TableHead>
+                  <TableHead>Course</TableHead>
+                  <TableHead>Trainer</TableHead>
+                  <TableHead>Operators</TableHead>
+                  <TableHead>5M Approver</TableHead>
+                  <TableHead>Skill Matrix Approver</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredDepartments.length > 0 ? (
+                  <>
+                    {filteredDepartments.map((department) => (
+                      <TableRow
+                        key={department._id}
+                        className="group hover:bg-muted/30"
+                        onClick={() => handleDepartmentClick(department)}
+                      >
+                        <TableCell>
+                          <div className="flex items-center space-x-3">
+                            <div className="p-2 rounded-full bg-blue-100">
+                              <IconSchool className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-foreground">
+                                {department.name}
                               </p>
+                              {department.uniCode && (
+                                <p className="text-xs text-muted-foreground">
+                                  {department.uniCode}
+                                </p>
+                              )}
+                            </div>
+                            <IconExternalLink className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </TableCell>
+                        <TableCell>{getCourseInfo(department)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getInstructorInfo(department)}
+                            {canUpdate && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openAssignInstructorDialog(department);
+                                      }}
+                                      className="h-7 w-7 p-0"
+                                    >
+                                      <IconPencil className="h-3 w-3" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Assign trainer</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             )}
                           </div>
-                          <IconExternalLink className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                      </TableCell>
-                      <TableCell>{getCourseInfo(department)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {getInstructorInfo(department)}
-                          {canUpdate && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className="flex items-center gap-1"
+                            >
+                              <IconUsers className="h-3 w-3" />
+                              {getStudentCount(department)}
+                              {department.capacity ? ` / ${department.capacity}` : ""}
+                            </Badge>
+
+                            {canManageStudents && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
                                   <Button
-                                    variant="ghost"
-                                    size="sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      openAssignInstructorDialog(department);
                                     }}
+                                    variant="ghost"
+                                    size="sm"
                                     className="h-7 w-7 p-0"
                                   >
-                                    <IconPencil className="h-3 w-3" />
+                                    <IconUserPlus className="h-3 w-3" />
                                   </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Assign trainer</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className="flex items-center gap-1"
-                          >
-                            <IconUsers className="h-3 w-3" />
-                            {getStudentCount(department)}
-                            {department.capacity ? ` / ${department.capacity}` : ""}
-                          </Badge>
-
-                          {canManageStudents && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                  }}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                >
-                                  <IconUserPlus className="h-3 w-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openManageStudentsDialog(department);
-                                  }}
-                                >
-                                  <IconUserPlus className="h-4 w-4 mr-2" />
-                                  Manage Operators
-                                </DropdownMenuItem>
-
-                                {department.students && department.students.length > 0 && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <div className="max-h-48 overflow-y-auto">
-                                      {department.students.slice(0, 5).map((student) => (
-                                        <DropdownMenuItem
-                                          key={student._id}
-                                          onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            handleRemoveStudent({ departmentId: department._id, studentId: student._id, studentName: student.fullName });
-                                          }}
-                                          className="text-red-600 focus:text-red-600"
-                                        >
-                                          <IconTrash className="h-4 w-4 mr-2" />
-                                          Remove {student.fullName}
-                                        </DropdownMenuItem>
-                                      ))}
-                                    </div>
-                                  </>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Daily5MRoutingBadge department={department} allDepartments={allDepartmentsForRouting} />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-sm">
-                            {new Date(department.createdAt).toLocaleDateString()}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(department.createdAt).toLocaleTimeString()}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end space-x-1">
-                          {canUpdate && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      openEditDialog(department);
+                                      openManageStudentsDialog(department);
                                     }}
-                                    className="h-8 w-8 p-0"
                                   >
-                                    <IconPencil className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Edit department</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
+                                    <IconUserPlus className="h-4 w-4 mr-2" />
+                                    Manage Operators
+                                  </DropdownMenuItem>
 
-                          {canUpdate && department.status !== 'CANCELLED' && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedDepartment(department);
-                                      setIsCancelDepartmentDialogOpen(true);
-                                    }}
-                                    className="h-8 w-8 p-0 text-orange-600 hover:text-orange-800 hover:bg-orange-50"
-                                  >
-                                    <IconX className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Cancel department</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-
-                          {canDelete && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openDeleteDialog(department);
-                                    }}
-                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
-                                  >
-                                    <IconTrash className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Delete department</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {page < totalPages && (
-                    <TableRow ref={scrollSentinelRef}>
-                      <TableCell colSpan={7} className="text-center py-4">
-                        {isFetchingNextPage ? (
-                          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                            <IconLoader className="h-4 w-4 animate-spin" />
-                            Loading more departments...
+                                  {department.students && department.students.length > 0 && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <div className="max-h-48 overflow-y-auto">
+                                        {department.students.slice(0, 5).map((student) => (
+                                          <DropdownMenuItem
+                                            key={student._id}
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              handleRemoveStudent({ departmentId: department._id, studentId: student._id, studentName: student.fullName });
+                                            }}
+                                            className="text-red-600 focus:text-red-600"
+                                          >
+                                            <IconTrash className="h-4 w-4 mr-2" />
+                                            Remove {student.fullName}
+                                          </DropdownMenuItem>
+                                        ))}
+                                      </div>
+                                    </>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">&nbsp;</span>
+                        </TableCell>
+                        <TableCell>
+                          <Daily5MRoutingBadge department={department} allDepartments={allDepartmentsForRouting} />
+                        </TableCell>
+                        <TableCell>
+                          <SkillMatrixRoutingBadge department={department} allDepartments={allDepartmentsForRouting} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-sm">
+                              {new Date(department.createdAt).toLocaleDateString()}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(department.createdAt).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end space-x-1">
+                            {canUpdate && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openEditDialog(department);
+                                      }}
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <IconPencil className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Edit department</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+
+                            {canUpdate && department.status !== 'CANCELLED' && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedDepartment(department);
+                                        setIsCancelDepartmentDialogOpen(true);
+                                      }}
+                                      className="h-8 w-8 p-0 text-orange-600 hover:text-orange-800 hover:bg-orange-50"
+                                    >
+                                      <IconX className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Cancel department</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+
+                            {canDelete && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openDeleteDialog(department);
+                                      }}
+                                      className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                    >
+                                      <IconTrash className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Delete department</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {page < totalPages && (
+                      <TableRow ref={scrollSentinelRef}>
+                        <TableCell colSpan={8} className="text-center py-4">
+                          {isFetchingNextPage ? (
+                            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                              <IconLoader className="h-4 w-4 animate-spin" />
+                              Loading more departments...
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">&nbsp;</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-10">
+                      <div className="flex flex-col items-center space-y-3">
+                        <IconSchool className="h-12 w-12 text-muted-foreground/60" />
+                        <p className="text-muted-foreground font-medium">
+                          No departments found
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {searchTerm || statusFilter !== "ALL"
+                            ? "Try adjusting your search or filters"
+                            : "Create your first department to get started"}
+                        </p>
+                        {(searchTerm || statusFilter !== "ALL") && (
+                          <Button
+                            variant="outline"
+                            onClick={clearFilters}
+                            className="mt-2"
+                          >
+                            Clear filters
+                          </Button>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </>
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10">
-                    <div className="flex flex-col items-center space-y-3">
-                      <IconSchool className="h-12 w-12 text-muted-foreground/60" />
-                      <p className="text-muted-foreground font-medium">
-                        No departments found
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {searchTerm || statusFilter !== "ALL"
-                          ? "Try adjusting your search or filters"
-                          : "Create your first department to get started"}
-                      </p>
-                      {(searchTerm || statusFilter !== "ALL") && (
-                        <Button
-                          variant="outline"
-                          onClick={clearFilters}
-                          className="mt-2"
-                        >
-                          Clear filters
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
@@ -1548,8 +1926,8 @@ const Departments = () => {
       )}
 
       {/* Create Department Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto">
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} className="max-w-[90vw] md:max-w-4xl lg:max-w-5xl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconPlus className="h-5 w-5" />
@@ -1559,175 +1937,176 @@ const Departments = () => {
               Create a new department. You can assign an trainer later.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name">Department Name *</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  placeholder="Enter department name"
-                  className={
-                    formErrors.name ? "border-red-500 focus:border-red-500" : ""
-                  }
-                />
-                {formErrors.name && (
-                  <p className="text-sm text-red-600">{formErrors.name}</p>
-                )}
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="uniCode">UniCode (Unique)</Label>
-                <Input
-                  id="uniCode"
-                  name="uniCode"
-                  value={formData.uniCode}
-                  onChange={handleInputChange}
-                  placeholder="Enter unique code"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Courses (Optional)</Label>
-              <div className="space-y-3">
-                <Select
-                  value=""
-                  onValueChange={(value) => {
-                    if (value && value !== "loading" && value !== "error" && value !== "none" && !selectedCourses.map(String).includes(String(value))) {
-                      setSelectedCourses([...selectedCourses, String(value)]);
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+            {/* Left Grid: Department Information */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Department Name *</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    placeholder="Enter department name"
+                    className={
+                      formErrors.name ? "border-red-500 focus:border-red-500" : ""
                     }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add courses..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {coursesLoading ? (
-                      <SelectItem value="loading" disabled>
-                        <div className="flex items-center gap-2">
-                          <IconLoader className="h-4 w-4 animate-spin" />
-                          Loading courses...
-                        </div>
-                      </SelectItem>
-                    ) : coursesError ? (
-                      <SelectItem value="error" disabled>
-                        Error loading courses
-                      </SelectItem>
-                    ) : allCourses.length > 0 ? (
-                      allCourses.map((course) => (
-                        <SelectItem key={course._id || course.id} value={String(course._id || course.id)}>
-                          {course.title || course.name}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>
-                        No courses available
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                  />
+                  {formErrors.name && (
+                    <p className="text-sm text-red-600">{formErrors.name}</p>
+                  )}
+                </div>
 
-                {selectedCourses.length > 0 && (
-                  <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20">
-                    {selectedCourses.map((courseId) => {
-                      const course = allCourses.find((c) => String(c._id || c.id) === String(courseId));
-                      return (
-                        <Badge key={courseId} variant="secondary" className="flex items-center gap-1 pl-2 pr-1 py-1">
-                          {course?.title || course?.name || "Loading..."}
-                          <div
-                            className="ml-1 hover:bg-red-200 rounded-full p-0.5 cursor-pointer transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedCourses(prev => prev.filter(id => id !== courseId));
-                            }}
-                          >
-                            <IconX className="h-3 w-3 text-red-600" />
+                <div className="grid gap-2">
+                  <Label htmlFor="uniCode">UniCode (Unique)</Label>
+                  <Input
+                    id="uniCode"
+                    name="uniCode"
+                    value={formData.uniCode}
+                    onChange={handleInputChange}
+                    placeholder="Enter unique code"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Courses (Optional)</Label>
+                <div className="space-y-3">
+                  <Select
+                    value=""
+                    onValueChange={(value) => {
+                      if (value && value !== "loading" && value !== "error" && value !== "none" && !selectedCourses.map(String).includes(String(value))) {
+                        setSelectedCourses([...selectedCourses, String(value)]);
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Add courses..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {coursesLoading ? (
+                        <SelectItem value="loading" disabled>
+                          <div className="flex items-center gap-2">
+                            <IconLoader className="h-4 w-4 animate-spin" />
+                            Loading courses...
                           </div>
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="instructorId">Trainer (Optional)</Label>
-                <Select
-                  value={formData.instructorId ? String(formData.instructorId) : ""}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, instructorId: value ? Number(value) : "" })
-                  }
-                >
-                  <SelectTrigger id="instructorId">
-                    <SelectValue placeholder="Select an trainer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {instructorsLoading ? (
-                      <SelectItem value="loading" disabled>
-                        Loading Trainers...
-                      </SelectItem>
-                    ) : instructorsError ? (
-                      <SelectItem value="error" disabled>
-                        Error loading trainers
-                      </SelectItem>
-                    ) : instructors.length > 0 ? (
-                      instructors.map((instructor) => (
-                        <SelectItem key={instructor._id} value={String(instructor._id)}>
-                          {instructor.fullName} ({instructor.email})
                         </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>
-                        No trainers available
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                      ) : coursesError ? (
+                        <SelectItem value="error" disabled>
+                          Error loading courses
+                        </SelectItem>
+                      ) : allCourses.length > 0 ? (
+                        allCourses.map((course) => (
+                          <SelectItem key={course._id || course.id} value={String(course._id || course.id)}>
+                            {course.title || course.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="none" disabled>
+                          No courses available
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+
+                  {selectedCourses.length > 0 && (
+                    <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20">
+                      {selectedCourses.map((courseId) => {
+                        const course = allCourses.find((c) => String(c._id || c.id) === String(courseId));
+                        return (
+                          <Badge key={courseId} variant="secondary" className="flex items-center gap-1 pl-2 pr-1 py-1">
+                            {course?.title || course?.name || "Loading..."}
+                            <div
+                              className="ml-1 hover:bg-red-200 rounded-full p-0.5 cursor-pointer transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedCourses(prev => prev.filter(id => id !== courseId));
+                              }}
+                            >
+                              <IconX className="h-3 w-3 text-red-600" />
+                            </div>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="capacity">Capacity (Optional)</Label>
-                <Input
-                  id="capacity"
-                  name="capacity"
-                  type="number"
-                  min="1"
-                  value={formData.capacity}
-                  onChange={handleInputChange}
-                  placeholder="Enter capacity"
-                />
-              </div>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="instructorId">Trainer (Optional)</Label>
+                  <Select
+                    value={formData.instructorId ? String(formData.instructorId) : ""}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, instructorId: value ? Number(value) : "" })
+                    }
+                  >
+                    <SelectTrigger id="instructorId">
+                      <SelectValue placeholder="Select an trainer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {instructorsLoading ? (
+                        <SelectItem value="loading" disabled>
+                          Loading Trainers...
+                        </SelectItem>
+                      ) : instructorsError ? (
+                        <SelectItem value="error" disabled>
+                          Error loading trainers
+                        </SelectItem>
+                      ) : instructors.length > 0 ? (
+                        instructors.map((instructor) => (
+                          <SelectItem key={instructor._id} value={String(instructor._id)}>
+                            {instructor.fullName} ({instructor.email})
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="none" disabled>
+                          No trainers available
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="startDate">Start Date (Optional)</Label>
-                <Input
-                  id="startDate"
-                  name="startDate"
-                  type="date"
-                  value={formData.startDate}
-                  onChange={handleInputChange}
-                />
+                <div className="grid gap-2">
+                  <Label htmlFor="capacity">Capacity (Optional)</Label>
+                  <Input
+                    id="capacity"
+                    name="capacity"
+                    type="number"
+                    min="1"
+                    value={formData.capacity}
+                    onChange={handleInputChange}
+                    placeholder="Enter capacity"
+                  />
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="endDate">End Date (Optional)</Label>
-                <Input
-                  id="endDate"
-                  name="endDate"
-                  type="date"
-                  value={formData.endDate}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="startDate">Start Date (Optional)</Label>
+                  <Input
+                    id="startDate"
+                    name="startDate"
+                    type="date"
+                    value={formData.startDate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="endDate">End Date (Optional)</Label>
+                  <Input
+                    id="endDate"
+                    name="endDate"
+                    type="date"
+                    value={formData.endDate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+
               <div className="grid gap-2">
                 <Label className="text-sm font-medium">Source Department</Label>
                 <div className="rounded-md border bg-muted/20 p-3 space-y-1">
@@ -1735,6 +2114,22 @@ const Departments = () => {
                   <p className="text-xs text-muted-foreground">{formData.uniCode || "No UniCode set"}</p>
                 </div>
               </div>
+
+              <div className="grid gap-2">
+                <Label className="text-sm font-medium">Source Section</Label>
+                <Select value="dept" disabled>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Department-level (all sections)" />
+                  </SelectTrigger>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Section-specific routing can be configured after the department is created.
+                </p>
+              </div>
+            </div>
+
+            {/* Right Grid: Daily 5M Routing Fields */}
+            <div className="space-y-4 border-t pt-6 md:border-t-0 md:pt-0 md:border-l md:pl-6">
               <Daily5MRoutingFields
                 idPrefix="create"
                 formData={formData}
@@ -1745,6 +2140,21 @@ const Departments = () => {
                 lines={routingLines}
                 isLoadingLines={isLoadingRoutingLines}
               />
+
+              <div className="border-t pt-4 space-y-4">
+                {SKILL_MATRIX_ROLES.map((role) => (
+                  <SkillMatrixRoutingFields
+                    key={role.key}
+                    idPrefix="create"
+                    role={role.key}
+                    roleLabel={role.label}
+                    formData={formData}
+                    setFormData={setFormData}
+                    departments={allDepartmentsForRouting}
+                    {...skillMatrixRoutingQueryData[role.key]}
+                  />
+                ))}
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1770,8 +2180,8 @@ const Departments = () => {
       </Dialog>
 
       {/* Edit Department Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto">
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} className="max-w-[90vw] md:max-w-4xl lg:max-w-5xl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconPencil className="h-5 w-5" />
@@ -1779,156 +2189,157 @@ const Departments = () => {
             </DialogTitle>
             <DialogDescription>Update department information.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-name">Department Name *</Label>
-                <Input
-                  id="edit-name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  placeholder="Enter department name"
-                />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+            {/* Left Grid: Department Information */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Department Name *</Label>
+                  <Input
+                    id="edit-name"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    placeholder="Enter department name"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-uniCode">UniCode</Label>
+                  <Input
+                    id="edit-uniCode"
+                    name="uniCode"
+                    value={formData.uniCode}
+                    onChange={handleInputChange}
+                    placeholder="Enter unique code"
+                  />
+                </div>
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="edit-uniCode">UniCode</Label>
-                <Input
-                  id="edit-uniCode"
-                  name="uniCode"
-                  value={formData.uniCode}
-                  onChange={handleInputChange}
-                  placeholder="Enter unique code"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Courses</Label>
-              <div className="space-y-3">
-                <Select
-                  value=""
-                  onValueChange={(value) => {
-                    if (value && value !== "loading" && value !== "error" && value !== "none" && !selectedCourses.map(String).includes(String(value))) {
-                      setSelectedCourses([...selectedCourses, String(value)]);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add courses..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {coursesLoading ? (
-                      <SelectItem value="loading" disabled>
-                        <div className="flex items-center gap-2">
-                          <IconLoader className="h-4 w-4 animate-spin" />
-                          Loading courses...
-                        </div>
-                      </SelectItem>
-                    ) : coursesError ? (
-                      <SelectItem value="error" disabled>
-                        Error loading courses
-                      </SelectItem>
-                    ) : allCourses.length > 0 ? (
-                      allCourses.map((course) => (
-                        <SelectItem key={course._id || course.id} value={String(course._id || course.id)}>
-                          {course.title || course.name}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>
-                        No courses available
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-
-                {selectedCourses.length > 0 && (
-                  <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20">
-                    {selectedCourses.map((courseId) => {
-                      const course = allCourses.find((c) => String(c._id || c.id) === String(courseId));
-                      // Fallback if course not found in list (e.g. pagination limit)
-                      // In real app we might need to fetch it or rely on department data if available
-                      return (
-                        <Badge key={courseId} variant="secondary" className="flex items-center gap-1 pl-2 pr-1 py-1">
-                          {course?.title || course?.name || "Unknown Course"}
-                          <div
-                            className="ml-1 hover:bg-red-200 rounded-full p-0.5 cursor-pointer transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedCourses(prev => prev.filter(id => id !== courseId));
-                            }}
-                          >
-                            <IconX className="h-3 w-3 text-red-600" />
+                <Label>Courses</Label>
+                <div className="space-y-3">
+                  <Select
+                    value=""
+                    onValueChange={(value) => {
+                      if (value && value !== "loading" && value !== "error" && value !== "none" && !selectedCourses.map(String).includes(String(value))) {
+                        setSelectedCourses([...selectedCourses, String(value)]);
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Add courses..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {coursesLoading ? (
+                        <SelectItem value="loading" disabled>
+                          <div className="flex items-center gap-2">
+                            <IconLoader className="h-4 w-4 animate-spin" />
+                            Loading courses...
                           </div>
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
+                        </SelectItem>
+                      ) : coursesError ? (
+                        <SelectItem value="error" disabled>
+                          Error loading courses
+                        </SelectItem>
+                      ) : allCourses.length > 0 ? (
+                        allCourses.map((course) => (
+                          <SelectItem key={course._id || course.id} value={String(course._id || course.id)}>
+                            {course.title || course.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="none" disabled>
+                          No courses available
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-status">Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, status: value })
-                  }
-                >
-                  <SelectTrigger id="edit-status">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UPCOMING">Upcoming</SelectItem>
-                    <SelectItem value="ONGOING">Ongoing</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
+                  {selectedCourses.length > 0 && (
+                    <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20">
+                      {selectedCourses.map((courseId) => {
+                        const course = allCourses.find((c) => String(c._id || c.id) === String(courseId));
+                        // Fallback if course not found in list (e.g. pagination limit)
+                        // In real app we might need to fetch it or rely on department data if available
+                        return (
+                          <Badge key={courseId} variant="secondary" className="flex items-center gap-1 pl-2 pr-1 py-1">
+                            {course?.title || course?.name || "Unknown Course"}
+                            <div
+                              className="ml-1 hover:bg-red-200 rounded-full p-0.5 cursor-pointer transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedCourses(prev => prev.filter(id => id !== courseId));
+                              }}
+                            >
+                              <IconX className="h-3 w-3 text-red-600" />
+                            </div>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="edit-capacity">Capacity</Label>
-                <Input
-                  id="edit-capacity"
-                  name="capacity"
-                  type="number"
-                  min="1"
-                  value={formData.capacity}
-                  onChange={handleInputChange}
-                  placeholder="Enter capacity"
-                />
-              </div>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-status">Status</Label>
+                  <Select
+                    value={formData.status}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, status: value })
+                    }
+                  >
+                    <SelectTrigger id="edit-status">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UPCOMING">Upcoming</SelectItem>
+                      <SelectItem value="ONGOING">Ongoing</SelectItem>
+                      <SelectItem value="COMPLETED">Completed</SelectItem>
+                      <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-startDate">Start Date</Label>
-                <Input
-                  id="edit-startDate"
-                  name="startDate"
-                  type="date"
-                  value={formData.startDate}
-                  onChange={handleInputChange}
-                />
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-capacity">Capacity</Label>
+                  <Input
+                    id="edit-capacity"
+                    name="capacity"
+                    type="number"
+                    min="1"
+                    value={formData.capacity}
+                    onChange={handleInputChange}
+                    placeholder="Enter capacity"
+                  />
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-endDate">End Date</Label>
-                <Input
-                  id="edit-endDate"
-                  name="endDate"
-                  type="date"
-                  value={formData.endDate}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-startDate">Start Date</Label>
+                  <Input
+                    id="edit-startDate"
+                    name="startDate"
+                    type="date"
+                    value={formData.startDate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-endDate">End Date</Label>
+                  <Input
+                    id="edit-endDate"
+                    name="endDate"
+                    type="date"
+                    value={formData.endDate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+
               <div className="grid gap-2">
                 <Label className="text-sm font-medium">Source Department</Label>
                 <div className="rounded-md border bg-muted/20 p-3 space-y-1">
@@ -1937,16 +2348,67 @@ const Departments = () => {
                   <p className="text-xs text-muted-foreground">{getStudentCount(selectedDepartment)} operators</p>
                 </div>
               </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-source-section">Source Section</Label>
+                <Select value={selectedSourceSectionId} onValueChange={setSelectedSourceSectionId}>
+                  <SelectTrigger id="edit-source-section">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dept">Department-level (all sections)</SelectItem>
+                    {isLoadingSourceSections ? (
+                      <SelectItem value="loading" disabled>
+                        Loading sections...
+                      </SelectItem>
+                    ) : sourceSections.length > 0 ? (
+                      sourceSections.map((s) => (
+                        <SelectItem key={s.id || s._id} value={String(s.id || s._id)}>
+                          {s.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        No sections in this department
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {selectedSourceSectionId === "dept"
+                    ? "Editing department-wide routing. Select a section to override it for that section only."
+                    : "Editing routing for this section only. Falls back to department-level routing when left unset."}
+                </p>
+              </div>
+            </div>
+
+            {/* Right Grid: Daily 5M Routing Fields */}
+            <div className="space-y-4 border-t pt-6 md:border-t-0 md:pt-0 md:border-l md:pl-6">
               <Daily5MRoutingFields
                 idPrefix="edit"
-                formData={formData}
-                setFormData={setFormData}
+                formData={activeRoutingValue}
+                setFormData={setActiveRoutingValue}
                 departments={allDepartmentsForRouting}
                 sections={routingSections}
                 isLoadingSections={isLoadingRoutingSections}
                 lines={routingLines}
                 isLoadingLines={isLoadingRoutingLines}
               />
+
+              <div className="border-t pt-4 space-y-4">
+                {SKILL_MATRIX_ROLES.map((role) => (
+                  <SkillMatrixRoutingFields
+                    key={role.key}
+                    idPrefix="edit"
+                    role={role.key}
+                    roleLabel={role.label}
+                    formData={activeRoutingValue}
+                    setFormData={setActiveRoutingValue}
+                    departments={allDepartmentsForRouting}
+                    {...skillMatrixRoutingQueryData[role.key]}
+                  />
+                ))}
+              </div>
             </div>
           </div>
           <DialogFooter>

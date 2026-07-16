@@ -14,6 +14,21 @@ class Section {
         this.tenCycleFormType = data.tenCycleFormType || "form1";
         this.departmentId = data.departmentId;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
+
+        this.daily5mApproverDeptId = data.daily5mApproverDeptId || null;
+        this.daily5mApproverSectionId = data.daily5mApproverSectionId || null;
+        this.daily5mApproverLineId = data.daily5mApproverLineId || null;
+
+        this.skillMatrixApproverQaDeptId = data.skillMatrixApproverQaDeptId || null;
+        this.skillMatrixApproverQaSectionId = data.skillMatrixApproverQaSectionId || null;
+        this.skillMatrixApproverQaLineId = data.skillMatrixApproverQaLineId || null;
+        this.skillMatrixApproverSafetyDeptId = data.skillMatrixApproverSafetyDeptId || null;
+        this.skillMatrixApproverSafetySectionId = data.skillMatrixApproverSafetySectionId || null;
+        this.skillMatrixApproverSafetyLineId = data.skillMatrixApproverSafetyLineId || null;
+        this.skillMatrixApproverProcessDeptId = data.skillMatrixApproverProcessDeptId || null;
+        this.skillMatrixApproverProcessSectionId = data.skillMatrixApproverProcessSectionId || null;
+        this.skillMatrixApproverProcessLineId = data.skillMatrixApproverProcessLineId || null;
+
         this.users = typeof data.users === 'string' ? JSON.parse(data.users) : (data.users || []);
         this.sectionCount = data.sectionCount || this.users.length || 0;
 
@@ -36,6 +51,18 @@ class Section {
                     tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
                     departmentId INT NOT NULL,
                     isActive BIT DEFAULT 1,
+                    daily5mApproverDeptId INT NULL,
+                    daily5mApproverSectionId INT NULL,
+                    daily5mApproverLineId INT NULL,
+                    skillMatrixApproverQaDeptId INT NULL,
+                    skillMatrixApproverQaSectionId INT NULL,
+                    skillMatrixApproverQaLineId INT NULL,
+                    skillMatrixApproverSafetyDeptId INT NULL,
+                    skillMatrixApproverSafetySectionId INT NULL,
+                    skillMatrixApproverSafetyLineId INT NULL,
+                    skillMatrixApproverProcessDeptId INT NULL,
+                    skillMatrixApproverProcessSectionId INT NULL,
+                    skillMatrixApproverProcessLineId INT NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId),
@@ -79,11 +106,95 @@ class Section {
                     ALTER TABLE [sections] ALTER COLUMN tenCycleFormType NVARCHAR(255);
                 END
 
-                IF NOT EXISTS (SELECT * FROM sys.columns 
-                             WHERE object_id = OBJECT_ID('sections') 
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
                              AND name = 'users')
                 BEGIN
                     ALTER TABLE [sections] ADD users NVARCHAR(MAX) DEFAULT '[]';
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'daily5mApproverDeptId')
+                BEGIN
+                    ALTER TABLE [sections] ADD daily5mApproverDeptId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'daily5mApproverSectionId')
+                BEGIN
+                    ALTER TABLE [sections] ADD daily5mApproverSectionId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'daily5mApproverLineId')
+                BEGIN
+                    ALTER TABLE [sections] ADD daily5mApproverLineId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverQaDeptId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverQaDeptId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverQaSectionId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverQaSectionId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverQaLineId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverQaLineId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverSafetyDeptId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverSafetyDeptId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverSafetySectionId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverSafetySectionId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverSafetyLineId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverSafetyLineId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverProcessDeptId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverProcessDeptId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverProcessSectionId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverProcessSectionId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillMatrixApproverProcessLineId')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillMatrixApproverProcessLineId INT NULL;
                 END
 
                 -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
@@ -180,7 +291,12 @@ class Section {
 
     static async create(data) {
         const fields = [
-            "name", "uniCode", "description", "category", "daily5mFormType", "tenCycleFormType", "departmentId", "isActive", "users", "createdAt", "updatedAt"
+            "name", "uniCode", "description", "category", "daily5mFormType", "tenCycleFormType", "departmentId", "isActive",
+            "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
+            "skillMatrixApproverQaDeptId", "skillMatrixApproverQaSectionId", "skillMatrixApproverQaLineId",
+            "skillMatrixApproverSafetyDeptId", "skillMatrixApproverSafetySectionId", "skillMatrixApproverSafetyLineId",
+            "skillMatrixApproverProcessDeptId", "skillMatrixApproverProcessSectionId", "skillMatrixApproverProcessLineId",
+            "users", "createdAt", "updatedAt"
         ];
 
         const now = new Date();
@@ -193,6 +309,18 @@ class Section {
             data.tenCycleFormType || "form1",
             data.departmentId,
             data.isActive !== undefined ? data.isActive : true,
+            data.daily5mApproverDeptId || null,
+            data.daily5mApproverSectionId || null,
+            data.daily5mApproverLineId || null,
+            data.skillMatrixApproverQaDeptId || null,
+            data.skillMatrixApproverQaSectionId || null,
+            data.skillMatrixApproverQaLineId || null,
+            data.skillMatrixApproverSafetyDeptId || null,
+            data.skillMatrixApproverSafetySectionId || null,
+            data.skillMatrixApproverSafetyLineId || null,
+            data.skillMatrixApproverProcessDeptId || null,
+            data.skillMatrixApproverProcessSectionId || null,
+            data.skillMatrixApproverProcessLineId || null,
             '[]',
             now,
             now
@@ -263,6 +391,18 @@ class Section {
         if (data.daily5mFormType !== undefined) { updateFields.push("daily5mFormType = ?"); values.push(data.daily5mFormType); }
         if (data.tenCycleFormType !== undefined) { updateFields.push("tenCycleFormType = ?"); values.push(data.tenCycleFormType); }
         if (data.isActive !== undefined) { updateFields.push("isActive = ?"); values.push(data.isActive); }
+        if (data.daily5mApproverDeptId !== undefined) { updateFields.push("daily5mApproverDeptId = ?"); values.push(data.daily5mApproverDeptId); }
+        if (data.daily5mApproverSectionId !== undefined) { updateFields.push("daily5mApproverSectionId = ?"); values.push(data.daily5mApproverSectionId); }
+        if (data.daily5mApproverLineId !== undefined) { updateFields.push("daily5mApproverLineId = ?"); values.push(data.daily5mApproverLineId); }
+        if (data.skillMatrixApproverQaDeptId !== undefined) { updateFields.push("skillMatrixApproverQaDeptId = ?"); values.push(data.skillMatrixApproverQaDeptId); }
+        if (data.skillMatrixApproverQaSectionId !== undefined) { updateFields.push("skillMatrixApproverQaSectionId = ?"); values.push(data.skillMatrixApproverQaSectionId); }
+        if (data.skillMatrixApproverQaLineId !== undefined) { updateFields.push("skillMatrixApproverQaLineId = ?"); values.push(data.skillMatrixApproverQaLineId); }
+        if (data.skillMatrixApproverSafetyDeptId !== undefined) { updateFields.push("skillMatrixApproverSafetyDeptId = ?"); values.push(data.skillMatrixApproverSafetyDeptId); }
+        if (data.skillMatrixApproverSafetySectionId !== undefined) { updateFields.push("skillMatrixApproverSafetySectionId = ?"); values.push(data.skillMatrixApproverSafetySectionId); }
+        if (data.skillMatrixApproverSafetyLineId !== undefined) { updateFields.push("skillMatrixApproverSafetyLineId = ?"); values.push(data.skillMatrixApproverSafetyLineId); }
+        if (data.skillMatrixApproverProcessDeptId !== undefined) { updateFields.push("skillMatrixApproverProcessDeptId = ?"); values.push(data.skillMatrixApproverProcessDeptId); }
+        if (data.skillMatrixApproverProcessSectionId !== undefined) { updateFields.push("skillMatrixApproverProcessSectionId = ?"); values.push(data.skillMatrixApproverProcessSectionId); }
+        if (data.skillMatrixApproverProcessLineId !== undefined) { updateFields.push("skillMatrixApproverProcessLineId = ?"); values.push(data.skillMatrixApproverProcessLineId); }
 
         if (updateFields.length === 0) return null;
 

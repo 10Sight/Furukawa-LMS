@@ -46,6 +46,16 @@ class Department {
         this.daily5mApproverSectionId = data.daily5mApproverSectionId || null;
         this.daily5mApproverLineId = data.daily5mApproverLineId || null;
 
+        this.skillMatrixApproverQaDeptId = data.skillMatrixApproverQaDeptId || null;
+        this.skillMatrixApproverQaSectionId = data.skillMatrixApproverQaSectionId || null;
+        this.skillMatrixApproverQaLineId = data.skillMatrixApproverQaLineId || null;
+        this.skillMatrixApproverSafetyDeptId = data.skillMatrixApproverSafetyDeptId || null;
+        this.skillMatrixApproverSafetySectionId = data.skillMatrixApproverSafetySectionId || null;
+        this.skillMatrixApproverSafetyLineId = data.skillMatrixApproverSafetyLineId || null;
+        this.skillMatrixApproverProcessDeptId = data.skillMatrixApproverProcessDeptId || null;
+        this.skillMatrixApproverProcessSectionId = data.skillMatrixApproverProcessSectionId || null;
+        this.skillMatrixApproverProcessLineId = data.skillMatrixApproverProcessLineId || null;
+
         const parseIdArray = (val) => {
             if (Array.isArray(val)) return val;
             if (typeof val === 'string' && val.trim() !== '') {
@@ -117,6 +127,42 @@ class Department {
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverLineId')
                 BEGIN
                     ALTER TABLE departments ADD daily5mApproverLineId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverQaDeptId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverQaDeptId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverQaSectionId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverQaSectionId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverQaLineId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverQaLineId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverSafetyDeptId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverSafetyDeptId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverSafetySectionId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverSafetySectionId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverSafetyLineId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverSafetyLineId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverProcessDeptId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverProcessDeptId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverProcessSectionId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverProcessSectionId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverProcessLineId')
+                BEGIN
+                    ALTER TABLE departments ADD skillMatrixApproverProcessLineId INT NULL;
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoMandatoryQuizId')
                 BEGIN
@@ -241,6 +287,9 @@ class Department {
             "schedule", "notes", "statusUpdatedAt", "departmentQuiz",
             "departmentAssignment", "isDeleted", "isReportingEnabled",
             "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
+            "skillMatrixApproverQaDeptId", "skillMatrixApproverQaSectionId", "skillMatrixApproverQaLineId",
+            "skillMatrixApproverSafetyDeptId", "skillMatrixApproverSafetySectionId", "skillMatrixApproverSafetyLineId",
+            "skillMatrixApproverProcessDeptId", "skillMatrixApproverProcessSectionId", "skillMatrixApproverProcessLineId",
             "dojoMandatoryQuizId", "dojoHandoverQuizId", "dojoInterviewQuizId",
             "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId", "isDojoSpecificDept",
             "createdAt"
@@ -389,6 +438,9 @@ class Department {
             "schedule", "notes", "statusUpdatedAt", "departmentQuiz",
             "departmentAssignment", "isDeleted", "isReportingEnabled",
             "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
+            "skillMatrixApproverQaDeptId", "skillMatrixApproverQaSectionId", "skillMatrixApproverQaLineId",
+            "skillMatrixApproverSafetyDeptId", "skillMatrixApproverSafetySectionId", "skillMatrixApproverSafetyLineId",
+            "skillMatrixApproverProcessDeptId", "skillMatrixApproverProcessSectionId", "skillMatrixApproverProcessLineId",
             "dojoMandatoryQuizId", "dojoHandoverQuizId", "dojoInterviewQuizId",
             "dojoEligibilityEvaluationId", "dojoInterviewEvaluationId", "isDojoSpecificDept"
         ];

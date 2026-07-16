@@ -12,6 +12,7 @@ import { useGetMachinesBySubSectionQuery, useGetMachinesByLineQuery, useGetMachi
 import { useGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
 import { useGetSkillMatrixListQuery, useGetSkillMatrixQuery, useSaveSkillMatrixMutation, useDeleteEvaluationSheetMutation, useDeleteSkillMatrixMutation } from '@/Redux/AllApi/SkillMatrixApi';
+import { canActOnSkillMatrix, SKILL_MATRIX_SIGNATURE_ROLES } from '../../../../shared/skillMatrixRouting.js';
 import { toast } from "sonner";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -897,6 +898,26 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
             setCreateSection(String(secs[0].id || secs[0]._id));
     }, [isRestricted, createOpen, createDepartment, createSectionsData, createSection]);
 
+    // Skill Matrix Approval Routing: QA/Safety/Process signatures are each independently routed
+    // (unlike Daily 5M's single approver target), so button visibility is checked per role.
+    // Delegates to the same canActOnSkillMatrix the server enforces at save time
+    // (shared/skillMatrixRouting.js) so this can never drift from what the server actually allows.
+    const currentDepartmentObj = departmentsData?.data?.departments?.find(
+        d => String(d.id || d._id) === String(selectedDepartment)
+    );
+    const currentSectionObj = (sectionsData?.data || []).find(
+        s => String(s.id || s._id) === String(selectedSection)
+    );
+    const canSignSkillMatrix = React.useMemo(() => {
+        const result = {};
+        SKILL_MATRIX_SIGNATURE_ROLES.forEach(role => {
+            result[role] = user
+                ? canActOnSkillMatrix(user, currentDepartmentObj, currentSectionObj, role).allowed
+                : false;
+        });
+        return result;
+    }, [user, currentDepartmentObj, currentSectionObj]);
+
     const handleSignature = (role, status) => {
         if (!user) {
             toast.error("Please log in to sign the document");
@@ -1714,7 +1735,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        !isMatrixReadOnly && (
+                                                        !isMatrixReadOnly && canSignSkillMatrix.qa && (
                                                             <div className="flex gap-1">
                                                                 <button onClick={() => handleSignature('qa', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
                                                                 <button onClick={() => handleSignature('qa', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
@@ -1736,7 +1757,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        !isMatrixReadOnly && (
+                                                        !isMatrixReadOnly && canSignSkillMatrix.safety && (
                                                             <div className="flex gap-1">
                                                                 <button onClick={() => handleSignature('safety', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
                                                                 <button onClick={() => handleSignature('safety', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>
@@ -1758,7 +1779,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        !isMatrixReadOnly && (
+                                                        !isMatrixReadOnly && canSignSkillMatrix.process && (
                                                             <div className="flex gap-1">
                                                                 <button onClick={() => handleSignature('process', 'Approved')} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Approve</button>
                                                                 <button onClick={() => handleSignature('process', 'Rejected')} className="bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded-sm text-[9px] font-bold no-print">Reject</button>

@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import Department from "../models/department.model.js";
+import Section from "../models/section.model.js";
 import User from "../models/auth.model.js";
 import Course from "../models/course.model.js";
 import Progress from "../models/progress.model.js";
@@ -159,7 +160,13 @@ export const getMyDepartments = asyncHandler(async (req, res) => {
 });
 
 export const createDepartment = asyncHandler(async (req, res) => {
-    const { name, uniCode, instructorId, courseIds, startDate, endDate, capacity, daily5mApproverDeptId, daily5mApproverSectionId, daily5mApproverLineId } = req.body;
+    const {
+        name, uniCode, instructorId, courseIds, startDate, endDate, capacity,
+        daily5mApproverDeptId, daily5mApproverSectionId, daily5mApproverLineId,
+        skillMatrixApproverQaDeptId, skillMatrixApproverQaSectionId, skillMatrixApproverQaLineId,
+        skillMatrixApproverSafetyDeptId, skillMatrixApproverSafetySectionId, skillMatrixApproverSafetyLineId,
+        skillMatrixApproverProcessDeptId, skillMatrixApproverProcessSectionId, skillMatrixApproverProcessLineId,
+    } = req.body;
     if (!name) throw new ApiError("Department name is required", 400);
 
     if (uniCode) {
@@ -191,7 +198,16 @@ export const createDepartment = asyncHandler(async (req, res) => {
         capacity: capacity ? parseInt(capacity) : null,
         daily5mApproverDeptId: daily5mApproverDeptId ? parseInt(daily5mApproverDeptId) : null,
         daily5mApproverSectionId: daily5mApproverSectionId ? parseInt(daily5mApproverSectionId) : null,
-        daily5mApproverLineId: daily5mApproverLineId ? parseInt(daily5mApproverLineId) : null
+        daily5mApproverLineId: daily5mApproverLineId ? parseInt(daily5mApproverLineId) : null,
+        skillMatrixApproverQaDeptId: skillMatrixApproverQaDeptId ? parseInt(skillMatrixApproverQaDeptId) : null,
+        skillMatrixApproverQaSectionId: skillMatrixApproverQaSectionId ? parseInt(skillMatrixApproverQaSectionId) : null,
+        skillMatrixApproverQaLineId: skillMatrixApproverQaLineId ? parseInt(skillMatrixApproverQaLineId) : null,
+        skillMatrixApproverSafetyDeptId: skillMatrixApproverSafetyDeptId ? parseInt(skillMatrixApproverSafetyDeptId) : null,
+        skillMatrixApproverSafetySectionId: skillMatrixApproverSafetySectionId ? parseInt(skillMatrixApproverSafetySectionId) : null,
+        skillMatrixApproverSafetyLineId: skillMatrixApproverSafetyLineId ? parseInt(skillMatrixApproverSafetyLineId) : null,
+        skillMatrixApproverProcessDeptId: skillMatrixApproverProcessDeptId ? parseInt(skillMatrixApproverProcessDeptId) : null,
+        skillMatrixApproverProcessSectionId: skillMatrixApproverProcessSectionId ? parseInt(skillMatrixApproverProcessSectionId) : null,
+        skillMatrixApproverProcessLineId: skillMatrixApproverProcessLineId ? parseInt(skillMatrixApproverProcessLineId) : null
     };
     let department = await Department.create(departmentData);
     department = await populateDepartment(department, ['instructor', 'courses', 'course']);
@@ -501,7 +517,47 @@ export const updateDepartment = asyncHandler(async (req, res) => {
     if (req.body.daily5mApproverDeptId !== undefined) department.daily5mApproverDeptId = req.body.daily5mApproverDeptId ? parseInt(req.body.daily5mApproverDeptId) : null;
     if (req.body.daily5mApproverSectionId !== undefined) department.daily5mApproverSectionId = req.body.daily5mApproverSectionId ? parseInt(req.body.daily5mApproverSectionId) : null;
     if (req.body.daily5mApproverLineId !== undefined) department.daily5mApproverLineId = req.body.daily5mApproverLineId ? parseInt(req.body.daily5mApproverLineId) : null;
+    if (req.body.skillMatrixApproverQaDeptId !== undefined) department.skillMatrixApproverQaDeptId = req.body.skillMatrixApproverQaDeptId ? parseInt(req.body.skillMatrixApproverQaDeptId) : null;
+    if (req.body.skillMatrixApproverQaSectionId !== undefined) department.skillMatrixApproverQaSectionId = req.body.skillMatrixApproverQaSectionId ? parseInt(req.body.skillMatrixApproverQaSectionId) : null;
+    if (req.body.skillMatrixApproverQaLineId !== undefined) department.skillMatrixApproverQaLineId = req.body.skillMatrixApproverQaLineId ? parseInt(req.body.skillMatrixApproverQaLineId) : null;
+    if (req.body.skillMatrixApproverSafetyDeptId !== undefined) department.skillMatrixApproverSafetyDeptId = req.body.skillMatrixApproverSafetyDeptId ? parseInt(req.body.skillMatrixApproverSafetyDeptId) : null;
+    if (req.body.skillMatrixApproverSafetySectionId !== undefined) department.skillMatrixApproverSafetySectionId = req.body.skillMatrixApproverSafetySectionId ? parseInt(req.body.skillMatrixApproverSafetySectionId) : null;
+    if (req.body.skillMatrixApproverSafetyLineId !== undefined) department.skillMatrixApproverSafetyLineId = req.body.skillMatrixApproverSafetyLineId ? parseInt(req.body.skillMatrixApproverSafetyLineId) : null;
+    if (req.body.skillMatrixApproverProcessDeptId !== undefined) department.skillMatrixApproverProcessDeptId = req.body.skillMatrixApproverProcessDeptId ? parseInt(req.body.skillMatrixApproverProcessDeptId) : null;
+    if (req.body.skillMatrixApproverProcessSectionId !== undefined) department.skillMatrixApproverProcessSectionId = req.body.skillMatrixApproverProcessSectionId ? parseInt(req.body.skillMatrixApproverProcessSectionId) : null;
+    if (req.body.skillMatrixApproverProcessLineId !== undefined) department.skillMatrixApproverProcessLineId = req.body.skillMatrixApproverProcessLineId ? parseInt(req.body.skillMatrixApproverProcessLineId) : null;
     await department.save();
+
+    // Section-level Daily 5M / Skill Matrix routing overrides: each entry configures (or clears,
+    // when the routing ids are null) one section's own approver dept/section/line per role,
+    // falling back to this department's routing above when a section has none set. Restricted to
+    // sections that actually belong to this department so a stray/incorrect id can't repoint
+    // another department's section.
+    if (Array.isArray(req.body.sectionRoutings) && req.body.sectionRoutings.length > 0) {
+        const departmentSections = await Section.findByDepartment(id);
+        const validSectionIds = new Set(departmentSections.map((s) => String(s.id)));
+
+        for (const routing of req.body.sectionRoutings) {
+            const sectionId = routing?.sectionId;
+            if (!sectionId || !validSectionIds.has(String(sectionId))) continue;
+
+            await Section.update(sectionId, {
+                daily5mApproverDeptId: routing.daily5mApproverDeptId ? parseInt(routing.daily5mApproverDeptId) : null,
+                daily5mApproverSectionId: routing.daily5mApproverSectionId ? parseInt(routing.daily5mApproverSectionId) : null,
+                daily5mApproverLineId: routing.daily5mApproverLineId ? parseInt(routing.daily5mApproverLineId) : null,
+                skillMatrixApproverQaDeptId: routing.skillMatrixApproverQaDeptId ? parseInt(routing.skillMatrixApproverQaDeptId) : null,
+                skillMatrixApproverQaSectionId: routing.skillMatrixApproverQaSectionId ? parseInt(routing.skillMatrixApproverQaSectionId) : null,
+                skillMatrixApproverQaLineId: routing.skillMatrixApproverQaLineId ? parseInt(routing.skillMatrixApproverQaLineId) : null,
+                skillMatrixApproverSafetyDeptId: routing.skillMatrixApproverSafetyDeptId ? parseInt(routing.skillMatrixApproverSafetyDeptId) : null,
+                skillMatrixApproverSafetySectionId: routing.skillMatrixApproverSafetySectionId ? parseInt(routing.skillMatrixApproverSafetySectionId) : null,
+                skillMatrixApproverSafetyLineId: routing.skillMatrixApproverSafetyLineId ? parseInt(routing.skillMatrixApproverSafetyLineId) : null,
+                skillMatrixApproverProcessDeptId: routing.skillMatrixApproverProcessDeptId ? parseInt(routing.skillMatrixApproverProcessDeptId) : null,
+                skillMatrixApproverProcessSectionId: routing.skillMatrixApproverProcessSectionId ? parseInt(routing.skillMatrixApproverProcessSectionId) : null,
+                skillMatrixApproverProcessLineId: routing.skillMatrixApproverProcessLineId ? parseInt(routing.skillMatrixApproverProcessLineId) : null,
+            });
+        }
+    }
+
     const updated = await populateDepartment(department, ['instructor', 'courses', 'course']);
     res.json(new ApiResponse(200, updated, "Updated"));
 });
@@ -1095,120 +1151,204 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
         const interviewQuizIds = dojoConfig?.dojoInterviewQuizId || [];
         const interviewEvalIds = dojoConfig?.dojoInterviewEvaluationId || [];
 
-        // Source 1: Legacy — users who passed ANY of the department's configured handover quizzes on this date
-        const quizFilterSql = handoverQuizIds.length > 0
-            ? "EXISTS (SELECT 1 FROM OPENJSON(?) WHERE CAST(value AS INT) = q.id)"
-            : "q.isHandover = 1 AND q.isDojo = 1";
-        const quizFilterParams = handoverQuizIds.length > 0 ? [JSON.stringify(handoverQuizIds)] : [];
+        // Departments that haven't configured a Dojo Eligibility Evaluation Test yet fall back to the
+        // legacy quiz-OR-any-eval-attempt check until they're migrated to Dojo Hiring Config.
+        if (eligibilityEvalIds.length === 0) {
+            // Source 1: Legacy — users who passed ANY of the department's configured handover quizzes on this date
+            const quizFilterSql = handoverQuizIds.length > 0
+                ? "EXISTS (SELECT 1 FROM OPENJSON(?) WHERE CAST(value AS INT) = q.id)"
+                : "q.isHandover = 1 AND q.isDojo = 1";
+            const quizFilterParams = handoverQuizIds.length > 0 ? [JSON.stringify(handoverQuizIds)] : [];
 
-        const [passedUsers] = await executeQuery(`
-                SELECT DISTINCT
-                    u.id as studentId,
-                    u.fullName as employeeName,
-                    u.userName as employeeCode,
-                    u.targetDeptId,
-                    u.targetSectionId as sectionId,
-                    u.targetLineId as lineId,
-                    u.targetSubSectionId as subSectionId,
-                    u.targetStationId as stationId,
-                    l.name as lineName,
-                    st.name as stationName,
-                    aq.score,
-                    q.questions as quizQuestions
-                FROM users u
-                JOIN attempted_quizzes aq ON CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student
-                JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
-                LEFT JOIN [lines] l ON u.targetLineId = l.id
-                LEFT JOIN machines st ON u.targetStationId = st.id
-                WHERE u.isTemporary = 1
-                  AND u.targetDeptId = ?
-                  AND ${quizFilterSql}
-                  AND (aq.status = 'PASSED' OR aq.status = 'PASS')
-                  AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
-                  AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-                  AND (u.status IS NULL OR u.status != 'LEFT')
-            `, [departmentId, ...quizFilterParams, date]);
+            const [passedUsers] = await executeQuery(`
+                    SELECT DISTINCT
+                        u.id as studentId,
+                        u.fullName as employeeName,
+                        u.userName as employeeCode,
+                        u.targetDeptId,
+                        u.targetSectionId as sectionId,
+                        u.targetLineId as lineId,
+                        u.targetSubSectionId as subSectionId,
+                        u.targetStationId as stationId,
+                        l.name as lineName,
+                        st.name as stationName,
+                        aq.score,
+                        q.questions as quizQuestions
+                    FROM users u
+                    JOIN attempted_quizzes aq ON CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student
+                    JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+                    LEFT JOIN [lines] l ON u.targetLineId = l.id
+                    LEFT JOIN machines st ON u.targetStationId = st.id
+                    WHERE u.isTemporary = 1
+                      AND u.targetDeptId = ?
+                      AND ${quizFilterSql}
+                      AND (aq.status = 'PASSED' OR aq.status = 'PASS')
+                      AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
+                      AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                      AND (u.status IS NULL OR u.status != 'LEFT')
+                `, [departmentId, ...quizFilterParams, date]);
 
-        const quizSuggested = passedUsers.map(user => {
-            let marksPercent = "0%";
-            try {
-                const questions = JSON.parse(user.quizQuestions || "[]");
-                const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
-                marksPercent = `${Math.round((user.score / totalMarks) * 100)}%`;
-            } catch (e) {
-                console.error("Error calculating marks:", e);
-            }
-            return { ...user, marks: marksPercent, passedQuizDate: date, isAutoSuggested: true };
-        });
-
-        // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
-        const evalFilterSql = eligibilityEvalIds.length > 0
-            ? "AND EXISTS (SELECT 1 FROM OPENJSON(?) WHERE CAST(value AS INT) = eta.testId)"
-            : "";
-        const evalFilterParams = eligibilityEvalIds.length > 0 ? [JSON.stringify(eligibilityEvalIds)] : [];
-
-        const [evalUsers] = await executeQuery(`
-                SELECT DISTINCT
-                    u.id as studentId,
-                    u.fullName as employeeName,
-                    u.userName as employeeCode,
-                    u.targetDeptId,
-                    u.targetSectionId as sectionId,
-                    u.targetLineId as lineId,
-                    u.targetSubSectionId as subSectionId,
-                    u.targetStationId as stationId,
-                    l.name as lineName,
-                    st.name as stationName,
-                    tp.score as testPaperScore,
-                    tp.quizQuestions as testPaperQuestions
-                FROM evaluation_test_attempts eta
-                JOIN users u ON eta.userId = u.id
-                LEFT JOIN [lines] l ON u.targetLineId = l.id
-                LEFT JOIN machines st ON u.targetStationId = st.id
-                OUTER APPLY (
-                    SELECT TOP 1 aq2.score, q2.questions as quizQuestions
-                    FROM attempted_quizzes aq2
-                    JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
-                    WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
-                      AND (
-                          (ISJSON(q2.targetDeptId) > 0 AND EXISTS (SELECT 1 FROM OPENJSON(q2.targetDeptId) WHERE CAST(value AS INT) = u.targetDeptId))
-                          OR (ISJSON(q2.targetDeptId) = 0 AND q2.targetDeptId = CAST(u.targetDeptId AS NVARCHAR(50)))
-                      )
-                      AND (
-                          (ISJSON(q2.targetSectionId) > 0 AND (q2.targetSectionId = '[]' OR EXISTS (SELECT 1 FROM OPENJSON(q2.targetSectionId) WHERE CAST(value AS INT) = u.targetSectionId)))
-                          OR (ISJSON(q2.targetSectionId) = 0 AND q2.targetSectionId = CAST(u.targetSectionId AS NVARCHAR(50)))
-                          OR (q2.targetSectionId IS NULL AND u.targetSectionId IS NULL)
-                      )
-                      AND q2.isDojo = 1
-                      AND q2.isHandover = 1
-                      AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
-                    ORDER BY aq2.completedAt DESC
-                ) tp
-                WHERE eta.isHandoverEligible = 1
-                  AND CAST(eta.passedDate AS DATE) = CAST(? AS DATE)
-                  AND u.targetDeptId = ?
-                  ${evalFilterSql}
-                  AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-                  AND (u.status IS NULL OR u.status != 'LEFT')
-            `, [date, departmentId, ...evalFilterParams]);
-
-        const evalSuggested = evalUsers.map(user => {
-            let marks = "100%";
-            if (user.testPaperScore !== null && user.testPaperScore !== undefined && user.testPaperQuestions) {
+            const quizSuggested = passedUsers.map(user => {
+                let marksPercent = "0%";
                 try {
-                    const questions = JSON.parse(user.testPaperQuestions || "[]");
+                    const questions = JSON.parse(user.quizQuestions || "[]");
                     const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
-                    marks = `${Math.round((user.testPaperScore / totalMarks) * 100)}%`;
-                } catch (e) { /* fallback to 100% */ }
-            }
-            return { ...user, marks, passedQuizDate: date, isAutoSuggested: true };
-        });
+                    marksPercent = `${Math.round((user.score / totalMarks) * 100)}%`;
+                } catch (e) {
+                    console.error("Error calculating marks:", e);
+                }
+                return { ...user, marks: marksPercent, passedQuizDate: date, isAutoSuggested: true };
+            });
 
-        // Merge: deduplicate by studentId; evaluation test entry wins over quiz entry
-        const mergedMap = new Map();
-        quizSuggested.forEach(e => mergedMap.set(e.studentId, e));
-        evalSuggested.forEach(e => mergedMap.set(e.studentId, e));
-        eligibleUsers = [...mergedMap.values()];
+            // Source 2: Dojo evaluation test — approved + confirmed, last column all ✓, passedDate matches
+            const [evalUsers] = await executeQuery(`
+                    SELECT DISTINCT
+                        u.id as studentId,
+                        u.fullName as employeeName,
+                        u.userName as employeeCode,
+                        u.targetDeptId,
+                        u.targetSectionId as sectionId,
+                        u.targetLineId as lineId,
+                        u.targetSubSectionId as subSectionId,
+                        u.targetStationId as stationId,
+                        l.name as lineName,
+                        st.name as stationName,
+                        tp.score as testPaperScore,
+                        tp.quizQuestions as testPaperQuestions
+                    FROM evaluation_test_attempts eta
+                    JOIN users u ON eta.userId = u.id
+                    LEFT JOIN [lines] l ON u.targetLineId = l.id
+                    LEFT JOIN machines st ON u.targetStationId = st.id
+                    OUTER APPLY (
+                        SELECT TOP 1 aq2.score, q2.questions as quizQuestions
+                        FROM attempted_quizzes aq2
+                        JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
+                        WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
+                          AND (
+                              (ISJSON(q2.targetDeptId) > 0 AND EXISTS (SELECT 1 FROM OPENJSON(q2.targetDeptId) WHERE CAST(value AS INT) = u.targetDeptId))
+                              OR (ISJSON(q2.targetDeptId) = 0 AND q2.targetDeptId = CAST(u.targetDeptId AS NVARCHAR(50)))
+                          )
+                          AND (
+                              (ISJSON(q2.targetSectionId) > 0 AND (q2.targetSectionId = '[]' OR EXISTS (SELECT 1 FROM OPENJSON(q2.targetSectionId) WHERE CAST(value AS INT) = u.targetSectionId)))
+                              OR (ISJSON(q2.targetSectionId) = 0 AND q2.targetSectionId = CAST(u.targetSectionId AS NVARCHAR(50)))
+                              OR (q2.targetSectionId IS NULL AND u.targetSectionId IS NULL)
+                          )
+                          AND q2.isDojo = 1
+                          AND q2.isHandover = 1
+                          AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
+                        ORDER BY aq2.completedAt DESC
+                    ) tp
+                    WHERE eta.isHandoverEligible = 1
+                      AND CAST(eta.passedDate AS DATE) = CAST(? AS DATE)
+                      AND u.targetDeptId = ?
+                      AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                      AND (u.status IS NULL OR u.status != 'LEFT')
+                `, [date, departmentId]);
+
+            const evalSuggested = evalUsers.map(user => {
+                let marks = "100%";
+                if (user.testPaperScore !== null && user.testPaperScore !== undefined && user.testPaperQuestions) {
+                    try {
+                        const questions = JSON.parse(user.testPaperQuestions || "[]");
+                        const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
+                        marks = `${Math.round((user.testPaperScore / totalMarks) * 100)}%`;
+                    } catch (e) { /* fallback to 100% */ }
+                }
+                return { ...user, marks, passedQuizDate: date, isAutoSuggested: true };
+            });
+
+            // Merge: deduplicate by studentId; evaluation test entry wins over quiz entry
+            const mergedMap = new Map();
+            quizSuggested.forEach(e => mergedMap.set(e.studentId, e));
+            evalSuggested.forEach(e => mergedMap.set(e.studentId, e));
+            eligibleUsers = [...mergedMap.values()];
+        } else {
+            // Strict path: department has a configured Dojo Eligibility Evaluation Test, so search
+            // eligibility is driven solely by evaluation_test_attempts. The Handover Quiz score (if any)
+            // is looked up only to populate the "Marks Secured" column, not to gate eligibility.
+            const requiresInterview = isSpecificDept && interviewEvalIds.length > 0;
+
+            let queryParams = [departmentId, JSON.stringify(eligibilityEvalIds)];
+            let dateCondition;
+            let interviewJoinSql = "";
+            if (requiresInterview) {
+                // Eligibility test passed on or before the sheet date; 2nd interview passed exactly on it
+                dateCondition = "AND CAST(eta1.passedDate AS DATE) <= CAST(? AS DATE)";
+                queryParams.push(date);
+                interviewJoinSql = `
+                    AND EXISTS (
+                        SELECT 1 FROM evaluation_test_attempts eta2
+                        WHERE eta2.userId = u.id
+                          AND eta2.isHandoverEligible = 1
+                          AND eta2.testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
+                          AND CAST(eta2.passedDate AS DATE) = CAST(? AS DATE)
+                    )
+                `;
+                queryParams.push(JSON.stringify(interviewEvalIds), date);
+            } else {
+                dateCondition = "AND CAST(eta1.passedDate AS DATE) = CAST(? AS DATE)";
+                queryParams.push(date);
+            }
+
+            const [evalUsers] = await executeQuery(`
+                    SELECT DISTINCT
+                        u.id as studentId,
+                        u.fullName as employeeName,
+                        u.userName as employeeCode,
+                        u.targetDeptId,
+                        u.targetSectionId as sectionId,
+                        u.targetLineId as lineId,
+                        u.targetSubSectionId as subSectionId,
+                        u.targetStationId as stationId,
+                        l.name as lineName,
+                        st.name as stationName,
+                        tp.score as testPaperScore,
+                        tp.quizQuestions as testPaperQuestions
+                    FROM users u
+                    JOIN evaluation_test_attempts eta1 ON eta1.userId = u.id
+                    LEFT JOIN [lines] l ON u.targetLineId = l.id
+                    LEFT JOIN machines st ON u.targetStationId = st.id
+                    OUTER APPLY (
+                        SELECT TOP 1 aq2.score, q2.questions as quizQuestions
+                        FROM attempted_quizzes aq2
+                        JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
+                        WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
+                          AND (
+                              (ISJSON(q2.targetDeptId) > 0 AND EXISTS (SELECT 1 FROM OPENJSON(q2.targetDeptId) WHERE CAST(value AS INT) = u.targetDeptId))
+                              OR (ISJSON(q2.targetDeptId) = 0 AND q2.targetDeptId = CAST(u.targetDeptId AS NVARCHAR(50)))
+                          )
+                          AND (
+                              (ISJSON(q2.targetSectionId) > 0 AND (q2.targetSectionId = '[]' OR EXISTS (SELECT 1 FROM OPENJSON(q2.targetSectionId) WHERE CAST(value AS INT) = u.targetSectionId)))
+                              OR (ISJSON(q2.targetSectionId) = 0 AND q2.targetSectionId = CAST(u.targetSectionId AS NVARCHAR(50)))
+                              OR (q2.targetSectionId IS NULL AND u.targetSectionId IS NULL)
+                          )
+                          AND q2.isDojo = 1
+                          AND q2.isHandover = 1
+                          AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
+                        ORDER BY aq2.completedAt DESC
+                    ) tp
+                    WHERE u.isTemporary = 1
+                      AND u.targetDeptId = ?
+                      AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                      AND (u.status IS NULL OR u.status != 'LEFT')
+                      AND eta1.isHandoverEligible = 1
+                      AND eta1.testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
+                      ${dateCondition}
+                      ${interviewJoinSql}
+                `, queryParams);
+
+            eligibleUsers = evalUsers.map(user => {
+                let marks = "N/A";
+                if (user.testPaperScore !== null && user.testPaperScore !== undefined && user.testPaperQuestions) {
+                    try {
+                        const questions = JSON.parse(user.testPaperQuestions || "[]");
+                        const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0) || 1;
+                        marks = `${Math.round((user.testPaperScore / totalMarks) * 100)}%`;
+                    } catch (e) { /* leave as N/A */ }
+                }
+                return { ...user, marks, passedQuizDate: date, isAutoSuggested: true };
+            });
+        }
 
         // Interview1/Interview2 prefill — only computed for departments flagged as "specific"
         if (isSpecificDept && eligibleUsers.length > 0) {

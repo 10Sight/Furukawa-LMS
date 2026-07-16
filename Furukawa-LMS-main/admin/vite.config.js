@@ -111,6 +111,12 @@ export default defineConfig({
     // Hot reload optimization
     hmr: {
       overlay: false // Disable error overlay for better performance
+    },
+    fs: {
+      // Allow importing shared/daily5mRouting.js from the repo root — there's no npm
+      // workspace linking admin/ and server/, so Vite's default root-only fs.allow
+      // would otherwise 403 this cross-package import in dev.
+      allow: [path.resolve(__dirname, ".."), path.resolve(__dirname, "./src")]
     }
   },
   optimizeDeps: {

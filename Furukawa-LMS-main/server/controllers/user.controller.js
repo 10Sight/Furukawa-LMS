@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
 import CourseLevelConfig from "../models/courseLevelConfig.model.js";
+import Department from "../models/department.model.js";
 import validator from "validator";
 import { hasPermission } from "../middlewares/roleAuth.middleware.js";
 import { SYSTEM_PERMISSIONS } from "./rolesPermissions.controller.js";
@@ -382,6 +383,55 @@ const buildAssignmentClause = (assignmentStatus, assignmentType) => {
   }
 };
 
+// Builds the SQL fragment + params for the `dojoHandoverPassedOnly` filter.
+// Departments with a configured Dojo Eligibility Evaluation Test use the strict
+// evaluation-only check; departments not yet migrated to Dojo Hiring Config fall
+// back to the legacy quiz-OR-any-eval-attempt check so their searches keep working.
+const buildDojoHandoverPassedClause = async (departmentId) => {
+  const dept = departmentId ? await Department.findById(departmentId) : null;
+  const eligibilityEvalIds = dept?.dojoEligibilityEvaluationId || [];
+  const interviewEvalIds = dept?.dojoInterviewEvaluationId || [];
+  const requiresInterview = !!dept?.isDojoSpecificDept && interviewEvalIds.length > 0;
+
+  if (eligibilityEvalIds.length === 0) {
+    return {
+      sql: `(
+        EXISTS (
+          SELECT 1 FROM attempted_quizzes aq
+          JOIN quizzes q ON aq.quiz = q.id
+          WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+            AND q.isDojo = 1
+            AND q.isHandover = 1
+            AND aq.status = 'PASSED'
+        )
+        OR EXISTS (
+          SELECT 1 FROM evaluation_test_attempts eta
+          WHERE eta.userId = u.id AND eta.isHandoverEligible = 1
+        )
+      )`,
+      params: []
+    };
+  }
+
+  let sql = `EXISTS (
+    SELECT 1 FROM evaluation_test_attempts eta
+    WHERE eta.userId = u.id AND eta.isHandoverEligible = 1
+      AND eta.testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
+  )`;
+  const params = [JSON.stringify(eligibilityEvalIds)];
+
+  if (requiresInterview) {
+    sql += ` AND EXISTS (
+      SELECT 1 FROM evaluation_test_attempts eta2
+      WHERE eta2.userId = u.id AND eta2.isHandoverEligible = 1
+        AND eta2.testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
+    )`;
+    params.push(JSON.stringify(interviewEvalIds));
+  }
+
+  return { sql, params };
+};
+
 /**
  * Get All Users (Paginated & Filtered)
  */
@@ -393,26 +443,16 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   let whereClauses = [
     "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
   ];
+  let params = [];
   if (req.query.ignoreShutter !== "true") {
     whereClauses.push(
       "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
     );
   }
   if (req.query.dojoHandoverPassedOnly === "true") {
-    whereClauses.push(`(
-      EXISTS (
-        SELECT 1 FROM attempted_quizzes aq
-        JOIN quizzes q ON aq.quiz = q.id
-        WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
-          AND q.isDojo = 1
-          AND q.isHandover = 1
-          AND aq.status = 'PASSED'
-      )
-      OR EXISTS (
-        SELECT 1 FROM evaluation_test_attempts eta
-        WHERE eta.userId = u.id AND eta.isHandoverEligible = 1
-      )
-    )`);
+    const dojoClause = await buildDojoHandoverPassedClause(req.query.departmentId);
+    whereClauses.push(dojoClause.sql);
+    params.push(...dojoClause.params);
   }
 
   if (req.query.includeTemporary === "true") {
@@ -422,7 +462,6 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   } else {
     whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
   }
-  let params = [];
 
   if (req.query.search) {
     const t = `%${req.query.search}%`;
@@ -1599,20 +1638,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     );
   }
   if (req.query.dojoHandoverPassedOnly === "true") {
-    whereClauses.push(`(
-      EXISTS (
-        SELECT 1 FROM attempted_quizzes aq
-        JOIN quizzes q ON aq.quiz = q.id
-        WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
-          AND q.isDojo = 1
-          AND q.isHandover = 1
-          AND aq.status = 'PASSED'
-      )
-      OR EXISTS (
-        SELECT 1 FROM evaluation_test_attempts eta
-        WHERE eta.userId = u.id AND eta.isHandoverEligible = 1
-      )
-    )`);
+    const dojoClause = await buildDojoHandoverPassedClause(req.query.departmentId);
+    whereClauses.push(dojoClause.sql);
+    params.push(...dojoClause.params);
   }
 
   const isDojoVal = req.query.isDojo === "true" || req.query.isDojo === true;

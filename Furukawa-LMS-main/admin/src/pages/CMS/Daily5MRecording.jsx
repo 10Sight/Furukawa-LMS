@@ -18,6 +18,7 @@ import { useLazyGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { useLazyGetAllUsersQuery } from '@/Redux/AllApi/UserApi';
 import { useGetSubSectionsQuery } from '@/Redux/AllApi/SubSectionApi';
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
+import { canActOnRow as canActOnRowShared } from '../../../../shared/daily5mRouting.js';
 import { Button } from "@/components/ui/button";
 import {
     IconSettings,
@@ -1094,31 +1095,21 @@ const Daily5MRecording = () => {
     // Even Admins are restricted from approving their own entries for audit integrity.
     const isSubmitter = authUser && submittedById && String(authUser.id || authUser._id) === String(submittedById);
 
-    // Cross-department approval routing: if the source department has a configured
-    // approver dept/section/line, only users matching that routing (or admins, as an
-    // emergency override for routing only — self-approval above still always applies)
-    // may approve/reject its rows.
+    // Cross-department approval routing: if the source section (or its parent department, as a
+    // fallback) has a configured approver dept/section/line, only users matching that routing (or
+    // admins, as an emergency override for routing only — self-approval above still always
+    // applies) may approve/reject its rows. Delegates to the same canActOnRow the server enforces
+    // at save time (shared/daily5mRouting.js) so this button-visibility check can never drift from
+    // what the server actually allows.
     const currentDepartmentObj = departmentsData?.data?.departments?.find(
         d => String(d._id || d.id) === String(selectedDepartment)
     );
-    const routingDeptId = currentDepartmentObj?.daily5mApproverDeptId;
-    const routingSectionId = currentDepartmentObj?.daily5mApproverSectionId;
-    const routingLineId = currentDepartmentObj?.daily5mApproverLineId;
-    const matchesApprovalRouting = (() => {
-        if (!routingDeptId) return true;
-        if (isAdmin) return true;
-        const userDepts = [authUser?.departmentId, ...(Array.isArray(authUser?.departments) ? authUser.departments : [])].map(String);
-        if (!userDepts.includes(String(routingDeptId))) return false;
-        if (routingSectionId) {
-            const userSections = [authUser?.sectionId, ...(Array.isArray(authUser?.sections) ? authUser.sections : [])].map(String);
-            if (!userSections.includes(String(routingSectionId))) return false;
-        }
-        if (routingLineId) {
-            const userLines = [authUser?.lineId, ...(Array.isArray(authUser?.lines) ? authUser.lines : [])].map(String);
-            if (!userLines.includes(String(routingLineId))) return false;
-        }
-        return true;
-    })();
+    const currentSectionObj = sections.find(
+        s => String(s._id || s.id) === String(selectedSection)
+    );
+    const matchesApprovalRouting = authUser
+        ? canActOnRowShared(authUser, null, currentDepartmentObj, currentSectionObj).allowed
+        : false;
 
     const canApprove = hasApprovalPermission && !isSubmitter && matchesApprovalRouting;
 

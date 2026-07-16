@@ -47,7 +47,7 @@ export const getSectionsByDepartment = asyncHandler(async (req, res) => {
 // @access  Private
 export const getAllSections = asyncHandler(async (req, res) => {
     const { departmentId } = req.query;
-    let querySQL = "SELECT id, name, uniCode, description, category, departmentId, isActive FROM [sections]";
+    let querySQL = "SELECT id, name, uniCode, description, category, departmentId, isActive, daily5mApproverDeptId, daily5mApproverSectionId, daily5mApproverLineId FROM [sections]";
     let params = [];
 
     if (departmentId && departmentId !== "ALL" && departmentId !== "undefined" && departmentId !== "null") {

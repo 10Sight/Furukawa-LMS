@@ -479,8 +479,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   if (deptIds.length) {
     const ph = deptIds.map(() => "?").join(",");
-    whereClauses.push(`(u.departmentId IN (${ph}) OR u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId IN (${ph})))`);
-    params.push(...deptIds, ...deptIds);
+    whereClauses.push(`(u.departmentId IN (${ph}) OR (u.isTemporary = 1 AND u.targetDeptId IN (${ph})) OR u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId IN (${ph})))`);
+    params.push(...deptIds, ...deptIds, ...deptIds);
   }
   if (sectIds.length) {
     const ph = sectIds.map(() => "?").join(",");

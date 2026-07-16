@@ -864,6 +864,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                         ) : col.field === 'employeeName' && !col.readOnly && canManage && isEditable ? (
                                                             <UserAutocomplete
                                                                 mode="all"
+                                                                departmentId={departmentId}
                                                                 excludeAdmins={true}
                                                                 excludeTrainers={true}
                                                                 value={entry.employeeName}
@@ -932,6 +933,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                         {canManage && isEditable ? (
                                                             <UserAutocomplete
                                                                 mode="all"
+                                                                departmentId={departmentId}
                                                                 excludeAdmins={true}
                                                                 excludeTrainers={true}
                                                                 value={entry.employeeName}

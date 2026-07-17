@@ -167,6 +167,27 @@ class NotificationService {
                 });
             }
 
+            if (formName === "Operator Observance Check Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const reviewUrl = `${adminUrl}/admin/skill-matrix?tab=observance&dept=${departmentId}&operator=${studentId}`;
+
+                const operator = studentId ? await User.findById(studentId).catch(() => null) : null;
+
+                htmlMessage = emailTemplates.generateObservanceStatusEmail({
+                    operatorName: operator?.fullName || formData?.operatorNameCode || "-",
+                    employeeCode: operator?.empId || "",
+                    departmentName: deptName,
+                    lineName: formData?.lineName || "",
+                    processName: formData?.processName || "",
+                    level1Date: formData?.level1Date || "",
+                    preparedBy: formData?.preparedBy || "",
+                    checkedBy: formData?.checkedBy || "",
+                    verifiedBy: formData?.verifiedBy || "",
+                    status: formData?.status || "Submitted",
+                    portalUrl: reviewUrl
+                });
+            }
+
             if (formName === "Dojo Evaluation Sheet") {
                 const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const reviewUrl = `${adminUrl}/admin/view-evaluation-attempt/${formData?.id}`;

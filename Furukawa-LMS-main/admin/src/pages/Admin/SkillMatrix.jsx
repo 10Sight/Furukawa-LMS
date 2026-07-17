@@ -479,6 +479,15 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         }
     }, [searchParams, isEmbeddedView]);
 
+    // Deep link into the Observance tab for a specific operator (e.g. from a review email)
+    useEffect(() => {
+        if (searchParams.get('tab') !== 'observance') return;
+        const dept = searchParams.get('dept');
+        const operator = searchParams.get('operator');
+        if (dept) setObservanceDepartment(dept);
+        if (operator) setSelectedOperatorForObservance(operator);
+    }, [searchParams]);
+
     useEffect(() => {
         if (selectedDepartment) {
             fetchDashboardConfig();

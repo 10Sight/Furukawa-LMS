@@ -1642,6 +1642,127 @@ export const generatePlanUpdationWarningEmail = ({
 </html>`;
 };
 
+/**
+ * Generate Operator Observance Check Sheet status email.
+ * Summary-only (no observance grid) — operator info, sign-off status, and a review link.
+ */
+export const generateObservanceStatusEmail = ({
+    operatorName,
+    employeeCode,
+    departmentName,
+    lineName,
+    processName,
+    level1Date,
+    preparedBy,
+    checkedBy,
+    verifiedBy,
+    status,
+    portalUrl
+}) => {
+    const formatSignOff = (val) => {
+        if (!val) return '<span style="color:#94a3b8;font-weight:600;">Pending</span>';
+        const isApproved = String(val).startsWith('Approved');
+        const name = String(val).replace('Approved By: ', '').replace('Rejected By: ', '');
+        return `<span style="color:${isApproved ? '#059669' : '#dc2626'};font-weight:700;">${isApproved ? 'Approved' : 'Rejected'}</span>
+                <span style="color:#111827;"> — ${name}</span>`;
+    };
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Operator Observance Check Sheet</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+    <div style="max-width:600px;margin:30px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);">
+
+        <!-- Header -->
+        <div style="background:#1d4ed8;padding:24px 32px;">
+            <div style="font-size:13px;color:#bfdbfe;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
+            <div style="font-size:20px;color:#ffffff;font-weight:700;margin-top:6px;">Operator Observance Check Sheet Submitted</div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:28px 32px;">
+            <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear Reviewer,</p>
+            <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
+                The Operator Observance Check Sheet for <strong>${operatorName}</strong> has been submitted and requires your review.
+            </p>
+
+            <!-- Details Card -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;width:160px;">Operator</td>
+                        <td style="padding:7px 0;color:#111827;font-weight:700;font-size:15px;">${operatorName}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Emp. Code</td>
+                        <td style="padding:7px 0;color:#111827;">${employeeCode || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Department</td>
+                        <td style="padding:7px 0;color:#111827;">${departmentName || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Line</td>
+                        <td style="padding:7px 0;color:#111827;">${lineName || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Process</td>
+                        <td style="padding:7px 0;color:#111827;">${processName || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Level-1 Complete Date</td>
+                        <td style="padding:7px 0;color:#111827;">${level1Date || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Status</td>
+                        <td style="padding:7px 0;color:#2563eb;font-weight:700;">${status || 'Submitted'}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Sign-off Card -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;width:160px;">Prepared By</td>
+                        <td style="padding:7px 0;color:#111827;">${preparedBy || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Checked By</td>
+                        <td style="padding:7px 0;">${formatSignOff(checkedBy)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Verified By</td>
+                        <td style="padding:7px 0;">${formatSignOff(verifiedBy)}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- CTA Button -->
+            <div style="text-align:center;margin:28px 0;">
+                <a href="${portalUrl}"
+                   style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+                    Review & Approve
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
+            <p style="margin:0;color:#94a3b8;font-size:11px;">
+                This is an automated notification from the FME Digital Portal. &nbsp;|&nbsp; ${new Date().toLocaleString()}
+            </p>
+        </div>
+    </div>
+</body>
+</html>`;
+};
+
 export default {
     generateWelcomeEmail,
     generateInstructorWelcomeEmail,
@@ -1657,4 +1778,5 @@ export default {
     generateSkillMatrixEmail,
     generateHandoverApprovalRequestEmail,
     generatePlanUpdationWarningEmail,
+    generateObservanceStatusEmail,
 };

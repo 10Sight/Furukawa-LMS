@@ -1253,7 +1253,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                         ORDER BY aq2.completedAt DESC
                     ) tp
                     WHERE eta.isHandoverEligible = 1
-                      AND CAST(eta.passedDate AS DATE) = CAST(? AS DATE)
+                      AND CAST(eta.passedDate AS DATE) <= CAST(? AS DATE)
                       AND u.targetDeptId = ?
                       AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
                       AND (u.status IS NULL OR u.status != 'LEFT')
@@ -1300,7 +1300,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 `;
                 queryParams.push(JSON.stringify(interviewEvalIds), date);
             } else {
-                dateCondition = "AND CAST(eta1.passedDate AS DATE) = CAST(? AS DATE)";
+                dateCondition = "AND CAST(eta1.passedDate AS DATE) <= CAST(? AS DATE)";
                 queryParams.push(date);
             }
 

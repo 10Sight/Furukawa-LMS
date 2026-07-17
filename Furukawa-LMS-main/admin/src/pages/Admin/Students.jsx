@@ -1593,6 +1593,19 @@ const Students = () => {
   const handleConfirmLeftStatus = async () => {
     if (!leftConfirmTarget) return;
 
+    if (!leftConfirmDate) {
+      showToast("error", "Please select a date of leaving");
+      return;
+    }
+    if (!leftConfirmReason) {
+      showToast("error", "Please select a reason of leaving");
+      return;
+    }
+    if (leftConfirmReason === "Other" && !leftConfirmCustomReason.trim()) {
+      showToast("error", "Please specify the reason of leaving");
+      return;
+    }
+
     setIsLeftConfirmSubmitting(true);
     try {
       await updateStudent({
@@ -4150,7 +4163,12 @@ const Students = () => {
             <Button
               variant="destructive"
               onClick={handleConfirmLeftStatus}
-              disabled={isLeftConfirmSubmitting}
+              disabled={
+                isLeftConfirmSubmitting ||
+                !leftConfirmDate ||
+                !leftConfirmReason ||
+                (leftConfirmReason === "Other" && !leftConfirmCustomReason.trim())
+              }
               className="gap-2"
             >
               {isLeftConfirmSubmitting && <IconLoader className="h-4 w-4 animate-spin" />}

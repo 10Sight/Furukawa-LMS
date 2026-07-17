@@ -1284,7 +1284,10 @@ export const updateUser = asyncHandler(async (req, res) => {
   }
 
   // Trigger Hierarchy Sync
-  if (data.lineId || data.subSectionId || data.stationId || data.lines !== undefined || data.subSections !== undefined || data.sections !== undefined || data.status !== undefined || data.isDeleted !== undefined) {
+  // Note: status is intentionally excluded — sync queries below only filter on isDeleted/role,
+  // never on status, so a status-only change (e.g. Mark as Left) has nothing to resync and
+  // running this cascade for it was pure wasted latency.
+  if (data.lineId || data.subSectionId || data.stationId || data.lines !== undefined || data.subSections !== undefined || data.sections !== undefined || data.isDeleted !== undefined) {
     try {
       const SubSection = (await import("../models/subSection.model.js")).default;
       const Line = (await import("../models/line.model.js")).default;
@@ -1428,11 +1431,13 @@ export const updateUser = asyncHandler(async (req, res) => {
     };
   }
 
-  try {
-    await UserHierarchySnapshot.syncFromUsers();
-  } catch (syncErr) {
+  // Fire-and-forget: this rebuilds the whole snapshot table (TRUNCATE + full INSERT...SELECT
+  // over all users) and was blocking every update response, including simple status changes
+  // like Mark as Left. The table is already eventually-consistent via a 30-minute background
+  // sync, so it doesn't need to be on the response's critical path.
+  UserHierarchySnapshot.syncFromUsers().catch((syncErr) => {
     console.error("Snapshot sync failed after updateUser:", syncErr.message);
-  }
+  });
 
   res.json(new ApiResponse(200, finalUser, "User updated successfully"));
 });

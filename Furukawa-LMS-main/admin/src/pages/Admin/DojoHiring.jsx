@@ -521,6 +521,19 @@ const DojoHiring = () => {
     const handleConfirmLeftStatus = async () => {
         if (!leftConfirmTarget) return;
 
+        if (!leftConfirmDate) {
+            toast.error("Please select a date of leaving");
+            return;
+        }
+        if (!leftConfirmReason) {
+            toast.error("Please select a reason of leaving");
+            return;
+        }
+        if (leftConfirmReason === "Other" && !leftConfirmCustomReason.trim()) {
+            toast.error("Please specify the reason of leaving");
+            return;
+        }
+
         setIsLeftConfirmSubmitting(true);
         try {
             await updateUser({
@@ -2013,7 +2026,12 @@ const DojoHiring = () => {
                             <Button
                                 variant="destructive"
                                 onClick={handleConfirmLeftStatus}
-                                disabled={isLeftConfirmSubmitting}
+                                disabled={
+                                    isLeftConfirmSubmitting ||
+                                    !leftConfirmDate ||
+                                    !leftConfirmReason ||
+                                    (leftConfirmReason === "Other" && !leftConfirmCustomReason.trim())
+                                }
                                 className="flex-1 gap-2"
                             >
                                 {isLeftConfirmSubmitting && <IconLoader className="w-4 h-4 animate-spin" />}

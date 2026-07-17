@@ -162,8 +162,13 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
     }
 
     if (isDojo !== undefined && isDojo !== '' && isDojo !== 'all') {
-        filterClause += ' AND u.isTemporary = ?';
-        baseParams.push(isDojo === 'true' || isDojo === '1' ? 1 : 0);
+        const isDojoBool = isDojo === 'true' || isDojo === '1';
+        // "Dojo" also covers users who have since been handed over — their attempts were
+        // taken while they were still Dojo, so they shouldn't drop out once isTemporary flips
+        // to 0. Mirrors the same guard used in getDojoHiringTrend / getContractorWiseOperatorStats.
+        filterClause += isDojoBool
+            ? ' AND (u.expectedHandover IS NOT NULL OR u.isTemporary = 1)'
+            : ' AND u.isTemporary = 0';
     }
 
     const quizIds = quizId ? quizId.split(',').map(s => s.trim()).filter(Boolean) : [];

@@ -65,7 +65,7 @@ export function HomeLayout() {
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const { user, isLoading } = useSelector((state) => state.auth);
 
   const { t, language } = useTranslate();
@@ -144,6 +144,16 @@ export function HomeLayout() {
   }, [pathname, language, tabs, t]);
 
   const isPathAllowed = useMemo(() => isPathAllowedForUser(pathname, "admin", user), [pathname, user]);
+
+  // The Skill Upgradation tab renders its own bounded scroll track (SkillUpgradationPlan.jsx),
+  // which only works if this container is width-constrained. Every other Skill Matrix tab
+  // should be free to grow with the page's natural (window-level) horizontal scroll instead.
+  const needsMinW0 = useMemo(() => {
+    if (pathname.startsWith("/admin/skill-matrix")) {
+      return new URLSearchParams(search).get("tab") === "skillUpgradation";
+    }
+    return ["/admin/multi-skilling", "/admin/departments"].some(p => pathname.startsWith(p));
+  }, [pathname, search]);
 
   useEffect(() => {
     if (isPathAllowed) {
@@ -395,7 +405,7 @@ export function HomeLayout() {
       {/* Main Content Area */}
       <div
         className={`flex-1 transition-all duration-300 ${collapsed ? "ml-16" : "ml-64"
-          } ${["/admin/skill-matrix", "/admin/multi-skilling", "/admin/departments"].some(p => pathname.startsWith(p)) ? "min-w-0" : ""}`}
+          } ${needsMinW0 ? "min-w-0" : ""}`}
       >
         {/* Header */}
         <header

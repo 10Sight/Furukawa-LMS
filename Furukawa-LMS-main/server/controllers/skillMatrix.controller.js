@@ -583,7 +583,8 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
             al.logStatus as logStatus,
             CONVERT(VARCHAR(10), dates.attendanceDate, 120) as attendanceDate,
             al_shift.shift,
-            u.currentEffeciency
+            u.currentEffeciency,
+            COALESCE(u.isTemporary, 0) as isTemporary
         FROM users u
         CROSS JOIN (
             SELECT DISTINCT [date] as attendanceDate FROM attendance_logs
@@ -620,6 +621,7 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
         WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND u.role IN ('STUDENT', 'CUSTOM')
           AND (u.status IS NULL OR u.status != 'LEFT')
+          AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
           AND (u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))
     `;
 

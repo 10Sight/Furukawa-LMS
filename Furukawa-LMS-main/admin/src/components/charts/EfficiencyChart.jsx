@@ -87,10 +87,14 @@ const barLabel = (staggerPx, outsideColor) => ({ x, y, width, height, value }) =
     return <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={outsideColor} fontSize={13} fontWeight={900}>{Math.round(value)}%</text>;
 };
 
+const isTemporaryUser = (op) => op.isTemporary === 1 || op.isTemporary === true || op.isTemporary === '1';
+
 const applyFilters = (ops, f) => {
     let r = ops || [];
     // Condition 1: If user status is LEFT, exclude them
     r = r.filter(op => op.status !== 'LEFT' && op.userStatus !== 'LEFT');
+    // Exclude temporary (Dojo candidate) users
+    r = r.filter(op => !isTemporaryUser(op));
 
     if (f.deptIds?.length) r = r.filter(op => f.deptIds.includes(String(op.departmentId || op.departmentName)));
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
@@ -113,6 +117,8 @@ const applyFiltersNoDate = (ops, f) => {
     let r = ops || [];
     // Condition 1: If user status is LEFT, exclude them
     r = r.filter(op => op.status !== 'LEFT' && op.userStatus !== 'LEFT');
+    // Exclude temporary (Dojo candidate) users
+    r = r.filter(op => !isTemporaryUser(op));
 
     if (f.deptIds?.length) r = r.filter(op => f.deptIds.includes(String(op.departmentId || op.departmentName)));
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));

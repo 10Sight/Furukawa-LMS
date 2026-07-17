@@ -558,7 +558,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     name: machine.name,
                     critical: "Non-Critical",
                     min: "L-1",
-                    curr: user.currentSkill?.[String(machine.subSectionId)] || user.currentLevel || null, // Use user skill if available, else global level
+                    curr: user.currentSkill?.[String(machine.subSectionId)] || null, // Use user skill if available, else null
                 }));
 
                 const mergedStations = activeMachines.map(machine => {
@@ -570,7 +570,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                         min: savedStation?.min || "L-1",
                         curr: (savedStation?.curr && savedStation.curr !== "L-1")
                             ? savedStation.curr
-                            : (user.currentSkill?.[String(machine.subSectionId)] || user.currentLevel || null),
+                            : (user.currentSkill?.[String(machine.subSectionId)] || null),
                     };
                 });
 

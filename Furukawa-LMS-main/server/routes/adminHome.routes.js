@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getContractorWiseOperatorStats } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -22,5 +22,8 @@ router.get("/dojo-hiring-trend", verifyJWT, authorizeRoles("isAdmin", "SUPERADMI
 
 // Get Dojo Handover Comparison (Expected vs Actual) for Admin Home
 router.get("/dojo-handover-comparison", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getDojoHandoverComparison);
+
+// Get Contractor-wise Operator stats for Admin Home
+router.get("/contractor-wise-operator-stats", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getContractorWiseOperatorStats);
 
 export default router;

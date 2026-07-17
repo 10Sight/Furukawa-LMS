@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useGetTemporaryUsersQuery } from '@/Redux/AllApi/UserApi';
+import { useGetContractorWiseOperatorStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useGetAllContractorsQuery } from '@/Redux/AllApi/ContractorApi';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,7 +120,12 @@ const ContractorWiseOperatorChart = () => {
     const [rawStart,  setRawStart]  = useState('');
     const [rawEnd,    setRawEnd]    = useState('');
 
-    const { data: usersData, isLoading, error } = useGetTemporaryUsersQuery({ limit: 9999 });
+    const { startDate, endDate } = useMemo(
+        () => toApiDates(timeframe, rawStart, rawEnd),
+        [timeframe, rawStart, rawEnd]
+    );
+
+    const { data: usersData, isLoading, error } = useGetContractorWiseOperatorStatsQuery({ startDate, endDate });
     const { data: contractorsData } = useGetAllContractorsQuery();
     const allUsers = usersData?.data?.users || [];
 
@@ -129,11 +134,6 @@ const ContractorWiseOperatorChart = () => {
         (contractorsData?.data || []).forEach(c => { map[String(c.id)] = c.name; });
         return map;
     }, [contractorsData]);
-
-    const { startDate, endDate } = useMemo(
-        () => toApiDates(timeframe, rawStart, rawEnd),
-        [timeframe, rawStart, rawEnd]
-    );
 
     const { periods, contractorNames, flatPoints, categories, groupSeparators } = useMemo(() => {
         if (!allUsers.length || !startDate || !endDate)

@@ -579,3 +579,42 @@ export const getAdminHomeUserStatusStats = asyncHandler(async (req, res) => {
         new ApiResponse(200, results, "User status stats fetched successfully")
     );
 });
+
+/**
+ * Gets all operator records matching the date range with isTemporary = 1
+ * for the Contractor-wise Operator trend chart.
+ */
+export const getContractorWiseOperatorStats = asyncHandler(async (req, res) => {
+    const { startDate, endDate } = req.query;
+
+    const now = new Date();
+    let start = startDate;
+    let end = endDate;
+
+    if (!start || !end) {
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        start = start || firstOfMonth.toISOString().split('T')[0];
+        end   = end || lastOfMonth.toISOString().split('T')[0];
+    }
+
+    const params = [start, end];
+
+    const [rows] = await executeQuery(`
+        SELECT
+            FORMAT(COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)), 'yyyy-MM-dd') AS joiningDate,
+            u.contractorId,
+            COALESCE(c.name, u.contractor, '') AS contractor
+        FROM users u
+        LEFT JOIN contractors c ON u.contractorId = c.id
+        WHERE (u.expectedHandover IS NOT NULL OR u.isTemporary = 1)
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)) >= ?
+          AND COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)) <= ?
+        ORDER BY joiningDate ASC
+    `, params);
+
+    res.status(200).json(
+        new ApiResponse(200, { users: rows }, "Contractor-wise operator stats fetched successfully")
+    );
+});

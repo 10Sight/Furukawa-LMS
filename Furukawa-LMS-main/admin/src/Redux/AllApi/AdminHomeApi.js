@@ -53,6 +53,14 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
+        getContractorWiseOperatorStats: builder.query({
+            query: ({ startDate = "", endDate = "" } = {}) => ({
+                url: "/api/admin-home/contractor-wise-operator-stats",
+                method: "GET",
+                params: { startDate, endDate }
+            }),
+            keepUnusedDataFor: 0,
+        }),
     }),
 });
 
@@ -63,4 +71,5 @@ export const {
     useGetAdminHomeUserStatusStatsQuery,
     useGetDojoHiringTrendQuery,
     useGetDojoHandoverComparisonQuery,
+    useGetContractorWiseOperatorStatsQuery,
 } = adminHomeApi;

@@ -1414,7 +1414,7 @@ export const generateSkillMatrixEmail = ({
         </div>
 
         <div class="btn-container">
-            <a href="${portalUrl}" class="btn">View & Approve Full Skill Matrix</a>
+            <a href="${portalUrl}" class="btn">Review & Approve</a>
         </div>
 
         <div style="font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid #eee; padding-top: 10px; margin-top: 20px;">

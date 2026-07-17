@@ -464,7 +464,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         if (mon) setSelectedMonth(mon);
 
         // If we have minimum required filters, open the matrix automatically
-        if (dept && line && mon) {
+        // (line is optional — sheets can be saved at department level only)
+        if (dept && mon) {
             setIsMatrixOpen(true);
         }
     }, [searchParams]);

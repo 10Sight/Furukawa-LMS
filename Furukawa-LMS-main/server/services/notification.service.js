@@ -130,6 +130,43 @@ class NotificationService {
                 });
             }
 
+            if (formName === "Skill Matrix Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const sheetSectionId = formData?.section || "";
+                const sheetLineId = formData?.line || "";
+                const sheetSubSectionId = formData?.subSection || "";
+                const sheetStationId = formData?.station || "";
+                const sheetMonth = formData?.month || "";
+
+                const [sec, ln, sub] = await Promise.all([
+                    sheetSectionId ? Section.findById(sheetSectionId).catch(() => null) : null,
+                    sheetLineId ? Line.findById(sheetLineId).catch(() => null) : null,
+                    sheetSubSectionId ? SubSection.findById(sheetSubSectionId).catch(() => null) : null
+                ]);
+                const sectionName = sec?.name || "";
+                const lineName = ln?.name || "";
+                const subSectionName = sub?.name || "";
+
+                const reviewParams = new URLSearchParams({ dept: departmentId, tab: 'skillMatrix' });
+                if (sheetSectionId) reviewParams.set('section', sheetSectionId);
+                if (sheetLineId) reviewParams.set('line', sheetLineId);
+                if (sheetSubSectionId) reviewParams.set('subSection', sheetSubSectionId);
+                if (sheetStationId) reviewParams.set('station', sheetStationId);
+                if (sheetMonth) reviewParams.set('month', sheetMonth);
+                const reviewUrl = `${adminUrl}/admin/skill-matrix?${reviewParams.toString()}`;
+
+                htmlMessage = emailTemplates.generateSkillMatrixEmail({
+                    departmentName: deptName,
+                    sectionName,
+                    lineName,
+                    subSectionName,
+                    month: sheetMonth,
+                    entries: formData?.entries || [],
+                    config: formData?.footerInfo?.config || {},
+                    portalUrl: reviewUrl
+                });
+            }
+
             if (formName === "Dojo Evaluation Sheet") {
                 const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
                 const reviewUrl = `${adminUrl}/admin/view-evaluation-attempt/${formData?.id}`;

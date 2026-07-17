@@ -281,7 +281,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                     <span className="p-1 border-r border-black font-semibold bg-gray-100 w-20">Doc. No.</span>
                                     <span className="p-1 w-32">
                                         <Input disabled={readOnly}
-                                            className="h-full w-full border-none p-1 focus-visible:ring-0"
+                                            className="h-full w-full border-none p-1 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                             value={docDetails.docNo}
                                             onChange={e => handleDocDetailChange('docNo', e.target.value)}
                                         />
@@ -291,7 +291,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                     <span className="p-1 border-r border-black font-semibold bg-gray-100 w-20">Rev. No.</span>
                                     <span className="p-1 w-32">
                                         <Input disabled={readOnly}
-                                            className="h-full w-full border-none p-1 focus-visible:ring-0"
+                                            className="h-full w-full border-none p-1 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                             value={docDetails.revNo}
                                             onChange={e => handleDocDetailChange('revNo', e.target.value)}
                                         />
@@ -301,7 +301,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                     <span className="p-1 border-r border-black font-semibold bg-gray-100 w-20">Rev. Date</span>
                                     <span className="p-1 w-32">
                                         <Input disabled={readOnly}
-                                            className="h-full w-full border-none p-1 focus-visible:ring-0"
+                                            className="h-full w-full border-none p-1 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                             value={docDetails.revDate}
                                             onChange={e => handleDocDetailChange('revDate', e.target.value)}
                                         />
@@ -360,27 +360,27 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                     {entries.map((row, index) => (
                                         <tr key={index}>
                                             <td className="border border-black p-0 h-8">
-                                                <Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0"
+                                                <Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                     value={row.date?.toString().split('T')[0] ?? ""}
                                                     onChange={e => handleEntryChange(index, 'date', e.target.value)} type="date"
                                                     min={new Date().toLocaleDateString('en-CA')} />
                                             </td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.hours ?? ""} onChange={e => handleEntryChange(index, 'hours', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.productionTarget ?? ""} onChange={e => handleEntryChange(index, 'productionTarget', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.totalPartProduction ?? ""} onChange={e => handleEntryChange(index, 'totalPartProduction', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.okParts ?? ""} onChange={e => handleEntryChange(index, 'okParts', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.rejection ?? ""} onChange={e => handleEntryChange(index, 'rejection', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.cycleTimeTarget ?? ""} onChange={e => handleEntryChange(index, 'cycleTimeTarget', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.cycleTimeActual ?? ""} onChange={e => handleEntryChange(index, 'cycleTimeActual', e.target.value)} /></td>
-                                            <td className="border border-black p-0 bg-gray-50"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 bg-transparent focus-visible:ring-0" value={row.ncTag ?? ""} onChange={e => handleEntryChange(index, 'ncTag', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.escalationSystem ?? ""} onChange={e => handleEntryChange(index, 'escalationSystem', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.sosFollow ?? ""} onChange={e => handleEntryChange(index, 'sosFollow', e.target.value)} /></td>
-                                            <td className="border border-black p-0 bg-gray-50"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 bg-transparent focus-visible:ring-0" value={row.customerComplaint ?? ""} onChange={e => handleEntryChange(index, 'customerComplaint', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.ppeUses ?? ""} onChange={e => handleEntryChange(index, 'ppeUses', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.associateSign ?? ""} onChange={e => handleEntryChange(index, 'associateSign', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.mtsTrainerSign ?? ""} onChange={e => handleEntryChange(index, 'mtsTrainerSign', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.tlSign ?? ""} onChange={e => handleEntryChange(index, 'tlSign', e.target.value)} /></td>
-                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0" value={row.shiftInchargeSign ?? ""} onChange={e => handleEntryChange(index, 'shiftInchargeSign', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.hours ?? ""} onChange={e => handleEntryChange(index, 'hours', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.productionTarget ?? ""} onChange={e => handleEntryChange(index, 'productionTarget', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.totalPartProduction ?? ""} onChange={e => handleEntryChange(index, 'totalPartProduction', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.okParts ?? ""} onChange={e => handleEntryChange(index, 'okParts', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.rejection ?? ""} onChange={e => handleEntryChange(index, 'rejection', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.cycleTimeTarget ?? ""} onChange={e => handleEntryChange(index, 'cycleTimeTarget', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.cycleTimeActual ?? ""} onChange={e => handleEntryChange(index, 'cycleTimeActual', e.target.value)} /></td>
+                                            <td className="border border-black p-0 bg-gray-50"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 bg-transparent focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.ncTag ?? ""} onChange={e => handleEntryChange(index, 'ncTag', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.escalationSystem ?? ""} onChange={e => handleEntryChange(index, 'escalationSystem', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.sosFollow ?? ""} onChange={e => handleEntryChange(index, 'sosFollow', e.target.value)} /></td>
+                                            <td className="border border-black p-0 bg-gray-50"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 bg-transparent focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.customerComplaint ?? ""} onChange={e => handleEntryChange(index, 'customerComplaint', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.ppeUses ?? ""} onChange={e => handleEntryChange(index, 'ppeUses', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.associateSign ?? ""} onChange={e => handleEntryChange(index, 'associateSign', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.mtsTrainerSign ?? ""} onChange={e => handleEntryChange(index, 'mtsTrainerSign', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.tlSign ?? ""} onChange={e => handleEntryChange(index, 'tlSign', e.target.value)} /></td>
+                                            <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.shiftInchargeSign ?? ""} onChange={e => handleEntryChange(index, 'shiftInchargeSign', e.target.value)} /></td>
                                         </tr>
                                     ))}
 
@@ -404,7 +404,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                                     <div className="border-b border-black p-1 font-bold text-center text-[10px] h-10 flex items-center justify-center">TOTAL MARKS</div>
                                                     <div className="flex-1 p-0">
                                                         <Input disabled={readOnly}
-                                                            className="h-full w-full border-none text-center text-lg font-bold p-0 focus-visible:ring-0"
+                                                            className="h-full w-full border-none text-center text-lg font-bold p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900"
                                                             value={summary.totalMarks}
                                                             onChange={e => handleSummaryChange('totalMarks', e.target.value)}
                                                         />
@@ -414,7 +414,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                                     <div className="border-b border-black p-1 font-bold text-center text-[10px] h-10 flex items-center justify-center">TOTAL MARKS OBTAINED</div>
                                                     <div className="flex-1 p-0">
                                                         <Input disabled={readOnly}
-                                                            className="h-full w-full border-none text-center text-lg font-bold p-0 focus-visible:ring-0"
+                                                            className="h-full w-full border-none text-center text-lg font-bold p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900"
                                                             value={summary.totalMarksObtained}
                                                             onChange={e => handleSummaryChange('totalMarksObtained', e.target.value)}
                                                         />
@@ -424,7 +424,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                                     <div className="border-b border-black p-1 font-bold text-center text-[10px] h-10 flex items-center justify-center">Total %</div>
                                                     <div className="flex-1 p-0">
                                                         <Input disabled={readOnly}
-                                                            className="h-full w-full border-none text-center text-lg font-bold p-0 focus-visible:ring-0"
+                                                            className="h-full w-full border-none text-center text-lg font-bold p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900"
                                                             value={summary.totalPercentage}
                                                             onChange={e => handleSummaryChange('totalPercentage', e.target.value)}
                                                         />
@@ -435,7 +435,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                                     <div className="flex-1 p-0 h-full">
                                                         <select
                                                             disabled={readOnly}
-                                                            className={`h-full w-full border-none text-center text-lg font-bold p-0 focus:outline-none bg-transparent ${summary.result === 'Pass' ? 'text-green-600' : summary.result === 'Fail' ? 'text-red-600' : ''}`}
+                                                            className={`h-full w-full border-none text-center text-lg font-bold p-0 focus:outline-none bg-transparent disabled:opacity-100 ${summary.result === 'Pass' ? 'text-green-600' : summary.result === 'Fail' ? 'text-red-600' : ''}`}
                                                             value={summary.result}
                                                             onChange={e => handleSummaryChange('result', e.target.value)}
                                                         >
@@ -606,7 +606,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                         )}
                                     </div>
                                     <textarea disabled={readOnly}
-                                        className="w-full h-20 border-none resize-none focus:outline-none p-1 bg-transparent"
+                                        className="w-full h-20 border-none resize-none focus:outline-none p-1 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         placeholder="Enter remarks here..."
                                         value={remarks}
                                         onChange={(e) => setRemarks(e.target.value)}

@@ -353,7 +353,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                     <span className="font-bold whitespace-nowrap">Area / Line :-</span>
                                     <Input
                                         disabled={readOnly}
-                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1"
+                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.areaLine}
                                         onChange={e => handleInputChange('areaLine', e.target.value)}
                                         placeholder="Enter Area/Line"
@@ -364,7 +364,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                     <Input
                                         disabled={readOnly}
                                         type="date"
-                                        className="inline w-32 border-none h-auto p-0 focus-visible:ring-0 text-blue-600 font-semibold text-right"
+                                        className="inline w-32 border-none h-auto p-0 focus-visible:ring-0 text-blue-600 font-semibold text-right disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.date}
                                         onChange={e => handleInputChange('date', e.target.value)}
                                         min={new Date().toISOString().split('T')[0]}
@@ -377,7 +377,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                     <span className="font-bold whitespace-nowrap">Training Given By :-</span>
                                     <Input
                                         disabled={readOnly}
-                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-left"
+                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-left disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.trainingGivenBy}
                                         onChange={e => handleInputChange('trainingGivenBy', e.target.value)}
                                         placeholder="Trainer Name"
@@ -390,7 +390,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                     <span className="font-bold whitespace-nowrap">Training Topic :-</span>
                                     <Input
                                         disabled={readOnly}
-                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-left"
+                                        className="inline border-none h-auto p-0 ml-2 focus-visible:ring-0 text-blue-600 font-semibold flex-1 text-left disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.trainingTopic}
                                         onChange={e => handleInputChange('trainingTopic', e.target.value)}
                                         placeholder="Topic Name"
@@ -413,7 +413,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                     <Input
                                         disabled={readOnly}
                                         type="time"
-                                        className="inline w-24 border-none h-auto p-0 ml-1 focus-visible:ring-0 text-blue-600 font-semibold"
+                                        className="inline w-24 border-none h-auto p-0 ml-1 focus-visible:ring-0 text-blue-600 font-semibold disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.trainingStartTime}
                                         onChange={e => handleInputChange('trainingStartTime', e.target.value)}
                                     />
@@ -423,7 +423,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                     <Input
                                         disabled={readOnly}
                                         type="time"
-                                        className="inline w-24 border-none h-auto p-0 ml-1 focus-visible:ring-0 text-blue-600 font-semibold"
+                                        className="inline w-24 border-none h-auto p-0 ml-1 focus-visible:ring-0 text-blue-600 font-semibold disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.trainingEndTime}
                                         onChange={e => handleInputChange('trainingEndTime', e.target.value)}
                                     />
@@ -546,7 +546,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                 {/* Text Area */}
                                                 <Textarea
                                                     disabled={readOnly}
-                                                    className="w-full h-full min-h-[80px] border-none p-1 text-sm text-blue-600 resize-none focus-visible:ring-0 leading-relaxed bg-transparent flex-1"
+                                                    className="w-full h-full min-h-[80px] border-none p-1 text-sm text-blue-600 resize-none focus-visible:ring-0 leading-relaxed bg-transparent flex-1 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                     placeholder={`${index + 1}. Enter description...`}
                                                     value={log.description}
                                                     onChange={(e) => {
@@ -620,9 +620,9 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                         {/* Left Side */}
                                                         <td className="border-r border-black text-center font-bold text-blue-600">{leftIndex + 1}</td>
                                                         <td className="border-r border-black p-0">
-                                                            <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent"
-                                                                value={trainingData.attendanceRecords[leftIndex]?.date || ""} 
-                                                                onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)} 
+                                                            <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
+                                                                value={trainingData.attendanceRecords[leftIndex]?.date || ""}
+                                                                onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)}
                                                                 min={new Date().toISOString().split('T')[0]} />
                                                         </td>
                                                         <td className="border-r border-black p-0 overflow-visible relative">
@@ -640,11 +640,11 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                                 }}
                                                                 onTextChange={(val) => handleAttendanceChange(leftIndex, 'name', val)}
                                                                 placeholder="Search Name..."
-                                                                inputClassName="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase text-left bg-transparent rounded-none"
+                                                                inputClassName="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase text-left bg-transparent rounded-none disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                             />
                                                         </td>
                                                         <td className="border-r border-black p-0">
-                                                            <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent"
+                                                            <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                 value={trainingData.attendanceRecords[leftIndex]?.ecode || ""} onChange={e => handleAttendanceChange(leftIndex, 'ecode', e.target.value)} />
                                                         </td>
 
@@ -653,9 +653,9 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                         {rightIndex < N ? (
                                                             <>
                                                                 <td className="border-r border-black p-0">
-                                                                    <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent"
-                                                                        value={trainingData.attendanceRecords[rightIndex]?.date || ""} 
-                                                                        onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)} 
+                                                                    <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
+                                                                        value={trainingData.attendanceRecords[rightIndex]?.date || ""}
+                                                                        onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)}
                                                                         min={new Date().toISOString().split('T')[0]} />
                                                                 </td>
                                                                 <td className="border-r border-black p-0 overflow-visible relative">
@@ -673,11 +673,11 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                                         }}
                                                                         onTextChange={(val) => handleAttendanceChange(rightIndex, 'name', val)}
                                                                         placeholder="Search Name..."
-                                                                        inputClassName="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase text-left bg-transparent rounded-none"
+                                                                        inputClassName="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase text-left bg-transparent rounded-none disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                     />
                                                                 </td>
                                                                 <td className="p-0">
-                                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent"
+                                                                    <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                         value={trainingData.attendanceRecords[rightIndex]?.ecode || ""} onChange={e => handleAttendanceChange(rightIndex, 'ecode', e.target.value)} />
                                                                 </td>
                                                             </>
@@ -700,15 +700,15 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                             <div className="grid grid-cols-2 text-xs border-b border-black">
                                 <div className="border-r border-black p-1 flex items-center h-8 gap-2">
                                     <span className="font-bold">Prepared By :-</span>
-                                    <span className="text-blue-600 font-semibold uppercase">{ojtData?.data?.creatorName || trainingData.trainingGivenBy || "--"}</span>
+                                    <span className="text-blue-900 font-bold uppercase">{ojtData?.data?.creatorName || trainingData.trainingGivenBy || "--"}</span>
                                 </div>
                                 <div className="p-1 flex items-center h-8 justify-between">
                                     <div className="flex items-center gap-2">
                                         <span className="font-bold">Checked By :-</span>
                                         {ojtData?.data?.result && ojtData?.data?.result !== "Pending" && (
-                                            <span className="text-blue-600 font-semibold uppercase">
-                                                {ojtData.data.result === "Approved" 
-                                                    ? (ojtData.data.approverName || "--") 
+                                            <span className="text-blue-900 font-bold uppercase">
+                                                {ojtData.data.result === "Approved"
+                                                    ? (ojtData.data.approverName || "--")
                                                     : `Rejected By: ${ojtData.data.approverName || "--"}`}
                                             </span>
                                         )}

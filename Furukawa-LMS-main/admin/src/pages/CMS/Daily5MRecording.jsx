@@ -237,6 +237,8 @@ const formatHierarchyOption = (childName, parentName) => {
     return childName || parentName || "";
 };
 
+const LINE_SELECT_OTHER = "__other__";
+
 const LineSelect = ({ recIndex, formData, onInputChange, disabled }) => {
     const deptOption = formatHierarchyOption(
         formData[`rec_${recIndex}_DeputedDeptName`],
@@ -248,22 +250,47 @@ const LineSelect = ({ recIndex, formData, onInputChange, disabled }) => {
     );
     const options = [deptOption, lineOption].filter(Boolean);
 
+    const currentFrom = formData[`rec_${recIndex}_From`] || "";
+    const [otherSelected, setOtherSelected] = useState(false);
+    const isOther = otherSelected || (currentFrom !== "" && currentFrom !== deptOption && currentFrom !== lineOption);
+    const selectValue = isOther ? LINE_SELECT_OTHER : currentFrom;
+
     const handleChange = (e) => {
-        onInputChange(recIndex, 'From', e.target.value);
+        const val = e.target.value;
+        if (val === LINE_SELECT_OTHER) {
+            setOtherSelected(true);
+            onInputChange(recIndex, 'From', "");
+        } else {
+            setOtherSelected(false);
+            onInputChange(recIndex, 'From', val);
+        }
     };
 
     return (
-        <select
-            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-            value={formData[`rec_${recIndex}_From`] || ""}
-            onChange={handleChange}
-            disabled={disabled || options.length === 0}
-        >
-            <option value="">-</option>
-            {options.map((opt, idx) => (
-                <option key={idx} value={opt}>{opt}</option>
-            ))}
-        </select>
+        <div className="flex flex-col gap-1 items-center w-full">
+            <select
+                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
+                value={selectValue}
+                onChange={handleChange}
+                disabled={disabled}
+            >
+                <option value="">-</option>
+                {options.map((opt, idx) => (
+                    <option key={idx} value={opt}>{opt}</option>
+                ))}
+                <option value={LINE_SELECT_OTHER}>Other</option>
+            </select>
+            {isOther && (
+                <input
+                    type="text"
+                    className="w-full text-center bg-transparent outline-none h-7 text-[16px] border border-black"
+                    value={currentFrom}
+                    onChange={(e) => onInputChange(recIndex, 'From', e.target.value)}
+                    placeholder="Enter value"
+                    disabled={disabled}
+                />
+            )}
+        </div>
     );
 };
 

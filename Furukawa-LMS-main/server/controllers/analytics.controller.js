@@ -845,7 +845,12 @@ export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
                 COUNT(aq.id) as totalAttempts
             FROM [sections] s
             LEFT JOIN users u ON u.sectionId = s.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-            LEFT JOIN attempted_quizzes aq ON aq.student = u.id ${dateFilter}
+            LEFT JOIN (
+                SELECT aq_sub.*
+                FROM attempted_quizzes aq_sub
+                JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq_sub.quiz
+                WHERE COALESCE(q.isDojo, 0) = 0
+            ) aq ON aq.student = u.id ${dateFilter}
             WHERE s.departmentId = ?
             GROUP BY s.id, s.name, s.category
             ORDER BY passedCount DESC
@@ -861,8 +866,13 @@ export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
                 COUNT(aq.id) as totalAttempts
             FROM departments d
             LEFT JOIN users u ON (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name) AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-            LEFT JOIN attempted_quizzes aq ON aq.student = u.id ${dateFilter}
-            WHERE d.isDeleted = 0 
+            LEFT JOIN (
+                SELECT aq_sub.*
+                FROM attempted_quizzes aq_sub
+                JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq_sub.quiz
+                WHERE COALESCE(q.isDojo, 0) = 0
+            ) aq ON aq.student = u.id ${dateFilter}
+            WHERE d.isDeleted = 0
             GROUP BY d.id, d.name
             ORDER BY passedCount DESC
         `;

@@ -620,6 +620,7 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
         WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND u.role IN ('STUDENT', 'CUSTOM')
           AND (u.status IS NULL OR u.status != 'LEFT')
+          AND (u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))
     `;
 
     const [rows] = await executeQuery(sql);

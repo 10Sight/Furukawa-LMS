@@ -58,7 +58,7 @@ import { getSidebarTabs, isPathAllowedForUser } from "@/constants/pageRegistry";
 
 export function HomeLayout() {
   const [collapsed, setCollapsed] = useState(
-    window.innerWidth >= 820 ? false : true,
+    window.innerWidth >= 1024 ? false : true,
   );
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [pageName, setPageName] = useState("Dashboard");

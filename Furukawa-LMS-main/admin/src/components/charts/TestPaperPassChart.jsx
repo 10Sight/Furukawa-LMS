@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useGetAdminHomeTestPaperStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
+import { useGetAllQuizzesQuery } from '@/Redux/AllApi/QuizApi';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,10 +13,10 @@ import {
     SelectTrigger,
     SelectValue
 } from "@/components/ui/select";
+import MultiSelectFilter from "@/components/common/MultiSelectFilter";
 import {
     IconCertificate,
     IconRefresh,
-    IconClipboardCheck,
     IconSchool,
 } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
@@ -85,7 +86,7 @@ const formatPeriodLabel = (period, groupBy, language = 'en') => {
         .toLocaleDateString(activeLocale, { month: 'short', year: 'numeric' });
 };
 
-const EMPTY_RESULT = { passedTheoretical: 0, failedTheoretical: 0, passedPractical: 0, failedPractical: 0 };
+const EMPTY_RESULT = { passedTheoretical: 0, failedTheoretical: 0 };
 
 const buildFullSeries = (groupBy, start, end, resultData) => {
     if (!start || !end) return { periods: [], resultRows: resultData };
@@ -267,9 +268,15 @@ const TestPaperPassChart = () => {
     const [rawEnd,       setRawEnd]       = useState('');
     const [departmentId, setDepartmentId] = useState('all');
     const [isDojo,       setIsDojo]       = useState('all');
+    const [quizId,       setQuizId]       = useState('');
 
     const { data: deptsData } = useGetAllDepartmentsQuery();
     const departments = deptsData?.data?.departments || [];
+
+    // limit: 500 — this list is independent of the chart's date range/filters, so every
+    // Dojo theoretical test paper always appears here, even ones with no attempts yet.
+    const { data: quizzesData } = useGetAllQuizzesQuery({ isDojo: true, isTheoretical: true, limit: 500 });
+    const testPapers = quizzesData?.data?.quizzes || quizzesData?.data || [];
 
     const { startDate, endDate } = useMemo(
         () => toApiDates(timeframe, rawStart, rawEnd),
@@ -282,6 +289,7 @@ const TestPaperPassChart = () => {
         groupBy:      timeframe,
         departmentId: departmentId === 'all' ? '' : departmentId,
         isDojo:       isDojo       === 'all' ? '' : isDojo,
+        quizId,
     });
 
     const rawTrendByResult = statsData?.data?.trendByResult || [];
@@ -298,8 +306,6 @@ const TestPaperPassChart = () => {
 
     const theoreticalPassedSeries = resultRows.map(r => Number(r.passedTheoretical) || 0);
     const theoreticalFailedSeries = resultRows.map(r => Number(r.failedTheoretical) || 0);
-    const practicalPassedSeries   = resultRows.map(r => Number(r.passedPractical)   || 0);
-    const practicalFailedSeries   = resultRows.map(r => Number(r.failedPractical)   || 0);
 
     const handleTimeframeChange = (tf) => {
         setTimeframe(tf);
@@ -313,6 +319,7 @@ const TestPaperPassChart = () => {
         setRawEnd('');
         setDepartmentId('all');
         setIsDojo('all');
+        setQuizId('');
     };
 
     const SLOT_WIDTH     = 72;
@@ -320,7 +327,7 @@ const TestPaperPassChart = () => {
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
     const cfg = INPUT_CONFIG[timeframe];
-    const chartKeyBase = `${timeframe}-${startDate}-${endDate}-${departmentId}-${isDojo}`;
+    const chartKeyBase = `${timeframe}-${startDate}-${endDate}-${departmentId}-${isDojo}-${quizId}`;
 
     return (
         <Card className="col-span-2">
@@ -419,6 +426,18 @@ const TestPaperPassChart = () => {
                         </Select>
                     </div>
 
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.testPaper')}</Label>
+                        <div className="w-56">
+                            <MultiSelectFilter
+                                placeholder={t('charts.allTestPapers')}
+                                options={testPapers.map(paper => ({ id: String(paper._id), name: paper.title }))}
+                                selectedValues={quizId ? quizId.split(',').filter(Boolean) : []}
+                                onChange={(vals) => setQuizId(vals.join(','))}
+                            />
+                        </div>
+                    </div>
+
                     <Button
                         variant="ghost"
                         size="sm"
@@ -448,33 +467,17 @@ const TestPaperPassChart = () => {
                         <p className="text-sm font-semibold">{t('charts.failedToLoadTestPaper')}</p>
                     </div>
                 ) : (
-                    <>
-                        <PassFailChart
-                            title={t('charts.theoreticalTestPerf')}
-                            icon={IconSchool}
-                            iconColor="text-blue-500"
-                            passedSeries={theoreticalPassedSeries}
-                            failedSeries={theoreticalFailedSeries}
-                            categories={categories}
-                            chartKey={`theoretical-${chartKeyBase}`}
-                            needsScroll={needsScroll}
-                            scrollMinWidth={scrollMinWidth}
-                        />
-
-                        <div className="border-t border-slate-100" />
-
-                        <PassFailChart
-                            title={t('charts.practicalTestPerf')}
-                            icon={IconClipboardCheck}
-                            iconColor="text-orange-500"
-                            passedSeries={practicalPassedSeries}
-                            failedSeries={practicalFailedSeries}
-                            categories={categories}
-                            chartKey={`practical-${chartKeyBase}`}
-                            needsScroll={needsScroll}
-                            scrollMinWidth={scrollMinWidth}
-                        />
-                    </>
+                    <PassFailChart
+                        title={t('charts.theoreticalTestPerf')}
+                        icon={IconSchool}
+                        iconColor="text-blue-500"
+                        passedSeries={theoreticalPassedSeries}
+                        failedSeries={theoreticalFailedSeries}
+                        categories={categories}
+                        chartKey={`theoretical-${chartKeyBase}`}
+                        needsScroll={needsScroll}
+                        scrollMinWidth={scrollMinWidth}
+                    />
                 )}
             </CardContent>
         </Card>

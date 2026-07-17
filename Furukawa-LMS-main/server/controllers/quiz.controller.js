@@ -141,7 +141,7 @@ export const createQuiz = asyncHandler(async (req, res) => {
 // Get All Quizzes
 export const getAllQuizzes = asyncHandler(async (req, res) => {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 500);
     const skip = (page - 1) * limit;
 
     let whereClauses = ["1=1"];
@@ -199,6 +199,11 @@ export const getAllQuizzes = asyncHandler(async (req, res) => {
     if (req.query.isHandover !== undefined) {
         whereClauses.push("COALESCE(q.isHandover, 0) = ?");
         params.push(req.query.isHandover === 'true' || req.query.isHandover === '1' || req.query.isHandover === true ? 1 : 0);
+    }
+
+    if (req.query.isTheoretical !== undefined) {
+        whereClauses.push("COALESCE(q.isTheoretical, 0) = ?");
+        params.push(req.query.isTheoretical === 'true' || req.query.isTheoretical === '1' || req.query.isTheoretical === true ? 1 : 0);
     }
 
     // Restrict quiz visibility for custom role users (non-student, non-admin) without access_all

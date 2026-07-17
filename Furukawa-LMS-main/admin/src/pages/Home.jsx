@@ -226,7 +226,7 @@ const Home = () => {
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <ContractorWiseOperatorChart />
         </LazyContainer>
-        <LazyContainer minHeight={isTablet ? 1160 : isMobile ? 900 : 420}>
+        <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 500}>
           <TestPaperPassChart />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 620 : isMobile ? 500 : 560}>

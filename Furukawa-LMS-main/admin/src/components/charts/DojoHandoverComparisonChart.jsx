@@ -11,6 +11,7 @@ import { IconArrowsTransferDown, IconCalendar, IconRefresh, IconChevronDown } fr
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
+import { useIsTablet } from "@/hooks/useIsTablet";
 
 const _now = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -122,6 +123,7 @@ const INPUT_CONFIG = {
 
 const DojoHandoverComparisonChart = () => {
     const { t, language } = useTranslate();
+    const isTablet = useIsTablet();
     const [timeframe, setTimeframe] = useState('daily');
     const [rawStart, setRawStart] = useState('');
     const [rawEnd, setRawEnd] = useState('');
@@ -366,6 +368,13 @@ const DojoHandoverComparisonChart = () => {
                 },
             },
         },
+        // Taller chart on tablet widths so labels/legend fit in one frame without overlap.
+        responsive: {
+            rules: [{
+                condition: { minWidth: 768, maxWidth: 1024 },
+                chartOptions: { chart: { height: 500 } },
+            }],
+        },
         series: [
             {
                 type: 'column',
@@ -527,7 +536,7 @@ const DojoHandoverComparisonChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div className="h-[560px] flex flex-col items-center justify-center gap-4">
+                    <div style={{ height: isTablet ? 500 : 560 }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -538,11 +547,11 @@ const DojoHandoverComparisonChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[560px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div style={{ height: isTablet ? 500 : 560 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">{t('charts.failedToLoadHandover')}</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div className="h-[560px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div style={{ height: isTablet ? 500 : 560 }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">{t('charts.noHandoverData')}</p>
                         <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>

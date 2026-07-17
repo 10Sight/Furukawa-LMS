@@ -296,11 +296,11 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/on-job-training", key: "on-job-training" },
     { layout: "admin", prefix: "/admin/settings", key: "settings" },
     { layout: "admin", prefix: "/admin/data-management", key: "data-management" },
-    { layout: "admin", Prefix: "/admin/evaluation-test", key: "dojo-evaluation-test" },
-    { layout: "admin", prefix: "/admin/add-evaluation-test", key: "dojo-evaluation-test" },
-    { layout: "admin", prefix: "/admin/edit-evaluation-test/", key: "dojo-evaluation-test" },
-    { layout: "admin", prefix: "/admin/attempt-evaluation-test/", key: "dojo-evaluation-test" },
-    { layout: "admin", prefix: "/admin/view-evaluation-attempt/", key: "dojo-evaluation-test" },
+    { layout: "admin", prefix: "/admin/evaluation-test", key: "dojo-hiring" },
+    { layout: "admin", prefix: "/admin/add-evaluation-test", key: "dojo-hiring" },
+    { layout: "admin", prefix: "/admin/edit-evaluation-test/", key: "dojo-hiring" },
+    { layout: "admin", prefix: "/admin/attempt-evaluation-test/", key: "dojo-hiring" },
+    { layout: "admin", prefix: "/admin/view-evaluation-attempt/", key: "dojo-hiring" },
     { layout: "cms", prefix: "/cms/abnormal-condition", key: "abnormal-condition" },
 
     // Trainer layout

@@ -1263,17 +1263,19 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 
             <ConditionalTabs isEmbedded={isEmbeddedView} activeTab={activeTab} setActiveTab={handleTabChange}>
                 {!isEmbeddedView && (
-                    <TabsList className="no-print mb-6 flex gap-2 w-fit bg-gray-100 p-1.5 rounded-lg shadow-sm border border-gray-200">
-                        <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Handover Sheet</TabsTrigger>
-                        <TabsTrigger value="sixteenDayMonitoring" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">16 Day Monitoring</TabsTrigger>
-                        <TabsTrigger value="skillUpgradation" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Plan for Skill Upgradation</TabsTrigger>
-                        <TabsTrigger value="ojt" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">OJT</TabsTrigger>
-                        <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Test Paper</TabsTrigger>
-                        <TabsTrigger value="cycle10" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">10 Cycle</TabsTrigger>
-                        <TabsTrigger value="evaluation" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Check Sheet of Skill Evaluation</TabsTrigger>
-                        <TabsTrigger value="skillMatrix" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Skill Matrix</TabsTrigger>
-                        <TabsTrigger value="observance" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Operator Observance</TabsTrigger>
-                    </TabsList>
+                    <div className="w-full overflow-x-auto pb-2 no-print themed-scrollbar">
+                        <TabsList className="flex gap-2 w-max bg-gray-100 p-1.5 rounded-lg shadow-sm border border-gray-200 h-auto mb-6">
+                            <TabsTrigger value="handoverSheet" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Handover Sheet</TabsTrigger>
+                            <TabsTrigger value="sixteenDayMonitoring" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">16 Day Monitoring</TabsTrigger>
+                            <TabsTrigger value="skillUpgradation" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Plan for Skill Upgradation</TabsTrigger>
+                            <TabsTrigger value="ojt" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">OJT</TabsTrigger>
+                            <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Test Paper</TabsTrigger>
+                            <TabsTrigger value="cycle10" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">10 Cycle</TabsTrigger>
+                            <TabsTrigger value="evaluation" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Check Sheet of Skill Evaluation</TabsTrigger>
+                            <TabsTrigger value="skillMatrix" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Skill Matrix</TabsTrigger>
+                            <TabsTrigger value="observance" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Operator Observance</TabsTrigger>
+                        </TabsList>
+                    </div>
                 )}
 
                 <ConditionalTabsContent isEmbedded={isEmbeddedView} value="ojt" className="space-y-6">

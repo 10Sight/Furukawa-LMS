@@ -525,6 +525,7 @@ const DojoCandidateDetail = () => {
             departmentName={candidate.deptName || candidate.department?.name}
             sectionId={candidate.targetSectionId || candidate.sectionId || 0}
             sectionName={candidate.sectionName}
+            studentStatus={candidate.status}
           />
           <MenteeFeedbackMonitoringSheet studentId={Number(studentId)} />
         </TabsContent>

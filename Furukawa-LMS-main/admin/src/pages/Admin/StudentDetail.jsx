@@ -1039,6 +1039,7 @@ const StudentDetail = () => {
             employeeCode={student?.userName || student?.empId || student?.employeeId || ""}
             departmentName={typeof student.department === 'object' ? (student.department?.name || "") : (student.department || "")}
             departmentId={typeof student.department === 'object' ? (student.department?._id || student.department?.id || "") : (student.department || "")}
+            studentStatus={student?.status}
           />
         </TabsContent>
 

@@ -24,7 +24,6 @@ import LazyContainer from "@/components/common/LazyContainer";
 import DepartmentQuizChart from "@/components/charts/DepartmentQuizChart";
 import DojoHiringTrendChart from "@/components/charts/DojoHiringTrendChart";
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
-import UserStatusDistributionChart from "@/components/charts/UserStatusDistributionChart";
 import EfficiencyChart from "@/components/charts/EfficiencyChart";
 import DojoHandoverComparisonChart from "@/components/charts/DojoHandoverComparisonChart";
 import ContractorWiseOperatorChart from "@/components/charts/ContractorWiseOperatorChart";
@@ -35,6 +34,7 @@ import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import { IconUserPlus } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate";
+import { useIsTablet } from "@/hooks/useIsTablet";
 
 // Reusable StatCard component
 const StatCard = ({ title, value, description, icon: Icon, iconBgColor, iconColor, isLoading, trend, linkTo }) => {
@@ -107,6 +107,7 @@ const QuickActionCard = ({ title, description, icon: Icon, linkTo, color = "blue
 
 const Home = () => {
   const { t } = useTranslate();
+  const isTablet = useIsTablet();
   const [dateRange, setDateRange] = React.useState({ startDate: '', endDate: '' });
   const [logAction] = useLogActionMutation();
 
@@ -215,22 +216,19 @@ const Home = () => {
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 gap-6">
-        <LazyContainer minHeight={460}>
+        <LazyContainer minHeight={isTablet ? 600 : 460}>
           <DojoHiringTrendChart />
         </LazyContainer>
-        <LazyContainer minHeight={640}>
+        <LazyContainer minHeight={isTablet ? 580 : 640}>
           <DojoHandoverComparisonChart />
         </LazyContainer>
-        <LazyContainer minHeight={640}>
+        <LazyContainer minHeight={isTablet ? 580 : 640}>
           <ContractorWiseOperatorChart />
         </LazyContainer>
-        <LazyContainer minHeight={420}>
+        <LazyContainer minHeight={isTablet ? 1160 : 420}>
           <TestPaperPassChart />
         </LazyContainer>
-        <LazyContainer minHeight={520}>
-          <UserStatusDistributionChart />
-        </LazyContainer>
-        <LazyContainer minHeight={560}>
+        <LazyContainer minHeight={isTablet ? 620 : 560}>
           <DepartmentQuizChart dateRange={dateRange} />
         </LazyContainer>
         <LazyContainer minHeight={600}>

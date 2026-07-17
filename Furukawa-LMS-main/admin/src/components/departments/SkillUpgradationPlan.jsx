@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,8 +47,8 @@ const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChan
     const suggestions = useMemo(() => {
         if (!searchTerm.trim()) return [];
         const lower = searchTerm.toLowerCase();
-        return students.filter(s => 
-            (s.fullName || "").toLowerCase().includes(lower) || 
+        return students.filter(s =>
+            (s.fullName || "").toLowerCase().includes(lower) ||
             (s.cardNo || "").toLowerCase().includes(lower)
         ).slice(0, 5);
     }, [students, searchTerm]);
@@ -146,13 +146,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
         const savedRemovedIds = new Set(tableData.__removedUserIds || []);
         const finalRows = [];
-        const seenUserIds = new Set();
 
         // 1. Auto-populate all assigned students (skip removed ones)
         students.forEach((student) => {
             const userId = String(student._id || student.id);
             if (savedRemovedIds.has(userId)) return;
-            seenUserIds.add(userId);
             const data = tableData[userId] || {};
             finalRows.push({
                 rowId: userId,
@@ -169,28 +167,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
             });
         });
 
-        // 2. Preserve saved entries for users no longer in the section (historical data)
-        Object.keys(tableData).forEach((userId) => {
-            if (userId === "__removedUserIds") return;
-            if (seenUserIds.has(userId)) return;
-            if (savedRemovedIds.has(userId)) return;
-            const data = tableData[userId];
-            finalRows.push({
-                rowId: userId,
-                userId,
-                userName: data.userName || "",
-                cardNo: data.cardNo || "",
-                shift: data.shift || "",
-                modelLine: data.modelLine || "",
-                station: data.station || "",
-                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "",
-                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "",
-                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "",
-                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "",
-            });
-        });
-
-        // 3. Always append 10 blank rows at the bottom for manual entry
+        // 2. Always append 10 blank rows at the bottom for manual entry
         const BLANK_PADDING = 10;
         const baseCount = finalRows.length;
         for (let i = 0; i < BLANK_PADDING; i++) {
@@ -365,8 +342,96 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         logAction({
             action: "PRINT_SKILL_UPGRADATION_PLAN",
             details: { departmentId, sectionId, year }
-        }).catch(() => {});
+        }).catch(() => { });
         window.print();
+    };
+
+    const tableContainerRef = useRef(null);
+    const topTrackRef = useRef(null);
+    const dragState = useRef(null);
+    const [thumb, setThumb] = useState({ width: 0, left: 0, visible: false });
+
+    const recomputeThumb = () => {
+        const el = tableContainerRef.current;
+        const track = topTrackRef.current;
+        if (!el || !track) return;
+        const trackWidth = track.clientWidth;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        if (scrollWidth <= clientWidth) {
+            setThumb({ width: 0, left: 0, visible: false });
+            return;
+        }
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
+        const maxScroll = scrollWidth - clientWidth;
+        const maxThumbLeft = trackWidth - thumbWidth;
+        const left = maxScroll > 0 ? (el.scrollLeft / maxScroll) * maxThumbLeft : 0;
+        setThumb({ width: thumbWidth, left, visible: true });
+    };
+
+    useEffect(() => {
+        recomputeThumb();
+        window.addEventListener("resize", recomputeThumb);
+        const el = tableContainerRef.current;
+        const observer = el ? new ResizeObserver(recomputeThumb) : null;
+        if (observer && el.firstElementChild) observer.observe(el.firstElementChild);
+        return () => {
+            window.removeEventListener("resize", recomputeThumb);
+            observer?.disconnect();
+        };
+    }, [filteredRows.length]);
+
+    const handleTableScroll = () => {
+        recomputeThumb();
+    };
+
+    const scrollByThumbDelta = (deltaPx) => {
+        const el = tableContainerRef.current;
+        const track = topTrackRef.current;
+        if (!el || !track) return;
+        const trackWidth = track.clientWidth;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        const maxScroll = scrollWidth - clientWidth;
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
+        const maxThumbLeft = trackWidth - thumbWidth;
+        if (maxThumbLeft <= 0) return;
+        const deltaScroll = (deltaPx / maxThumbLeft) * maxScroll;
+        el.scrollLeft = Math.min(maxScroll, Math.max(0, el.scrollLeft + deltaScroll));
+    };
+
+    const handleThumbMouseDown = (e) => {
+        e.preventDefault();
+        dragState.current = { startX: e.clientX };
+        const onMouseMove = (moveEvent) => {
+            if (!dragState.current) return;
+            const deltaX = moveEvent.clientX - dragState.current.startX;
+            dragState.current.startX = moveEvent.clientX;
+            scrollByThumbDelta(deltaX);
+        };
+        const onMouseUp = () => {
+            dragState.current = null;
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+        };
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+    };
+
+    const handleTrackClick = (e) => {
+        if (e.target !== topTrackRef.current) return;
+        const track = topTrackRef.current;
+        const rect = track.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const el = tableContainerRef.current;
+        if (!el) return;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        const maxScroll = scrollWidth - clientWidth;
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * rect.width);
+        const targetLeft = Math.min(rect.width - thumbWidth, Math.max(0, clickX - thumbWidth / 2));
+        const maxThumbLeft = rect.width - thumbWidth;
+        el.scrollLeft = maxThumbLeft > 0 ? (targetLeft / maxThumbLeft) * maxScroll : 0;
     };
 
     const stickyHeader = "sticky top-0 z-40 print:static";
@@ -375,7 +440,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     const stickyFrozenCell = "sticky z-30 bg-white group-hover:bg-slate-50 transition-colors print:static";
 
     return (
-        <Card className="max-w-full overflow-hidden bg-white">
+        <Card className="max-w-full overflow-visible bg-white">
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2 print:hidden">
                     <div />
@@ -402,7 +467,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="w-full overflow-hidden">
+            <CardContent className="w-full overflow-visible">
                 {/* Sheet Metadata Header Block - Visible in screen & print */}
                 <div className="flex justify-between items-center w-full mb-4 pb-2 border-b border-slate-200 print:border-black">
                     <div>
@@ -436,7 +501,23 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     </div>
                 </div>
 
-                <div className="w-full max-w-full max-h-[calc(100vh-340px)] overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar">
+                <div
+                    ref={topTrackRef}
+                    onMouseDown={handleTrackClick}
+                    className={`no-print relative w-full h-3 rounded-full bg-slate-200 mb-2 ${thumb.visible ? "" : "invisible"}`}
+                >
+                    <div
+                        onMouseDown={handleThumbMouseDown}
+                        className="absolute top-0 h-full rounded-full bg-slate-400 hover:bg-slate-500 active:bg-slate-600 cursor-grab active:cursor-grabbing transition-colors"
+                        style={{ width: `${thumb.width}px`, left: `${thumb.left}px` }}
+                    />
+                </div>
+
+                <div
+                    ref={tableContainerRef}
+                    onScroll={handleTableScroll}
+                    className="w-full max-w-full max-h-[calc(100vh-340px)] overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar"
+                >
                     <table className="w-full min-w-[2600px] border-separate border-spacing-0 text-sm table-auto">
                         <thead className="bg-slate-100 text-slate-700">
                             {/* Group headers row */}
@@ -480,8 +561,8 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                         <tbody className="bg-white">
                             {filteredRows.map((row, index) => {
                                 const rowId = row.rowId;
-                                const rowSubSections = row.modelLine 
-                                    ? subSections.filter(ss => ss.lineName === row.modelLine) 
+                                const rowSubSections = row.modelLine
+                                    ? subSections.filter(ss => ss.lineName === row.modelLine)
                                     : subSections;
 
                                 return (

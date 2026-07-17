@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
 import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus } from "@tabler/icons-react";
@@ -124,6 +125,20 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
     });
     const subSections = subSectionsData?.data || [];
 
+    // Only students whose current level is flagged "Include in Multi-Skilling Sheet"
+    // in the active CourseLevelConfig should be auto-added to this sheet — mirrors the
+    // filterMultiSkillingLevels logic in server/controllers/user.controller.js so this
+    // holds true regardless of which page passes in an unfiltered students list.
+    const { data: activeConfigData, isLoading: isLoadingActiveConfig } = useGetActiveConfigQuery();
+    const allowedMultiSkillingLevels = useMemo(() => {
+        const levels = activeConfigData?.data?.levels || [];
+        return new Set(
+            levels
+                .filter(l => l.includeInMultiSkilling === true || l.includeInMultiSkilling === "true")
+                .map(l => String(l.name || "").toUpperCase())
+        );
+    }, [activeConfigData]);
+
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
@@ -137,7 +152,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
 
     // Initialize rows when both students and plan details are ready
     useEffect(() => {
-        if (isLoadingPlan || hasLoaded || (students.length === 0 && Object.keys(tableData || {}).length === 0)) return;
+        if (isLoadingPlan || isLoadingActiveConfig || hasLoaded || (students.length === 0 && Object.keys(tableData || {}).length === 0)) return;
 
         const savedRows = [];
         const savedUserIds = Object.keys(tableData || {});
@@ -176,7 +191,11 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
         const savedSet = new Set(savedUserIds.map(String));
         students.forEach((s) => {
             const uid = String(s._id || s.id);
-            if (!savedSet.has(uid)) {
+            // department.students (DepartmentDetail's tab) never computes primaryLevel, only
+            // the raw currentLevel column — fall back to it so this filter works from either caller.
+            const levelQualifies = allowedMultiSkillingLevels.size === 0
+                || allowedMultiSkillingLevels.has(String(s.primaryLevel || s.currentLevel || "").toUpperCase());
+            if (!savedSet.has(uid) && levelQualifies) {
                 savedRows.push({
                     rowId: uid,
                     userId: uid,
@@ -216,7 +235,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
 
         setRows(savedRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, hasLoaded]);
+    }, [tableData, students, isLoadingPlan, isLoadingActiveConfig, hasLoaded, allowedMultiSkillingLevels]);
 
     // Safeguard: Update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
     useEffect(() => {
@@ -373,8 +392,96 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
         window.print();
     };
 
+    const tableContainerRef = useRef(null);
+    const topTrackRef = useRef(null);
+    const dragState = useRef(null);
+    const [thumb, setThumb] = useState({ width: 0, left: 0, visible: false });
+
+    const recomputeThumb = () => {
+        const el = tableContainerRef.current;
+        const track = topTrackRef.current;
+        if (!el || !track) return;
+        const trackWidth = track.clientWidth;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        if (scrollWidth <= clientWidth) {
+            setThumb({ width: 0, left: 0, visible: false });
+            return;
+        }
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
+        const maxScroll = scrollWidth - clientWidth;
+        const maxThumbLeft = trackWidth - thumbWidth;
+        const left = maxScroll > 0 ? (el.scrollLeft / maxScroll) * maxThumbLeft : 0;
+        setThumb({ width: thumbWidth, left, visible: true });
+    };
+
+    useEffect(() => {
+        recomputeThumb();
+        window.addEventListener("resize", recomputeThumb);
+        const el = tableContainerRef.current;
+        const observer = el ? new ResizeObserver(recomputeThumb) : null;
+        if (observer && el.firstElementChild) observer.observe(el.firstElementChild);
+        return () => {
+            window.removeEventListener("resize", recomputeThumb);
+            observer?.disconnect();
+        };
+    }, [filteredRows.length]);
+
+    const handleTableScroll = () => {
+        recomputeThumb();
+    };
+
+    const scrollByThumbDelta = (deltaPx) => {
+        const el = tableContainerRef.current;
+        const track = topTrackRef.current;
+        if (!el || !track) return;
+        const trackWidth = track.clientWidth;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        const maxScroll = scrollWidth - clientWidth;
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
+        const maxThumbLeft = trackWidth - thumbWidth;
+        if (maxThumbLeft <= 0) return;
+        const deltaScroll = (deltaPx / maxThumbLeft) * maxScroll;
+        el.scrollLeft = Math.min(maxScroll, Math.max(0, el.scrollLeft + deltaScroll));
+    };
+
+    const handleThumbMouseDown = (e) => {
+        e.preventDefault();
+        dragState.current = { startX: e.clientX };
+        const onMouseMove = (moveEvent) => {
+            if (!dragState.current) return;
+            const deltaX = moveEvent.clientX - dragState.current.startX;
+            dragState.current.startX = moveEvent.clientX;
+            scrollByThumbDelta(deltaX);
+        };
+        const onMouseUp = () => {
+            dragState.current = null;
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+        };
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+    };
+
+    const handleTrackClick = (e) => {
+        if (e.target !== topTrackRef.current) return;
+        const track = topTrackRef.current;
+        const rect = track.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const el = tableContainerRef.current;
+        if (!el) return;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        const maxScroll = scrollWidth - clientWidth;
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * rect.width);
+        const targetLeft = Math.min(rect.width - thumbWidth, Math.max(0, clickX - thumbWidth / 2));
+        const maxThumbLeft = rect.width - thumbWidth;
+        el.scrollLeft = maxThumbLeft > 0 ? (targetLeft / maxThumbLeft) * maxScroll : 0;
+    };
+
     return (
-        <Card className="max-w-full overflow-hidden bg-white">
+        <Card className="max-w-full overflow-visible bg-white">
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2 print:hidden">
                     <div />
@@ -399,7 +506,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
+            <CardContent className="w-full overflow-visible">
                 {/* Sheet Metadata Header Block - Visible in screen & print */}
                 <div className="flex justify-between items-center w-full mb-4 pb-2 border-b border-slate-200 print:border-black">
                     <div>
@@ -433,7 +540,23 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                     </div>
                 </div>
 
-                <div className="w-full overflow-x-auto rounded-lg border border-slate-300">
+                <div
+                    ref={topTrackRef}
+                    onMouseDown={handleTrackClick}
+                    className={`no-print relative w-full h-3 rounded-full bg-slate-200 mb-2 ${thumb.visible ? "" : "invisible"}`}
+                >
+                    <div
+                        onMouseDown={handleThumbMouseDown}
+                        className="absolute top-0 h-full rounded-full bg-slate-400 hover:bg-slate-500 active:bg-slate-600 cursor-grab active:cursor-grabbing transition-colors"
+                        style={{ width: `${thumb.width}px`, left: `${thumb.left}px` }}
+                    />
+                </div>
+
+                <div
+                    ref={tableContainerRef}
+                    onScroll={handleTableScroll}
+                    className="w-full overflow-x-auto rounded-lg border border-slate-300"
+                >
                     <table className="w-full border-collapse border border-slate-300 text-sm table-auto">
                         <thead className="bg-slate-100 text-slate-700">
                             {/* Group headers row */}

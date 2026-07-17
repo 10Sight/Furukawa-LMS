@@ -547,7 +547,7 @@ const StudentDetail = () => {
                 </TabsList>
 
                 <TabsContent value="monitoring16">
-                    <SixteenDayMonitoringSheet studentId={studentId} />
+                    <SixteenDayMonitoringSheet studentId={studentId} studentStatus={student?.status} />
                 </TabsContent>
 
                 <TabsContent value="skillEvaluation">

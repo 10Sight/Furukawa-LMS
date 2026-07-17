@@ -3347,7 +3347,7 @@ const Daily5MRecording = () => {
                             </Button>
                         </div>
                     </CardHeader>
-                    <CardContent className="p-0 sm:p-4 overflow-x-auto print:overflow-visible">
+                    <CardContent className="p-0 sm:p-4">
                         {/* Table Container for PDF Capture */}
                         <div ref={tableRef} data-pdf-content="true" className="w-full">
                             {renderRecordingTable(viewMode)}

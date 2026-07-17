@@ -11,6 +11,7 @@ import { IconUsers, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/i
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
+import { useIsTablet } from "@/hooks/useIsTablet";
 
 const _now        = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -135,6 +136,7 @@ const INPUT_CONFIG = {
 
 const DojoHiringTrendChart = () => {
     const { t, language } = useTranslate();
+    const isTablet = useIsTablet();
     const [viewMode,     setViewMode]     = useState('total');
     const [timeframe,    setTimeframe]    = useState('daily');
     const [rawStart,     setRawStart]     = useState('');
@@ -248,6 +250,13 @@ const DojoHiringTrendChart = () => {
             gridLineColor: '#f1f5f9',
         },
         legend: { enabled: viewMode === 'gender' },
+        // Taller chart on tablet widths so labels/legend fit in one frame without overlap.
+        responsive: {
+            rules: [{
+                condition: { minWidth: 768, maxWidth: 1024 },
+                chartOptions: { chart: { height: 500 } },
+            }],
+        },
     };
 
     // Data labels above each bar (total view)
@@ -484,7 +493,7 @@ const DojoHiringTrendChart = () => {
             <CardContent>
                 {/* Loading state — logo centred in the chart area; header/filters stay visible */}
                 {isLoading ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center gap-4">
+                    <div style={{ height: isTablet ? 500 : 360 }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -495,11 +504,11 @@ const DojoHiringTrendChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div style={{ height: isTablet ? 500 : 360 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">{t('charts.failedToLoadHiringTrend')}</p>
                     </div>
                 ) : grandTotal === 0 ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div style={{ height: isTablet ? 500 : 360 }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">{t('charts.noHiringData')}</p>
                         <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>

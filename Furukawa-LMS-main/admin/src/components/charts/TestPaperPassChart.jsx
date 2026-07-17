@@ -21,6 +21,7 @@ import {
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
+import { useIsTablet } from "@/hooks/useIsTablet";
 
 const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -208,6 +209,13 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
                 },
             },
         },
+        // Taller chart on tablet widths so labels/legend fit in one frame without overlap.
+        responsive: {
+            rules: [{
+                condition: { minWidth: 768, maxWidth: 1024 },
+                chartOptions: { chart: { height: 500 } },
+            }],
+        },
         series: [
             { type: 'column', name: t('charts.passed'), data: passedSeries, color: '#16a34a' },
             { type: 'column', name: t('charts.failed'), data: failedSeries, color: '#dc2626' },
@@ -245,6 +253,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
 
 const TestPaperPassChart = () => {
     const { t, language } = useTranslate();
+    const isTablet = useIsTablet();
     const [timeframe,    setTimeframe]    = useState('daily');
     const [rawStart,     setRawStart]     = useState('');
     const [rawEnd,       setRawEnd]       = useState('');
@@ -416,7 +425,7 @@ const TestPaperPassChart = () => {
 
             <CardContent className="space-y-10">
                 {isLoading ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center gap-4">
+                    <div style={{ height: isTablet ? 500 : 360 }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -427,7 +436,7 @@ const TestPaperPassChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="h-[360px] flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div style={{ height: isTablet ? 500 : 360 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">{t('charts.failedToLoadTestPaper')}</p>
                     </div>
                 ) : (

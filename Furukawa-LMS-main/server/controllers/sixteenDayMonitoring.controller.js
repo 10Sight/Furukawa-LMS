@@ -152,7 +152,7 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
 
     // Resolve the candidate's current name, code, and dept/section from the users table
     const [userRows] = await executeQuery(`
-        SELECT u.fullName, u.empId, d.name as departmentName, s.name as sectionName
+        SELECT u.fullName, u.empId, u.status, d.name as departmentName, s.name as sectionName
         FROM users u
         LEFT JOIN departments d ON u.departmentId = d.id
         LEFT JOIN sections s ON u.sectionId = s.id
@@ -162,11 +162,13 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const resolvedDept = student
         ? [student.departmentName, student.sectionName].filter(Boolean).join(" / ")
         : "";
+    const userStatus = student?.status || "PRESENT";
 
     if (!data) {
         return res.status(200).json(
             new ApiResponse(200, {
                 isNew: true,
+                userStatus,
                 headerInfo: {
                     employeeName: student?.fullName || "",
                     employeeCode: student?.empId || "",
@@ -199,6 +201,7 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
         new ApiResponse(200, {
             ...data,
             isNew: false,
+            userStatus,
         }, "16 Day Monitoring fetched successfully")
     );
 });
@@ -232,6 +235,11 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to save this monitoring record", 403);
+    }
+
+    const [userStatusRows] = await executeQuery("SELECT status FROM users WHERE id = ?", [sid]);
+    if (userStatusRows.length > 0 && userStatusRows[0].status === 'LEFT') {
+        throw new ApiError("This associate has left. The monitoring sheet is locked and cannot be modified.", 400);
     }
 
     const {

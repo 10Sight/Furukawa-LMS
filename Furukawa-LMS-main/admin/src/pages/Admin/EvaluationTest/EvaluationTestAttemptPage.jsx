@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
@@ -121,6 +121,15 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
     const defaultTrainee = queryTrainee || (isStudent ? (user?.fullName || "") : "");
     const defaultEmpId = queryEmpId || (isStudent ? (user?.empId || "") : "");
     const defaultEducator = "";
+
+    const isAdmin = user?.role === "SUPERADMIN" || user?.role === "ADMIN";
+    const todayStr = useMemo(() => {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }, []);
 
     // Student attempt metadata states
     const [traineeName, setTraineeName] = useState(defaultTrainee);
@@ -831,9 +840,16 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                                                             <input
                                                                 type="date"
                                                                 value={performDates[idx] || ""}
+                                                                min={!isAdmin ? todayStr : undefined}
+                                                                max={!isAdmin ? todayStr : undefined}
                                                                 onChange={(e) => {
+                                                                    let selectedDate = e.target.value;
+                                                                    if (!isAdmin && selectedDate && selectedDate !== todayStr) {
+                                                                        alert("You can only select the current date.");
+                                                                        selectedDate = todayStr;
+                                                                    }
                                                                     const newDates = [...performDates];
-                                                                    newDates[idx] = e.target.value;
+                                                                    newDates[idx] = selectedDate;
                                                                     setPerformDates(newDates);
                                                                 }}
                                                                 className="w-full text-center border border-gray-200 rounded px-1 py-0.5 font-bold font-mono text-[9px] bg-white focus:ring-1 focus:ring-blue-100 focus:outline-none"

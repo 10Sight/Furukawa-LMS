@@ -395,7 +395,7 @@ export function HomeLayout() {
       {/* Main Content Area */}
       <div
         className={`flex-1 transition-all duration-300 ${collapsed ? "ml-16" : "ml-64"
-          }`}
+          } ${["/admin/skill-matrix", "/admin/multi-skilling", "/admin/departments"].some(p => pathname.startsWith(p)) ? "min-w-0" : ""}`}
       >
         {/* Header */}
         <header

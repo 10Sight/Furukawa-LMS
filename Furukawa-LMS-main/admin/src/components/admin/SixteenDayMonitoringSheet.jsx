@@ -18,6 +18,7 @@ import {
     XCircle as RejectIcon,
     ShieldCheck,
     Trash2,
+    AlertTriangle,
     Calendar as CalendarIcon
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +116,7 @@ const SixteenDayMonitoringSheet = ({
     initialForceNewAttempt = false,
     onAfterSave = null,
     feedbackRef = null,
+    studentStatus = "PRESENT",
 }) => {
     const combinedDept = (name, section) => [name, section].filter(Boolean).join(" / ");
 
@@ -166,9 +168,15 @@ const SixteenDayMonitoringSheet = ({
     const [historyAttempts, setHistoryAttempts] = useState([]);
     const [selectedAttemptId, setSelectedAttemptId] = useState("");
     const [isForceNewAttempt, setIsForceNewAttempt] = useState(false);
+    const [userStatus, setUserStatus] = useState(studentStatus || "PRESENT");
+
+    useEffect(() => {
+        setUserStatus(studentStatus || "PRESENT");
+    }, [studentStatus]);
 
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const isSheetSaved = !!selectedAttemptId && !isForceNewAttempt;
+    const isLeftUser = userStatus === 'LEFT';
 
     const isLocked = (headerInfo.status === 'Submitted' &&
         !authUser?.isAdmin &&
@@ -180,6 +188,7 @@ const SixteenDayMonitoringSheet = ({
         !authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
 
     const isCellLocked = (key, type = 'grid') => {
+        if (isLeftUser) return true;
         if (readOnly) return true;
         if (isLocked) return true;
         if (isAdmin || canEditSubmitted) return false;
@@ -294,6 +303,9 @@ const SixteenDayMonitoringSheet = ({
                     setLineNamePart(progressData.lineName || "");
                 } catch (err) { console.error(err); }
                 const response = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}`);
+                if (response.data.success && response.data.data?.userStatus) {
+                    setUserStatus(response.data.data.userStatus);
+                }
                 if (response.data.success && response.data.data && !response.data.data.isNew) {
                     const record = response.data.data;
                     const loadedHeader = {
@@ -431,6 +443,9 @@ const SixteenDayMonitoringSheet = ({
             const res = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}?recordId=${attemptId}`);
             if (res.data.success) {
                 const record = res.data.data;
+                if (record.userStatus) {
+                    setUserStatus(record.userStatus);
+                }
                 const loadedHeader = {
                     employeeName: record.employeeName || "",
                     employeeCode: record.employeeCode || "",
@@ -566,6 +581,11 @@ const SixteenDayMonitoringSheet = ({
             return;
         }
 
+        if (isLeftUser) {
+            toast.error("This associate has left. The monitoring sheet is locked and cannot be saved.");
+            return;
+        }
+
         const targetStatus = finalStatus || headerInfo.status || "Draft";
 
         // Intercept: admin or canEditSubmitted user editing a saved sheet must provide a remark if they modified already saved values
@@ -664,7 +684,7 @@ const SixteenDayMonitoringSheet = ({
     };
 
     useEffect(() => {
-        if (readOnly || !studentId) return;
+        if (readOnly || isLeftUser || !studentId) return;
 
         const newGridData = { ...gridData };
         let hasChanges = false;
@@ -987,6 +1007,12 @@ const SixteenDayMonitoringSheet = ({
 
     return (
         <div className="space-y-4">
+            {isLeftUser && (
+                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 print:hidden">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Associate has LEFT: This sheet is locked. No fields can be edited or saved.
+                </div>
+            )}
             <div className="flex justify-between items-center print:hidden">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
@@ -994,6 +1020,7 @@ const SixteenDayMonitoringSheet = ({
                             {headerInfo.status || 'Draft'}
                         </Badge>
                         {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
+                        {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Locked — Associate Left</Badge>}
                         {isForceNewAttempt && <Badge className="bg-blue-500 animate-pulse text-white text-[10px]">NEW ATTEMPT MODE</Badge>}
                         {!studentId && (
                             <Badge className="bg-amber-500 text-white text-[10px] animate-pulse">DESIGN MODE: TEMPLATE SETUP</Badge>
@@ -1082,7 +1109,7 @@ const SixteenDayMonitoringSheet = ({
                                 <Button
                                     variant="secondary"
                                     onClick={() => handleSave("Draft", false)}
-                                    disabled={saving || !studentId}
+                                    disabled={saving || !studentId || isLeftUser}
                                     className="h-9 gap-2"
                                 >
                                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1094,7 +1121,7 @@ const SixteenDayMonitoringSheet = ({
                                 <Button
                                     variant="secondary"
                                     onClick={() => handleSave("Submitted", false)}
-                                    disabled={saving || !studentId || isLocked || readOnly}
+                                    disabled={saving || !studentId || isLocked || readOnly || isLeftUser}
                                     className="h-9 gap-2"
                                 >
                                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1105,7 +1132,7 @@ const SixteenDayMonitoringSheet = ({
                             <Button
                                 variant={headerInfo.status === 'Submitted' ? "outline" : "default"}
                                 onClick={() => handleSave("Submitted", true)}
-                                disabled={saving || !studentId || !isDay16ColFilled || isLocked || readOnly}
+                                disabled={saving || !studentId || !isDay16ColFilled || isLocked || readOnly || isLeftUser}
                                 className="h-9 gap-2"
                             >
                                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

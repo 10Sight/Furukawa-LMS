@@ -240,19 +240,15 @@ const formatHierarchyOption = (childName, parentName) => {
 const LINE_SELECT_OTHER = "__other__";
 
 const LineSelect = ({ recIndex, formData, onInputChange, disabled }) => {
-    const deptOption = formatHierarchyOption(
-        formData[`rec_${recIndex}_DeputedDeptName`],
-        formData[`rec_${recIndex}_DeputedSectionName`]
-    );
     const lineOption = formatHierarchyOption(
         formData[`rec_${recIndex}_DeputedSubSectionName`],
         formData[`rec_${recIndex}_DeputedLineName`]
     );
-    const options = [deptOption, lineOption].filter(Boolean);
+    const options = [lineOption].filter(Boolean);
 
     const currentFrom = formData[`rec_${recIndex}_From`] || "";
     const [otherSelected, setOtherSelected] = useState(false);
-    const isOther = otherSelected || (currentFrom !== "" && currentFrom !== deptOption && currentFrom !== lineOption);
+    const isOther = otherSelected || (currentFrom !== "" && currentFrom !== lineOption);
     const selectValue = isOther ? LINE_SELECT_OTHER : currentFrom;
 
     const handleChange = (e) => {
@@ -733,12 +729,11 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                 <td rowSpan="5" className="border border-black p-0.5 min-w-[100px]">
                     <UserAutocomplete
                         value={formData[`rec_${recIndex}_DeputedPerson`] || ""}
-                        onChange={({ fullName, empId, departmentId, deptName, sectionName, lineName, subSectionName, currentLevel }) => {
+                        onChange={({ fullName, empId, departmentId, deptName, lineName, subSectionName, currentLevel }) => {
                             handleInputChange(recIndex, 'DeputedPerson', fullName);
                             handleInputChange(recIndex, 'EmpCode', empId);
                             handleInputChange(recIndex, 'DeputedDeptId', departmentId);
                             handleInputChange(recIndex, 'DeputedDeptName', deptName);
-                            handleInputChange(recIndex, 'DeputedSectionName', sectionName);
                             handleInputChange(recIndex, 'DeputedLineName', lineName);
                             handleInputChange(recIndex, 'DeputedSubSectionName', subSectionName);
                             handleInputChange(recIndex, 'ActSkill', currentLevel || "L1");
@@ -2320,12 +2315,11 @@ const Daily5MRecording = () => {
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <UserAutocomplete
                                                                 value={formData[`rec_${recIndex}_DeputedCode`] || ""}
-                                                                onChange={({ fullName, empId, departmentId, deptName, sectionName, lineName, subSectionName, currentLevel }) => {
+                                                                onChange={({ fullName, empId, departmentId, deptName, lineName, subSectionName, currentLevel }) => {
                                                                     handleInputChange(recIndex, 'DeputedCode', empId);
                                                                     handleInputChange(recIndex, 'Deputed', fullName);
                                                                     handleInputChange(recIndex, 'DeputedDeptId', departmentId);
                                                                     handleInputChange(recIndex, 'DeputedDeptName', deptName);
-                                                                    handleInputChange(recIndex, 'DeputedSectionName', sectionName);
                                                                     handleInputChange(recIndex, 'DeputedLineName', lineName);
                                                                     handleInputChange(recIndex, 'DeputedSubSectionName', subSectionName);
                                                                     handleInputChange(recIndex, 'From', formatHierarchyOption(subSectionName, lineName));

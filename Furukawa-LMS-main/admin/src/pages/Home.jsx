@@ -34,7 +34,7 @@ import { useGetAdminHomeDojoStatsQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import { IconUserPlus } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate";
-import { useIsTablet } from "@/hooks/useIsTablet";
+import { useIsTablet, useIsMobile } from "@/hooks/useIsTablet";
 
 // Reusable StatCard component
 const StatCard = ({ title, value, description, icon: Icon, iconBgColor, iconColor, isLoading, trend, linkTo }) => {
@@ -108,6 +108,7 @@ const QuickActionCard = ({ title, description, icon: Icon, linkTo, color = "blue
 const Home = () => {
   const { t } = useTranslate();
   const isTablet = useIsTablet();
+  const isMobile = useIsMobile();
   const [dateRange, setDateRange] = React.useState({ startDate: '', endDate: '' });
   const [logAction] = useLogActionMutation();
 
@@ -216,19 +217,19 @@ const Home = () => {
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 gap-6">
-        <LazyContainer minHeight={isTablet ? 600 : 460}>
+        <LazyContainer minHeight={isTablet ? 600 : isMobile ? 420 : 460}>
           <DojoHiringTrendChart />
         </LazyContainer>
-        <LazyContainer minHeight={isTablet ? 580 : 640}>
+        <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <DojoHandoverComparisonChart />
         </LazyContainer>
-        <LazyContainer minHeight={isTablet ? 580 : 640}>
+        <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <ContractorWiseOperatorChart />
         </LazyContainer>
-        <LazyContainer minHeight={isTablet ? 1160 : 420}>
+        <LazyContainer minHeight={isTablet ? 1160 : isMobile ? 900 : 420}>
           <TestPaperPassChart />
         </LazyContainer>
-        <LazyContainer minHeight={isTablet ? 620 : 560}>
+        <LazyContainer minHeight={isTablet ? 620 : isMobile ? 500 : 560}>
           <DepartmentQuizChart dateRange={dateRange} />
         </LazyContainer>
         <LazyContainer minHeight={600}>

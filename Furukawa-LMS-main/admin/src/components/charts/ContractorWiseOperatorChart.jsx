@@ -9,7 +9,7 @@ import { IconBuilding, IconCalendar, IconRefresh } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
-import { useIsTablet } from "@/hooks/useIsTablet";
+import { useIsTablet, useIsMobile } from "@/hooks/useIsTablet";
 
 const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -115,6 +115,7 @@ const INPUT_CONFIG = {
 const ContractorWiseOperatorChart = () => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
+    const isMobile = useIsMobile();
     const [timeframe, setTimeframe] = useState('daily');
     const [rawStart,  setRawStart]  = useState('');
     const [rawEnd,    setRawEnd]    = useState('');
@@ -345,12 +346,19 @@ const ContractorWiseOperatorChart = () => {
                 },
             },
         },
-        // Taller chart on tablet widths so labels/legend fit in one frame without overlap.
+        // Taller chart on tablet widths so labels/legend fit in one frame without overlap;
+        // shorter on phones to keep a compact plot area.
         responsive: {
-            rules: [{
-                condition: { minWidth: 768, maxWidth: 1024 },
-                chartOptions: { chart: { height: 500 } },
-            }],
+            rules: [
+                {
+                    condition: { minWidth: 768, maxWidth: 1024 },
+                    chartOptions: { chart: { height: 500 } },
+                },
+                {
+                    condition: { maxWidth: 767 },
+                    chartOptions: { chart: { height: 480 } },
+                },
+            ],
         },
         series: [{
             type:  'column',
@@ -446,7 +454,7 @@ const ContractorWiseOperatorChart = () => {
 
             <CardContent>
                 {isLoading ? (
-                    <div style={{ height: isTablet ? 500 : 560 }} className="flex flex-col items-center justify-center gap-4">
+                    <div style={{ height: isTablet ? 500 : isMobile ? 480 : 560 }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -457,11 +465,11 @@ const ContractorWiseOperatorChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div style={{ height: isTablet ? 500 : 560 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div style={{ height: isTablet ? 500 : isMobile ? 480 : 560 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">{t('charts.failedToLoadContractor')}</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div style={{ height: isTablet ? 500 : 560 }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div style={{ height: isTablet ? 500 : isMobile ? 480 : 560 }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">{t('charts.noOperatorJoiningData')}</p>
                         <p className="text-xs opacity-60">{t('charts.adjustTimeframeOrRange')}</p>

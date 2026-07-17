@@ -21,7 +21,7 @@ import {
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
-import { useIsTablet } from "@/hooks/useIsTablet";
+import { useIsTablet, useIsMobile } from "@/hooks/useIsTablet";
 
 const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
@@ -209,12 +209,19 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
                 },
             },
         },
-        // Taller chart on tablet widths so labels/legend fit in one frame without overlap.
+        // Taller chart on tablet widths so labels/legend fit in one frame without overlap;
+        // shorter on phones to keep a compact plot area.
         responsive: {
-            rules: [{
-                condition: { minWidth: 768, maxWidth: 1024 },
-                chartOptions: { chart: { height: 500 } },
-            }],
+            rules: [
+                {
+                    condition: { minWidth: 768, maxWidth: 1024 },
+                    chartOptions: { chart: { height: 500 } },
+                },
+                {
+                    condition: { maxWidth: 767 },
+                    chartOptions: { chart: { height: 280 } },
+                },
+            ],
         },
         series: [
             { type: 'column', name: t('charts.passed'), data: passedSeries, color: '#16a34a' },
@@ -254,6 +261,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
 const TestPaperPassChart = () => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
+    const isMobile = useIsMobile();
     const [timeframe,    setTimeframe]    = useState('daily');
     const [rawStart,     setRawStart]     = useState('');
     const [rawEnd,       setRawEnd]       = useState('');
@@ -425,7 +433,7 @@ const TestPaperPassChart = () => {
 
             <CardContent className="space-y-10">
                 {isLoading ? (
-                    <div style={{ height: isTablet ? 500 : 360 }} className="flex flex-col items-center justify-center gap-4">
+                    <div style={{ height: isTablet ? 500 : isMobile ? 400 : 360 }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -436,7 +444,7 @@ const TestPaperPassChart = () => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div style={{ height: isTablet ? 500 : 360 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div style={{ height: isTablet ? 500 : isMobile ? 400 : 360 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">{t('charts.failedToLoadTestPaper')}</p>
                     </div>
                 ) : (

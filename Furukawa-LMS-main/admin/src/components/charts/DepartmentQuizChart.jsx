@@ -20,7 +20,7 @@ import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import 'highcharts/modules/no-data-to-display';
 import useTranslate from "@/hooks/useTranslate";
-import { useIsTablet } from "@/hooks/useIsTablet";
+import { useIsTablet, useIsMobile } from "@/hooks/useIsTablet";
 
 const PASS_COLOR = '#16a34a';
 const FAIL_COLOR = '#dc2626';
@@ -66,6 +66,7 @@ const getDefaultDateRange = () => {
 const DepartmentQuizChart = ({ dateRange }) => {
     const { t } = useTranslate();
     const isTablet = useIsTablet();
+    const isMobile = useIsMobile();
     const [filters, setFilters] = useState({ departmentId: '', sectionId: '' });
     const [startDate, setStartDate] = useState(dateRange?.startDate || '');
     const [endDate, setEndDate]     = useState(dateRange?.endDate || '');
@@ -270,12 +271,19 @@ const DepartmentQuizChart = ({ dateRange }) => {
                 },
             },
         },
-        // Taller chart on tablet widths so labels/legend fit in one frame without overlap.
+        // Taller chart on tablet widths so labels/legend fit in one frame without overlap;
+        // shorter on phones to keep a compact plot area.
         responsive: {
-            rules: [{
-                condition: { minWidth: 768, maxWidth: 1024 },
-                chartOptions: { chart: { height: 500 } },
-            }],
+            rules: [
+                {
+                    condition: { minWidth: 768, maxWidth: 1024 },
+                    chartOptions: { chart: { height: 500 } },
+                },
+                {
+                    condition: { maxWidth: 767 },
+                    chartOptions: { chart: { height: 420 } },
+                },
+            ],
         },
         series: [
             {
@@ -403,7 +411,7 @@ const DepartmentQuizChart = ({ dateRange }) => {
 
             <CardContent>
                 {isLoading ? (
-                    <div style={{ height: isTablet ? 500 : 480 }} className="flex flex-col items-center justify-center gap-4">
+                    <div style={{ height: isTablet ? 500 : isMobile ? 420 : 480 }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -414,7 +422,7 @@ const DepartmentQuizChart = ({ dateRange }) => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div style={{ height: isTablet ? 500 : 480 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div style={{ height: isTablet ? 500 : isMobile ? 420 : 480 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">{t('charts.failedToLoadDeptTest')}</p>
                     </div>
                 ) : (

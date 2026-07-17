@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
-import { useGetLinesBySectionQuery, useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
+import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
 import { useGetMachinesByLineQuery, useGetMachinesBySubSectionQuery } from '@/Redux/AllApi/MachineApi';
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
 import { useLazyGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
@@ -231,13 +231,25 @@ import UserAutocomplete from '@/components/common/UserAutocomplete';
 const todayStr = new Date().toLocaleDateString('en-CA');
 
 
-const LineSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
-    const { data: linesData, isLoading } = useGetLinesByDepartmentQuery(departmentId, { skip: !departmentId });
-    const lines = linesData?.data || [];
+// Builds a "child (parent)" display label, falling back to whichever part is present.
+const formatHierarchyOption = (childName, parentName) => {
+    if (childName && parentName) return `${childName} (${parentName})`;
+    return childName || parentName || "";
+};
+
+const LineSelect = ({ recIndex, formData, onInputChange, disabled }) => {
+    const deptOption = formatHierarchyOption(
+        formData[`rec_${recIndex}_DeputedDeptName`],
+        formData[`rec_${recIndex}_DeputedSectionName`]
+    );
+    const lineOption = formatHierarchyOption(
+        formData[`rec_${recIndex}_DeputedSubSectionName`],
+        formData[`rec_${recIndex}_DeputedLineName`]
+    );
+    const options = [deptOption, lineOption].filter(Boolean);
 
     const handleChange = (e) => {
-        const val = e.target.value;
-        onInputChange(recIndex, 'From', val);
+        onInputChange(recIndex, 'From', e.target.value);
     };
 
     return (
@@ -245,13 +257,11 @@ const LineSelect = ({ recIndex, departmentId, formData, onInputChange }) => {
             className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
             value={formData[`rec_${recIndex}_From`] || ""}
             onChange={handleChange}
-            disabled={!departmentId}
+            disabled={disabled || options.length === 0}
         >
-            <option value="">{isLoading ? "Loading..." : "-"}</option>
-            {lines.map((line, idx) => (
-                <option key={line.id || line._id || idx} value={line.name}>
-                    {line.name} {line.sectionName ? `(${line.sectionName})` : ''}
-                </option>
+            <option value="">-</option>
+            {options.map((opt, idx) => (
+                <option key={idx} value={opt}>{opt}</option>
             ))}
         </select>
     );
@@ -696,12 +706,16 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                 <td rowSpan="5" className="border border-black p-0.5 min-w-[100px]">
                     <UserAutocomplete
                         value={formData[`rec_${recIndex}_DeputedPerson`] || ""}
-                        onChange={({ fullName, empId, departmentId, deptName, currentLevel }) => {
+                        onChange={({ fullName, empId, departmentId, deptName, sectionName, lineName, subSectionName, currentLevel }) => {
                             handleInputChange(recIndex, 'DeputedPerson', fullName);
                             handleInputChange(recIndex, 'EmpCode', empId);
                             handleInputChange(recIndex, 'DeputedDeptId', departmentId);
                             handleInputChange(recIndex, 'DeputedDeptName', deptName);
+                            handleInputChange(recIndex, 'DeputedSectionName', sectionName);
+                            handleInputChange(recIndex, 'DeputedLineName', lineName);
+                            handleInputChange(recIndex, 'DeputedSubSectionName', subSectionName);
                             handleInputChange(recIndex, 'ActSkill', currentLevel || "L1");
+                            handleInputChange(recIndex, 'From', formatHierarchyOption(subSectionName, lineName));
                         }}
                         placeholder="Deputed Person"
                         compact={true}
@@ -734,7 +748,6 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                 <td rowSpan="5" className="border border-black py-0.5 px-0">
                     <LineSelect
                         recIndex={recIndex}
-                        departmentId={formData[`rec_${recIndex}_DeputedDeptId`]}
                         formData={formData}
                         onInputChange={handleInputChange}
                         disabled={isLocked}
@@ -2280,12 +2293,15 @@ const Daily5MRecording = () => {
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <UserAutocomplete
                                                                 value={formData[`rec_${recIndex}_DeputedCode`] || ""}
-                                                                onChange={({ fullName, empId, departmentId, deptName, lineName, currentLevel }) => {
+                                                                onChange={({ fullName, empId, departmentId, deptName, sectionName, lineName, subSectionName, currentLevel }) => {
                                                                     handleInputChange(recIndex, 'DeputedCode', empId);
                                                                     handleInputChange(recIndex, 'Deputed', fullName);
                                                                     handleInputChange(recIndex, 'DeputedDeptId', departmentId);
                                                                     handleInputChange(recIndex, 'DeputedDeptName', deptName);
-                                                                    handleInputChange(recIndex, 'From', lineName || "");
+                                                                    handleInputChange(recIndex, 'DeputedSectionName', sectionName);
+                                                                    handleInputChange(recIndex, 'DeputedLineName', lineName);
+                                                                    handleInputChange(recIndex, 'DeputedSubSectionName', subSectionName);
+                                                                    handleInputChange(recIndex, 'From', formatHierarchyOption(subSectionName, lineName));
                                                                     handleInputChange(recIndex, 'ActSkill', currentLevel || "L1");
                                                                 }}
                                                                 placeholder="Op Code"
@@ -2313,7 +2329,6 @@ const Daily5MRecording = () => {
                                                                 )}
                                                                 <LineSelect
                                                                     recIndex={recIndex}
-                                                                    departmentId={formData[`rec_${recIndex}_DeputedDeptId`]}
                                                                     formData={formData}
                                                                     onInputChange={handleInputChange}
                                                                     disabled={isLocked}

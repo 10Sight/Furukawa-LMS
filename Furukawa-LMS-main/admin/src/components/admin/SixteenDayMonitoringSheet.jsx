@@ -138,6 +138,7 @@ const SixteenDayMonitoringSheet = ({
     });
 
     const authUser = useSelector(state => state.auth.user);
+    const loggedInName = authUser?.fullName || authUser?.name || authUser?.userName || "";
     const canVerify = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify');
     const canApprove = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:approve');
     const canVerifyEduCell = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify_education');
@@ -610,8 +611,11 @@ const SixteenDayMonitoringSheet = ({
                     ? (gridData['attendance_date_1'] || new Date().toISOString().split('T')[0])
                     : headerInfo.startDate;
 
+            const computedCheckedBy = headerInfo.checkedBy || (isSubmit ? loggedInName : "");
+
             const payload = {
                 ...headerInfo,
+                checkedBy: computedCheckedBy,
                 startDate: computedStartDate,
                 gridData,
                 status: targetStatus,
@@ -625,6 +629,7 @@ const SixteenDayMonitoringSheet = ({
             if (response.data.success) {
                 const finalHeader = {
                     ...headerInfo,
+                    checkedBy: computedCheckedBy,
                     status: targetStatus,
                     startDate: computedStartDate
                 };
@@ -963,9 +968,8 @@ const SixteenDayMonitoringSheet = ({
     }, [gridData, config, readOnly]);
 
     const handleSignature = (field, type) => {
-        const name = authUser?.fullName || authUser?.name;
         const prefix = type === 'approve' ? "Approved By: " : "Rejected By: ";
-        setHeaderInfo(prev => ({ ...prev, [field]: `${prefix}${name}` }));
+        setHeaderInfo(prev => ({ ...prev, [field]: `${prefix}${loggedInName}` }));
     };
 
     const handleClearSignature = (field) => {
@@ -1801,7 +1805,7 @@ const SixteenDayMonitoringSheet = ({
                                                                 onChange={e => handleGridChange('attendance', `checked_${i + 1}`, e.target.value)}
                                                                 onFocus={(e) => {
                                                                     if (!val && !readOnly && !isLocked && !isCellLocked(`attendance_checked_${i + 1}`, 'grid')) {
-                                                                        handleGridChange('attendance', `checked_${i + 1}`, authUser?.fullName || authUser?.name || "");
+                                                                        handleGridChange('attendance', `checked_${i + 1}`, loggedInName);
                                                                     }
                                                                 }}
                                                             />
@@ -1999,7 +2003,7 @@ const SixteenDayMonitoringSheet = ({
                                                                     </Button>
                                                                 </>
                                                             ) : (
-                                                                (authUser?.isAdmin || headerInfo.verifiedBy.includes(authUser?.fullName || authUser?.name)) && (
+                                                                (authUser?.isAdmin || headerInfo.verifiedBy.includes(loggedInName)) && (
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
@@ -2047,7 +2051,7 @@ const SixteenDayMonitoringSheet = ({
                                                                     </Button>
                                                                 </>
                                                             ) : (
-                                                                (authUser?.isAdmin || headerInfo.approvedBy.includes(authUser?.fullName || authUser?.name)) && (
+                                                                (authUser?.isAdmin || headerInfo.approvedBy.includes(loggedInName)) && (
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
@@ -2110,7 +2114,7 @@ const SixteenDayMonitoringSheet = ({
                                                                     </Button>
                                                                 </>
                                                             ) : (
-                                                                (authUser?.isAdmin || headerInfo.verifiedByEduCell.includes(authUser?.fullName || authUser?.name)) && (
+                                                                (authUser?.isAdmin || headerInfo.verifiedByEduCell.includes(loggedInName)) && (
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"

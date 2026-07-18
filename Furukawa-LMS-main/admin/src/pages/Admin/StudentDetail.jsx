@@ -234,8 +234,9 @@ const StudentDetail = () => {
     return Array.isArray(raw) ? raw : (raw?.subSections || []);
   }, [allSubSectionsResp]);
 
-  // Every sub-section the operator has a recorded skill level for (student.currentSkill),
-  // unioned with their active machine assignments — not just the primary/active one.
+  // Every sub-section ID that literally has an entry in student.currentSkill — including
+  // ones the operator is no longer assigned to (orphaned entries), so they're visible for
+  // data-cleanup tracking rather than silently dropped or padded with assignment-only rows.
   const subSectionSkillList = useMemo(() => {
     if (!student) return [];
     let skillEff = student.skillEffeciency;
@@ -265,9 +266,8 @@ const StudentDetail = () => {
     // currentSkill also carries "<id>_locked" / "<id>_lockedLevel" meta keys alongside
     // the plain "<id>" level keys — skip those when collecting sub-section IDs.
     const skillKeys = Object.keys(currentSkill).filter(k => /^\d+$/.test(k));
-    const allKeys = new Set([...skillKeys, ...assignmentByKey.keys()]);
 
-    const list = Array.from(allKeys).map((key) => {
+    const list = skillKeys.map((key) => {
       const assignment = assignmentByKey.get(key);
       const subInfo = allSubSectionsList.find(ss => String(ss.id) === key);
       const isPrimary = assignment?.isPrimary || String(student.subSectionId) === key;

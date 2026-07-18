@@ -6,6 +6,7 @@ import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetStudentProgressQuery } from "@/Redux/AllApi/ProgressApi";
 import { useGetStudentSubmissionsQuery } from "@/Redux/AllApi/SubmissionApi";
 import { useGetStudentAttemptsQuery } from "@/Redux/AllApi/AttemptedQuizApi";
+import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import {
   Card,
   CardContent,
@@ -225,46 +226,70 @@ const StudentDetail = () => {
     return eff !== undefined ? `${Math.round(eff * 100) / 100}%` : "0%";
   }, [student]);
 
-  // Per-sub-section skill level + efficiency, deduped from the assignment list
+  // Global sub-section list, used to resolve names for sub-sections in currentSkill
+  // that the operator isn't currently machine-assigned to (e.g. after a reassignment).
+  const { data: allSubSectionsResp } = useGetSubSectionsQuery({ limit: 1000 });
+  const allSubSectionsList = useMemo(() => {
+    const raw = allSubSectionsResp?.data;
+    return Array.isArray(raw) ? raw : (raw?.subSections || []);
+  }, [allSubSectionsResp]);
+
+  // Every sub-section the operator has a recorded skill level for (student.currentSkill),
+  // unioned with their active machine assignments — not just the primary/active one.
   const subSectionSkillList = useMemo(() => {
     if (!student) return [];
     let skillEff = student.skillEffeciency;
     if (typeof skillEff === 'string') {
       try { skillEff = JSON.parse(skillEff); } catch (e) { skillEff = {}; }
     }
-    const currentSkill = student.currentSkill || {};
-    const assignments = (student.assignments && student.assignments.length > 0)
-      ? student.assignments
-      : [{
-          subSectionId: student.subSectionId,
-          subSectionName: student.subSectionName || "N/A",
-          sectionName: student.sectionName || "N/A",
-          lineName: student.lineName || "N/A",
-          machineId: student.stationId,
-        }];
+    let currentSkill = student.currentSkill;
+    if (typeof currentSkill === 'string') {
+      try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+    }
+    currentSkill = currentSkill || {};
 
-    const bySubSection = new Map();
+    const assignments = student.assignments || [];
+    const assignmentByKey = new Map();
     assignments.forEach((a) => {
       if (a.subSectionId == null) return;
       const key = String(a.subSectionId);
       const isPrimary = a.machineId === student.stationId;
-      const existing = bySubSection.get(key);
+      const existing = assignmentByKey.get(key);
       if (!existing) {
-        bySubSection.set(key, {
-          subSectionId: a.subSectionId,
-          name: a.subSectionName || "N/A",
-          lineName: a.lineName || "N/A",
-          sectionName: a.sectionName || "N/A",
-          level: currentSkill[key] || "L1",
-          efficiency: skillEff?.[key],
-          isPrimary,
-        });
+        assignmentByKey.set(key, { ...a, isPrimary });
       } else if (isPrimary) {
         existing.isPrimary = true;
       }
     });
-    return Array.from(bySubSection.values());
-  }, [student]);
+
+    // currentSkill also carries "<id>_locked" / "<id>_lockedLevel" meta keys alongside
+    // the plain "<id>" level keys — skip those when collecting sub-section IDs.
+    const skillKeys = Object.keys(currentSkill).filter(k => /^\d+$/.test(k));
+    const allKeys = new Set([...skillKeys, ...assignmentByKey.keys()]);
+
+    const list = Array.from(allKeys).map((key) => {
+      const assignment = assignmentByKey.get(key);
+      const subInfo = allSubSectionsList.find(ss => String(ss.id) === key);
+      const isPrimary = assignment?.isPrimary || String(student.subSectionId) === key;
+      return {
+        subSectionId: key,
+        name: assignment?.subSectionName || subInfo?.name || `Sub-Section ${key}`,
+        lineName: assignment?.lineName || subInfo?.lineName || "N/A",
+        sectionName: assignment?.sectionName || subInfo?.sectionName || "N/A",
+        level: currentSkill[key] || "L1",
+        efficiency: skillEff?.[key],
+        isPrimary,
+        isActive: !!assignment,
+      };
+    });
+
+    list.sort((a, b) => {
+      if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return list;
+  }, [student, allSubSectionsList]);
 
   // Loading state
   const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading || ojtLoading;
@@ -934,8 +959,14 @@ const StudentDetail = () => {
                       </span>
                     </div>
                   </div>
-                  <Badge className={s.isPrimary ? "bg-blue-600 text-white border-blue-700 shrink-0" : "bg-slate-200 text-slate-700 border-slate-300 shrink-0"}>
-                    {s.isPrimary ? "Primary" : "Assigned"}
+                  <Badge className={
+                    s.isPrimary
+                      ? "bg-blue-600 text-white border-blue-700 shrink-0"
+                      : s.isActive
+                        ? "bg-slate-200 text-slate-700 border-slate-300 shrink-0"
+                        : "bg-white text-slate-500 border-slate-200 border-dashed shrink-0"
+                  }>
+                    {s.isPrimary ? "Primary" : s.isActive ? "Assigned" : "Not Assigned"}
                   </Badge>
                 </div>
               ))}

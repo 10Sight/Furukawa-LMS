@@ -90,8 +90,8 @@ const populateDepartment = async (dept, fields = []) => {
     if (fields.includes('students')) {
         // Load limited students for preview; use getDepartmentTrainees for full paginated list
         const [students] = await executeQuery(`
-            SELECT TOP 50 id, fullName, email, slug, createdAt, avatar, userName, empId, currentLevel, status
-            FROM users 
+            SELECT TOP 50 id, fullName, email, slug, createdAt, avatar, userName, empId, currentLevel, currentSkill, status
+            FROM users
             WHERE (departmentId = ? OR department = ? OR department = ?)
             AND (isDeleted = 0 OR isDeleted IS NULL)
             AND (isEmployee = 1)
@@ -100,7 +100,13 @@ const populateDepartment = async (dept, fields = []) => {
             AND (status IS NULL OR status != 'LEFT')
             ORDER BY fullName ASC
         `, [dept.id, String(dept.id), dept.name]);
-        dept.students = students.map(s => ({ ...s, _id: s.id }));
+        dept.students = students.map(s => {
+            let currentSkill = s.currentSkill;
+            if (typeof currentSkill === 'string') {
+                try { currentSkill = JSON.parse(currentSkill); } catch (e) { currentSkill = {}; }
+            }
+            return { ...s, _id: s.id, currentSkill: currentSkill || {} };
+        });
 
         // Always ensure we have an accurate studentCount if we're showing the students list
         if (!dept.studentCount) {

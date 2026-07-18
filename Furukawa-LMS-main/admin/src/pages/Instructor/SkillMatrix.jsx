@@ -200,7 +200,7 @@ const InstructorSkillMatrix = () => {
                     name: machine.name,
                     critical: "Non-Critical",
                     min: "L-1",
-                    curr: user.level,
+                    curr: user.currentSkill?.[String(machine.subSectionId)] || null,
                 }));
 
                 // Merged Stations (Existing User)
@@ -213,7 +213,7 @@ const InstructorSkillMatrix = () => {
                         name: machine.name,
                         critical: savedStation?.critical || "Non-Critical",
                         min: savedStation?.min || "L-1",
-                        curr: savedStation?.curr || user.level, // Prefer saved level, fallback to user default
+                        curr: savedStation?.curr || user.currentSkill?.[String(machine.subSectionId)] || null, // Prefer saved level, fallback to sub-section-specific skill
                     };
                 });
 
@@ -368,6 +368,7 @@ const InstructorSkillMatrix = () => {
         const user = departmentUsers.find(u => u._id === userId);
         if (!user) return;
 
+        const activeMachines = machinesData?.data || [];
         const updatedEntries = [...matrixEntries];
         const row = updatedEntries[rowIdx];
 
@@ -385,7 +386,10 @@ const InstructorSkillMatrix = () => {
             department: displayDepartment,
             type: user.type,
             doj: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-GB') : "-",
-            stations: row.stations.map(s => ({ ...s, curr: user.level || 'L-1' })), // Reset stations to user level
+            stations: row.stations.map(s => {
+                const machine = activeMachines.find(m => (m._id || m.id) === s._id);
+                return { ...s, curr: user.currentSkill?.[String(machine?.subSectionId)] || null };
+            }), // Reset stations to the operator's sub-section-specific skill, not their global level
             isManual: false // Lock it after selection? Or keep true to allow changing? 
             // "operator name have to drop down" implies it might stay a dropdown. 
             // Let's keep isManual true if we want it to remain editable, 

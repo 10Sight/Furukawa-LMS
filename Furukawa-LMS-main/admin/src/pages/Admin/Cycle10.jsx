@@ -14,8 +14,8 @@ import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsByLineQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetMachinesByLineQuery } from "@/Redux/AllApi/MachineApi";
-import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
+import UserAutocomplete from '@/components/common/UserAutocomplete';
 import {
     Dialog,
     DialogContent,
@@ -86,15 +86,6 @@ const Cycle10 = () => {
 
     const { data: machineData } = useGetMachinesByLineQuery(selectedLineFilter, { skip: !selectedLineFilter });
     const stations = machineData?.data || [];
-
-    const { data: usersData } = useGetAllUsersQuery({
-        departmentId: selectedDepartmentFilter,
-        limit: 1000,
-        isEmployee: true,
-        includeTemporary: "true",
-        ojtApprovedToday: "true"
-    }, { skip: !selectedDepartmentFilter });
-    const operators = usersData?.data?.users || [];
 
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
@@ -398,15 +389,6 @@ const Cycle10 = () => {
             if (row.id === id) {
                 let updatedRow = { ...row, [field]: value };
 
-                // Auto-populate employee details when inspector is selected
-                if (field === 'inspectorName') {
-                    const operator = operators.find(op => op.fullName === value);
-                    if (operator) {
-                        updatedRow.empCode = operator.empId || '';
-                        updatedRow.skillLevel = operator.currentLevel || '';
-                    }
-                }
-
                 // Fields to check for result (Marking fields)
                 const markingFields = [
                     'secA_q1', 'secA_q2', 'secA_q3', 'secA_q4',
@@ -455,6 +437,26 @@ const Cycle10 = () => {
                 return updatedRow;
             }
             return row;
+        }));
+    };
+
+    const handleOperatorSelect = (id, user) => {
+        setRows(rows.map(row => {
+            if (row.id !== id) return row;
+
+            const lineName = user.lineName || '';
+            const subSectionName = user.subSectionName || '';
+            const lineMachine = (lineName && subSectionName)
+                ? `${lineName} (${subSectionName})`
+                : (lineName || subSectionName || row.lineMachine);
+
+            return {
+                ...row,
+                inspectorName: user.fullName || '',
+                empCode: user.empId || '',
+                skillLevel: user.currentLevel || '',
+                lineMachine,
+            };
         }));
     };
 
@@ -952,19 +954,21 @@ const Cycle10 = () => {
                                                                 <input type="date" className="w-full text-center bg-transparent outline-none p-1 text-[9px] disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} />
                                                             </td>
                                                             <td className="border border-black p-0 h-8 bg-yellow-50">
-                                                                <select
-                                                                    className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 text-blue-600 font-bold disabled:cursor-default"
+                                                                <input
+                                                                    list={`stations-f1-${row.id}`}
+                                                                    className="w-full h-full text-center bg-transparent outline-none text-[10px] py-1 text-blue-600 font-bold disabled:cursor-default"
+                                                                    placeholder="Search Station..."
                                                                     value={row.lineMachine || ''}
                                                                     onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)}
                                                                     disabled={!isEditMode}
-                                                                >
-                                                                    <option value="">Select Station</option>
+                                                                />
+                                                                <datalist id={`stations-f1-${row.id}`}>
                                                                     {stations.map(st => (
                                                                         <option key={st.id} value={st.name}>
                                                                             {st.name} ({st.subSectionName || '-'})
                                                                         </option>
                                                                     ))}
-                                                                </select>
+                                                                </datalist>
                                                             </td>
                                                             <td className="border border-black p-0 bg-yellow-50">
                                                                 <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} />
@@ -1021,20 +1025,16 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             <td className="border border-black p-0 bg-yellow-50">
-                                                                <input
-                                                                    list={`ops-f1-${row.id}`}
-                                                                    className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default"
+                                                                <UserAutocomplete
+                                                                    compact
+                                                                    departmentId={selectedDepartmentFilter}
                                                                     value={row.inspectorName}
-                                                                    onChange={(e) => handleRowChange(row.id, 'inspectorName', e.target.value)}
+                                                                    onChange={(user) => handleOperatorSelect(row.id, user)}
+                                                                    onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
+                                                                    placeholder="Search Operator..."
+                                                                    inputClassName="text-blue-600 font-bold"
                                                                     disabled={!isEditMode}
                                                                 />
-                                                                <datalist id={`ops-f1-${row.id}`}>
-                                                                    {operators.map(op => (
-                                                                        <option key={op.id} value={op.fullName}>
-                                                                            {op.empId} - {op.currentLevel}
-                                                                        </option>
-                                                                    ))}
-                                                                </datalist>
                                                             </td>
                                                             <td className="border border-black p-0 bg-yellow-50">
                                                                 <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} />
@@ -1191,19 +1191,21 @@ const Cycle10 = () => {
                                                             </td>
                                                             <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0 h-8">
-                                                                <select
-                                                                    className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 text-blue-600 disabled:cursor-default"
+                                                                <input
+                                                                    list={`stations-f2-${row.id}`}
+                                                                    className="w-full h-full text-center bg-transparent outline-none text-[10px] py-1 text-blue-600 disabled:cursor-default"
+                                                                    placeholder="Search Station..."
                                                                     value={row.lineMachine || ''}
                                                                     onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)}
                                                                     disabled={!isEditMode}
-                                                                >
-                                                                    <option value="">Select Station</option>
+                                                                />
+                                                                <datalist id={`stations-f2-${row.id}`}>
                                                                     {stations.map(st => (
                                                                         <option key={st.id} value={st.name}>
                                                                             {st.name} ({st.subSectionName || '-'})
                                                                         </option>
                                                                     ))}
-                                                                </select>
+                                                                </datalist>
                                                             </td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} /></td>
@@ -1237,20 +1239,16 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             <td className="border border-black p-0">
-                                                                <input
-                                                                    list={`ops-f2-${row.id}`}
-                                                                    className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default"
+                                                                <UserAutocomplete
+                                                                    compact
+                                                                    departmentId={selectedDepartmentFilter}
                                                                     value={row.inspectorName}
-                                                                    onChange={(e) => handleRowChange(row.id, 'inspectorName', e.target.value)}
+                                                                    onChange={(user) => handleOperatorSelect(row.id, user)}
+                                                                    onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
+                                                                    placeholder="Search Operator..."
+                                                                    inputClassName="text-blue-600"
                                                                     disabled={!isEditMode}
                                                                 />
-                                                                <datalist id={`ops-f2-${row.id}`}>
-                                                                    {operators.map(op => (
-                                                                        <option key={op.id} value={op.fullName}>
-                                                                            {op.empId} - {op.currentLevel}
-                                                                        </option>
-                                                                    ))}
-                                                                </datalist>
                                                             </td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} /></td>
@@ -1389,19 +1387,21 @@ const Cycle10 = () => {
                                                             </td>
                                                             <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0 h-8">
-                                                                <select
-                                                                    className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 text-blue-600 disabled:cursor-default"
+                                                                <input
+                                                                    list={`stations-f3-${row.id}`}
+                                                                    className="w-full h-full text-center bg-transparent outline-none text-[10px] py-1 text-blue-600 disabled:cursor-default"
+                                                                    placeholder="Search Station..."
                                                                     value={row.lineMachine || ''}
                                                                     onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)}
                                                                     disabled={!isEditMode}
-                                                                >
-                                                                    <option value="">Select Station</option>
+                                                                />
+                                                                <datalist id={`stations-f3-${row.id}`}>
                                                                     {stations.map(st => (
                                                                         <option key={st.id} value={st.name}>
                                                                             {st.name} ({st.subSectionName || '-'})
                                                                         </option>
                                                                     ))}
-                                                                </select>
+                                                                </datalist>
                                                             </td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} /></td>
@@ -1436,20 +1436,16 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             <td className="border border-black p-0">
-                                                                <input
-                                                                    list={`ops-f3-${row.id}`}
-                                                                    className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default"
+                                                                <UserAutocomplete
+                                                                    compact
+                                                                    departmentId={selectedDepartmentFilter}
                                                                     value={row.inspectorName}
-                                                                    onChange={(e) => handleRowChange(row.id, 'inspectorName', e.target.value)}
+                                                                    onChange={(user) => handleOperatorSelect(row.id, user)}
+                                                                    onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
+                                                                    placeholder="Search Operator..."
+                                                                    inputClassName="text-blue-600"
                                                                     disabled={!isEditMode}
                                                                 />
-                                                                <datalist id={`ops-f3-${row.id}`}>
-                                                                    {operators.map(op => (
-                                                                        <option key={op.id} value={op.fullName}>
-                                                                            {op.empId} - {op.currentLevel}
-                                                                        </option>
-                                                                    ))}
-                                                                </datalist>
                                                             </td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} /></td>

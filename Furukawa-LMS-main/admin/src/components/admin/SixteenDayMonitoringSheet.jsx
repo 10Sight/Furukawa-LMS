@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
+import useCountdown from '@/hooks/useCountdown';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,6 +136,9 @@ const SixteenDayMonitoringSheet = ({
         verifiedByEduCell: "",
         status: "Draft",
         startDate: "",
+        handoverApprovedAt: null,
+        eligibleAt: null,
+        isEligible: true,
     });
 
     const authUser = useSelector(state => state.auth.user);
@@ -188,10 +192,22 @@ const SixteenDayMonitoringSheet = ({
         !canEditSubmitted &&
         !authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
 
+    // Locked for the very first attempt until 24h after Handover approval — Admins/Trainers can override.
+    const isEligibilityLocked = !isSheetSaved &&
+        !isForceNewAttempt &&
+        headerInfo.isEligible === false &&
+        !isAdmin &&
+        !authUser?.isTrainer;
+    const { isExpired: eligibilityExpired, formatted: eligibilityCountdown } = useCountdown(
+        isEligibilityLocked ? headerInfo.eligibleAt : null
+    );
+    const eligibilityStillLocked = isEligibilityLocked && !eligibilityExpired;
+
     const isCellLocked = (key, type = 'grid') => {
         if (isLeftUser) return true;
         if (readOnly) return true;
         if (isLocked) return true;
+        if (eligibilityStillLocked) return true;
         if (isAdmin || canEditSubmitted) return false;
         if (!isSheetSaved) return false;
 
@@ -325,6 +341,9 @@ const SixteenDayMonitoringSheet = ({
                         status: record.status || "Draft",
                         attemptNumber: record.attemptNumber || 1,
                         startDate: record.startDate || "",
+                        handoverApprovedAt: record.handoverApprovedAt || null,
+                        eligibleAt: record.eligibleAt || null,
+                        isEligible: record.isEligible !== false,
                     };
                     if (initialForceNewAttempt) {
                         setHeaderInfo({
@@ -368,6 +387,9 @@ const SixteenDayMonitoringSheet = ({
                         status: "Draft",
                         attemptNumber: 1,
                         startDate: "",
+                        handoverApprovedAt: response.data.data?.handoverApprovedAt || null,
+                        eligibleAt: response.data.data?.eligibleAt || null,
+                        isEligible: response.data.data?.isEligible !== false,
                     };
                     setHeaderInfo(newHeader);
                     setGridData({});
@@ -1017,6 +1039,14 @@ const SixteenDayMonitoringSheet = ({
                     Associate has LEFT: This sheet is locked. No fields can be edited or saved.
                 </div>
             )}
+            {eligibilityStillLocked && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 print:hidden">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    16-Day Monitoring unlocks in {eligibilityCountdown} (Approved in Handover on{" "}
+                    {headerInfo.handoverApprovedAt ? new Date(headerInfo.handoverApprovedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : "-"}
+                    ). This sheet is locked until then.
+                </div>
+            )}
             <div className="flex justify-between items-center print:hidden">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
@@ -1025,6 +1055,11 @@ const SixteenDayMonitoringSheet = ({
                         </Badge>
                         {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
                         {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Locked — Associate Left</Badge>}
+                        {eligibilityStillLocked && (
+                            <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
+                                ⏳ Eligible in {eligibilityCountdown}
+                            </Badge>
+                        )}
                         {isForceNewAttempt && <Badge className="bg-blue-500 animate-pulse text-white text-[10px]">NEW ATTEMPT MODE</Badge>}
                         {!studentId && (
                             <Badge className="bg-amber-500 text-white text-[10px] animate-pulse">DESIGN MODE: TEMPLATE SETUP</Badge>
@@ -1113,7 +1148,7 @@ const SixteenDayMonitoringSheet = ({
                                 <Button
                                     variant="secondary"
                                     onClick={() => handleSave("Draft", false)}
-                                    disabled={saving || !studentId || isLeftUser}
+                                    disabled={saving || !studentId || isLeftUser || eligibilityStillLocked}
                                     className="h-9 gap-2"
                                 >
                                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1136,7 +1171,7 @@ const SixteenDayMonitoringSheet = ({
                             <Button
                                 variant={headerInfo.status === 'Submitted' ? "outline" : "default"}
                                 onClick={() => handleSave("Submitted", true)}
-                                disabled={saving || !studentId || !isDay16ColFilled || isLocked || readOnly || isLeftUser}
+                                disabled={saving || !studentId || !isDay16ColFilled || isLocked || readOnly || isLeftUser || eligibilityStillLocked}
                                 className="h-9 gap-2"
                             >
                                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

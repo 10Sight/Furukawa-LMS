@@ -46,8 +46,47 @@ import { cn } from "@/lib/utils";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
+import useCountdown from '@/hooks/useCountdown';
 
 const EMPTY_ARRAY = [];
+
+// Renders the stack-table action button, locking it behind a live countdown until
+// 24h after Handover approval — unless the viewer is an Admin/Trainer (override).
+const StartMonitoringCell = ({ item, readOnly, canOverride, onStart }) => {
+    const isLocked = !item.status && !item.isEligible && !canOverride;
+    const { isExpired, formatted } = useCountdown(isLocked ? item.eligibleAt : null);
+    const stillLocked = isLocked && !isExpired;
+
+    if (stillLocked) {
+        return (
+            <div className="flex flex-col items-end gap-1">
+                <Badge variant="outline" className="text-[10px] font-semibold text-amber-600 border-amber-300 bg-amber-50 whitespace-nowrap">
+                    ⏳ Eligible in {formatted}
+                </Badge>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs font-bold text-slate-400"
+                    disabled
+                    title="Unlocks 24 hours after Handover approval"
+                >
+                    Locked
+                </Button>
+            </div>
+        );
+    }
+
+    return (
+        <Button
+            size="sm"
+            variant={item.status ? "outline" : "default"}
+            className={cn("h-8 text-xs font-bold", !item.status && "bg-indigo-600 hover:bg-indigo-700")}
+            onClick={onStart}
+        >
+            {item.status ? (readOnly ? "View" : "View Latest") : (readOnly ? "View" : "Start Monitoring")}
+        </Button>
+    );
+};
 const SixteenDayMonitoring = ({ readOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
@@ -625,18 +664,16 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                                     </TableCell>
                                                     <TableCell className="text-right pr-6">
                                                         <div className="flex justify-end gap-2">
-                                                            <Button
-                                                                size="sm"
-                                                                variant={item.status ? "outline" : "default"}
-                                                                className={cn("h-8 text-xs font-bold", !item.status && "bg-indigo-600 hover:bg-indigo-700")}
-                                                                onClick={() => {
+                                                            <StartMonitoringCell
+                                                                item={item}
+                                                                readOnly={readOnly}
+                                                                canOverride={isAdmin || authUser?.isTrainer}
+                                                                onStart={() => {
                                                                     setStudentId(String(item.id));
                                                                     setActiveDept(String(item.departmentId || ""));
                                                                     setForceNewAttempt(false);
                                                                 }}
-                                                            >
-                                                                {item.status ? (readOnly ? "View" : "View Latest") : (readOnly ? "View" : "Start Monitoring")}
-                                                            </Button>
+                                                            />
                                                             {badge.label.includes("Rejected") && !readOnly && (
                                                                 <Button
                                                                     size="sm"

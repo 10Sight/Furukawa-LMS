@@ -40,7 +40,8 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
             u.id, u.fullName, u.empId, u.avatar, u.departmentId, u.sectionId,
             d.name as departmentName, s.name as sectionName,
             m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.verifiedByEduCell, m.updatedAt, m.attemptNumber, m.startDate, m.gridData, m.adminRemarksHistory,
-            stats.totalAttempts, stats.rejectedCount
+            stats.totalAttempts, stats.rejectedCount,
+            ho.handoverApprovedAt
         FROM users u
         LEFT JOIN departments d ON u.departmentId = d.id
         LEFT JOIN sections s ON u.sectionId = s.id
@@ -55,6 +56,14 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
             FROM sixteen_day_monitorings
             GROUP BY studentId
         ) stats ON u.id = stats.studentId
+        OUTER APPLY (
+            SELECT TOP 1 JSON_VALUE(entry.value, '$.statusActionAt') as handoverApprovedAt
+            FROM handover_sheets hs
+            CROSS APPLY OPENJSON(hs.entries) as entry
+            WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+              AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+            ORDER BY hs.createdAt DESC
+        ) ho
         WHERE u.departmentId = ?
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
         AND (u.status IS NULL OR u.status != 'LEFT')
@@ -100,6 +109,16 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
         } else {
             row.adminRemarksHistory = [];
         }
+
+        if (row.handoverApprovedAt) {
+            const eligibleAtMs = new Date(row.handoverApprovedAt).getTime() + 24 * 60 * 60 * 1000;
+            row.eligibleAt = new Date(eligibleAtMs).toISOString();
+            row.isEligible = Date.now() >= eligibleAtMs;
+        } else {
+            row.eligibleAt = null;
+            row.isEligible = true;
+        }
+
         return row;
     });
 
@@ -150,6 +169,15 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
 
     const handoverInfo = handoverRows.length > 0 ? handoverRows[0] : null;
 
+    let eligibleAt = null;
+    let isEligible = true;
+    if (handoverInfo?.handoverDate) {
+        const eligibleAtMs = new Date(handoverInfo.handoverDate).getTime() + 24 * 60 * 60 * 1000;
+        eligibleAt = new Date(eligibleAtMs).toISOString();
+        isEligible = Date.now() >= eligibleAtMs;
+    }
+    const canOverrideEligibility = !!(req.user.isAdmin || req.user.isTrainer);
+
     // Resolve the candidate's current name, code, and dept/section from the users table
     const [userRows] = await executeQuery(`
         SELECT u.fullName, u.empId, u.status, d.name as departmentName, s.name as sectionName
@@ -169,6 +197,10 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
             new ApiResponse(200, {
                 isNew: true,
                 userStatus,
+                handoverApprovedAt: handoverInfo?.handoverDate || null,
+                eligibleAt,
+                isEligible,
+                canOverrideEligibility,
                 headerInfo: {
                     employeeName: student?.fullName || "",
                     employeeCode: student?.empId || "",
@@ -202,6 +234,10 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
             ...data,
             isNew: false,
             userStatus,
+            handoverApprovedAt: handoverInfo?.handoverDate || null,
+            eligibleAt,
+            isEligible,
+            canOverrideEligibility,
         }, "16 Day Monitoring fetched successfully")
     );
 });
@@ -240,6 +276,30 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const [userStatusRows] = await executeQuery("SELECT status FROM users WHERE id = ?", [sid]);
     if (userStatusRows.length > 0 && userStatusRows[0].status === 'LEFT') {
         throw new ApiError("This associate has left. The monitoring sheet is locked and cannot be modified.", 400);
+    }
+
+    // 24-hour eligibility gate: only applies before the very first attempt is created.
+    // Admins/Trainers can override and start monitoring early.
+    const canOverrideEligibility = req.user.isAdmin || req.user.isTrainer;
+    if (!canOverrideEligibility) {
+        const existingAttempt = await SixteenDayMonitoring.findByStudentId(sid);
+        if (!existingAttempt) {
+            const [approvalRows] = await executeQuery(`
+                SELECT TOP 1 JSON_VALUE(entry.value, '$.statusActionAt') as approvedAt
+                FROM handover_sheets hs
+                CROSS APPLY OPENJSON(hs.entries) as entry
+                WHERE JSON_VALUE(entry.value, '$.studentId') = ?
+                  AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+                ORDER BY hs.createdAt DESC
+            `, [sid]);
+            const approvedAt = approvalRows[0]?.approvedAt;
+            if (approvedAt) {
+                const eligibleAtMs = new Date(approvedAt).getTime() + 24 * 60 * 60 * 1000;
+                if (Date.now() < eligibleAtMs) {
+                    throw new ApiError("16-Day Monitoring can only be started 24 hours after Handover approval.", 400);
+                }
+            }
+        }
     }
 
     const {

@@ -79,7 +79,7 @@ const SkillUpgradationWrapper = () => {
         departmentId: dept,
         sectionId: section,
         limit: 1000,
-        includeTemporary: "true"
+        includeTemporary: "false"
     }, {
         skip: !dept || !section,
         refetchOnMountOrArgChange: true
@@ -88,7 +88,14 @@ const SkillUpgradationWrapper = () => {
     const departments = deptsData?.data?.departments || [];
     const sections = sectionsData?.data || [];
     const createSections = createSectionsData?.data || [];
-    const students = studentsData?.data?.users || [];
+    const students = useMemo(() => {
+        const rawUsers = studentsData?.data?.users || [];
+        return rawUsers.filter(user =>
+            (user.isTemporary === 0 || user.isTemporary === "0" || !user.isTemporary) &&
+            (user.isDeleted === 0 || user.isDeleted === "0" || !user.isDeleted) &&
+            (user.status || "").toUpperCase() === "PRESENT"
+        );
+    }, [studentsData]);
 
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];

@@ -93,6 +93,120 @@ const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChan
     );
 };
 
+const HorizontalScrollbar = React.memo(({ containerRef }) => {
+    const trackRef = useRef(null);
+    const dragState = useRef(null);
+    const rafRef = useRef(null);
+    const [thumb, setThumb] = useState({ width: 0, left: 0, visible: false });
+
+    const recomputeThumb = () => {
+        const el = containerRef.current;
+        const track = trackRef.current;
+        if (!el || !track) return;
+        const trackWidth = track.clientWidth;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        if (scrollWidth <= clientWidth) {
+            setThumb(prev => (prev.visible ? { width: 0, left: 0, visible: false } : prev));
+            return;
+        }
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
+        const maxScroll = scrollWidth - clientWidth;
+        const maxThumbLeft = trackWidth - thumbWidth;
+        const left = maxScroll > 0 ? (el.scrollLeft / maxScroll) * maxThumbLeft : 0;
+        setThumb({ width: thumbWidth, left, visible: true });
+    };
+
+    const scheduleRecompute = () => {
+        if (rafRef.current) return;
+        rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null;
+            recomputeThumb();
+        });
+    };
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        recomputeThumb();
+        el.addEventListener("scroll", scheduleRecompute, { passive: true });
+        window.addEventListener("resize", scheduleRecompute);
+        const observer = new ResizeObserver(scheduleRecompute);
+        if (el.firstElementChild) observer.observe(el.firstElementChild);
+        return () => {
+            el.removeEventListener("scroll", scheduleRecompute);
+            window.removeEventListener("resize", scheduleRecompute);
+            observer.disconnect();
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const scrollByThumbDelta = (deltaPx) => {
+        const el = containerRef.current;
+        const track = trackRef.current;
+        if (!el || !track) return;
+        const trackWidth = track.clientWidth;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        const maxScroll = scrollWidth - clientWidth;
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
+        const maxThumbLeft = trackWidth - thumbWidth;
+        if (maxThumbLeft <= 0) return;
+        const deltaScroll = (deltaPx / maxThumbLeft) * maxScroll;
+        el.scrollLeft = Math.min(maxScroll, Math.max(0, el.scrollLeft + deltaScroll));
+    };
+
+    const handleThumbMouseDown = (e) => {
+        e.preventDefault();
+        dragState.current = { startX: e.clientX };
+        const onMouseMove = (moveEvent) => {
+            if (!dragState.current) return;
+            const deltaX = moveEvent.clientX - dragState.current.startX;
+            dragState.current.startX = moveEvent.clientX;
+            scrollByThumbDelta(deltaX);
+        };
+        const onMouseUp = () => {
+            dragState.current = null;
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+        };
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+    };
+
+    const handleTrackClick = (e) => {
+        if (e.target !== trackRef.current) return;
+        const track = trackRef.current;
+        const rect = track.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const el = containerRef.current;
+        if (!el) return;
+        const clientWidth = el.clientWidth;
+        const scrollWidth = el.scrollWidth;
+        const maxScroll = scrollWidth - clientWidth;
+        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * rect.width);
+        const targetLeft = Math.min(rect.width - thumbWidth, Math.max(0, clickX - thumbWidth / 2));
+        const maxThumbLeft = rect.width - thumbWidth;
+        el.scrollLeft = maxThumbLeft > 0 ? (targetLeft / maxThumbLeft) * maxScroll : 0;
+    };
+
+    return (
+        <div
+            ref={trackRef}
+            onMouseDown={handleTrackClick}
+            className={`no-print relative w-full h-3 rounded-full bg-slate-200 mb-2 ${thumb.visible ? "" : "invisible"}`}
+        >
+            <div
+                onMouseDown={handleThumbMouseDown}
+                className="absolute top-0 h-full rounded-full bg-slate-400 hover:bg-slate-500 active:bg-slate-600 cursor-grab active:cursor-grabbing transition-colors"
+                style={{ width: `${thumb.width}px`, left: `${thumb.left}px` }}
+            />
+        </div>
+    );
+});
+HorizontalScrollbar.displayName = "HorizontalScrollbar";
+
 const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, year, isReadOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
@@ -347,92 +461,6 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     };
 
     const tableContainerRef = useRef(null);
-    const topTrackRef = useRef(null);
-    const dragState = useRef(null);
-    const [thumb, setThumb] = useState({ width: 0, left: 0, visible: false });
-
-    const recomputeThumb = () => {
-        const el = tableContainerRef.current;
-        const track = topTrackRef.current;
-        if (!el || !track) return;
-        const trackWidth = track.clientWidth;
-        const clientWidth = el.clientWidth;
-        const scrollWidth = el.scrollWidth;
-        if (scrollWidth <= clientWidth) {
-            setThumb({ width: 0, left: 0, visible: false });
-            return;
-        }
-        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
-        const maxScroll = scrollWidth - clientWidth;
-        const maxThumbLeft = trackWidth - thumbWidth;
-        const left = maxScroll > 0 ? (el.scrollLeft / maxScroll) * maxThumbLeft : 0;
-        setThumb({ width: thumbWidth, left, visible: true });
-    };
-
-    useEffect(() => {
-        recomputeThumb();
-        window.addEventListener("resize", recomputeThumb);
-        const el = tableContainerRef.current;
-        const observer = el ? new ResizeObserver(recomputeThumb) : null;
-        if (observer && el.firstElementChild) observer.observe(el.firstElementChild);
-        return () => {
-            window.removeEventListener("resize", recomputeThumb);
-            observer?.disconnect();
-        };
-    }, [filteredRows.length]);
-
-    const handleTableScroll = () => {
-        recomputeThumb();
-    };
-
-    const scrollByThumbDelta = (deltaPx) => {
-        const el = tableContainerRef.current;
-        const track = topTrackRef.current;
-        if (!el || !track) return;
-        const trackWidth = track.clientWidth;
-        const clientWidth = el.clientWidth;
-        const scrollWidth = el.scrollWidth;
-        const maxScroll = scrollWidth - clientWidth;
-        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * trackWidth);
-        const maxThumbLeft = trackWidth - thumbWidth;
-        if (maxThumbLeft <= 0) return;
-        const deltaScroll = (deltaPx / maxThumbLeft) * maxScroll;
-        el.scrollLeft = Math.min(maxScroll, Math.max(0, el.scrollLeft + deltaScroll));
-    };
-
-    const handleThumbMouseDown = (e) => {
-        e.preventDefault();
-        dragState.current = { startX: e.clientX };
-        const onMouseMove = (moveEvent) => {
-            if (!dragState.current) return;
-            const deltaX = moveEvent.clientX - dragState.current.startX;
-            dragState.current.startX = moveEvent.clientX;
-            scrollByThumbDelta(deltaX);
-        };
-        const onMouseUp = () => {
-            dragState.current = null;
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
-        };
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
-    };
-
-    const handleTrackClick = (e) => {
-        if (e.target !== topTrackRef.current) return;
-        const track = topTrackRef.current;
-        const rect = track.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const el = tableContainerRef.current;
-        if (!el) return;
-        const clientWidth = el.clientWidth;
-        const scrollWidth = el.scrollWidth;
-        const maxScroll = scrollWidth - clientWidth;
-        const thumbWidth = Math.max(30, (clientWidth / scrollWidth) * rect.width);
-        const targetLeft = Math.min(rect.width - thumbWidth, Math.max(0, clickX - thumbWidth / 2));
-        const maxThumbLeft = rect.width - thumbWidth;
-        el.scrollLeft = maxThumbLeft > 0 ? (targetLeft / maxThumbLeft) * maxScroll : 0;
-    };
 
     const stickyHeader = "sticky top-0 z-40 print:static";
     const stickySubHeader = "sticky top-12 z-40 print:static";
@@ -501,22 +529,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     </div>
                 </div>
 
-                <div
-                    ref={topTrackRef}
-                    onMouseDown={handleTrackClick}
-                    className={`no-print relative w-full h-3 rounded-full bg-slate-200 mb-2 ${thumb.visible ? "" : "invisible"}`}
-                >
-                    <div
-                        onMouseDown={handleThumbMouseDown}
-                        className="absolute top-0 h-full rounded-full bg-slate-400 hover:bg-slate-500 active:bg-slate-600 cursor-grab active:cursor-grabbing transition-colors"
-                        style={{ width: `${thumb.width}px`, left: `${thumb.left}px` }}
-                    />
-                </div>
+                <HorizontalScrollbar containerRef={tableContainerRef} />
 
                 <div
                     ref={tableContainerRef}
-                    onScroll={handleTableScroll}
-                    className="w-full max-w-full max-h-[calc(100vh-340px)] overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar"
+                    className="w-full max-w-full max-h-[calc(100vh-340px)] overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar overscroll-contain"
+                    style={{ WebkitOverflowScrolling: "touch" }}
                 >
                     <table className="w-full min-w-[2600px] border-separate border-spacing-0 text-sm table-auto">
                         <thead className="bg-slate-100 text-slate-700">

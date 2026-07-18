@@ -225,6 +225,47 @@ const StudentDetail = () => {
     return eff !== undefined ? `${Math.round(eff * 100) / 100}%` : "0%";
   }, [student]);
 
+  // Per-sub-section skill level + efficiency, deduped from the assignment list
+  const subSectionSkillList = useMemo(() => {
+    if (!student) return [];
+    let skillEff = student.skillEffeciency;
+    if (typeof skillEff === 'string') {
+      try { skillEff = JSON.parse(skillEff); } catch (e) { skillEff = {}; }
+    }
+    const currentSkill = student.currentSkill || {};
+    const assignments = (student.assignments && student.assignments.length > 0)
+      ? student.assignments
+      : [{
+          subSectionId: student.subSectionId,
+          subSectionName: student.subSectionName || "N/A",
+          sectionName: student.sectionName || "N/A",
+          lineName: student.lineName || "N/A",
+          machineId: student.stationId,
+        }];
+
+    const bySubSection = new Map();
+    assignments.forEach((a) => {
+      if (a.subSectionId == null) return;
+      const key = String(a.subSectionId);
+      const isPrimary = a.machineId === student.stationId;
+      const existing = bySubSection.get(key);
+      if (!existing) {
+        bySubSection.set(key, {
+          subSectionId: a.subSectionId,
+          name: a.subSectionName || "N/A",
+          lineName: a.lineName || "N/A",
+          sectionName: a.sectionName || "N/A",
+          level: currentSkill[key] || "L1",
+          efficiency: skillEff?.[key],
+          isPrimary,
+        });
+      } else if (isPrimary) {
+        existing.isPrimary = true;
+      }
+    });
+    return Array.from(bySubSection.values());
+  }, [student]);
+
   // Loading state
   const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading || ojtLoading;
 
@@ -336,6 +377,7 @@ const StudentDetail = () => {
       L1: "bg-blue-100 text-blue-800 border-blue-200",
       L2: "bg-orange-100 text-orange-800 border-orange-200",
       L3: "bg-green-100 text-green-800 border-green-200",
+      L4: "bg-indigo-100 text-indigo-800 border-indigo-200",
     };
 
     const raw = typeof level === "string" ? level : (level != null ? `L${level}` : "L1");
@@ -857,6 +899,50 @@ const StudentDetail = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Sub-Section Skill Levels */}
+      {subSectionSkillList.length > 0 && (
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-3 border-b bg-slate-50/50">
+            <CardTitle className="text-base flex items-center gap-2">
+              <IconGitCommit className="h-5 w-5 text-slate-600" />
+              Sub-Section Skill Levels
+            </CardTitle>
+            <CardDescription>
+              Operator proficiency level and efficiency breakdown across assigned sub-sections
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="space-y-3">
+              {subSectionSkillList.map((s) => (
+                <div
+                  key={s.subSectionId}
+                  className={`flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg border ${s.isPrimary ? 'bg-blue-50/30 border-blue-200' : 'bg-slate-50/50 border-slate-100'}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{s.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{s.lineName} • {s.sectionName}</p>
+                  </div>
+                  <div className="flex items-center gap-4 sm:w-64">
+                    <div className="w-24 shrink-0">
+                      {getLevelBadge(s.level)}
+                    </div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <Progress value={s.efficiency || 0} className="h-2" />
+                      <span className="text-xs font-medium text-emerald-700 w-12 text-right shrink-0">
+                        {s.efficiency !== undefined ? `${Math.round(s.efficiency * 100) / 100}%` : "0%"}
+                      </span>
+                    </div>
+                  </div>
+                  <Badge className={s.isPrimary ? "bg-blue-600 text-white border-blue-700 shrink-0" : "bg-slate-200 text-slate-700 border-slate-300 shrink-0"}>
+                    {s.isPrimary ? "Primary" : "Assigned"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Shift Schedule */}
       <Card>

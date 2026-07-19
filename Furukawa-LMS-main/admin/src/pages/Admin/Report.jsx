@@ -16,6 +16,9 @@ import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
 import { useGetAllClubsQuery } from '@/Redux/AllApi/ReportClubApi';
 
+const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual"];
+const ZERO_DEFAULT_ROWS = ["Hiring Plan", "Handover Plan", "Handover Actual"];
+
 const Report = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [tableData, setTableData] = useState({});
@@ -440,9 +443,9 @@ const Report = () => {
                                             {headerDates.map((dateObj, colIndex) => {
                                                 const cellKey = dateObj.fullDate;
                                                 const key = `${row.dataKey || row.label}_${cellKey}`;
-                                                const isHiringActual = row.label === "Hiring Actual";
+                                                const isSyncedReadOnly = SYNCED_READONLY_ROWS.includes(row.label);
                                                 const rawValue = tableData[key];
-                                                const value = row.label === "Hiring Plan"
+                                                const value = ZERO_DEFAULT_ROWS.includes(row.label)
                                                     ? (rawValue ?? '0')
                                                     : (rawValue ?? '');
                                                 const isPrevMonthCol = colIndex === 0;
@@ -459,17 +462,17 @@ const Report = () => {
                                                             <input
                                                                 type="text"
                                                                 value={value}
-                                                                readOnly={isHiringActual}
+                                                                readOnly={isSyncedReadOnly}
                                                                 onChange={(e) =>
                                                                     handleInputChange(row.dataKey || row.label, cellKey, e.target.value)
                                                                 }
                                                                 className={`
                                                                     w-full h-full px-1 py-1.5 bg-transparent text-center focus:outline-none transition-colors
-                                                                    ${isHiringActual ? 'cursor-not-allowed' : 'focus:bg-blue-100'}
+                                                                    ${isSyncedReadOnly ? 'cursor-not-allowed' : 'focus:bg-blue-100'}
                                                                     ${row.bold ? 'font-bold' : ''}
                                                                 `}
                                                                 style={{ minHeight: '28px' }}
-                                                                title={isHiringActual ? 'Auto-calculated from actual joining dates (synced)' : undefined}
+                                                                title={isSyncedReadOnly ? 'Auto-calculated on sync' : undefined}
                                                             />
                                                         )}
                                                     </td>

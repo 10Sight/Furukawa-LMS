@@ -508,6 +508,26 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         });
     }
 
+    // 5b. Handover Plan (expected handover count per day)
+    const expectedHandoverSql = `
+        SELECT CONVERT(VARCHAR, expectedHandover, 23) AS dateKey, COUNT(*) AS count
+        FROM users
+        WHERE (isTemporary = 1 OR expectedHandover IS NOT NULL)
+          AND (isDeleted = 0 OR isDeleted IS NULL)
+          AND expectedHandover >= ?
+          AND expectedHandover <= ?
+        GROUP BY CONVERT(VARCHAR, expectedHandover, 23)
+    `;
+    const [expectedHandoverData] = await executeQuery(expectedHandoverSql, [start, end]);
+
+    for (let d = 1; d <= totalDays; d++) {
+        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        tableData[`Handover Plan_${dKey}`] = 0;
+    }
+    expectedHandoverData.forEach(row => {
+        if (row.dateKey) tableData[`Handover Plan_${row.dateKey}`] = row.count;
+    });
+
     // 6. Separations
     const nYear = Number(month) === 12 ? Number(year) + 1 : Number(year);
     const nMonth = Number(month) === 12 ? 1 : Number(month) + 1;

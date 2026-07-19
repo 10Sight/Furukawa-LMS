@@ -170,6 +170,60 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         .map(id => parseInt(id, 10))
         .filter(id => !Number.isNaN(id));
 
+
+    // SECTION HIERARCHY FIX:
+    // A user belongs to a selected section when any one of these is true:
+    // 1) users.sectionId directly matches the selected section,
+    // 2) users.sectionId is blank and the user's line/sub-section resolves to it,
+    // 3) the user's id exists in sections.users JSON for the selected section.
+    // This matches the SDP section assignment rule and prevents section-wise
+    // Total Manpower/Attendance mismatches without changing other filters.
+    const getSectionHierarchyMatchSql = (alias = "u") => {
+        if (!numericSectionIds.length && !sectionNames.length) return "";
+
+        const directMatchSql = numericSectionIds.length
+            ? `${alias}.sectionId IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(${alias}.[section] AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        const resolvedSectionSelectionSql = numericSectionIds.length
+            ? `resolvedSection.id IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(resolvedSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        const jsonSectionSelectionSql = numericSectionIds.length
+            ? `jsonSection.id IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(jsonSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        return `(
+            ${directMatchSql}
+            OR (
+                ${alias}.sectionId IS NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM [lines] resolvedLine
+                    LEFT JOIN sub_sections resolvedSubSection
+                        ON resolvedSubSection.id = ${alias}.subSectionId
+                    INNER JOIN sections resolvedSection
+                        ON resolvedSection.id = resolvedLine.sectionId
+                    WHERE resolvedLine.id = COALESCE(${alias}.lineId, resolvedSubSection.lineId)
+                      AND ${resolvedSectionSelectionSql}
+                )
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM sections jsonSection
+                CROSS APPLY OPENJSON(
+                    CASE
+                        WHEN ISJSON(CAST(jsonSection.[users] AS NVARCHAR(MAX))) = 1
+                        THEN CAST(jsonSection.[users] AS NVARCHAR(MAX))
+                        ELSE N'[]'
+                    END
+                ) jsonSectionUser
+                WHERE ${jsonSectionSelectionSql}
+                  AND TRY_CAST(jsonSectionUser.[value] AS INT) = ${alias}.id
+            )
+        )`;
+    };
+
     // IMPORTANT FIX:
     // Attendance/present graphs must use the same hierarchy source as Current Headcount.
     // Current Headcount users.departmentId/users.sectionId se count hota hai.
@@ -183,10 +237,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         hierCondition += buildNameInCondition("u.[department]", departmentNames);
     }
 
-    if (numericSectionIds.length) {
-        hierCondition += ` AND u.sectionId IN (${numericSectionIds.join(",")})`;
-    } else {
-        hierCondition += buildNameInCondition("u.[section]", sectionNames);
+    const sectionHierarchyMatchSql = getSectionHierarchyMatchSql("u");
+    if (sectionHierarchyMatchSql) {
+        hierCondition += ` AND ${sectionHierarchyMatchSql}`;
     }
 
     if (numericLineIds.length) {
@@ -271,20 +324,27 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         )
     `;
 
-    // Date-wise employee activity rule used ONLY for Total Manpower / Users Total bars.
-    // Existing correct eligibility remains unchanged:
+    // Common date-wise active employee rule used by all Users Total / master graphs.
+    // Existing eligibility remains unchanged:
     // isDeleted = 0, isTemporary = 0, valid empId and shutter designation exclusion.
-    // Blank/invalid joiningDate is treated as an old existing employee so the correct base total is preserved.
+    // Blank/invalid joiningDate is treated as an old existing employee.
     // Valid joiningDate adds the employee from that exact date.
-    // Valid leavingDate removes the employee from that exact date.
+    // leavingDate removes an employee ONLY when users.status = LEFT.
+    // PRESENT / ACTIVE / ON-LEAVE or any non-LEFT status remains counted even if leavingDate is filled.
+    // For LEFT status, valid leavingDate removes the employee from that exact date.
     const getActiveUserAsOfDateSql = (alias = "u", asOfDate) => {
         const joiningDateSql = userDateToDateSql(`${alias}.joiningDate`);
         const leavingDateSql = userDateToDateSql(`${alias}.leavingDate`);
+        const employeeStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
         const safeAsOfDate = String(asOfDate || sqlEndDate).replace(/'/g, "''");
 
         return `
             AND (${joiningDateSql} IS NULL OR ${joiningDateSql} <= CONVERT(DATE, '${safeAsOfDate}', 23))
-            AND (${leavingDateSql} IS NULL OR ${leavingDateSql} > CONVERT(DATE, '${safeAsOfDate}', 23))
+            AND (
+                    ${employeeStatusSql} <> 'LEFT'
+                    OR ${leavingDateSql} IS NULL
+                    OR ${leavingDateSql} > CONVERT(DATE, '${safeAsOfDate}', 23)
+                )
         `;
     };
 
@@ -298,12 +358,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let totalSql = `
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
-                WHERE u.leavingDate IS NOT NULL
+                WHERE UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
+                  AND u.leavingDate IS NOT NULL
                   AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
                   AND ${leaveDateSql} IS NOT NULL
                   ${attritionHierCondition}
-                  -- NOTE: Normal Attrition source = users.leavingDate.
+                  -- NOTE: Attrition me employee tabhi count hoga jab users.status = LEFT ho.
+                  -- leavingDate sirf employee ke exact left date ko determine karegi.
+                  -- PRESENT status employee leavingDate filled hone par bhi attrition me count nahi hoga.
                   -- Hierarchy filters are applied directly from users table.
                   -- isTemporary/isDeleted/designation filters are intentionally not applied in attrition.
             `;
@@ -324,11 +387,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     u.id AS userId,
                     ${leaveDateSql} AS leaving_date
                 FROM users u
-                WHERE u.leavingDate IS NOT NULL
+                WHERE UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
+                  AND u.leavingDate IS NOT NULL
                   AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
                   ${attritionHierCondition}
-                  -- NOTE: Normal Attrition me sirf leavingDate present employees count honge.
+                  -- NOTE: Attrition me pehle users.status = LEFT check hoga.
+                  -- leavingDate employee ko uske exact left date par show karegi.
+                  -- PRESENT status employee attrition graph me count nahi hoga.
                   -- isTemporary/isDeleted/designation/shift filters yahan apply nahi honge.
         `;
 
@@ -577,11 +643,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 addTextInFilter(scheduleHierConditions, scheduleHierParams, "u.[department]", departmentNames);
             }
 
-            if (numericSectionIds.length) {
-                scheduleHierConditions.push(`u.sectionId IN (${makePlaceholders(numericSectionIds.length)})`);
-                scheduleHierParams.push(...numericSectionIds);
-            } else if (sectionNames.length) {
-                addTextInFilter(scheduleHierConditions, scheduleHierParams, "u.[section]", sectionNames);
+            const scheduleSectionHierarchyMatchSql = getSectionHierarchyMatchSql("u");
+            if (scheduleSectionHierarchyMatchSql) {
+                scheduleHierConditions.push(scheduleSectionHierarchyMatchSql);
             }
 
             if (numericLineIds.length) {
@@ -718,11 +782,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         addTextInFilter(userHierConditions, userHierParams, "u.[department]", departmentNames);
     }
 
-    if (numericSectionIds.length) {
-        userHierConditions.push(`u.sectionId IN (${makePlaceholders(numericSectionIds.length)})`);
-        userHierParams.push(...numericSectionIds);
-    } else {
-        addTextInFilter(userHierConditions, userHierParams, "u.[section]", sectionNames);
+    const userSectionHierarchyMatchSql = getSectionHierarchyMatchSql("u");
+    if (userSectionHierarchyMatchSql) {
+        userHierConditions.push(userSectionHierarchyMatchSql);
     }
 
     if (numericLineIds.length) {
@@ -753,7 +815,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT DISTINCT
                     LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) AS empId,
                     ${joiningDateSql} AS joining_date,
-                    ${leavingDateSql} AS leaving_date
+                    ${leavingDateSql} AS leaving_date,
+                    UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) AS employee_status
                 FROM users u
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
@@ -766,7 +829,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 CONVERT(VARCHAR, d.fullDate, 23) AS fullDate,
                 COUNT(DISTINCT CASE
                     WHEN (eu.joining_date IS NULL OR eu.joining_date <= d.fullDate)
-                     AND (eu.leaving_date IS NULL OR eu.leaving_date > d.fullDate)
+                     AND (
+                            eu.employee_status <> 'LEFT'
+                            OR eu.leaving_date IS NULL
+                            OR eu.leaving_date > d.fullDate
+                         )
                     THEN eu.empId
                 END) AS total
             FROM DateRange d
@@ -785,7 +852,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         console.warn("[DASHBOARD] Date-wise Total Manpower query failed; original total fallback used:", e.message);
 
         try {
-            // Fallback intentionally uses the untouched correct base count.
+            // Fallback applies the same LEFT-status and leavingDate rule for the selected end date.
             let fallbackSql = `
                 SELECT COUNT(DISTINCT u.empId) AS total
                 FROM users u
@@ -793,6 +860,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  AND (
+                        UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) <> 'LEFT'
+                        OR ${leavingDateSql} IS NULL
+                        OR ${leavingDateSql} > CONVERT(DATE, '${sqlEndDate}', 23)
+                      )
                   ${userHierCondition}
                   ${getDesignationShutterExclusionSql("u")}
             `;
@@ -884,6 +956,19 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         const isFuture = iterDate > today;
 
         const mappedPresent = attItem ? Number(attItem.mappedPresentCount) || 0 : 0;
+        const totalManpower = Number(dailyHeadcountByDate[dateStr] ?? snapshotTotal) || 0;
+        const explicitAbsent = attItem ? Number(attItem.absentCount) || 0 : 0;
+
+        // When Shift = ALL, every eligible active employee who is not Present
+        // must be counted in Absenteeism. This includes employees whose attendance
+        // row is missing for the selected date.
+        // Selected-shift mode keeps the existing explicit absent logic because
+        // Total Manpower intentionally remains an all-shift users-table count.
+        const correctedAbsent = isFuture
+            ? null
+            : selectedShiftValue
+                ? explicitAbsent
+                : Math.max(totalManpower - mappedPresent, 0);
 
         return {
             month: `${day} ${monthShort}`,
@@ -891,22 +976,24 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             required: getRequirementForDate(iterDate),
 
             // Current Headcount = total active employees from users table
-            current: isFuture ? null : Number(dailyHeadcountByDate[dateStr] ?? snapshotTotal),
+            current: isFuture ? null : totalManpower,
 
             // Actual / Present = attendance present count
             present: isFuture ? null : mappedPresent,
             unmappedPresent: isFuture ? null : unmappedCount,
             totalPresent: isFuture ? null : (mappedPresent + unmappedCount),
 
-            // Absent = attendance absent/leave/half day count
-            absent: attItem ? Number(attItem.absentCount) || 0 : isFuture ? null : 0,
+            // Absent = explicit absent + active employees whose attendance is missing
+            absent: correctedAbsent,
         };
     });
 
     let attritionData = [];
 
     try {
-        // Attrition graph users.leavingDate se calculate hoga.
+        // Attrition graph me pehle users.status = LEFT check hoga.
+        // leavingDate employee ke exact left date ko determine karegi.
+        // PRESENT status employee attrition graph me count nahi hoga.
         // isTemporary/isDeleted/designation/shift filters attrition graph par apply nahi honge.
         // Department/Section/Line filters users table se apply honge.
         attritionData = await buildDailyAttritionDataFromUsers();
@@ -918,57 +1005,22 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     let absenteeismData = [];
 
     try {
-        let absSql = `
-            SELECT
-                CONVERT(VARCHAR, al.[date], 23) AS fullDate,
-                DAY(al.[date]) AS dayNum,
-                COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT','LEAVE','HALF DAY', 'Absent', 'Leave', 'Half Day') THEN u.id END) AS absent_count,
-                COUNT(DISTINCT u.id) AS total_count
-            FROM attendance_logs al
-            INNER JOIN users u ON al.userId = u.id
-            WHERE 1=1
-              AND al.[date] >= '${sqlStartDate}'
-              AND al.[date] <= '${sqlEndDate}'
-              AND ISNULL(u.isTemporary, 0) = 0
-              ${hierCondition}
-              ${getDesignationShutterExclusionSql("u")}
-        `;
-        const absParams = [];
-        absSql = addShiftFilter(absSql, absParams, "al");
-        absSql += `
-            GROUP BY al.[date], DAY(al.[date])
-            ORDER BY al.[date]
-        `;
+        // Use the same corrected absent count as the Manpower graph so both graphs
+        // always follow one rule: eligible Total Manpower = Present + Absent.
+        // In Shift = ALL mode, employees with no attendance row are included in Absent.
+        // In selected-shift mode, manpowerData retains the existing explicit absent rule.
+        absenteeismData = manpowerData
+            .map((manpowerItem) => {
+                if (manpowerItem?.current === null) return null;
 
-        const [absRows] = await executeQuery(absSql, absParams);
-
-        absenteeismData = loopDates
-            .map((iterDateRaw) => {
-                const iterDate = new Date(iterDateRaw);
-                const day = iterDate.getDate();
-                const monthShort = iterDate.toLocaleString("en-US", { month: "short" });
-                const dateStr = formatDateLocal(iterDate);
-
-                iterDate.setHours(0, 0, 0, 0);
-                const isFuture = iterDate > today;
-
-                if (isFuture) return null;
-
-                const row = absRows.find((r) => r.fullDate === dateStr);
-
-                const absent = row ? Number(row.absent_count) || 0 : 0;
-
-                // IMPORTANT:
-                // Absenteeism % denominator attendance_logs ka uploaded total nahi hoga.
-                // Example: agar 21 employees ka data/category available hai aur total active employees 2900 hain,
-                // to percentage = absent / 2900 * 100 hoga, not absent / 21 * 100.
-                const total = Number(dailyHeadcountByDate[dateStr] ?? snapshotTotal) || 0;
+                const total = Number(manpowerItem?.current || 0);
+                const absent = Number(manpowerItem?.absent || 0);
 
                 const absenteeismPercentage =
                     total > 0 ? Math.round((absent / total) * 1000) / 10 : 0;
 
                 return {
-                    day: `${day} ${monthShort}`,
+                    day: manpowerItem.month,
                     actual: absenteeismPercentage,
                     absent,
                     total,
@@ -977,7 +1029,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             })
             .filter(Boolean);
     } catch (e) {
-        console.warn("[DASHBOARD] Daily absenteeism query failed:", e.message);
+        console.warn("[DASHBOARD] Daily absenteeism calculation failed:", e.message);
         absenteeismData = [];
     }
 
@@ -992,15 +1044,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const yesterdaySqlDate = formatDateLocal(yesterday);
 
-    // Master / pie graph date range.
-    // Jab date select hogi to pie/master graphs bhi selected attendance date/range se aayenge.
+    // LOWER GRAPH DATE RANGE FILTER DISABLED.
+    // All graphs below the top three use the default previous attendance date.
+    // The old selected date-range block is retained below for easy restoration.
     let masterRangeStart = new Date(yesterday);
     let masterRangeEnd = new Date(yesterday);
 
+    /* RESTORE LOWER GRAPH DATE RANGE FILTER:
     if (startDate) {
         masterRangeStart = parseDateLocal(startDate) || new Date(yesterday);
         masterRangeEnd = parseDateLocal(endDate || startDate) || new Date(yesterday);
     }
+    */
 
     masterRangeStart.setHours(0, 0, 0, 0);
     masterRangeEnd.setHours(0, 0, 0, 0);
@@ -1008,9 +1063,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const masterSqlStartDate = formatDateLocal(masterRangeStart);
     const masterSqlEndDate = formatDateLocal(masterRangeEnd);
 
-    // Attendance defaults to yesterday, but Users Total bars must represent current active manpower.
-    // For an explicitly selected date/range, the selected end date is the as-of date.
-    const usersTotalAsOfDate = startDate ? masterSqlEndDate : formatDateLocal(today);
+    // Attendance bars continue to use the selected date/range.
+    // Every Users Total / Total Manpower comparison bar must always use
+    // the current India date, independent of the selected attendance date.
+    const usersTotalAsOfDate = formatDateLocal(today);
 
     function appendMultiHierarchyFilter({
         sqlText,
@@ -1047,7 +1103,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         return `${sqlText} AND UPPER(LTRIM(RTRIM(CAST(${alias}.[${resolvedNameColumn}] AS NVARCHAR(510))))) IN (${placeholders})`;
     }
 
-    function addUserMasterFilters(baseSql, params, alias = "u") {
+    function addUserMasterHierarchyFilters(baseSql, params, alias = "u") {
         let sqlText = baseSql;
 
         sqlText = appendMultiHierarchyFilter({
@@ -1060,15 +1116,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             alias,
         });
 
-        sqlText = appendMultiHierarchyFilter({
-            sqlText,
-            params,
-            nameColumn: "section",
-            idColumn: "sectionId",
-            ids: sectionIds,
-            names: sectionNames,
-            alias,
-        });
+        const masterSectionHierarchyMatchSql = getSectionHierarchyMatchSql(alias);
+        if (masterSectionHierarchyMatchSql) {
+            sqlText += ` AND ${masterSectionHierarchyMatchSql}`;
+        }
 
         sqlText = appendMultiHierarchyFilter({
             sqlText,
@@ -1079,6 +1130,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             names: lineNames,
             alias,
         });
+
+        return sqlText;
+    }
+
+    function addUserMasterFilters(baseSql, params, alias = "u") {
+        let sqlText = addUserMasterHierarchyFilters(baseSql, params, alias);
 
         // Common dashboard employee eligibility:
         // users.empId must be valid, isTemporary = 0, not deleted,
@@ -1351,6 +1408,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         masterColumnSql = null,
         masterExtraWhere = null,
         alignBlankMasterWithAttendance = false,
+        ensureMasterAtLeastAttendance = false,
+        masterUsePresentUsersOnly = false,
+        caseInsensitiveNameMerge = false,
+        preserveMergedDisplayName = false,
     }) => {
         const mapByName = {};
         const resolvedMasterColumnSql = masterColumnSql || columnSql;
@@ -1358,10 +1419,23 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         const addToMap = (name, key, value) => {
             const cleanName = normalizeChartName(name);
-            if (!mapByName[cleanName]) {
-                mapByName[cleanName] = {
-                    [labelKey]: cleanName,
-                    name: cleanName,
+
+            // State values can be returned with different casing/spacing by the
+            // attendance and master queries, for example BIHAR / Bihar / " BIHAR ".
+            // When explicitly enabled, use one canonical map key so both values
+            // are placed on the same graph category.
+            const mapKey = caseInsensitiveNameMerge
+                ? cleanName.replace(/\s+/g, " ").trim().toUpperCase()
+                : cleanName;
+
+            const displayName = caseInsensitiveNameMerge && !preserveMergedDisplayName
+                ? mapKey
+                : cleanName;
+
+            if (!mapByName[mapKey]) {
+                mapByName[mapKey] = {
+                    [labelKey]: displayName,
+                    name: displayName,
                     value: 0,
                     attendanceValue: 0,
                     masterValue: 0,
@@ -1369,9 +1443,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     percentage: 0,
                 };
             }
-            // Same cleanName may come from multiple raw DB values (NULL, empty, UNKNOWN, Not Provided).
-            // Add values instead of overwriting so Blank/Not Provided totals stay correct.
-            mapByName[cleanName][key] += Number(value || 0);
+
+            // Add instead of overwrite so category variants never lose counts.
+            mapByName[mapKey][key] += Number(value || 0);
         };
 
         try {
@@ -1399,27 +1473,53 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         }
 
         try {
-            let masterSql = `
-                SELECT
-                    ${resolvedMasterColumnSql} AS rawName,
-                    COUNT(DISTINCT u.empId) AS total
-                FROM users u
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  AND u.empId IS NOT NULL
-                  AND u.empId != ''
-                  ${resolvedMasterExtraWhere}
-            `;
-
+            let masterSql;
             const masterParams = [];
-            masterSql = addUserMasterFilters(masterSql, masterParams, "u");
-            masterSql += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
-            masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
+
+            if (masterUsePresentUsersOnly) {
+                // Skill Level Users Total must match the users-table query exactly:
+                // currentLevel L1-L4 + isTemporary = 0 + isDeleted = 0 + status = PRESENT.
+                // Do not apply joiningDate/leavingDate active-as-of-date logic here.
+                // This removes the net-count mismatch caused by:
+                // - future-joining PRESENT employees being excluded, and
+                // - ACTIVE / ON-LEAVE employees being added.
+                // Department/Section/Line, State/District and designation shutter filters remain unchanged.
+                masterSql = `
+                    SELECT
+                        ${resolvedMasterColumnSql} AS rawName,
+                        COUNT(DISTINCT u.id) AS total
+                    FROM users u
+                    WHERE u.isDeleted = 0
+                      AND u.isTemporary = 0
+                      AND u.status = 'PRESENT'
+                      ${resolvedMasterExtraWhere}
+                `;
+
+                masterSql = addUserMasterHierarchyFilters(masterSql, masterParams, "u");
+                masterSql += getDesignationShutterExclusionSql("u");
+                masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
+            } else {
+                masterSql = `
+                    SELECT
+                        ${resolvedMasterColumnSql} AS rawName,
+                        COUNT(DISTINCT u.empId) AS total
+                    FROM users u
+                    WHERE ISNULL(u.isDeleted, 0) = 0
+                      AND ISNULL(u.isTemporary, 0) = 0
+                      AND u.empId IS NOT NULL
+                      AND u.empId != ''
+                      ${resolvedMasterExtraWhere}
+                `;
+
+                masterSql = addUserMasterFilters(masterSql, masterParams, "u");
+                masterSql += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
+                masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
+            }
+
             // IMPORTANT:
             // Users Total / dark yellow bar par shift filter apply nahi hoga.
             // Baaki filters (department, section, line, state, district) apply rahenge.
             // Shift filter sirf Attendance / purple bar par apply hoga.
-
             masterSql += `
                 GROUP BY ${resolvedMasterColumnSql}
                 ORDER BY total DESC
@@ -1439,7 +1539,17 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 const rawMasterCount = Number(item.masterValue || 0);
                 const bucketName = String(item.name || item[labelKey] || "").trim().toUpperCase();
                 const isBlankBucket = ["", "BLANK", "NOT PROVIDED", "UNKNOWN", "NULL", "UNDEFINED", "N/A", "NA", "-"].includes(bucketName);
-                const masterCount = alignBlankMasterWithAttendance && isBlankBucket ? attendanceCount : rawMasterCount;
+                let masterCount = alignBlankMasterWithAttendance && isBlankBucket
+                    ? attendanceCount
+                    : rawMasterCount;
+
+                // DISTRICT GRAPH SAFETY RULE (enabled only for District Distribution):
+                // A district cannot have present attendance without at least the same employees
+                // existing in Total Manpower. Date/status master filters can otherwise exclude
+                // those present employees and incorrectly produce a yellow zero bar.
+                if (ensureMasterAtLeastAttendance && attendanceCount > masterCount) {
+                    masterCount = attendanceCount;
+                }
 
                 return {
                     ...item,
@@ -1514,16 +1624,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 params.push(...departmentNames);
             }
 
-            if (numericSectionIds.length) {
-                sqlText += ` AND ${alias}.sectionId IN (${makePlaceholders(numericSectionIds.length)})`;
-                params.push(...numericSectionIds);
-            } else if (sectionNames.length) {
-                const placeholders = sectionNames.map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))").join(",");
-                sqlText += ` AND (
-                    UPPER(LTRIM(RTRIM(CAST(${alias}.[section] AS NVARCHAR(510))))) IN (${placeholders})
-                    OR UPPER(LTRIM(RTRIM(CAST(${alias}.[sub_section] AS NVARCHAR(510))))) IN (${placeholders})
-                )`;
-                params.push(...sectionNames, ...sectionNames);
+            const rawSectionHierarchyMatchSql = getSectionHierarchyMatchSql(alias);
+            if (rawSectionHierarchyMatchSql) {
+                sqlText += ` AND ${rawSectionHierarchyMatchSql}`;
             }
 
             if (numericLineIds.length) {
@@ -1671,7 +1774,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         `;
 
         const skillMasterWhere = `
-            AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.currentLevel)))) IN ('L1','L2','L3','L4')
+            AND u.currentLevel IN ('L1','L2','L3','L4')
         `;
 
 
@@ -1707,11 +1810,25 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 extraWhere: skillLevelWhere,
                 masterColumnSql: skillMasterColumnSql,
                 masterExtraWhere: skillMasterWhere,
+                masterUsePresentUsersOnly: true,
             }).catch(err => { console.warn("[DASHBOARD] skillLevels query failed:", err.message); return []; }),
             getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] genderData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.state"), includeState: true, includeDistrict: true, alignBlankMasterWithAttendance: true }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.district"), includeState: true, includeDistrict: true, alignBlankMasterWithAttendance: true }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.designation"), alignBlankMasterWithAttendance: true }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({
+                columnSql: getCleanTextColumnSql("u.state"),
+                includeState: true,
+                includeDistrict: true,
+                caseInsensitiveNameMerge: true,
+            }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({
+                columnSql: getCleanTextColumnSql("u.district"),
+                includeState: true,
+                includeDistrict: true,
+                alignBlankMasterWithAttendance: true,
+                ensureMasterAtLeastAttendance: true,
+                caseInsensitiveNameMerge: true,
+                preserveMergedDisplayName: true,
+            }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
+            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.designation") }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
             getGroupedComparisonChart({
                 columnSql: getCleanTextColumnSql("u.designation"),
                 extraWhere: leaderExpertWhere,
@@ -1752,7 +1869,61 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // me addUserMasterFilters() use nahi karna. Warna contractor data exclude ho jayega.
         // ============================================================
 
-        const contractorColumnSql = `UPPER(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))))`;
+        // Contractor category normalization:
+        // 1) NULL/blank/placeholder values remain visible as one "Not Provided" category.
+        // 2) Punctuation variants are merged before SQL GROUP BY.
+        //    Examples:
+        //    "B4S SOLUTIONS PVT. LTD" and "B4S SOLUTIONS PVT. LTD." -> "B4S SOLUTIONS PVT LTD"
+        //    "VISION INDIA SERVICES PVT.LTD." and "VISION INDIA SERVICES PVT.LTD" -> "VISION INDIA SERVICES PVTLTD"
+        // This prevents frontend/category-key collisions and keeps the contractor attendance sum
+        // equal to the first Manpower graph attendance count.
+        const contractorColumnSql = `
+            CASE
+                WHEN NULLIF(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))), '') IS NULL
+                    THEN 'NOT PROVIDED'
+                WHEN UPPER(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510))))) IN (
+                    'NULL',
+                    'UNDEFINED',
+                    'UNKNOWN',
+                    'NOT PROVIDED',
+                    'N/A',
+                    'NA',
+                    '-'
+                )
+                    THEN 'NOT PROVIDED'
+                ELSE UPPER(
+                    LTRIM(
+                        RTRIM(
+                            REPLACE(
+                                REPLACE(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(
+                                                REPLACE(
+                                                    CAST(u.[contractor] AS NVARCHAR(510)),
+                                                    '.',
+                                                    ''
+                                                ),
+                                                ',',
+                                                ''
+                                            ),
+                                            CHAR(9),
+                                            ' '
+                                        ),
+                                        '  ',
+                                        ' '
+                                    ),
+                                    '  ',
+                                    ' '
+                                ),
+                                '  ',
+                                ' '
+                            )
+                        )
+                    )
+                )
+            END
+        `;
 
         const appendContractorHierarchyFilter = ({ sqlText, params, idColumn, textColumns = [], ids = [], names = [], alias = "u" }) => {
             const numericIds = (ids || [])
@@ -1849,7 +2020,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WHERE ISNULL(u.isDeleted, 0) = 0
               AND u.empId IS NOT NULL
               AND u.empId != ''
-              AND u.[contractor] IS NOT NULL AND u.[contractor] != ''
         `;
         const contractorTotalParams = [];
         contractorTotalSql = applyContractorCommonFilters(contractorTotalSql, contractorTotalParams, { applyUserShift: false });
@@ -1867,7 +2037,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WHERE ISNULL(u.isDeleted, 0) = 0
               AND u.empId IS NOT NULL
               AND u.empId != ''
-              AND u.[contractor] IS NOT NULL AND u.[contractor] != ''
               AND al.[date] >= '${masterSqlStartDate}'
               AND al.[date] <= '${masterSqlEndDate}'
               AND al.status IN ('P','PRESENT','Present')
@@ -1887,18 +2056,20 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         (contractorTotalRows || []).forEach(row => {
             const contractorName = normalizeChartName(row.contractorName);
-            if (!contractorName || contractorName === "Not Provided") return;
-
-            contractorMap.set(contractorName, {
+            const existing = contractorMap.get(contractorName) || {
                 name: contractorName,
-                totalHeadcount: Number(row.totalHeadcount || 0),
+                totalHeadcount: 0,
                 actualPresent: 0,
-            });
+            };
+
+            // Add instead of overwrite as a final safety net in case the DB returns
+            // multiple source variants that normalize to the same contractor name.
+            existing.totalHeadcount += Number(row.totalHeadcount || 0);
+            contractorMap.set(contractorName, existing);
         });
 
         (contractorPresentRows || []).forEach(row => {
             const contractorName = normalizeChartName(row.contractorName);
-            if (!contractorName || contractorName === "Not Provided") return;
 
             const existing = contractorMap.get(contractorName) || {
                 name: contractorName,
@@ -1906,7 +2077,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 actualPresent: 0,
             };
 
-            existing.actualPresent = Number(row.actualPresent || 0);
+            // Add instead of overwrite so no contractor attendance row is lost
+            // when multiple source spellings map to one normalized category.
+            existing.actualPresent += Number(row.actualPresent || 0);
             contractorMap.set(contractorName, existing);
         });
 
@@ -2082,6 +2255,60 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         .map(id => parseInt(id, 10))
         .filter(id => !Number.isNaN(id));
 
+
+    // SECTION HIERARCHY FIX:
+    // A user belongs to a selected section when any one of these is true:
+    // 1) users.sectionId directly matches the selected section,
+    // 2) users.sectionId is blank and the user's line/sub-section resolves to it,
+    // 3) the user's id exists in sections.users JSON for the selected section.
+    // This matches the SDP section assignment rule and prevents section-wise
+    // Total Manpower/Attendance mismatches without changing other filters.
+    const getSectionHierarchyMatchSql = (alias = "u") => {
+        if (!numericSectionIds.length && !sectionNames.length) return "";
+
+        const directMatchSql = numericSectionIds.length
+            ? `${alias}.sectionId IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(${alias}.[section] AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        const resolvedSectionSelectionSql = numericSectionIds.length
+            ? `resolvedSection.id IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(resolvedSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        const jsonSectionSelectionSql = numericSectionIds.length
+            ? `jsonSection.id IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(jsonSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        return `(
+            ${directMatchSql}
+            OR (
+                ${alias}.sectionId IS NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM [lines] resolvedLine
+                    LEFT JOIN sub_sections resolvedSubSection
+                        ON resolvedSubSection.id = ${alias}.subSectionId
+                    INNER JOIN sections resolvedSection
+                        ON resolvedSection.id = resolvedLine.sectionId
+                    WHERE resolvedLine.id = COALESCE(${alias}.lineId, resolvedSubSection.lineId)
+                      AND ${resolvedSectionSelectionSql}
+                )
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM sections jsonSection
+                CROSS APPLY OPENJSON(
+                    CASE
+                        WHEN ISJSON(CAST(jsonSection.[users] AS NVARCHAR(MAX))) = 1
+                        THEN CAST(jsonSection.[users] AS NVARCHAR(MAX))
+                        ELSE N'[]'
+                    END
+                ) jsonSectionUser
+                WHERE ${jsonSectionSelectionSql}
+                  AND TRY_CAST(jsonSectionUser.[value] AS INT) = ${alias}.id
+            )
+        )`;
+    };
+
     // IMPORTANT FIX:
     // Attendance/present graphs must use the same hierarchy source as Current Headcount.
     // Current Headcount users.departmentId/users.sectionId se count hota hai.
@@ -2095,10 +2322,9 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         hierCondition += buildNameInCondition("u.[department]", departmentNames);
     }
 
-    if (numericSectionIds.length) {
-        hierCondition += ` AND u.sectionId IN (${numericSectionIds.join(",")})`;
-    } else {
-        hierCondition += buildNameInCondition("u.[section]", sectionNames);
+    const sectionHierarchyMatchSql = getSectionHierarchyMatchSql("u");
+    if (sectionHierarchyMatchSql) {
+        hierCondition += ` AND ${sectionHierarchyMatchSql}`;
     }
 
     if (numericLineIds.length) {
@@ -2248,6 +2474,60 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         .map(id => parseInt(id, 10))
         .filter(id => !Number.isNaN(id));
 
+
+    // SECTION HIERARCHY FIX:
+    // A user belongs to a selected section when any one of these is true:
+    // 1) users.sectionId directly matches the selected section,
+    // 2) users.sectionId is blank and the user's line/sub-section resolves to it,
+    // 3) the user's id exists in sections.users JSON for the selected section.
+    // This matches the SDP section assignment rule and prevents section-wise
+    // Total Manpower/Attendance mismatches without changing other filters.
+    const getSectionHierarchyMatchSql = (alias = "u") => {
+        if (!numericSectionIds.length && !sectionNames.length) return "";
+
+        const directMatchSql = numericSectionIds.length
+            ? `${alias}.sectionId IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(${alias}.[section] AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        const resolvedSectionSelectionSql = numericSectionIds.length
+            ? `resolvedSection.id IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(resolvedSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        const jsonSectionSelectionSql = numericSectionIds.length
+            ? `jsonSection.id IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(jsonSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+
+        return `(
+            ${directMatchSql}
+            OR (
+                ${alias}.sectionId IS NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM [lines] resolvedLine
+                    LEFT JOIN sub_sections resolvedSubSection
+                        ON resolvedSubSection.id = ${alias}.subSectionId
+                    INNER JOIN sections resolvedSection
+                        ON resolvedSection.id = resolvedLine.sectionId
+                    WHERE resolvedLine.id = COALESCE(${alias}.lineId, resolvedSubSection.lineId)
+                      AND ${resolvedSectionSelectionSql}
+                )
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM sections jsonSection
+                CROSS APPLY OPENJSON(
+                    CASE
+                        WHEN ISJSON(CAST(jsonSection.[users] AS NVARCHAR(MAX))) = 1
+                        THEN CAST(jsonSection.[users] AS NVARCHAR(MAX))
+                        ELSE N'[]'
+                    END
+                ) jsonSectionUser
+                WHERE ${jsonSectionSelectionSql}
+                  AND TRY_CAST(jsonSectionUser.[value] AS INT) = ${alias}.id
+            )
+        )`;
+    };
+
     // IMPORTANT FIX:
     // Attendance/present graphs must use the same hierarchy source as Current Headcount.
     // Current Headcount users.departmentId/users.sectionId se count hota hai.
@@ -2261,10 +2541,9 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         hierCondition += buildNameInCondition("u.[department]", departmentNames);
     }
 
-    if (numericSectionIds.length) {
-        hierCondition += ` AND u.sectionId IN (${numericSectionIds.join(",")})`;
-    } else {
-        hierCondition += buildNameInCondition("u.[section]", sectionNames);
+    const sectionHierarchyMatchSql = getSectionHierarchyMatchSql("u");
+    if (sectionHierarchyMatchSql) {
+        hierCondition += ` AND ${sectionHierarchyMatchSql}`;
     }
 
     if (numericLineIds.length) {
@@ -2299,9 +2578,12 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     const yesterday = new Date(indiaNow);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    let rangeStart;
-    let rangeEnd;
+    // LOWER TENURE GRAPH DATE RANGE FILTER DISABLED.
+    // Tenure graphs use the default previous attendance date.
+    let rangeStart = new Date(yesterday);
+    let rangeEnd = new Date(yesterday);
 
+    /* RESTORE LOWER TENURE DATE RANGE FILTER:
     if (startDate) {
         rangeStart = parseDateLocal(startDate) || new Date(yesterday);
         rangeEnd = parseDateLocal(endDate || startDate) || new Date(rangeStart);
@@ -2309,12 +2591,18 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         rangeStart = new Date(yesterday);
         rangeEnd = new Date(yesterday);
     }
+    */
 
     rangeStart.setHours(0, 0, 0, 0);
     rangeEnd.setHours(0, 0, 0, 0);
 
     const sqlStartDate = formatDateLocal(rangeStart);
     const sqlEndDate = formatDateLocal(rangeEnd);
+
+    // Attendance/absenteeism/attrition continue to use the selected date.
+    // Tenure Users Total buckets always use the current India date so their
+    // Total Manpower values match all other dashboard comparison graphs.
+    const usersTotalAsOfDate = formatDateLocal(indiaNow);
 
     const customFromDays = Number(customTenureFrom);
     const customToDays = Number(customTenureTo);
@@ -2407,18 +2695,38 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
     const addShiftFilterOnAttendance = (sqlText, params) => {
         if (!selectedShiftValue) return sqlText;
+
+        // Tenure Attendance uses the same flexible shift matching as the
+        // other attendance graphs: A, Shift A, A Shift, A-Shift, A_Shift,
+        // and General/G shift formats are treated as the same shift.
+        const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100)))))`;
+        const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
+
         sqlText += `
             AND (
-                UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = UPPER(LTRIM(RTRIM(?)))
-                OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = UPPER('SHIFT ' + LTRIM(RTRIM(?)))
-                OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = UPPER(LTRIM(RTRIM(?)) + ' SHIFT')
+                ${shiftColumn} = UPPER(LTRIM(RTRIM(?)))
+                OR ${shiftColumn} = UPPER('SHIFT ' + LTRIM(RTRIM(?)))
+                OR ${shiftColumn} = UPPER(LTRIM(RTRIM(?)) + ' SHIFT')
+                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
+                OR ${shiftColumnCompact} = 'SHIFT' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
+                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + 'SHIFT'
                 OR (
                     UPPER(LTRIM(RTRIM(?))) = 'G'
-                    AND UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) IN ('G', 'GEN', 'GENERAL', 'GENERAL SHIFT')
+                    AND ${shiftColumnCompact} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
                 )
             )
         `;
-        params.push(selectedShiftValue, selectedShiftValue, selectedShiftValue, selectedShiftValue);
+
+        params.push(
+            selectedShiftValue,
+            selectedShiftValue,
+            selectedShiftValue,
+            selectedShiftValue,
+            selectedShiftValue,
+            selectedShiftValue,
+            selectedShiftValue
+        );
+
         return sqlText;
     };
 
@@ -2480,11 +2788,14 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     let masterTenure = emptyBuckets();
 
     try {
+        // Tenure Attendance follows the selected shift.
+        // Tenure Absenteeism intentionally ignores shift, so both metrics are
+        // calculated with separate queries even though they use the same date,
+        // hierarchy and tenure-bucket rules.
         let attendanceSql = `
             SELECT
                 ${bucketCaseSQL} AS bucket,
-                COUNT(DISTINCT CASE WHEN attendanceStatus IN ('P','PRESENT','Present') THEN userId END) AS presentCount,
-                COUNT(DISTINCT CASE WHEN attendanceStatus IN ('ABSENT', 'LEAVE', 'HALF DAY', 'Absent', 'Leave', 'Half Day') THEN userId END) AS absentCount
+                COUNT(DISTINCT CASE WHEN attendanceStatus IN ('P','PRESENT','Present') THEN userId END) AS presentCount
             FROM (
                 SELECT
                     u.id AS userId,
@@ -2518,6 +2829,41 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         attendanceRows.forEach((row) => {
             if (row.bucket && attendance[row.bucket] !== undefined) {
                 attendance[row.bucket] = Number(row.presentCount || 0);
+            }
+        });
+
+        let absenteeismSql = `
+            SELECT
+                ${bucketCaseSQL} AS bucket,
+                COUNT(DISTINCT CASE WHEN attendanceStatus IN ('ABSENT', 'LEAVE', 'HALF DAY', 'Absent', 'Leave', 'Half Day') THEN userId END) AS absentCount
+            FROM (
+                SELECT
+                    u.id AS userId,
+                    u.empId,
+                    al.status AS attendanceStatus,
+                    DATEDIFF(DAY, ${joinDateSQL}, al.[date]) AS tenureDays
+                FROM attendance_logs al
+                INNER JOIN users u
+                    ON al.userId = u.id
+                    AND ISNULL(u.isTemporary, 0) = 0
+                WHERE al.[date] >= ?
+                  AND al.[date] <= ?
+                  AND ISNULL(u.isDeleted, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND u.empId != ''
+                  AND ${joinDateSQL} IS NOT NULL
+                  ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+            ) parsed
+            WHERE tenureDays IS NOT NULL
+              AND tenureDays >= 0
+            GROUP BY ${bucketCaseSQL}
+        `;
+
+        const absenteeismParams = [sqlStartDate, sqlEndDate];
+        const [absenteeismRows] = await executeQuery(absenteeismSql, absenteeismParams);
+        absenteeismRows.forEach((row) => {
+            if (row.bucket && absenteeism[row.bucket] !== undefined) {
                 absenteeism[row.bucket] = Number(row.absentCount || 0);
             }
         });
@@ -2525,8 +2871,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         if (hasCustomTenureRange) {
             let customAttendanceSql = `
                 SELECT
-                    COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN u.id END) AS presentCount,
-                    COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT', 'LEAVE', 'HALF DAY', 'Absent', 'Leave', 'Half Day') THEN u.id END) AS absentCount
+                    COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN u.id END) AS presentCount
                 FROM attendance_logs al
                 INNER JOIN users u
                     ON al.userId = u.id
@@ -2544,9 +2889,30 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
             const customAttendanceParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
             customAttendanceSql = addShiftFilterOnAttendance(customAttendanceSql, customAttendanceParams);
-            const [rows] = await executeQuery(customAttendanceSql, customAttendanceParams);
-            attendance.CUSTOM = Number(rows?.[0]?.presentCount || 0);
-            absenteeism.CUSTOM = Number(rows?.[0]?.absentCount || 0);
+            const [attendanceCustomRows] = await executeQuery(customAttendanceSql, customAttendanceParams);
+            attendance.CUSTOM = Number(attendanceCustomRows?.[0]?.presentCount || 0);
+
+            const customAbsenteeismSql = `
+                SELECT
+                    COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT', 'LEAVE', 'HALF DAY', 'Absent', 'Leave', 'Half Day') THEN u.id END) AS absentCount
+                FROM attendance_logs al
+                INNER JOIN users u
+                    ON al.userId = u.id
+                    AND ISNULL(u.isTemporary, 0) = 0
+                WHERE al.[date] >= ?
+                  AND al.[date] <= ?
+                  AND ISNULL(u.isDeleted, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND u.empId != ''
+                  AND ${joinDateSQL} IS NOT NULL
+                  AND DATEDIFF(DAY, ${joinDateSQL}, al.[date]) BETWEEN ? AND ?
+                  ${hierCondition}
+                  ${getDesignationShutterExclusionSql("u")}
+            `;
+
+            const customAbsenteeismParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
+            const [absenteeismCustomRows] = await executeQuery(customAbsenteeismSql, customAbsenteeismParams);
+            absenteeism.CUSTOM = Number(absenteeismCustomRows?.[0]?.absentCount || 0);
         }
     } catch (e) {
         console.warn("[TENURE] attendance/absenteeism failed:", e.message);
@@ -2562,24 +2928,47 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             FROM (
                 SELECT
                     u.empId,
-                    DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?)) AS tenureDays
+
+                    -- Total Manpower blank/invalid joiningDate ko old existing employee maanta hai.
+                    -- Tenure graph me aise employees ko 3y & others bucket me rakha jayega,
+                    -- taaki sab tenure buckets ka total Total Manpower se match kare.
+                    CASE
+                        WHEN ${joinDateSQL} IS NULL THEN 1096
+                        ELSE DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?))
+                    END AS tenureDays
+
                 FROM users u
                 WHERE ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
-                  AND ${joinDateSQL} IS NOT NULL
-                  AND ${joinDateSQL} <= ?
-                  AND (${leaveDateSQL} IS NULL OR ${leaveDateSQL} >= ?)
+
+                  -- Valid future joiningDate employee current date tak count nahi hoga.
+                  -- Blank/invalid joiningDate old existing employee ke roop me include hoga.
+                  AND (${joinDateSQL} IS NULL OR ${joinDateSQL} <= ?)
+
+                  -- Total Manpower ke same active employee rule:
+                  -- leavingDate sirf tab employee ko remove karegi jab status LEFT ho.
+                  -- PRESENT/ACTIVE/ON-LEAVE employee filled old leavingDate ke baad bhi include rahega.
+                  AND (
+                        UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) <> 'LEFT'
+                        OR ${leaveDateSQL} IS NULL
+                        OR ${leaveDateSQL} > ?
+                      )
+
                   ${hierCondition}
                   ${getDesignationShutterExclusionSql("u")}
         `;
 
-        const masterTenureParams = [sqlEndDate, sqlEndDate, sqlStartDate];
+        const masterTenureParams = [
+            usersTotalAsOfDate,
+            usersTotalAsOfDate,
+            usersTotalAsOfDate,
+        ];
         // IMPORTANT:
         // Users Total / master tenure bar par shift filter apply nahi hoga.
-        // Shift filter sirf attendance/absenteeism values par apply hoga.
-        // Attrition tenure bhi shift ignore karega, kyunki left employees ka shift NULL/blank ho sakta hai.
+        // Shift filter sirf Tenure Attendance value par apply hoga.
+        // Tenure Absenteeism aur Attrition dono shift ignore karenge.
         masterTenureSql += `
             ) parsed
             WHERE tenureDays IS NOT NULL
@@ -2602,14 +2991,29 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
+
+                  -- Custom range needs a valid joining date because exact tenure is required.
                   AND ${joinDateSQL} IS NOT NULL
                   AND ${joinDateSQL} <= ?
-                  AND (${leaveDateSQL} IS NULL OR ${leaveDateSQL} >= ?)
+
+                  -- Keep the same status-aware active rule as Total Manpower.
+                  AND (
+                        UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) <> 'LEFT'
+                        OR ${leaveDateSQL} IS NULL
+                        OR ${leaveDateSQL} > ?
+                      )
+
                   AND DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?)) BETWEEN ? AND ?
                   ${hierCondition}
                   ${getDesignationShutterExclusionSql("u")}
             `;
-            const customMasterParams = [sqlEndDate, sqlStartDate, sqlEndDate, customFromDays, customToDays];
+            const customMasterParams = [
+                usersTotalAsOfDate,
+                usersTotalAsOfDate,
+                usersTotalAsOfDate,
+                customFromDays,
+                customToDays,
+            ];
             // IMPORTANT:
             // Custom tenure Users Total par shift filter apply nahi hoga.
             const [rows] = await executeQuery(customMasterSql, customMasterParams);
@@ -2630,23 +3034,25 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     u.id AS userId,
                     DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) AS tenureDays
                 FROM users u
-                WHERE ${attritionJoinDateSQL} IS NOT NULL
+                WHERE
+                  -- First mandatory condition: employee must be LEFT.
+                  UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
+
+                  -- After LEFT confirmation, joiningDate and leavingDate decide
+                  -- the employee's tenure bucket.
+                  AND ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
+
+                  -- Count only employees who left on the selected attendance date.
+                  -- When no date is selected, existing endpoint default is yesterday.
+                  AND ${leaveDateSQL} = ?
+
                   ${attritionHierCondition}
-                  -- NOTE: Tenure Attrition source = users.leavingDate + users.joiningDate.
-                  -- isTemporary/isDeleted/designation/shift filters yahan apply nahi honge.
+                  -- NOTE: isTemporary/isDeleted/designation/shift behavior remains unchanged
+                  -- and these filters are intentionally not applied to Tenure Attrition.
         `;
 
-        const attritionParams = [];
-
-        // IMPORTANT:
-        // Tenure Attrition graph default me current date se previous 30 days ke left employees count karega.
-        // Agar date range select ki gayi hai to selected range ke left employees count honge.
-        attritionSql += `
-                  AND ${leaveDateSQL} >= ?
-                  AND ${leaveDateSQL} <= ?
-        `;
-        attritionParams.push(sqlStartDate, sqlEndDate);
+        const attritionParams = [sqlEndDate];
 
         attritionSql += `
             ) parsed
@@ -2666,23 +3072,17 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             let customAttritionSql = `
                 SELECT COUNT(DISTINCT u.id) AS leftCount
                 FROM users u
-                WHERE ${attritionJoinDateSQL} IS NOT NULL
+                WHERE
+                  UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
+                  AND ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
+                  AND ${leaveDateSQL} = ?
                   AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
                   ${attritionHierCondition}
                   -- NOTE: Custom Tenure Attrition me isTemporary/isDeleted/designation/shift filters apply nahi honge.
             `;
 
-            const customAttritionParams = [customFromDays, customToDays];
-
-            // IMPORTANT:
-            // Custom Tenure Attrition bhi same date behavior follow karega:
-            // default previous 30 days, ya selected date range.
-            customAttritionSql += `
-                  AND ${leaveDateSQL} >= ?
-                  AND ${leaveDateSQL} <= ?
-            `;
-            customAttritionParams.push(sqlStartDate, sqlEndDate);
+            const customAttritionParams = [sqlEndDate, customFromDays, customToDays];
 
             const [rows] = await executeQuery(customAttritionSql, customAttritionParams);
             attrition.CUSTOM = Number(rows?.[0]?.leftCount || 0);
@@ -2721,11 +3121,11 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     endDate: sqlEndDate,
                     shift: selectedShiftValue || "ALL",
                     attendanceLogic:
-                        "Tenure attendance/absenteeism selected date attendance_logs se calculate hoga. Sirf attendance_logs.userId = users.id matched employees count honge. Shift filter attendance_logs.shift par lagega.",
+                        "Tenure Attendance selected date attendance_logs se calculate hoga aur selected shift attendance_logs.shift par apply hoga. Tenure Absenteeism same selected date aur hierarchy se calculate hoga, lekin shift ko ignore karega.",
                     masterLogic:
-                        "Grey/dark yellow Users Total bar users table ka total active employee count hai. Shift filter ka effect is bar par nahi padega; baaki hierarchy/date filters apply rahenge.",
+                        "Grey/dark yellow Users Total bar current India date ke active employee rule se calculate hota hai. Blank/invalid joiningDate 3y & others me count hogi; leavingDate employee ko sirf status LEFT hone par remove karegi. Selected attendance date aur shift is bar ko change nahi karenge.",
                     attritionLogic:
-                        "Attrition users.leavingDate se calculate hoga aur department/section/line filters users table se apply honge. legacy snapshot table use nahi hoga. isTemporary/isDeleted/designation/shift filters attrition par apply nahi honge. Tenure attrition me joiningDate valid hona mandatory hai.",
+                        "Tenure Attrition me pehle users.status = LEFT mandatory check hoga. Sirf selected attendance date ke exact leavingDate wale employees count honge. LEFT employee ki valid joiningDate aur leavingDate se tenure bucket decide hoga. Department/section/line filters users table se apply honge aur shift ignore hoga.",
                     matchingLogic:
                         "attendance_logs.userId = users.id and users.joiningDate se tenure bucket calculate hota hai.",
                     customTenureFrom: hasCustomTenureRange ? customFromDays : null,

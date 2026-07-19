@@ -194,15 +194,173 @@ const resolveApproverNameFromUserOrEmail = async (user, fallbackEmail = "", fall
     return resolvePersonNameByEmail(email, fallbackName);
 };
 
-const getRequirementUpdatedByName = (req) => {
-    return (
+const REQUIREMENT_LOG_FIELDS = [
+    { key: "salesPlan", oldColumn: "old_salesPlan", newColumn: "new_salesPlan" },
+    { key: "prodPlan", oldColumn: "old_prodPlan", newColumn: "new_prodPlan" },
+    { key: "prodPlanFN01", oldColumn: "old_prodPlanFN01", newColumn: "new_prodPlanFN01" },
+    { key: "prodPlanFN02", oldColumn: "old_prodPlanFN02", newColumn: "new_prodPlanFN02" },
+];
+
+const isSameRequirementLogValue = (a, b) => {
+    if (a === null || a === undefined || b === null || b === undefined) {
+        return a === b;
+    }
+
+    const n1 = Number(a);
+    const n2 = Number(b);
+
+    if (Number.isFinite(n1) && Number.isFinite(n2)) {
+        return n1 === n2;
+    }
+
+    return String(a) === String(b);
+};
+
+const parseRequirementLogJson = (value) => {
+    if (!value) return {};
+    if (typeof value === "object") return value;
+
+    try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+};
+
+const getChangedRequirementLogValues = (oldReq = {}, newReq = {}) => {
+    const oldValues = {
+        sectionName: oldReq.sectionName || newReq.sectionName || null,
+        lineDescription: oldReq.lineDescription || newReq.lineDescription || null,
+        monthName: oldReq.monthName || newReq.monthName || null,
+        year: oldReq.year || newReq.year || null,
+    };
+
+    const newValues = {
+        sectionName: newReq.sectionName || oldReq.sectionName || null,
+        lineDescription: newReq.lineDescription || oldReq.lineDescription || null,
+        monthName: newReq.monthName || oldReq.monthName || null,
+        year: newReq.year || oldReq.year || null,
+    };
+
+    const changedKeys = [];
+
+    for (const { key } of REQUIREMENT_LOG_FIELDS) {
+        const oldValue = oldReq?.[key];
+        const newValue = newReq?.[key];
+
+        if (isSameRequirementLogValue(oldValue, newValue)) continue;
+
+        oldValues[key] = oldValue;
+        newValues[key] = newValue;
+        changedKeys.push(key);
+    }
+
+    return { oldValues, newValues, changedKeys };
+};
+
+const resolveRequirementLogUser = async (req, transactionOrPool = null) => {
+    const rawUserId = req?.user?.id ?? req?.user?._id ?? null;
+    const numericUserId = Number(rawUserId);
+    const userEmail = safeTrim(req?.user?.email).toLowerCase();
+
+    let dbUser = null;
+
+    try {
+        if (rawUserId !== null && rawUserId !== undefined && Number.isInteger(numericUserId)) {
+            const [rows] = await executeSql(
+                `
+                SELECT TOP 1
+                    u.id,
+                    u.fullName,
+                    u.userName,
+                    u.email,
+                    u.role
+                FROM users u WITH (NOLOCK)
+                WHERE u.id = ?
+                `,
+                [numericUserId],
+                transactionOrPool
+            );
+
+            dbUser = rows?.[0] || null;
+        }
+
+        if (!dbUser && userEmail) {
+            const [rows] = await executeSql(
+                `
+                SELECT TOP 1
+                    u.id,
+                    u.fullName,
+                    u.userName,
+                    u.email,
+                    u.role
+                FROM users u WITH (NOLOCK)
+                WHERE LOWER(LTRIM(RTRIM(u.email))) = ?
+                `,
+                [userEmail],
+                transactionOrPool
+            );
+
+            dbUser = rows?.[0] || null;
+        }
+    } catch (error) {
+        console.error("[REQUIREMENT-LOG-USER] Failed to resolve logged-in user:", error.message);
+    }
+
+    const updatedByName =
+        cleanDisplayName(dbUser?.fullName) ||
+        cleanDisplayName(dbUser?.userName) ||
         cleanDisplayName(req?.user?.fullName) ||
         cleanDisplayName(req?.user?.name) ||
         cleanDisplayName(req?.user?.userName) ||
         cleanDisplayName(req?.user?.username) ||
+        safeTrim(dbUser?.email) ||
         safeTrim(req?.user?.email) ||
-        "Unknown"
-    );
+        "Unknown";
+
+    return {
+        employeeId:
+            dbUser?.id ??
+            (Number.isInteger(numericUserId) ? numericUserId : null),
+        employeeRole: dbUser?.role || req?.user?.role || "User",
+        updatedByName,
+    };
+};
+
+const getActualRequirementLogChanges = (row) => {
+    const oldValues = parseRequirementLogJson(row?.old_values);
+    const newValues = parseRequirementLogJson(row?.new_values);
+    const changes = [];
+
+    for (const field of REQUIREMENT_LOG_FIELDS) {
+        const oldValue =
+            row?.[field.oldColumn] !== undefined && row?.[field.oldColumn] !== null
+                ? row[field.oldColumn]
+                : oldValues?.[field.key];
+
+        const newValue =
+            row?.[field.newColumn] !== undefined && row?.[field.newColumn] !== null
+                ? row[field.newColumn]
+                : newValues?.[field.key];
+
+        // An update log must contain both old and new values.
+        // This excludes create/upload records where no previous value exists.
+        if (
+            oldValue === undefined ||
+            oldValue === null ||
+            newValue === undefined ||
+            newValue === null
+        ) {
+            continue;
+        }
+
+        if (!isSameRequirementLogValue(oldValue, newValue)) {
+            changes.push({ key: field.key, oldValue, newValue });
+        }
+    }
+
+    return changes;
 };
 
 const sendMailToMultipleRecipients = async (recipients, subject, htmlMsg, logPrefix) => {
@@ -1370,11 +1528,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
             }
         });
 
-        const getSectionId = (sectionCode) => {
-            const codeKey = normalizeUnicode(sectionCode);
-            return validSectionsMap.get(codeKey)?.id || null;
-        };
-
         const chunkSize = 50;
 
         for (let i = 0; i < rowsToInsert.length; i += chunkSize) {
@@ -1430,28 +1583,11 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 VALUES ${placeholders}
             `;
 
-            const [insertedRows, meta] = await executeSql(
+            const [, meta] = await executeSql(
                 insertQuery,
                 paramsArray,
                 transaction
             );
-
-            // Log inserted requirements
-            for (const insertedRow of insertedRows) {
-                try {
-                    await RequirementLog.create({
-                        requirement_id: insertedRow.id,
-                        section_id: getSectionId(insertedRow.sectionCode),
-                        old_values: null,
-                        new_values: insertedRow,
-                        employee_id: req.user?._id || req.user?.id || null,
-                        employee_role: req.user?.role || "Admin",
-                        updated_by_name: getRequirementUpdatedByName(req),
-                    }, transaction);
-                } catch (logErr) {
-                    console.error("Failed to log bulk insert requirement:", logErr.message);
-                }
-            }
 
             totalInsertedRows += meta?.affectedRows || chunk.length;
         }
@@ -1506,28 +1642,6 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 ],
                 transaction
             );
-
-            // Fetch and log updated requirement
-            try {
-                const [newRows] = await executeSql(
-                    "SELECT * FROM requirements WHERE id = ?",
-                    [row.id],
-                    transaction
-                );
-                if (newRows.length > 0) {
-                    await RequirementLog.create({
-                        requirement_id: row.id,
-                        section_id: getSectionId(row.sectionCode),
-                        old_values: row.oldReq,
-                        new_values: newRows[0],
-                        employee_id: req.user?._id || req.user?.id || null,
-                        employee_role: req.user?.role || "Admin",
-                        updated_by_name: getRequirementUpdatedByName(req),
-                    }, transaction);
-                }
-            } catch (logErr) {
-                console.error("Failed to log bulk update requirement:", logErr.message);
-            }
 
             updateCount++;
         }
@@ -2441,9 +2555,55 @@ export const getRequirementLogs = asyncHandler(async (req, res) => {
 
     const rows = await RequirementLog.getLogs(filters, { limit, offset });
 
-    const logsWithNames = (rows || []).map((row) => ({
+    // Keep only genuine requirement-value updates.
+    // Create/upload logs and status-only changes are not returned to the frontend.
+    const changedRows = (rows || []).filter(
+        (row) => getActualRequirementLogChanges(row).length > 0
+    );
+
+    const employeeIds = [
+        ...new Set(
+            changedRows
+                .map((row) => Number(row.employee_id))
+                .filter((employeeId) => Number.isInteger(employeeId))
+        ),
+    ];
+
+    const userNameById = new Map();
+
+    if (employeeIds.length > 0) {
+        try {
+            const [users] = await executeSql(
+                `
+                SELECT
+                    u.id,
+                    u.fullName,
+                    u.userName,
+                    u.email
+                FROM users u WITH (NOLOCK)
+                WHERE u.id IN (${employeeIds.map(() => "?").join(",")})
+                `,
+                employeeIds
+            );
+
+            for (const user of users || []) {
+                const resolvedName =
+                    cleanDisplayName(user.fullName) ||
+                    cleanDisplayName(user.userName) ||
+                    safeTrim(user.email) ||
+                    "Unknown";
+
+                userNameById.set(Number(user.id), resolvedName);
+            }
+        } catch (error) {
+            console.error("[REQUIREMENT-LOGS] Failed to resolve employee names:", error.message);
+        }
+    }
+
+    const logsWithNames = changedRows.map((row) => ({
         ...row,
         updated_by_name:
+            userNameById.get(Number(row.employee_id)) ||
             row.updated_by_name ||
             row.user_name ||
             row.employee_name ||
@@ -2782,37 +2942,6 @@ export const updateRequirement = asyncHandler(async (req, res) => {
 
     const newReq = updatedRows[0];
 
-    // Find section_id
-    let sectionIdToLog = null;
-    try {
-        const [sectionRows] = await executeSql(
-            `
-            SELECT id FROM sections
-            WHERE UPPER(LTRIM(RTRIM(uniCode))) = UPPER(LTRIM(RTRIM(?)))
-            `,
-            [newReq.sectionCode]
-        );
-        if (sectionRows.length > 0) {
-            sectionIdToLog = sectionRows[0].id;
-        }
-    } catch (err) {
-        console.error("Failed to find section for log:", err.message);
-    }
-
-    try {
-        await RequirementLog.create({
-            requirement_id: id,
-            section_id: sectionIdToLog,
-            old_values: oldReq,
-            new_values: newReq,
-            employee_id: req.user?._id || req.user?.id || null,
-            employee_role: req.user?.role || "Admin",
-            updated_by_name: getRequirementUpdatedByName(req),
-        });
-    } catch (logErr) {
-        console.error("Failed to log requirement update:", logErr.message);
-    }
-
     const salesChanged =
         salesPlan !== undefined && !isSameNumber(oldReq.salesPlan, newReq.salesPlan);
 
@@ -2840,6 +2969,44 @@ export const updateRequirement = asyncHandler(async (req, res) => {
                 "Requirement checked. No value changed, mail skipped."
             )
         );
+    }
+
+    // Save exactly one log only when an actual requirement value changed.
+    // The log contains only the previous and new plan values that are different.
+    try {
+        let sectionIdToLog = null;
+
+        const [sectionRows] = await executeSql(
+            `
+            SELECT id FROM sections
+            WHERE UPPER(LTRIM(RTRIM(uniCode))) = UPPER(LTRIM(RTRIM(?)))
+            `,
+            [newReq.sectionCode]
+        );
+
+        if (sectionRows.length > 0) {
+            sectionIdToLog = sectionRows[0].id;
+        }
+
+        const { oldValues, newValues, changedKeys } =
+            getChangedRequirementLogValues(oldReq, newReq);
+
+        if (changedKeys.length > 0) {
+            const logUser = await resolveRequirementLogUser(req);
+
+            await RequirementLog.create({
+                requirement_id: id,
+                section_id: sectionIdToLog,
+                action_type: "UPDATE",
+                old_values: oldValues,
+                new_values: newValues,
+                employee_id: logUser.employeeId,
+                employee_role: logUser.employeeRole,
+                updated_by_name: logUser.updatedByName,
+            });
+        }
+    } catch (logErr) {
+        console.error("Failed to log requirement update:", logErr.message);
     }
 
     const mailResult = await sendRequirementEditApprovalMail({

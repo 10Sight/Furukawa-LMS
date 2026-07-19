@@ -477,12 +477,15 @@ export const uploadAttendance = async (req, res, next) => {
         const normalizeText = (v) =>
             String(v || "").trim();
 
-        const normalizeCardNo = (v) =>
+        // Attendance matching rule:
+        // Excel PayCode must match users.empId only.
+        // No idCard fallback and no hierarchy-snapshot dependency.
+        const normalizePayCode = (v) =>
             String(v || "")
                 .trim()
                 .replace(/\.0$/, "")
                 .replace(/\s+/g, "")
-                .toLowerCase();
+                .toUpperCase();
 
         const normalizeStatus = (v) => {
             const val = String(v || "").trim().toLowerCase();
@@ -642,45 +645,49 @@ export const uploadAttendance = async (req, res, next) => {
 
         logger.info(`Column mapping: ${JSON.stringify(columnMap)}`);
 
-        if (columnMap.payCode === -1 && columnMap.cardNo === -1) {
+        if (columnMap.payCode === -1) {
             return res.status(400).json({
                 success: false,
-                message: "Neither 'PayCode' nor 'Card No' column was found in the Excel file."
+                message: "Required column 'PayCode' was not found in the Excel file."
             });
         }
 
         const dataRows = rows2D
             .slice(headerRowIndex + 1)
             .filter(row => {
-                const payCode = columnMap.payCode !== -1 ? row[columnMap.payCode] : null;
-                const cardNo = columnMap.cardNo !== -1 ? row[columnMap.cardNo] : null;
-                return normalizeText(payCode) || normalizeText(cardNo);
+                const payCode = row[columnMap.payCode];
+                return Boolean(normalizePayCode(payCode));
             });
 
         logger.info(`Found ${dataRows.length} data rows to process.`);
 
         const pool = await poolPromise;
 
-        // Fetch users to build maps for both empId and idCard
+        // Build the attendance master map from users.empId only.
+        // Active/non-deleted duplicate rows are preferred, but if an empId exists
+        // only on another users row it is still treated as a valid users-table match.
+        // No hierarchy snapshot table is used.
         const usersResult = await pool.request().query(`
-            SELECT id, empId, idCard
+            SELECT id, empId, isDeleted
             FROM users
-            WHERE isDeleted = 0
+            WHERE empId IS NOT NULL
+              AND LTRIM(RTRIM(CAST(empId AS NVARCHAR(100)))) <> ''
+            ORDER BY
+                CASE WHEN ISNULL(isDeleted, 0) = 0 THEN 0 ELSE 1 END,
+                id DESC
         `);
 
         const userMapByEmpId = new Map();
-        const userMapByIdCard = new Map();
 
         usersResult.recordset.forEach((u) => {
-            if (u.empId) {
-                userMapByEmpId.set(normalizeText(u.empId).toLowerCase(), u.id);
-            }
-            if (u.idCard) {
-                userMapByIdCard.set(normalizeCardNo(u.idCard), u.id);
+            const normalizedEmpId = normalizePayCode(u.empId);
+
+            if (normalizedEmpId && !userMapByEmpId.has(normalizedEmpId)) {
+                userMapByEmpId.set(normalizedEmpId, u.id);
             }
         });
 
-        logger.info(`Users mapped: ${userMapByEmpId.size} by empId, ${userMapByIdCard.size} by idCard.`);
+        logger.info(`Users mapped by users.empId only: ${userMapByEmpId.size}.`);
 
         // 1. Delete existing unmapped logs for this date
         try {
@@ -756,13 +763,14 @@ export const uploadAttendance = async (req, res, next) => {
             const rawPayCode = columnMap.payCode !== -1 ? row[columnMap.payCode] : null;
             const rawCardNo = columnMap.cardNo !== -1 ? row[columnMap.cardNo] : null;
 
-            const normalizedPayCode = rawPayCode ? normalizeText(rawPayCode).toLowerCase().replace(/\.0$/, "") : null;
-            const normalizedCardNo = rawCardNo ? normalizeCardNo(rawCardNo) : null;
+            const normalizedPayCode = normalizePayCode(rawPayCode);
 
-            // Try to find user by PayCode (empId) first, then CardNo (idCard)
-            let userId = null;
-            if (normalizedPayCode) userId = userMapByEmpId.get(normalizedPayCode);
-            if (!userId && normalizedCardNo) userId = userMapByIdCard.get(normalizedCardNo);
+            // Strict attendance mapping:
+            // Excel PayCode -> users.empId only.
+            // Card No and hierarchy snapshot data are not used for matching.
+            const userId = normalizedPayCode
+                ? userMapByEmpId.get(normalizedPayCode)
+                : null;
 
             const rowStatus = columnMap.status !== -1 ? normalizeStatus(row[columnMap.status]) : "Present";
 
@@ -824,7 +832,7 @@ export const uploadAttendance = async (req, res, next) => {
                 reqUnmapped.input("earlyDeparture", sql.Float, columnMap.earlyDeparture !== -1 ? parseHours(row[columnMap.earlyDeparture]) : 0);
                 reqUnmapped.input("otHrs", sql.Float, columnMap.otHrs !== -1 ? parseHours(row[columnMap.otHrs]) : 0);
                 reqUnmapped.input("otAmount", sql.Float, columnMap.otAmount !== -1 ? parseHours(row[columnMap.otAmount]) : 0);
-                reqUnmapped.input("reason", sql.VarChar, 'User not found in master');
+                reqUnmapped.input("reason", sql.VarChar, 'Excel PayCode not found in users.empId');
 
                 try {
                     await reqUnmapped.query(insertUnmappedSql);
@@ -1134,9 +1142,50 @@ export const getUnmappedPresent = async (req, res, next) => {
 
         const pool = await poolPromise;
 
+        const normalizedUnmappedPayCodeSql = `
+            UPPER(
+                REPLACE(
+                    CASE
+                        WHEN RIGHT(LTRIM(RTRIM(CAST(attendance_unmapped_logs.payCode AS NVARCHAR(100)))), 2) = '.0'
+                        THEN LEFT(
+                            LTRIM(RTRIM(CAST(attendance_unmapped_logs.payCode AS NVARCHAR(100)))),
+                            LEN(LTRIM(RTRIM(CAST(attendance_unmapped_logs.payCode AS NVARCHAR(100))))) - 2
+                        )
+                        ELSE LTRIM(RTRIM(CAST(attendance_unmapped_logs.payCode AS NVARCHAR(100))))
+                    END,
+                    ' ',
+                    ''
+                )
+            )
+        `;
+
+        const normalizedUserEmpIdSql = `
+            UPPER(
+                REPLACE(
+                    CASE
+                        WHEN RIGHT(LTRIM(RTRIM(CAST(matchedUser.empId AS NVARCHAR(100)))), 2) = '.0'
+                        THEN LEFT(
+                            LTRIM(RTRIM(CAST(matchedUser.empId AS NVARCHAR(100)))),
+                            LEN(LTRIM(RTRIM(CAST(matchedUser.empId AS NVARCHAR(100))))) - 2
+                        )
+                        ELSE LTRIM(RTRIM(CAST(matchedUser.empId AS NVARCHAR(100))))
+                    END,
+                    ' ',
+                    ''
+                )
+            )
+        `;
+
         let whereClauses = [
             "CONVERT(date, [date]) = @date",
-            "UPPER(LTRIM(RTRIM(status))) = 'PRESENT'"
+            "UPPER(LTRIM(RTRIM(status))) = 'PRESENT'",
+            `NOT EXISTS (
+                SELECT 1
+                FROM users matchedUser
+                WHERE matchedUser.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(matchedUser.empId AS NVARCHAR(100)))) <> ''
+                  AND ${normalizedUserEmpIdSql} = ${normalizedUnmappedPayCodeSql}
+            )`
         ];
 
         const countRequest = pool.request();

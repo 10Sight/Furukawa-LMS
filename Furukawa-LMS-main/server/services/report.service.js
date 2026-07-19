@@ -36,6 +36,64 @@ const getPct = (num, den) => {
 
 const getNum = (obj, key) => parseFloat(Number(obj?.[key] || 0).toFixed(2));
 
+// Keep report dates in local calendar format instead of UTC conversion.
+// This is important because every automated report must show yesterday's data.
+const formatDateKey = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const d = String(dateObj.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+};
+
+const formatDisplayDate = (dateObj) => {
+    const d = String(dateObj.getDate()).padStart(2, "0");
+    const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const y = dateObj.getFullYear();
+    return `${d}-${m}-${y}`;
+};
+
+// Match the Dashboard's India-time calendar handling exactly.
+// The automated report generated on 19-Jul must therefore use 18-Jul data.
+const getIndiaNow = () => {
+    const indiaNow = new Date(
+        new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+    indiaNow.setHours(0, 0, 0, 0);
+    return indiaNow;
+};
+
+const getIndiaYesterday = () => {
+    const reportDate = getIndiaNow();
+    reportDate.setDate(reportDate.getDate() - 1);
+    return reportDate;
+};
+
+// Same designation exclusion used by the first Dashboard manpower graph.
+const getDesignationShutterExclusionSql = (alias = "u") => `
+    AND NOT EXISTS (
+        SELECT 1
+        FROM designation_shutters ds
+        WHERE ds.designation IS NOT NULL
+          AND ds.designation = ${alias}.designation
+    )
+`;
+
+// users.joiningDate / leavingDate can be NVARCHAR in different formats.
+// This is copied from the Dashboard logic so report and graph evaluate dates identically.
+const userDateToDateSql = (columnSql) => `
+    COALESCE(
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 23),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 103),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 105),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 120),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 121),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 101),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 110),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 106),
+        TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 107)
+    )
+`;
+
 const safeMerge = (ws, range) => {
     try { ws.mergeCells(range); } catch (_) { }
 };
@@ -92,25 +150,115 @@ async function fetchDeptSections(dbPool) {
 
 // =================================================
 // STEP 2: Fetch required headcount from requirements
+// EXACT SAME LOGIC AS DASHBOARD FIRST DAILY MANPOWER TREND GRAPH:
+// - Report date = yesterday (India time)
+// - Day 1-15 => prodPlanFN01, Day 16-end => prodPlanFN02
+// - Same approved/system-approved requirement-row rule
+// - Section mapping supports sectionCode OR sectionName, exactly like dashboard
 // =================================================
-async function fetchRequirements(dbPool, monthName, yearVal, reportDay = 1) {
+async function fetchRequirements(dbPool, monthNumber, yearVal, reportDay = 1) {
     const reqColumn = reportDay <= 15 ? "prodPlanFN01" : "prodPlanFN02";
-    const rows = (await dbPool.request()
-        .input("monthName", monthName)
+
+    // Same approval rule used by Dashboard getDashboardStats().
+    const approvalCondition = `
+        AND (
+            (
+                ISNULL(r.is_active, 0) = 1
+                AND LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, 'approved')))) IN (
+                    'approved',
+                    'system_approved',
+                    'system approved',
+                    'system-approved',
+                    'systemapproved'
+                )
+            )
+            OR LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, '')))) IN (
+                'system_approved',
+                'system approved',
+                'system-approved',
+                'systemapproved'
+            )
+        )
+    `;
+
+    const sectionJoinSql = `
+        LEFT JOIN sections s
+            ON (
+                UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510)))))
+                    = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510)))))
+                    = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+            )
+            AND ISNULL(s.isActive, 1) = 1
+    `;
+
+    const totalPromise = dbPool.request()
+        .input("monthNumber", monthNumber)
+        .input("yearVal", yearVal)
+        .query(`
+            SELECT CAST(SUM(ISNULL(r.${reqColumn}, 0)) AS BIGINT) AS totalRequired
+            FROM requirements r
+            WHERE r.[year] = @yearVal
+              AND r.monthNumber = @monthNumber
+              ${approvalCondition}
+        `);
+
+    const departmentPromise = dbPool.request()
+        .input("monthNumber", monthNumber)
         .input("yearVal", yearVal)
         .query(`
             SELECT
-                UPPER(LTRIM(RTRIM(sectionCode))) AS secCode,
-                SUM(ISNULL(${reqColumn}, 0)) AS totalRequired
-            FROM requirements
-            WHERE monthName = @monthName AND year = @yearVal
-            GROUP BY UPPER(LTRIM(RTRIM(sectionCode)))
-        `)).recordset || [];
+                d.id AS deptId,
+                CAST(SUM(ISNULL(r.${reqColumn}, 0)) AS BIGINT) AS totalRequired
+            FROM requirements r
+            ${sectionJoinSql}
+            LEFT JOIN departments d ON d.id = s.departmentId
+            WHERE r.[year] = @yearVal
+              AND r.monthNumber = @monthNumber
+              ${approvalCondition}
+              AND d.id IS NOT NULL
+            GROUP BY d.id
+        `);
 
-    const map = new Map();
-    rows.forEach(r => map.set(r.secCode, Number(r.totalRequired) || 0));
-    console.log(`[fetchRequirements] entries: ${map.size}`);
-    return map;
+    const sectionPromise = dbPool.request()
+        .input("monthNumber", monthNumber)
+        .input("yearVal", yearVal)
+        .query(`
+            SELECT
+                s.id AS sectionId,
+                CAST(SUM(ISNULL(r.${reqColumn}, 0)) AS BIGINT) AS totalRequired
+            FROM requirements r
+            ${sectionJoinSql}
+            WHERE r.[year] = @yearVal
+              AND r.monthNumber = @monthNumber
+              ${approvalCondition}
+              AND s.id IS NOT NULL
+            GROUP BY s.id
+        `);
+
+    const [totalResult, departmentResult, sectionResult] = await Promise.all([
+        totalPromise,
+        departmentPromise,
+        sectionPromise
+    ]);
+
+    const byDepartment = new Map();
+    const bySection = new Map();
+
+    (departmentResult.recordset || []).forEach(r => {
+        byDepartment.set(Number(r.deptId), Number(r.totalRequired) || 0);
+    });
+    (sectionResult.recordset || []).forEach(r => {
+        bySection.set(Number(r.sectionId), Number(r.totalRequired) || 0);
+    });
+
+    const total = Number(totalResult.recordset?.[0]?.totalRequired || 0);
+
+    console.log(
+        `[fetchRequirements] DASHBOARD-EXACT month=${monthNumber}, year=${yearVal}, day=${reportDay}, total=${total}, departments=${byDepartment.size}, sections=${bySection.size}`
+    );
+
+    return { byDepartment, bySection, total };
 }
 
 // =================================================
@@ -181,55 +329,173 @@ async function fetchLineRequirements(dbPool, monthNumber, yearVal, reportDay = 1
 
 
 // =================================================
-// STEP 3: Fetch Actual M/P from user_hierarchy_snapshots
+// STEP 3: Fetch Total Manpower directly from users
+// EXACT SAME LOGIC AS DASHBOARD FIRST DAILY MANPOWER TREND GRAPH.
+// IMPORTANT:
+// - NO user_hierarchy_snapshots verification
+// - NO isEmployee filter
+// - isDeleted = 0
+// - isTemporary = 0
+// - valid/non-empty empId
+// - designation_shutters exclusion
+// - joiningDate adds employee from that exact date
+// - employee is removed only when status = LEFT and leavingDate <= report date
+// - blank/invalid joiningDate stays included as an existing employee
+// - Department uses users.departmentId
+// - Section uses the Dashboard's 3-way hierarchy rule
 // =================================================
-async function fetchActualMPBySection(dbPool) {
+async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
     try {
-        const rows = (await dbPool.request().query(`
-            WITH latest_uhs AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        uhs.*,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY UPPER(LTRIM(RTRIM(uhs.employeeid)))
-                            ORDER BY uhs.id DESC
-                        ) AS rn
-                    FROM user_hierarchy_snapshots uhs
-                    WHERE uhs.employeeid IS NOT NULL
-                      AND LTRIM(RTRIM(uhs.employeeid)) <> ''
-                ) x
-                WHERE x.rn = 1
-            )
-            SELECT
-                s.id AS sectionId,
-                COUNT(DISTINCT latest_uhs.employeeid) AS cnt
-            FROM latest_uhs
-            INNER JOIN sections s
-                ON  UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(latest_uhs.section_unicode)))
-                AND s.isActive = 1
-            WHERE latest_uhs.section_unicode IS NOT NULL
-              AND LTRIM(RTRIM(latest_uhs.section_unicode)) <> ''
-            GROUP BY s.id
-        `)).recordset || [];
+        const joiningDateSql = userDateToDateSql("u.joiningDate");
+        const leavingDateSql = userDateToDateSql("u.leavingDate");
+        const employeeStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, '')))))`;
 
-        const map = new Map();
-        rows.forEach(r => map.set(r.sectionId, Number(r.cnt) || 0));
-        console.log(`[fetchActualMPBySection] primary entries: ${map.size}`);
-        return map;
+        const eligibleUsersCte = `
+            WITH EligibleUsers AS (
+                SELECT DISTINCT
+                    u.id,
+                    LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) AS empId,
+                    u.departmentId,
+                    u.sectionId,
+                    u.lineId,
+                    u.subSectionId
+                FROM users u
+                WHERE ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  ${getDesignationShutterExclusionSql("u")}
+                  AND (${joiningDateSql} IS NULL OR ${joiningDateSql} <= CONVERT(DATE, @reportDate, 23))
+                  AND (
+                        ${employeeStatusSql} <> 'LEFT'
+                        OR ${leavingDateSql} IS NULL
+                        OR ${leavingDateSql} > CONVERT(DATE, @reportDate, 23)
+                  )
+            )
+        `;
+
+        const totalPromise = dbPool.request()
+            .input("reportDate", reportDateStr)
+            .query(`
+                ${eligibleUsersCte}
+                SELECT COUNT(DISTINCT empId) AS total
+                FROM EligibleUsers
+            `);
+
+        const departmentPromise = dbPool.request()
+            .input("reportDate", reportDateStr)
+            .query(`
+                ${eligibleUsersCte}
+                SELECT
+                    departmentId AS deptId,
+                    COUNT(DISTINCT empId) AS cnt
+                FROM EligibleUsers
+                WHERE departmentId IS NOT NULL
+                GROUP BY departmentId
+            `);
+
+        const linePromise = dbPool.request()
+            .input("reportDate", reportDateStr)
+            .query(`
+                ${eligibleUsersCte}
+                SELECT
+                    lineId,
+                    COUNT(DISTINCT empId) AS cnt
+                FROM EligibleUsers
+                WHERE lineId IS NOT NULL
+                GROUP BY lineId
+            `);
+
+        // This reproduces getSectionHierarchyMatchSql("u") from the dashboard.
+        // Because a section is displayed inside a department, users.departmentId must also
+        // match that section's department, the same way Dashboard Dept + Section filters combine.
+        const sectionPromise = dbPool.request()
+            .input("reportDate", reportDateStr)
+            .query(`
+                ${eligibleUsersCte}
+                SELECT
+                    s.id AS sectionId,
+                    COUNT(DISTINCT eu.empId) AS cnt
+                FROM sections s
+                LEFT JOIN EligibleUsers eu
+                    ON eu.departmentId = s.departmentId
+                   AND (
+                        eu.sectionId = s.id
+                        OR (
+                            eu.sectionId IS NULL
+                            AND EXISTS (
+                                SELECT 1
+                                FROM [lines] resolvedLine
+                                LEFT JOIN sub_sections resolvedSubSection
+                                    ON resolvedSubSection.id = eu.subSectionId
+                                WHERE resolvedLine.id = COALESCE(eu.lineId, resolvedSubSection.lineId)
+                                  AND resolvedLine.sectionId = s.id
+                            )
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM OPENJSON(
+                                CASE
+                                    WHEN ISJSON(CAST(s.[users] AS NVARCHAR(MAX))) = 1
+                                    THEN CAST(s.[users] AS NVARCHAR(MAX))
+                                    ELSE N'[]'
+                                END
+                            ) jsonSectionUser
+                            WHERE TRY_CAST(jsonSectionUser.[value] AS INT) = eu.id
+                        )
+                   )
+                WHERE ISNULL(s.isActive, 1) = 1
+                GROUP BY s.id
+            `);
+
+        const [totalResult, departmentResult, lineResult, sectionResult] = await Promise.all([
+            totalPromise,
+            departmentPromise,
+            linePromise,
+            sectionPromise
+        ]);
+
+        const byDepartment = new Map();
+        const bySection = new Map();
+        const byLine = new Map();
+
+        (departmentResult.recordset || []).forEach(r => {
+            byDepartment.set(Number(r.deptId), Number(r.cnt) || 0);
+        });
+        (sectionResult.recordset || []).forEach(r => {
+            bySection.set(Number(r.sectionId), Number(r.cnt) || 0);
+        });
+        (lineResult.recordset || []).forEach(r => {
+            byLine.set(Number(r.lineId), Number(r.cnt) || 0);
+        });
+
+        const total = Number(totalResult.recordset?.[0]?.total || 0);
+
+        console.log(
+            `[fetchActiveManpowerMaps] DASHBOARD-EXACT ${reportDateStr}: total=${total}, departments=${byDepartment.size}, sections=${bySection.size}, lines=${byLine.size}`
+        );
+
+        return { byDepartment, bySection, byLine, total };
+
     } catch (e) {
-        console.error("[fetchActualMPBySection] failed:", e.message);
-        return new Map();
+        console.error("[fetchActiveManpowerMaps] failed:", e.message);
+        return {
+            byDepartment: new Map(),
+            bySection: new Map(),
+            byLine: new Map(),
+            total: 0
+        };
     }
 }
 
 
 // =================================================
-// STEP 4: Fetch Available M/P from attendance_logs
+// STEP 4: Fetch attendance/present manpower by section
+// SAME LOGIC AS DAILY MANPOWER TREND GRAPH:
+// attendance_logs.userId -> users.id, eligible users only, status = PRESENT.
+// COUNT(*) is used to match the graph's present count exactly.
 // =================================================
-async function fetchAvailableMPBySection(dbPool, todayStr) {
-    const dateFilter = "CONVERT(VARCHAR, DATEADD(day, -1, CAST(@todayDate AS DATE)), 23)";
-
+async function fetchAvailableMPBySection(dbPool, reportDateStr) {
     const makeMap = (rows) => {
         const map = new Map();
         rows.forEach(r => map.set(Number(r.sectionId), r));
@@ -237,32 +503,24 @@ async function fetchAvailableMPBySection(dbPool, todayStr) {
     };
 
     try {
-        // OT Mandays = section employees' SUM(attendance_logs.otHrs) / 8
-        // Mapping: users.sectionId -> attendance_logs.payCode = users.empId
         const rows = (await dbPool.request()
-            .input("todayDate", todayStr)
+            .input("reportDate", reportDateStr)
             .query(`
                 SELECT
                     u.sectionId AS sectionId,
-                    COUNT(DISTINCT al.payCode) AS totalPresent,
+                    COUNT(*) AS totalPresent,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs
-                FROM users u
-                INNER JOIN attendance_logs al
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                INNER JOIN sections s
-                    ON s.id = u.sectionId
-                    AND ISNULL(s.isActive, 1) = 1
-                WHERE CONVERT(VARCHAR, al.[date], 23) = ${dateFilter}
+                FROM attendance_logs al
+                INNER JOIN users u
+                    ON u.id = al.userId
+                WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
+                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
                   AND u.sectionId IS NOT NULL
-                  AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
-                  AND ISNULL(u.isDeleted, 0) = 0
-                  AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
+                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
                 GROUP BY u.sectionId
             `)).recordset || [];
 
-        console.log(`[fetchAvailableMPBySection] users.sectionId rows Yesterday: ${rows.length}`);
+        console.log(`[fetchAvailableMPBySection] graph-aligned section attendance for ${reportDateStr}: ${rows.length} sections`);
         return makeMap(rows);
 
     } catch (e) {
@@ -272,12 +530,19 @@ async function fetchAvailableMPBySection(dbPool, todayStr) {
 }
 
 
+// SQL expressions below reproduce the graph's shift selection order:
+// A first, then G, then B, then C.
+const shiftExpr = "UPPER(ISNULL(al.shift, ISNULL(u.shift, '')))";
+const shiftAExpr = `CHARINDEX('A', ${shiftExpr}) > 0`;
+const shiftGExpr = `CHARINDEX('A', ${shiftExpr}) = 0 AND CHARINDEX('G', ${shiftExpr}) > 0`;
+const shiftBExpr = `CHARINDEX('A', ${shiftExpr}) = 0 AND CHARINDEX('G', ${shiftExpr}) = 0 AND CHARINDEX('B', ${shiftExpr}) > 0`;
+const shiftCExpr = `CHARINDEX('A', ${shiftExpr}) = 0 AND CHARINDEX('G', ${shiftExpr}) = 0 AND CHARINDEX('B', ${shiftExpr}) = 0 AND CHARINDEX('C', ${shiftExpr}) > 0`;
+
+
 // =================================================
 // STEP 5: Fetch shift-wise attendance by section
 // =================================================
-async function fetchShiftAttendanceBySection(dbPool, todayStr) {
-    const prevDayFilter = "CONVERT(VARCHAR, DATEADD(day, -1, CAST(@todayDate AS DATE)), 23)";
-
+async function fetchShiftAttendanceBySection(dbPool, reportDateStr) {
     const makeMap = (rows) => {
         const map = new Map();
         rows.forEach(r => map.set(Number(r.sectionId), r));
@@ -285,37 +550,29 @@ async function fetchShiftAttendanceBySection(dbPool, todayStr) {
     };
 
     try {
-        // Section-wise shift + OT Mandays direct from users table hierarchy.
-        // Mapping: users.sectionId -> users.empId -> attendance_logs.payCode
         const rows = (await dbPool.request()
-            .input("todayDate", todayStr)
+            .input("reportDate", reportDateStr)
             .query(`
                 SELECT
                     u.sectionId AS sectionId,
-                    COUNT(DISTINCT al.payCode) AS totalPresent,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
+                    COUNT(*) AS totalPresent,
+                    SUM(CASE WHEN ${shiftGExpr} THEN 1 ELSE 0 END) AS shiftGeneral,
+                    SUM(CASE WHEN ${shiftAExpr} THEN 1 ELSE 0 END) AS shiftA,
+                    SUM(CASE WHEN ${shiftBExpr} THEN 1 ELSE 0 END) AS shiftB,
+                    SUM(CASE WHEN ${shiftCExpr} THEN 1 ELSE 0 END) AS shiftC,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                     CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                FROM users u
-                INNER JOIN attendance_logs al
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                INNER JOIN sections s
-                    ON s.id = u.sectionId
-                    AND ISNULL(s.isActive, 1) = 1
-                WHERE CONVERT(VARCHAR, al.[date], 23) = ${prevDayFilter}
+                FROM attendance_logs al
+                INNER JOIN users u
+                    ON u.id = al.userId
+                WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
+                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
                   AND u.sectionId IS NOT NULL
-                  AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
-                  AND ISNULL(u.isDeleted, 0) = 0
-                  AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
+                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
                 GROUP BY u.sectionId
             `)).recordset || [];
 
-        console.log(`[fetchShiftAttendanceBySection] users.sectionId rows Yesterday: ${rows.length}`);
+        console.log(`[fetchShiftAttendanceBySection] graph-aligned rows for ${reportDateStr}: ${rows.length}`);
         return makeMap(rows);
 
     } catch (e) {
@@ -328,9 +585,7 @@ async function fetchShiftAttendanceBySection(dbPool, todayStr) {
 // =================================================
 // STEP 6: Fetch shift-wise attendance by line
 // =================================================
-async function fetchShiftAttendanceByLine(dbPool, todayStr) {
-    const prevDayFilter = "CONVERT(VARCHAR, DATEADD(day, -1, CAST(@todayDate AS DATE)), 23)";
-
+async function fetchShiftAttendanceByLine(dbPool, reportDateStr) {
     const makeMap = (rows) => {
         const map = new Map();
         rows.forEach(r => map.set(Number(r.lineId), r));
@@ -338,37 +593,29 @@ async function fetchShiftAttendanceByLine(dbPool, todayStr) {
     };
 
     try {
-        // Line-wise shift + OT Mandays direct from users table hierarchy.
-        // Mapping: users.lineId -> users.empId -> attendance_logs.payCode
         const rows = (await dbPool.request()
-            .input("todayDate", todayStr)
+            .input("reportDate", reportDateStr)
             .query(`
                 SELECT
                     u.lineId AS lineId,
-                    COUNT(DISTINCT al.payCode) AS totalPresent,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
+                    COUNT(*) AS totalPresent,
+                    SUM(CASE WHEN ${shiftGExpr} THEN 1 ELSE 0 END) AS shiftGeneral,
+                    SUM(CASE WHEN ${shiftAExpr} THEN 1 ELSE 0 END) AS shiftA,
+                    SUM(CASE WHEN ${shiftBExpr} THEN 1 ELSE 0 END) AS shiftB,
+                    SUM(CASE WHEN ${shiftCExpr} THEN 1 ELSE 0 END) AS shiftC,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                     CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                FROM users u
-                INNER JOIN attendance_logs al
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                INNER JOIN [lines] l
-                    ON l.id = u.lineId
-                    AND ISNULL(l.isActive, 1) = 1
-                WHERE CONVERT(VARCHAR, al.[date], 23) = ${prevDayFilter}
+                FROM attendance_logs al
+                INNER JOIN users u
+                    ON u.id = al.userId
+                WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
+                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
                   AND u.lineId IS NOT NULL
-                  AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
-                  AND ISNULL(u.isDeleted, 0) = 0
-                  AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
+                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
                 GROUP BY u.lineId
             `)).recordset || [];
 
-        console.log(`[fetchShiftAttendanceByLine] users.lineId rows Yesterday: ${rows.length}`);
+        console.log(`[fetchShiftAttendanceByLine] graph-aligned rows for ${reportDateStr}: ${rows.length}`);
         return makeMap(rows);
 
     } catch (e) {
@@ -377,13 +624,11 @@ async function fetchShiftAttendanceByLine(dbPool, todayStr) {
     }
 }
 
+
 // =================================================
 // STEP 6B: Fetch shift-wise attendance by department
-// Management report top summary uses this direct department-wise OT Mandays.
 // =================================================
-async function fetchShiftAttendanceByDepartment(dbPool, todayStr) {
-    const prevDayFilter = "CONVERT(VARCHAR, DATEADD(day, -1, CAST(@todayDate AS DATE)), 23)";
-
+async function fetchShiftAttendanceByDepartment(dbPool, reportDateStr) {
     const makeMap = (rows) => {
         const map = new Map();
         rows.forEach(r => map.set(Number(r.deptId), r));
@@ -391,37 +636,29 @@ async function fetchShiftAttendanceByDepartment(dbPool, todayStr) {
     };
 
     try {
-        // Department-wise shift + OT Mandays direct from users table hierarchy.
-        // Mapping: users.departmentId -> users.empId -> attendance_logs.payCode
         const rows = (await dbPool.request()
-            .input("todayDate", todayStr)
+            .input("reportDate", reportDateStr)
             .query(`
                 SELECT
                     u.departmentId AS deptId,
-                    COUNT(DISTINCT al.payCode) AS totalPresent,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'G%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'GEN%' THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'A%' THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'B%' THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'C%' OR LTRIM(RTRIM(UPPER(ISNULL(al.shift,'')))) LIKE 'D%' THEN 1 ELSE 0 END) AS shiftC,
+                    COUNT(*) AS totalPresent,
+                    SUM(CASE WHEN ${shiftGExpr} THEN 1 ELSE 0 END) AS shiftGeneral,
+                    SUM(CASE WHEN ${shiftAExpr} THEN 1 ELSE 0 END) AS shiftA,
+                    SUM(CASE WHEN ${shiftBExpr} THEN 1 ELSE 0 END) AS shiftB,
+                    SUM(CASE WHEN ${shiftCExpr} THEN 1 ELSE 0 END) AS shiftC,
                     CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
                     CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                FROM users u
-                INNER JOIN attendance_logs al
-                    ON UPPER(LTRIM(RTRIM(CAST(al.payCode AS NVARCHAR(100)))))
-                     = UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))))
-                INNER JOIN departments d
-                    ON d.id = u.departmentId
-                    AND ISNULL(d.isDeleted, 0) = 0
-                WHERE CONVERT(VARCHAR, al.[date], 23) = ${prevDayFilter}
+                FROM attendance_logs al
+                INNER JOIN users u
+                    ON u.id = al.userId
+                WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
+                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
                   AND u.departmentId IS NOT NULL
-                  AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) <> ''
-                  AND ISNULL(u.isDeleted, 0) = 0
-                  AND UPPER(LTRIM(RTRIM(ISNULL(al.status, '')))) IN ('PRESENT', 'P')
+                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
                 GROUP BY u.departmentId
             `)).recordset || [];
 
-        console.log(`[fetchShiftAttendanceByDepartment] users.departmentId rows Yesterday: ${rows.length}`);
+        console.log(`[fetchShiftAttendanceByDepartment] graph-aligned rows for ${reportDateStr}: ${rows.length}`);
         return makeMap(rows);
 
     } catch (e) {
@@ -436,19 +673,19 @@ async function fetchShiftAttendanceByDepartment(dbPool, todayStr) {
 // =================================================
 export const getReportData = async () => {
     const dbPool = await poolPromise;
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const reportDate = getIndiaYesterday(); // Dashboard/report both use yesterday in Asia/Kolkata
 
-    const reportDate = new Date(today);
-    reportDate.setDate(reportDate.getDate() - 1); // Yesterday is the report date
-    const monthName = MONTH_NAMES[reportDate.getMonth()];
+    const reportDateStr = formatDateKey(reportDate);
+    const monthNumber = reportDate.getMonth() + 1;
     const yearVal = reportDate.getFullYear();
     const reportDay = reportDate.getDate();
 
-    const deptSections = await fetchDeptSections(dbPool);
-    const reqMap = await fetchRequirements(dbPool, monthName, yearVal, reportDay);
-    const actualMap = await fetchActualMPBySection(dbPool);
-    const availMap = await fetchAvailableMPBySection(dbPool, todayStr);
+    const [deptSections, reqMaps, activeMaps, attendanceMap] = await Promise.all([
+        fetchDeptSections(dbPool),
+        fetchRequirements(dbPool, monthNumber, yearVal, reportDay),
+        fetchActiveManpowerMaps(dbPool, reportDateStr),
+        fetchAvailableMPBySection(dbPool, reportDateStr)
+    ]);
 
     const result = deptSections.map(row => ({
         deptId: row.deptId,
@@ -458,13 +695,34 @@ export const getReportData = async () => {
         section_name: row.section_name,
         section_code: row.section_code,
         category: row.category,
-        totalRequired: row.section_code ? (reqMap.get((row.section_code || "").toUpperCase().trim()) || 0) : 0,
-        totalPresent: row.sectionId ? getNum(availMap.get(row.sectionId), "totalPresent") : 0,
-        totalAssigned: row.sectionId ? (actualMap.get(row.sectionId) || 0) : 0,
-        totalOtHrs: row.sectionId ? getNum(availMap.get(row.sectionId), "totalOtHrs") : 0,
+        // Requirement = same FN logic as Daily Manpower Trend graph.
+        totalRequired: row.sectionId
+            ? (reqMaps.bySection.get(Number(row.sectionId)) || 0)
+            : 0,
+        departmentTotalRequired: row.deptId
+            ? (reqMaps.byDepartment.get(Number(row.deptId)) || 0)
+            : 0,
+        globalTotalRequired: reqMaps.total,
+        // Actual M/P = graph-aligned PRESENT attendance for yesterday.
+        totalPresent: row.sectionId
+            ? getNum(attendanceMap.get(Number(row.sectionId)), "totalPresent")
+            : 0,
+        // Available M/P = exact Dashboard Total Manpower logic for this Dept + Section.
+        totalAssigned: row.sectionId
+            ? (activeMaps.bySection.get(Number(row.sectionId)) || 0)
+            : 0,
+        // Keep exact department/global Dashboard totals so subtotal and GRAND TOTAL
+        // do not depend on summing section rows (which can miss null sectionId users).
+        departmentTotalAssigned: row.deptId
+            ? (activeMaps.byDepartment.get(Number(row.deptId)) || 0)
+            : 0,
+        globalTotalAssigned: activeMaps.total,
+        totalOtHrs: row.sectionId
+            ? getNum(attendanceMap.get(Number(row.sectionId)), "totalOtHrs")
+            : 0,
     }));
 
-    console.log(`[getReportData] merged rows: ${result.length}`);
+    console.log(`[getReportData] report date ${reportDateStr}, merged rows: ${result.length}, active manpower: ${activeMaps.total}`);
     return result;
 };
 
@@ -526,13 +784,13 @@ async function _buildManpowerBuffer() {
             });
         };
 
-        const now = new Date();
-        const currentDate = now.toLocaleDateString("en-GB").replace(/\//g, "-");
-        const monthHeader = now.toLocaleString("default", { month: "short", year: "numeric" });
+        const reportDate = getIndiaYesterday();
+
+        // The displayed date and all report data point to yesterday.
+        const reportDateLabel = formatDisplayDate(reportDate);
+        const monthHeader = reportDate.toLocaleString("default", { month: "short", year: "numeric" });
 
         // Calculate milestone date based on yesterday (reportDate)
-        const reportDate = new Date(now);
-        reportDate.setDate(reportDate.getDate() - 1);
         const reportDay = reportDate.getDate();
         const milestoneDateObj = new Date(reportDate);
         if (reportDay <= 15) {
@@ -550,7 +808,7 @@ async function _buildManpowerBuffer() {
         ws.getCell("A1").value = monthHeader;
         ws.getCell("E1").value = "";
         ws.getCell("F1").value = milestoneDate;
-        ws.getCell("G1").value = currentDate;
+        ws.getCell("G1").value = reportDateLabel;
 
         ["A1", "E1", "F1", "G1"].forEach(ref =>
             styleCell(ws.getCell(ref), {
@@ -756,12 +1014,22 @@ async function _buildManpowerBuffer() {
 
                 writeSubRow("Direct", dReq, dAvail, dAct, dGap, dOT);
                 writeSubRow("Indirect", iReq, iAvail, iAct, iGap, iOT);
+                // Department Total Available M/P must match Dashboard when that department is selected.
+                // Do not derive it by adding section rows because Dashboard section hierarchy can include
+                // users whose users.sectionId is null and because section membership can come from sections.users.
+                const exactDepartmentRequired = Number(
+                    sections[0]?.departmentTotalRequired ?? (dReq + iReq)
+                ) || 0;
+                const exactDepartmentAvailable = Number(
+                    sections[0]?.departmentTotalAssigned ?? (dAvail + iAvail)
+                ) || 0;
+
                 writeSubRow(
                     "Total",
-                    dReq + iReq,
-                    dAvail + iAvail,
+                    exactDepartmentRequired,
+                    exactDepartmentAvailable,
                     dAct + iAct,
-                    dGap + iGap,
+                    (dAct + iAct) - exactDepartmentRequired,
                     parseFloat((dOT + iOT).toFixed(2))
                 );
 
@@ -790,6 +1058,19 @@ async function _buildManpowerBuffer() {
                 makeDeptCell(ws.getCell(`A${startRow}`), dept.name);
                 makeDeptCell(ws.getCell(`B${startRow}`), dept.code);
             }
+        }
+
+        // GRAND TOTAL Available M/P must be the exact unfiltered Dashboard Total Manpower
+        // for yesterday, not the arithmetic sum of section rows.
+        if (data.length > 0) {
+            if (data[0].globalTotalRequired !== undefined) {
+                gReq = Number(data[0].globalTotalRequired) || 0;
+            }
+            if (data[0].globalTotalAssigned !== undefined) {
+                gAvail = Number(data[0].globalTotalAssigned) || 0;
+            }
+            // Gap is Actual M/P - Total Required.
+            gGap = gAct - gReq;
         }
 
         const gt = ws.getRow(rowIdx);
@@ -844,14 +1125,17 @@ async function _buildManagementBuffer() {
 
     try {
         const dbPool = await poolPromise;
-        const today = new Date();
-        const todayStr = today.toISOString().slice(0, 10);
-        
-        const reportDate = new Date(today);
-        reportDate.setDate(reportDate.getDate() - 1); // Yesterday is the report date
-        const monthName = MONTH_NAMES[reportDate.getMonth()];
+        const reportDate = getIndiaYesterday(); // All management report data is yesterday in Asia/Kolkata
+
+        const reportDateStr = formatDateKey(reportDate);
+        const monthNumber = reportDate.getMonth() + 1;
         const yearVal = reportDate.getFullYear();
         const reportDay = reportDate.getDate();
+
+        // Detailed line requirement also follows yesterday's FN period.
+        const requirementMonth = monthNumber;
+        const requirementYear = yearVal;
+        const requirementDay = reportDay;
 
         const secRows = (await dbPool.request().query(`
             SELECT
@@ -889,76 +1173,30 @@ async function _buildManagementBuffer() {
             linesBySection.get(l.sectionId).push(l);
         });
 
-        const reqMap = await fetchRequirements(dbPool, monthName, yearVal, reportDay);
-        const lineReqResult = await fetchLineRequirements(dbPool, reportDate.getMonth() + 1, yearVal, reportDay);
+        const reqMaps = await fetchRequirements(dbPool, monthNumber, yearVal, reportDay);
+
+        // Detailed Attendance Report line requirement comes from line_requirements.
+        // Use yesterday's month/year/day for selecting fn01 or fn02.
+        const lineReqResult = await fetchLineRequirements(
+            dbPool,
+            requirementMonth,
+            requirementYear,
+            requirementDay
+        );
         const lineReqMap = lineReqResult.byLine;
         const lineReqSectionMap = lineReqResult.bySection;
 
-        const handSecRows = (await dbPool.request().query(`
-            WITH latest_uhs AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        uhs.*,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY UPPER(LTRIM(RTRIM(uhs.employeeid)))
-                            ORDER BY uhs.id DESC
-                        ) AS rn
-                    FROM user_hierarchy_snapshots uhs
-                    WHERE uhs.employeeid IS NOT NULL
-                      AND LTRIM(RTRIM(uhs.employeeid)) <> ''
-                ) x
-                WHERE x.rn = 1
-            )
-            SELECT
-                s.id AS sectionId,
-                COUNT(DISTINCT latest_uhs.employeeid) AS cnt
-            FROM latest_uhs
-            INNER JOIN sections s
-                ON  UPPER(LTRIM(RTRIM(s.uniCode))) = UPPER(LTRIM(RTRIM(latest_uhs.section_unicode)))
-                AND s.isActive = 1
-            WHERE latest_uhs.section_unicode IS NOT NULL
-              AND LTRIM(RTRIM(latest_uhs.section_unicode)) <> ''
-            GROUP BY s.id
-        `)).recordset || [];
+        // Available / handover manpower now uses the same active-user logic as the
+        // Daily Manpower Trend graph. No snapshot hierarchy verification is used.
+        const activeMaps = await fetchActiveManpowerMaps(dbPool, reportDateStr);
+        const handSecMap = activeMaps.bySection;
+        const handLineMap = activeMaps.byLine;
+        const handDeptMap = activeMaps.byDepartment;
 
-        const handSecMap = new Map();
-        handSecRows.forEach(r => handSecMap.set(r.sectionId, Number(r.cnt) || 0));
-
-        const handLineRows = (await dbPool.request().query(`
-            WITH latest_uhs AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        uhs.*,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY UPPER(LTRIM(RTRIM(uhs.employeeid)))
-                            ORDER BY uhs.id DESC
-                        ) AS rn
-                    FROM user_hierarchy_snapshots uhs
-                    WHERE uhs.employeeid IS NOT NULL
-                      AND LTRIM(RTRIM(uhs.employeeid)) <> ''
-                ) x
-                WHERE x.rn = 1
-            )
-            SELECT
-                l.id AS lineId,
-                COUNT(DISTINCT latest_uhs.employeeid) AS cnt
-            FROM latest_uhs
-            INNER JOIN [lines] l
-                ON  UPPER(LTRIM(RTRIM(l.uniCode))) = UPPER(LTRIM(RTRIM(latest_uhs.line_unicode)))
-                AND l.isActive = 1
-            WHERE latest_uhs.line_unicode IS NOT NULL
-              AND LTRIM(RTRIM(latest_uhs.line_unicode)) <> ''
-            GROUP BY l.id
-        `)).recordset || [];
-
-        const handLineMap = new Map();
-        handLineRows.forEach(r => handLineMap.set(r.lineId, Number(r.cnt) || 0));
-
-        const attSecMap = await fetchShiftAttendanceBySection(dbPool, todayStr);
-        const attLineMap = await fetchShiftAttendanceByLine(dbPool, todayStr);
-        const attDeptMap = await fetchShiftAttendanceByDepartment(dbPool, todayStr);
+        // Attendance uses the exact graph relationship: attendance_logs.userId -> users.id.
+        const attSecMap = await fetchShiftAttendanceBySection(dbPool, reportDateStr);
+        const attLineMap = await fetchShiftAttendanceByLine(dbPool, reportDateStr);
+        const attDeptMap = await fetchShiftAttendanceByDepartment(dbPool, reportDateStr);
 
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet("Management Daily");
@@ -1096,12 +1334,11 @@ async function _buildManagementBuffer() {
             let dOT = 0;
             let dHrs = 0;
 
-            sections.forEach(s => {
-                const sc = (s.section_code || "").toUpperCase().trim();
+            // Exact Dashboard requirement when this department is selected.
+            dReq = reqMaps.byDepartment.get(Number(deptId)) || 0;
 
-                dReq += reqMap.get(sc) || 0;
-                dHand += handSecMap.get(s.sectionId) || 0;
-            });
+            // Department available/handed-over manpower = active users on report date.
+            dHand = handDeptMap.get(Number(deptId)) || 0;
 
             // Department-wise attendance/OT is calculated from all employees in users.departmentId.
             // OT Mandays = SUM(attendance_logs.otHrs) / 8.
@@ -1255,7 +1492,7 @@ async function _buildManagementBuffer() {
                 // Detailed Attendance Report requirement must come from line_requirements only.
                 // Do not use requirements table here, even if the section has a single line or no active line.
                 const secReq = lineReqSectionMap.get(Number(sec.sectionId)) || 0;
-                const secHand = handSecMap.get(sec.sectionId) || 0;
+                const secHand = handSecMap.get(Number(sec.sectionId)) || 0;
                 const secAct = getNum(att, "totalPresent");
                 const secOT = getNum(att, "totalOtHrs"); // OT Mandays = section employees OT sum / 8
                 const secHrs = getNum(att, "totalHrsWorked");
@@ -1389,7 +1626,7 @@ async function _buildManagementBuffer() {
                     secLines.forEach(ln => {
                         const latt = attLineMap.get(ln.lineId) || {};
                         const lReq = lineReqMap.get(Number(ln.lineId)) || 0;
-                        const lHand = handLineMap.get(ln.lineId) || 0;
+                        const lHand = handLineMap.get(Number(ln.lineId)) || 0;
                         const lGen = getNum(latt, "shiftGeneral");
                         const lA = getNum(latt, "shiftA");
                         const lB = getNum(latt, "shiftB");
@@ -1556,7 +1793,8 @@ export const generateAndSend = async (emails) => {
             return;
         }
 
-        const dt = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
+        const reportDate = getIndiaYesterday();
+        const dt = formatDisplayDate(reportDate);
 
         await transporter.sendMail({
             from: `"Manpower System" <${process.env.SMTP_USERNAME}>`,
@@ -1590,7 +1828,8 @@ export const generateAndSendManagementDaily = async (emails) => {
             return;
         }
 
-        const dt = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
+        const reportDate = getIndiaYesterday();
+        const dt = formatDisplayDate(reportDate);
 
         await transporter.sendMail({
             from: `"Management System" <${process.env.SMTP_USERNAME}>`,
@@ -1617,7 +1856,8 @@ export const generateAndSendManagementDaily = async (emails) => {
 // =================================================
 export async function sendBothReports(emails) {
     try {
-        const dt = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
+        const reportDate = getIndiaYesterday();
+        const dt = formatDisplayDate(reportDate);
 
         console.log("[sendBothReports] Building both buffers...");
 

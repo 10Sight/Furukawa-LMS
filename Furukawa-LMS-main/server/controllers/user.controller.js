@@ -601,8 +601,11 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   let attendanceParams = [];
 
   if (dateFrom || dateTo || (date && date !== "all") || attendanceShift) {
-    let start = dateFrom || date || dateTo;
-    let end = dateTo || date || dateFrom;
+    // dateFrom/dateTo (explicit range picker) must win over the unrelated `date` quick-filter,
+    // which the frontend always sends defaulted to today regardless of which picker is in use.
+    // Otherwise setting only dateFrom silently widens `end` to today instead of to dateFrom.
+    let start = dateFrom || dateTo || date;
+    let end = dateTo || dateFrom || date;
 
     // Optimization: If filtering for 'PRESENT', push the filter into the subquery
     const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";

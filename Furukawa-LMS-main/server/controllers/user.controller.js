@@ -718,6 +718,11 @@ export const getAllUsers = asyncHandler(async (req, res) => {
       !c.includes("al.presentDaysCount") &&
       !c.includes("(al.userId IS NULL")
     );
+    // Scope the stat cards to employees only, matching the Headcount Report's population,
+    // without restricting the underlying user list/table (which still shows all roles).
+    if (req.query.isEmployee !== "true") {
+      countsWhereClauses.push("u.isEmployee = 1");
+    }
     const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
     const [countsData] = await executeQuery(`

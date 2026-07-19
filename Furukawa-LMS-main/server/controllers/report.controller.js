@@ -293,11 +293,19 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentAbove3Months,
             SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) as totalAbsent,
             COUNT(*) as totalUploaded
-        FROM attendance_logs al
+        FROM (
+            -- Collapse to one row per user per date first: a user with more than one
+            -- attendance_logs row for the same day (duplicate punches, corrections,
+            -- multi-shift entries) must not be counted more than once. Matches the
+            -- MAX(status)-per-userId approach getAllUsers already uses for this reason.
+            SELECT userId, [date], MAX(status) AS status
+            FROM attendance_logs
+            WHERE [date] >= ? AND [date] <= ?
+            GROUP BY userId, [date]
+        ) al
         INNER JOIN users u ON u.id = al.userId
         ${getDesignationShutterLeftJoinSql('u', 'ds')}
         WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
-          AND al.[date] >= ? AND al.[date] <= ?
         GROUP BY al.[date]
     `;
     const [netHeadcountData] = await executeQuery(netHeadcountSql, [start, end]);
@@ -402,16 +410,21 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
                 SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' THEN 1 ELSE 0 END) AS presentCount,
                 SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' THEN 1 ELSE 0 END) AS presentAbove3Months,
                 SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) IN ('ABSENT', 'A') THEN 1 ELSE 0 END) AS absentCount
-            FROM attendance_logs al
+            FROM (
+                -- Collapse to one row per user per date first, same reasoning as netHeadcountSql above.
+                SELECT userId, [date], MAX(status) AS status
+                FROM attendance_logs
+                WHERE [date] >= ? AND [date] <= ?
+                GROUP BY userId, [date]
+            ) al
             INNER JOIN users u ON u.id = al.userId
             WHERE u.sectionId IN (${placeholders})
               AND u.[isEmployee] = 1
               ${getEligibleUserSql('u')}
               AND ${notYetLeftCondition}
-              AND al.[date] >= ? AND al.[date] <= ?
             GROUP BY al.[date]
         `;
-        const [clubDailyData] = await executeQuery(clubDailySql, [...sectionIds, start, end]);
+        const [clubDailyData] = await executeQuery(clubDailySql, [start, end, ...sectionIds]);
 
         const clubPresentMap = {};
         clubDailyData.forEach(row => {

@@ -723,18 +723,32 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     if (req.query.isEmployee !== "true") {
       countsWhereClauses.push("u.isEmployee = 1");
     }
+    // Match Report's eligibility definition (getEligibleUserSql): a real empId is required.
+    countsWhereClauses.push("u.empId IS NOT NULL AND u.empId != ''");
     const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
+    // Date-aware "not yet left" check, mirroring Report's netHeadcountSql: a user who has
+    // since left should still count as present/absent on dates before their leavingDate,
+    // rather than being blanket-excluded from every date just because they're LEFT today.
+    // Built as a validated literal (not a `?` param) because the SELECT list's CASE
+    // expressions are textually before attendanceJoinSQL/countsWhereSQL in the query, and
+    // the existing [...attendanceParams, ...params] ordering assumes no `?` precedes them.
+    const rawRefDate = dateTo || date || dateFrom;
+    const countsRefDate = /^\d{4}-\d{2}-\d{2}$/.test(rawRefDate || "")
+      ? rawRefDate
+      : new Date().toISOString().split('T')[0];
+    const notLeftYetSQL = `(u.status IS NULL OR u.status != 'LEFT' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > '${countsRefDate}')`;
+
     const [countsData] = await executeQuery(`
-      SELECT 
-        SUM(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as presentCount,
-        SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) as absentCount,
+      SELECT
+        SUM(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as presentCount,
+        SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as absentCount,
         SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
-        AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
-        AVG(CASE WHEN al.logStatus = 'Present' AND (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND (u.status IS NULL OR u.status != 'LEFT') THEN 0 ELSE NULL END) as overallEfficiency,
-        AVG(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
-      FROM users u 
-      ${getHierarchyJoinSQL} 
+        AVG(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
+        AVG(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND ${notLeftYetSQL} THEN 0 ELSE NULL END) as overallEfficiency,
+        AVG(CASE WHEN ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
+      FROM users u
+      ${getHierarchyJoinSQL}
       ${attendanceJoinSQL}
       ${countsWhereSQL}
     `, [...attendanceParams, ...params]); // We use the same params as the filters built so far

@@ -280,14 +280,18 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // subquery inside a SUM()'s argument, so the shutter check uses a LEFT JOIN instead of
     // the NOT EXISTS subquery used elsewhere.
     const eligibleEmployeeCondition = getEligibleUserConditionViaJoin('u', 'ds');
+    // Date-aware "not yet left" check: a user separated mid-month should still count as
+    // present on the days before their leavingDate, matching allEligibleUsers' JS filter
+    // below rather than blanket-excluding every date for anyone currently marked LEFT.
+    const notYetLeftCondition = `(LOWER(ISNULL(u.status, '')) <> 'left' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > al.[date])`;
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} THEN 1 ELSE 0 END) AS totalPresentEmployees,
+            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentEmployees,
             SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isTemporary] = 1 THEN 1 ELSE 0 END) AS totalPresentDojo,
             SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isTemporary] = 1 THEN 1 ELSE 0 END) AS totalAbsentDojo,
-            SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} THEN 1 ELSE 0 END) AS totalPresentAbove3Months,
-            SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} THEN 1 ELSE 0 END) as totalAbsent,
+            SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentAbove3Months,
+            SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) as totalAbsent,
             COUNT(*) as totalUploaded
         FROM attendance_logs al
         INNER JOIN users u ON u.id = al.userId
@@ -403,6 +407,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             WHERE u.sectionId IN (${placeholders})
               AND u.[isEmployee] = 1
               ${getEligibleUserSql('u')}
+              AND ${notYetLeftCondition}
               AND al.[date] >= ? AND al.[date] <= ?
             GROUP BY al.[date]
         `;

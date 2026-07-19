@@ -6,7 +6,7 @@ import HeadcountReport from '../models/headcountReport.model.js';
 import UserHierarchySnapshot from '../models/userHierarchySnapshot.model.js';
 import Mail from '../models/mail.model.js';
 import logAudit from '../utils/auditLogger.js';
-import { getEligibleUserSql, getEligibleUserCondition } from '../utils/userEligibility.js';
+import { getEligibleUserSql, getDesignationShutterLeftJoinSql, getEligibleUserConditionViaJoin } from '../utils/userEligibility.js';
 
 /**
  * Controller to handle manual Excel report exports for configured sheets.
@@ -276,8 +276,10 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // (totalPresentDojo/totalAbsentDojo) in one pass. The strict eligibility filter
     // (non-deleted, non-temporary, non-shuttered-designation) is therefore applied inline to
     // the employee-only CASE branches instead of the WHERE clause, so it doesn't zero out the
-    // Dojo branches which deliberately target isTemporary = 1 rows.
-    const eligibleEmployeeCondition = getEligibleUserCondition('u');
+    // Dojo branches which deliberately target isTemporary = 1 rows. SQL Server disallows a
+    // subquery inside a SUM()'s argument, so the shutter check uses a LEFT JOIN instead of
+    // the NOT EXISTS subquery used elsewhere.
+    const eligibleEmployeeCondition = getEligibleUserConditionViaJoin('u', 'ds');
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
@@ -289,6 +291,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             COUNT(*) as totalUploaded
         FROM attendance_logs al
         INNER JOIN users u ON u.id = al.userId
+        ${getDesignationShutterLeftJoinSql('u', 'ds')}
         WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
           AND al.[date] >= ? AND al.[date] <= ?
         GROUP BY al.[date]

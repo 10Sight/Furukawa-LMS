@@ -2,6 +2,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
+import { getDesignationShutterExclusionSql, getEligibleUserSql } from "../utils/userEligibility.js";
 
 const parseMultiParam = (value) => {
     if (!value) return [];
@@ -18,24 +19,6 @@ const parseMultiParam = (value) => {
         });
 };
 
-
-const getDesignationShutterExclusionSql = (alias = "u") => `
-    AND NOT EXISTS (
-        SELECT 1
-        FROM designation_shutters ds
-        WHERE ds.designation IS NOT NULL
-          AND ds.designation = ${alias}.designation
-    )
-`;
-
-
-const getEligibleUserSql = (alias = "u") => `
-    AND ISNULL(${alias}.isDeleted, 0) = 0
-    AND ISNULL(${alias}.isTemporary, 0) = 0
-    AND ${alias}.empId IS NOT NULL
-    AND ${alias}.empId != ''
-    ${getDesignationShutterExclusionSql(alias)}
-`;
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
     const {

@@ -72,6 +72,31 @@ class Requirement {
                 BEGIN
                     ALTER TABLE requirements ADD prodPlanFN02 FLOAT DEFAULT 0;
                 END
+                -- Ensure monthNumber exists if table was created by an older schema version
+                IF COL_LENGTH('requirements', 'monthNumber') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD monthNumber INT;
+                END
+                -- Ensure monthName exists if table was created by an older schema version
+                IF COL_LENGTH('requirements', 'monthName') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD monthName VARCHAR(15);
+                END
+                -- Ensure year exists if table was created by an older schema version
+                IF COL_LENGTH('requirements', 'year') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD year INT;
+                END
+                -- Ensure salesPlan exists if table was created by an older schema version
+                IF COL_LENGTH('requirements', 'salesPlan') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD salesPlan FLOAT DEFAULT 0;
+                END
+                -- Ensure prodPlan exists if table was created by an older schema version
+                IF COL_LENGTH('requirements', 'prodPlan') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD prodPlan FLOAT DEFAULT 0;
+                END
             END
         `;
         try {

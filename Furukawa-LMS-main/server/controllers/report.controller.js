@@ -6,6 +6,7 @@ import HeadcountReport from '../models/headcountReport.model.js';
 import UserHierarchySnapshot from '../models/userHierarchySnapshot.model.js';
 import Mail from '../models/mail.model.js';
 import logAudit from '../utils/auditLogger.js';
+import { getEligibleUserSql, getEligibleUserCondition } from '../utils/userEligibility.js';
 
 /**
  * Controller to handle manual Excel report exports for configured sheets.
@@ -261,21 +262,30 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     const [reportingClubs] = await executeQuery("SELECT id, name, sectionIds FROM report_clubs WHERE showInReport = 1");
 
     // Fetch all eligible users to calculate daily active counts
+    // (isEmployee, non-temporary, non-deleted, non-shuttered-designation)
     const [allEligibleUsers] = await executeQuery(`
-        SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary 
-        FROM users 
-        WHERE (isEmployee = 1 OR isTemporary = 1)
+        SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary
+        FROM users u
+        WHERE u.isEmployee = 1
+        ${getEligibleUserSql('u')}
     `);
 
     // 2. Global Attendance Stats
+    // NOTE: this query intentionally keeps a broad WHERE (isEmployee OR isTemporary) because
+    // it computes both the strict employee headcount AND the separate Dojo/temp-staff stats
+    // (totalPresentDojo/totalAbsentDojo) in one pass. The strict eligibility filter
+    // (non-deleted, non-temporary, non-shuttered-designation) is therefore applied inline to
+    // the employee-only CASE branches instead of the WHERE clause, so it doesn't zero out the
+    // Dojo branches which deliberately target isTemporary = 1 rows.
+    const eligibleEmployeeCondition = getEligibleUserCondition('u');
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' THEN 1 ELSE 0 END) AS totalPresentEmployees,
+            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} THEN 1 ELSE 0 END) AS totalPresentEmployees,
             SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isTemporary] = 1 THEN 1 ELSE 0 END) AS totalPresentDojo,
             SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isTemporary] = 1 THEN 1 ELSE 0 END) AS totalAbsentDojo,
-            SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' THEN 1 ELSE 0 END) AS totalPresentAbove3Months,
-            SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') THEN 1 ELSE 0 END) as totalAbsent,
+            SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} THEN 1 ELSE 0 END) AS totalPresentAbove3Months,
+            SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} THEN 1 ELSE 0 END) as totalAbsent,
             COUNT(*) as totalUploaded
         FROM attendance_logs al
         INNER JOIN users u ON u.id = al.userId
@@ -388,7 +398,8 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             FROM attendance_logs al
             INNER JOIN users u ON u.id = al.userId
             WHERE u.sectionId IN (${placeholders})
-              AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+              AND u.[isEmployee] = 1
+              ${getEligibleUserSql('u')}
               AND al.[date] >= ? AND al.[date] <= ?
             GROUP BY al.[date]
         `;

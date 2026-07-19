@@ -308,21 +308,21 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     `;
     const [netHeadcountData] = await executeQuery(netHeadcountSql, [start, end]);
 
-    // "Present in Training Cell" / Dojo attrition are not day-by-day attendance figures —
-    // they're a snapshot of users.status right now (defaults to 'PRESENT', becomes e.g.
-    // 'ON_LEAVE'/'SUSPENDED' or 'LEFT'), applied uniformly to every date in the synced month.
-    const [dojoStatusRows] = await executeQuery(`
-        SELECT
-            SUM(CASE WHEN UPPER(ISNULL(u.status, 'PRESENT')) = 'PRESENT' THEN 1 ELSE 0 END) AS dojoPresentCount,
-            SUM(CASE WHEN UPPER(ISNULL(u.status, 'PRESENT')) NOT IN ('PRESENT', 'LEFT') THEN 1 ELSE 0 END) AS dojoAbsentCount
+    // "Present in Training Cell" needs date-aware historical membership, not today's isTemporary
+    // flag: a user who was isTemporary = 1 on the 16th and got promoted (isTemporary -> 0) on the
+    // 17th must still show as a training-cell member on the 16th, and only drop out from the 17th
+    // onward. isTemporary itself has no history, so — mirroring the identity rule already used by
+    // getDojoHandoverComparison/getDojoHiringTrend in dashboard.controller.js — we fetch anyone
+    // who is currently temporary OR was ever a Dojo hire (expectedHandover IS NOT NULL), and use
+    // updatedAt as the handover-date proxy for those who've since been promoted out.
+    const [allDojoUsers] = await executeQuery(`
+        SELECT u.id, u.joiningDate, u.leavingDate, u.updatedAt, u.status, u.isTemporary
         FROM users u
         ${getDesignationShutterLeftJoinSql('u', 'ds')}
-        WHERE u.[isTemporary] = 1
+        WHERE (u.[expectedHandover] IS NOT NULL OR u.[isTemporary] = 1)
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
           AND ds.[designation] IS NULL
     `);
-    const dojoPresentCount = dojoStatusRows[0]?.dojoPresentCount || 0;
-    const dojoAbsentCount = dojoStatusRows[0]?.dojoAbsentCount || 0;
 
     const dailyTotalsMap = {};
     const presentDataMap = {};
@@ -345,14 +345,34 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             return true;
         }).length;
 
+        const dojoMembersOnDate = allDojoUsers.filter(u => {
+            const join = u.joiningDate ? new Date(u.joiningDate) : null;
+            if (join && join > dDate) return false;
+            if (u.status?.toLowerCase() === 'left') {
+                const left = new Date(u.leavingDate || u.updatedAt);
+                if (left <= dDate) return false;
+            }
+            // Already promoted out of the Dojo before this date (isTemporary is now 0);
+            // updatedAt is used as the handover-date proxy, per the note above.
+            if (!u.isTemporary) {
+                const promoted = u.updatedAt ? new Date(u.updatedAt) : null;
+                if (promoted && promoted <= dDate) return false;
+            }
+            return true;
+        });
+        const dojoPresentOnDate = dojoMembersOnDate.filter(
+            u => (u.status || 'PRESENT').toUpperCase() === 'PRESENT'
+        ).length;
+        const dojoAbsentOnDate = dojoMembersOnDate.length - dojoPresentOnDate;
+
         const present = row.totalPresentEmployees || 0;
         const absent = Math.max(0, activeCount - present);
         const totalPA = activeCount;
 
         dailyTotalsMap[dKey] = totalPA;
         tableData[`Headcount available_${dKey}`] = present;
-        tableData[`Present in Training Cell_${dKey}`] = dojoPresentCount;
-        tableData[`DojoAbsent_${dKey}`] = dojoAbsentCount;
+        tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
+        tableData[`DojoAbsent_${dKey}`] = dojoAbsentOnDate;
         tableData[`Net Available Headcount Total_${dKey}`] = String(present || 0);
         tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalPA;
         tableData[`Net Available Headcount Above 3 Months_${dKey}`] = String(row.totalPresentAbove3Months || 0);

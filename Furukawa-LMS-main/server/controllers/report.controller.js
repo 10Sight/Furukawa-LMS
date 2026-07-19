@@ -271,29 +271,23 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     `);
 
     // 2. Global Attendance Stats
-    // NOTE: this query intentionally keeps a broad WHERE (isEmployee OR isTemporary) because
-    // it computes both the strict employee headcount AND the separate Dojo/temp-staff stats
-    // (totalPresentDojo/totalAbsentDojo) in one pass. The strict eligibility filter
-    // (non-deleted, non-temporary, non-shuttered-designation) is therefore applied inline to
-    // the employee-only CASE branches instead of the WHERE clause, so it doesn't zero out the
-    // Dojo branches which deliberately target isTemporary = 1 rows. SQL Server disallows a
-    // subquery inside a SUM()'s argument, so the shutter check uses a LEFT JOIN instead of
-    // the NOT EXISTS subquery used elsewhere.
+    // NOTE: this query intentionally keeps a broad WHERE (isEmployee OR isTemporary) even though
+    // only the employee-only columns are selected below, because totalUploaded (COUNT(*)) is a
+    // general attendance-data-volume figure (including Dojo/temp rows) used later as the
+    // attrition-percentage denominator fallback. The strict eligibility filter (non-deleted,
+    // non-temporary, non-shuttered-designation) is applied inline to the employee-only CASE
+    // branches rather than the WHERE clause so it doesn't affect totalUploaded. SQL Server
+    // disallows a subquery inside a SUM()'s argument, so the shutter check uses a LEFT JOIN
+    // instead of the NOT EXISTS subquery used elsewhere.
     const eligibleEmployeeCondition = getEligibleUserConditionViaJoin('u', 'ds');
     // Date-aware "not yet left" check: a user separated mid-month should still count as
     // present on the days before their leavingDate, matching allEligibleUsers' JS filter
     // below rather than blanket-excluding every date for anyone currently marked LEFT.
     const notYetLeftCondition = `(LOWER(ISNULL(u.status, '')) <> 'left' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > al.[date])`;
-    // Dojo/temp eligibility: unlike eligibleEmployeeCondition this doesn't require isTemporary = 0
-    // or a non-empty empId (temp/dojo trainees may not have one yet) — just non-deleted and a
-    // non-shuttered designation, reusing the same ds LEFT JOIN as the employee branch.
-    const eligibleDojoCondition = `(u.[isDeleted] = 0 OR u.[isDeleted] IS NULL) AND ds.[designation] IS NULL`;
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
             SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentEmployees,
-            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isTemporary] = 1 AND ${eligibleDojoCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentDojo,
-            SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isTemporary] = 1 AND ${eligibleDojoCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalAbsentDojo,
             SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentAbove3Months,
             SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) as totalAbsent,
             COUNT(*) as totalUploaded
@@ -313,6 +307,22 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         GROUP BY al.[date]
     `;
     const [netHeadcountData] = await executeQuery(netHeadcountSql, [start, end]);
+
+    // "Present in Training Cell" / Dojo attrition are not day-by-day attendance figures —
+    // they're a snapshot of users.status right now (defaults to 'PRESENT', becomes e.g.
+    // 'ON_LEAVE'/'SUSPENDED' or 'LEFT'), applied uniformly to every date in the synced month.
+    const [dojoStatusRows] = await executeQuery(`
+        SELECT
+            SUM(CASE WHEN UPPER(ISNULL(u.status, 'PRESENT')) = 'PRESENT' THEN 1 ELSE 0 END) AS dojoPresentCount,
+            SUM(CASE WHEN UPPER(ISNULL(u.status, 'PRESENT')) NOT IN ('PRESENT', 'LEFT') THEN 1 ELSE 0 END) AS dojoAbsentCount
+        FROM users u
+        ${getDesignationShutterLeftJoinSql('u', 'ds')}
+        WHERE u.[isTemporary] = 1
+          AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
+          AND ds.[designation] IS NULL
+    `);
+    const dojoPresentCount = dojoStatusRows[0]?.dojoPresentCount || 0;
+    const dojoAbsentCount = dojoStatusRows[0]?.dojoAbsentCount || 0;
 
     const dailyTotalsMap = {};
     const presentDataMap = {};
@@ -341,8 +351,8 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
         dailyTotalsMap[dKey] = totalPA;
         tableData[`Headcount available_${dKey}`] = present;
-        tableData[`Present in Training Cell_${dKey}`] = row.totalPresentDojo || 0;
-        tableData[`DojoAbsent_${dKey}`] = row.totalAbsentDojo || 0;
+        tableData[`Present in Training Cell_${dKey}`] = dojoPresentCount;
+        tableData[`DojoAbsent_${dKey}`] = dojoAbsentCount;
         tableData[`Net Available Headcount Total_${dKey}`] = String(present || 0);
         tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalPA;
         tableData[`Net Available Headcount Above 3 Months_${dKey}`] = String(row.totalPresentAbove3Months || 0);

@@ -284,12 +284,16 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // present on the days before their leavingDate, matching allEligibleUsers' JS filter
     // below rather than blanket-excluding every date for anyone currently marked LEFT.
     const notYetLeftCondition = `(LOWER(ISNULL(u.status, '')) <> 'left' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > al.[date])`;
+    // Dojo/temp eligibility: unlike eligibleEmployeeCondition this doesn't require isTemporary = 0
+    // or a non-empty empId (temp/dojo trainees may not have one yet) — just non-deleted and a
+    // non-shuttered designation, reusing the same ds LEFT JOIN as the employee branch.
+    const eligibleDojoCondition = `(u.[isDeleted] = 0 OR u.[isDeleted] IS NULL) AND ds.[designation] IS NULL`;
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
             SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentEmployees,
-            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isTemporary] = 1 THEN 1 ELSE 0 END) AS totalPresentDojo,
-            SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isTemporary] = 1 THEN 1 ELSE 0 END) AS totalAbsentDojo,
+            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isTemporary] = 1 AND ${eligibleDojoCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentDojo,
+            SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isTemporary] = 1 AND ${eligibleDojoCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalAbsentDojo,
             SUM(CASE WHEN TRY_CONVERT(date, u.joiningDate) <= DATEADD(MONTH, -3, al.[date]) AND UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) AS totalPresentAbove3Months,
             SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} THEN 1 ELSE 0 END) as totalAbsent,
             COUNT(*) as totalUploaded

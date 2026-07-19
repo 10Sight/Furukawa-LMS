@@ -396,17 +396,26 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         tableData[`Attendance_Total_${dKey}`] = "0";
     }
 
-    // Shift-wise attendance
+    // Shift-wise attendance. Filters are kept identical to totalPresentEmployees above
+    // (eligibleEmployeeCondition/notYetLeftCondition) so Available_Total always matches
+    // Net Available Headcount Total exactly. Also deduplicated per (userId, date) for the
+    // same reason as netHeadcountSql/clubDailySql — a duplicate attendance_logs row on the
+    // same date would otherwise inflate the shift count without inflating the employee count.
     const shiftAttendanceSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
             UPPER(ISNULL(al.shift, ISNULL(u.shift, ''))) AS userShift,
             COUNT(*) AS count
-        FROM attendance_logs al
+        FROM (
+            SELECT userId, [date], MAX(status) AS status, MAX(shift) AS shift
+            FROM attendance_logs
+            WHERE [date] >= ? AND [date] <= ?
+            GROUP BY userId, [date]
+        ) al
         INNER JOIN users u ON u.id = al.userId
-        WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+        ${getDesignationShutterLeftJoinSql('u', 'ds')}
+        WHERE u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition}
           AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
-          AND al.[date] >= ? AND al.[date] <= ?
         GROUP BY al.[date], UPPER(ISNULL(al.shift, ISNULL(u.shift, '')))
     `;
     const [shiftAttendanceData] = await executeQuery(shiftAttendanceSql, [start, end]);
@@ -497,13 +506,18 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         }
     }
 
-    // 4. Hiring Actual
+    // 4. Hiring Actual — intentionally includes both regular and temp/Dojo hires (unlike
+    // eligibleEmployeeCondition, which requires isTemporary = 0), so isEmployee/isTemporary
+    // stay as-is; only the isDeleted/shuttered-designation data-quality checks are added.
     const joinSql = `
         SELECT
             CONVERT(VARCHAR, joiningDate, 23) as dateKey,
             COUNT(*) as count
         FROM users u
+        ${getDesignationShutterLeftJoinSql('u', 'ds')}
         WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+          AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
+          AND ds.[designation] IS NULL
           AND joiningDate >= ?
           AND joiningDate <= ?
         GROUP BY CONVERT(VARCHAR, joiningDate, 23)
@@ -576,13 +590,15 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
     // 5b. Handover Plan (expected handover count per day)
     const expectedHandoverSql = `
-        SELECT CONVERT(VARCHAR, expectedHandover, 23) AS dateKey, COUNT(*) AS count
-        FROM users
-        WHERE (isTemporary = 1 OR expectedHandover IS NOT NULL)
-          AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND expectedHandover >= ?
-          AND expectedHandover <= ?
-        GROUP BY CONVERT(VARCHAR, expectedHandover, 23)
+        SELECT CONVERT(VARCHAR, u.expectedHandover, 23) AS dateKey, COUNT(*) AS count
+        FROM users u
+        ${getDesignationShutterLeftJoinSql('u', 'ds')}
+        WHERE (u.[isTemporary] = 1 OR u.[expectedHandover] IS NOT NULL)
+          AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
+          AND ds.[designation] IS NULL
+          AND u.[expectedHandover] >= ?
+          AND u.[expectedHandover] <= ?
+        GROUP BY CONVERT(VARCHAR, u.expectedHandover, 23)
     `;
     const [expectedHandoverData] = await executeQuery(expectedHandoverSql, [start, end]);
 
@@ -793,25 +809,39 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         tableData[`Hiring Plan_${item.dateKey}`] = plan.prodPlan;
     });
 
-    // 8. Shift Manpower
+    // 8. Shift Manpower — same eligibility/dedup treatment as shiftAttendanceSql above, plus a
+    // station-assignment check to distinguish "Assigned" (has a station) from "Available" (just
+    // present). Date-aware via attendance_logs, not a static per-employee snapshot.
     const assignedManpowerSql = `
-        SELECT UPPER(ISNULL(shift, '')) as userShift, COUNT(*) as count 
-        FROM users 
-        WHERE isEmployee = 1 
-        GROUP BY UPPER(ISNULL(shift, ''))
+        SELECT
+            CONVERT(VARCHAR, al.[date], 23) AS dateKey,
+            UPPER(ISNULL(al.shift, ISNULL(u.shift, ''))) AS userShift,
+            COUNT(*) AS count
+        FROM (
+            SELECT userId, [date], MAX(status) AS status, MAX(shift) AS shift
+            FROM attendance_logs
+            WHERE [date] >= ? AND [date] <= ?
+            GROUP BY userId, [date]
+        ) al
+        INNER JOIN users u ON u.id = al.userId
+        ${getDesignationShutterLeftJoinSql('u', 'ds')}
+        WHERE u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition}
+          AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
+          AND (
+              u.stationId IS NOT NULL
+              OR (u.stations IS NOT NULL AND LTRIM(RTRIM(u.stations)) NOT IN ('[]', ''))
+          )
+        GROUP BY al.[date], UPPER(ISNULL(al.shift, ISNULL(u.shift, '')))
     `;
-    const [assignedManpowerData] = await executeQuery(assignedManpowerSql);
+    const [assignedManpowerData] = await executeQuery(assignedManpowerSql, [start, end]);
 
     assignedManpowerData.forEach(row => {
-        const shiftKey = Object.keys(shiftMap).find(k => row.userShift.includes(k));
+        const { dateKey, userShift, count } = row;
+        const shiftKey = Object.keys(shiftMap).find(k => userShift.includes(k));
         if (shiftKey) {
             const shiftName = shiftMap[shiftKey];
-
-            for (let d = 1; d <= totalDays; d++) {
-                const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                tableData[`Assigned_${shiftName}_${dKey}`] = String(row.count || 0);
-                tableData[`Assigned_Total_${dKey}`] = String(Number(tableData[`Assigned_Total_${dKey}`] || 0) + row.count);
-            }
+            tableData[`Assigned_${shiftName}_${dateKey}`] = String(count || 0);
+            tableData[`Assigned_Total_${dateKey}`] = String(Number(tableData[`Assigned_Total_${dateKey}`] || 0) + count);
         }
     });
 

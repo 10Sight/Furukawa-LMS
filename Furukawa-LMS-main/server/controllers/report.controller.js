@@ -599,15 +599,23 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     const nMonth = Number(month) === 12 ? 1 : Number(month) + 1;
     const nextMonthStart = `${nYear}-${String(nMonth).padStart(2, '0')}-01`;
 
+    // WHERE stays broad (isEmployee OR isTemporary) because this raw result set feeds both the
+    // employee "Separated (Cumulative)" metrics below AND dojoDayLeftCount (which specifically
+    // needs isTemporary = 1 rows) further down. isDeleted/shuttered-designation are excluded here
+    // since they're data-quality checks that apply to both populations; the isTemporary = 0
+    // restriction for "Separated (Cumulative)" is instead applied in JS where dayLeftCount /
+    // weeklyLeft / club counts are computed, so it doesn't zero out dojoDayLeftCount.
     const leftSql = `
-        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, 
-               CONVERT(VARCHAR, COALESCE(leavingDate, updatedAt), 23) as dateKey 
-        FROM users u 
+        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary,
+               CONVERT(VARCHAR, COALESCE(leavingDate, updatedAt), 23) as dateKey
+        FROM users u
         WHERE (
-            (leavingDate >= ? AND leavingDate < ?) OR 
+            (leavingDate >= ? AND leavingDate < ?) OR
             (TRIM(LOWER(status)) LIKE 'left%' AND (updatedAt >= ? AND updatedAt < ?))
-        ) 
+        )
         AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+        AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
+        AND (u.[designation] IS NULL OR u.[designation] = '' OR u.[designation] NOT IN (SELECT designation FROM designation_shutters))
     `;
     const [leftUsers] = await executeQuery(leftSql, [start, nextMonthStart, start, nextMonthStart]);
 
@@ -626,7 +634,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const dayLeftCount = leftUsers.filter(l => l.dateKey === dKey).length;
+        const dayLeftCount = leftUsers.filter(l => l.dateKey === dKey && !l.isTemporary).length;
         const dojoDayLeftCount = leftUsers.filter(l => l.dateKey === dKey && l.isTemporary).length;
         cumulativeLeft += dayLeftCount;
 
@@ -650,7 +658,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             const prevD = d - i;
             if (prevD >= 1) {
                 const prevDKey = `${year}-${String(month).padStart(2, '0')}-${String(prevD).padStart(2, '0')}`;
-                weeklyLeft += leftUsers.filter(l => l.dateKey === prevDKey).length;
+                weeklyLeft += leftUsers.filter(l => l.dateKey === prevDKey && !l.isTemporary).length;
             }
         }
 
@@ -674,7 +682,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
                 clubSectionIds = [];
             }
 
-            const clubDayCount = leftUsers.filter(l => l.dateKey === dKey && clubSectionIds.includes(String(l.sectionId))).length;
+            const clubDayCount = leftUsers.filter(l => l.dateKey === dKey && !l.isTemporary && clubSectionIds.includes(String(l.sectionId))).length;
             clubCumulativeLeft[club.id] = (clubCumulativeLeft[club.id] || 0) + clubDayCount;
             tableData[`${club.name} Separated (Cumulative)_${dKey}`] = clubCumulativeLeft[club.id];
         });

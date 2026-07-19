@@ -1763,6 +1763,78 @@ export const generateObservanceStatusEmail = ({
 </html>`;
 };
 
+export const generateSixteenDayMonitoringEligibleEmail = ({ operatorName, employeeCode, departmentName, handoverApprovedAt, portalUrl }) => {
+    const approvedDisplay = handoverApprovedAt
+        ? new Date(handoverApprovedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : "-";
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>16-Day Monitoring Now Eligible</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+    <div style="max-width:600px;margin:30px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);">
+
+        <!-- Header -->
+        <div style="background:#059669;padding:24px 32px;">
+            <div style="font-size:13px;color:#a7f3d0;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
+            <div style="font-size:20px;color:#ffffff;font-weight:700;margin-top:6px;">16-Day Monitoring Now Eligible</div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:28px 32px;">
+            <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear Team,</p>
+            <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
+                The 24-hour waiting period since Handover approval has elapsed for the employee below.
+                Their <strong>16-Day Monitoring Sheet</strong> can now be started for
+                <strong>${departmentName}</strong>.
+            </p>
+
+            <!-- Details Card -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;width:160px;">Employee Name</td>
+                        <td style="padding:7px 0;color:#111827;font-weight:700;font-size:15px;">${operatorName}</td>
+                    </tr>
+                    ${employeeCode ? `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Emp. Code</td>
+                        <td style="padding:7px 0;color:#111827;">${employeeCode}</td>
+                    </tr>` : ''}
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Department</td>
+                        <td style="padding:7px 0;color:#111827;">${departmentName}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Handover Approved On</td>
+                        <td style="padding:7px 0;color:#111827;">${approvedDisplay}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- CTA Button -->
+            <div style="text-align:center;margin:28px 0;">
+                <a href="${portalUrl}"
+                   style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+                    Start 16-Day Monitoring
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
+            <p style="margin:0;color:#94a3b8;font-size:11px;">
+                This is an automated notification from the FME Digital Portal. &nbsp;|&nbsp; ${new Date().toLocaleString()}
+            </p>
+        </div>
+    </div>
+</body>
+</html>`;
+};
+
 export default {
     generateWelcomeEmail,
     generateInstructorWelcomeEmail,
@@ -1779,4 +1851,5 @@ export default {
     generateHandoverApprovalRequestEmail,
     generatePlanUpdationWarningEmail,
     generateObservanceStatusEmail,
+    generateSixteenDayMonitoringEligibleEmail,
 };

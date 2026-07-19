@@ -192,16 +192,17 @@ const SixteenDayMonitoringSheet = ({
         !canEditSubmitted &&
         !authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
 
-    // Locked for the very first attempt until 24h after Handover approval — Admins/Trainers can override.
-    const isEligibilityLocked = !isSheetSaved &&
+    // Not yet 24h past Handover approval for the very first attempt.
+    // The countdown itself is shown to everyone; only the edit/save lock is Admin/Trainer-overridable.
+    const notYetEligible = !isSheetSaved &&
         !isForceNewAttempt &&
-        headerInfo.isEligible === false &&
-        !isAdmin &&
-        !authUser?.isTrainer;
+        headerInfo.isEligible === false;
+    const canOverrideEligibility = isAdmin || !!authUser?.isTrainer;
     const { isExpired: eligibilityExpired, formatted: eligibilityCountdown } = useCountdown(
-        isEligibilityLocked ? headerInfo.eligibleAt : null
+        notYetEligible ? headerInfo.eligibleAt : null
     );
-    const eligibilityStillLocked = isEligibilityLocked && !eligibilityExpired;
+    const eligibilityStillWaiting = notYetEligible && !eligibilityExpired;
+    const eligibilityStillLocked = eligibilityStillWaiting && !canOverrideEligibility;
 
     const isCellLocked = (key, type = 'grid') => {
         if (isLeftUser) return true;
@@ -1039,12 +1040,12 @@ const SixteenDayMonitoringSheet = ({
                     Associate has LEFT: This sheet is locked. No fields can be edited or saved.
                 </div>
             )}
-            {eligibilityStillLocked && (
+            {eligibilityStillWaiting && (
                 <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 print:hidden">
                     <AlertTriangle className="h-4 w-4 shrink-0" />
                     16-Day Monitoring unlocks in {eligibilityCountdown} (Approved in Handover on{" "}
                     {headerInfo.handoverApprovedAt ? new Date(headerInfo.handoverApprovedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : "-"}
-                    ). This sheet is locked until then.
+                    ). {canOverrideEligibility ? "As an Admin/Trainer you can still start it early." : "This sheet is locked until then."}
                 </div>
             )}
             <div className="flex justify-between items-center print:hidden">
@@ -1055,7 +1056,7 @@ const SixteenDayMonitoringSheet = ({
                         </Badge>
                         {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
                         {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Locked — Associate Left</Badge>}
-                        {eligibilityStillLocked && (
+                        {eligibilityStillWaiting && (
                             <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
                                 ⏳ Eligible in {eligibilityCountdown}
                             </Badge>

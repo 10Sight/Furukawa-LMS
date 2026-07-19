@@ -9,7 +9,6 @@ import EmailConfiguration from "../models/emailConfiguration.model.js";
 import sendMail from "../utils/mail.util.js";
 import emailTemplates from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
-import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
@@ -413,57 +412,6 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         );
     }
     // ---------------------
-
-    // Auto-enroll trainee in Skill Upgradation Plan if verifiedBy is approved
-    const isVerified = verifiedBy && 
-                       verifiedBy.includes("Approved") && 
-                       !verifiedBy.includes("Rejected");
-
-    if (isVerified) {
-        try {
-            // 1. Fetch trainee's hierarchy details
-            const [users] = await executeQuery(
-                "SELECT departmentId, sectionId FROM users WHERE id = ?",
-                [sid]
-            );
-            const trainee = users[0];
-
-            if (trainee && trainee.departmentId) {
-                const departmentId = trainee.departmentId;
-                const sectionId = trainee.sectionId || null;
-                const currentYear = new Date().getFullYear();
-
-                // 2. Load existing Skill Upgradation Plan for the current year
-                const plan = await SkillUpgradationPlan.findByHierarchy(departmentId, sectionId, currentYear);
-                let tableData = {};
-                let selectedLines = [];
-
-                if (plan) {
-                    tableData = plan.tableData || {};
-                    selectedLines = plan.selectedLines || [];
-                }
-
-                // 3. Add student entry to tableData if not already initialized
-                const traineeKey = String(sid);
-                if (!tableData[traineeKey]) {
-                    tableData[traineeKey] = { plan: {}, actual: {} };
-
-                    // 4. Save/Upsert the upgradation plan
-                    await SkillUpgradationPlan.upsert({
-                        departmentId,
-                        sectionId,
-                        year: currentYear,
-                        selectedLines,
-                        tableData,
-                        userName: "System (Auto-Enroll)"
-                    });
-                    console.log(`[Auto-Enroll] Operator ${sid} auto-added to Skill Upgradation Plan`);
-                }
-            }
-        } catch (err) {
-            console.error("[Auto-Enroll] Failed to auto-add trainee to Skill Upgradation Plan:", err);
-        }
-    }
 
     // Trigger Email Notification
     if (req.body.triggerEmail === true) {

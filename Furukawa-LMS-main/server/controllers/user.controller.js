@@ -432,6 +432,39 @@ const buildDojoHandoverPassedClause = async (departmentId) => {
   return { sql, params };
 };
 
+// Builds the SQL fragment + params for the `passedTestPaperOnly` filter.
+// mode: 'multiSkilling' (q.isMultiSkilling = 1), 'skillUpgradation' (q.skillUpgradation = true),
+// or 'any' (either flag). Optional `passedDate` restricts the match to a specific completion date,
+// used by Cycle10 where the passed attempt must line up with the sheet row's date.
+const buildPassedTestPaperClause = (req) => {
+  const mode = req.query.passedTestPaperOnly;
+  if (!mode) return null;
+
+  const flagConds = [];
+  if (mode === "multiSkilling" || mode === "any") flagConds.push("q.isMultiSkilling = 1");
+  if (mode === "skillUpgradation" || mode === "any") flagConds.push("COALESCE(q.skillUpgradation, 'false') = 'true'");
+  if (flagConds.length === 0) return null;
+
+  const params = [];
+  let dateClause = "";
+  if (req.query.passedDate) {
+    dateClause = " AND CAST(COALESCE(aq.completedAt, aq.createdAt) AS DATE) = CAST(? AS DATE)";
+    params.push(req.query.passedDate);
+  }
+
+  return {
+    sql: `EXISTS (
+      SELECT 1 FROM attempted_quizzes aq
+      JOIN quizzes q ON aq.quiz = q.id
+      WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+        AND aq.status = 'PASSED'
+        AND (${flagConds.join(" OR ")})
+        ${dateClause}
+    )`,
+    params
+  };
+};
+
 /**
  * Get All Users (Paginated & Filtered)
  */
@@ -519,6 +552,11 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   if (req.query.isTrainer === "true") { whereClauses.push("u.isTrainer = 1"); }
   if (req.query.passedQuizOnly === "true") {
     whereClauses.push("EXISTS (SELECT 1 FROM attempted_quizzes aq WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName) AND aq.status = 'PASSED')");
+  }
+  const passedTestPaperClauseUsers = buildPassedTestPaperClause(req);
+  if (passedTestPaperClauseUsers) {
+    whereClauses.push(passedTestPaperClauseUsers.sql);
+    params.push(...passedTestPaperClauseUsers.params);
   }
 
   if (req.query.ojtApprovedToday === "true") {
@@ -1735,8 +1773,8 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       ) latest_sdm
       WHERE latest_sdm.studentId = u.id
         AND latest_sdm.rn = 1
-        AND latest_sdm.verifiedBy LIKE '%Approved%'
-        AND latest_sdm.verifiedBy NOT LIKE '%Rejected%'
+        AND latest_sdm.approvedBy LIKE '%Approved%'
+        AND latest_sdm.approvedBy NOT LIKE '%Rejected%'
     )`);
   }
   if (req.query.ojtApprovedOnly === "true") {
@@ -1772,6 +1810,11 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       whereClauses.push(`u.designation IN (${designations.map(() => "?").join(",")})`);
       params.push(...designations);
     }
+  }
+  const passedTestPaperClauseStudents = buildPassedTestPaperClause(req);
+  if (passedTestPaperClauseStudents) {
+    whereClauses.push(passedTestPaperClauseStudents.sql);
+    params.push(...passedTestPaperClauseStudents.params);
   }
 
   if (req.query.filterMultiSkillingLevels === "true") {

@@ -260,11 +260,13 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
         const savedRemovedIds = new Set(tableData.__removedUserIds || []);
         const finalRows = [];
+        const addedUserIds = new Set();
 
-        // 1. Auto-populate all assigned students (skip removed ones)
+        // 1. Auto-populate all currently eligible students (skip removed ones)
         students.forEach((student) => {
             const userId = String(student._id || student.id);
             if (savedRemovedIds.has(userId)) return;
+            addedUserIds.add(userId);
             const data = tableData[userId] || {};
             finalRows.push({
                 rowId: userId,
@@ -274,6 +276,27 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 shift: data.shift || "",
                 modelLine: data.modelLine || student.lineName || "",
                 station: data.station || student.subSectionName || "",
+                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "",
+                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "",
+                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "",
+                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "",
+            });
+        });
+
+        // 1b. Preserve rows already saved in this sheet for users no longer in the eligible list
+        // (e.g. manually added, or added before an approval status changed)
+        Object.keys(tableData || {}).forEach((userId) => {
+            if (userId === "__removedUserIds") return;
+            if (addedUserIds.has(userId) || savedRemovedIds.has(userId)) return;
+            const data = tableData[userId] || {};
+            finalRows.push({
+                rowId: userId,
+                userId,
+                userName: data.userName || "",
+                cardNo: data.cardNo || "",
+                shift: data.shift || "",
+                modelLine: data.modelLine || "",
+                station: data.station || "",
                 q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "",
                 q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "",
                 q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "",

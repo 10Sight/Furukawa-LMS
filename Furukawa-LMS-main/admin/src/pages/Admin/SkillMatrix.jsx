@@ -287,7 +287,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         lineId: evalLine || undefined,
         subSectionId: evalSubSection || undefined,
         role: "STUDENT,CUSTOM",
-        includeTemporary: "true",
+        includeTemporary: "false",
         includeEvaluationInfo: "true",
         search: debouncedEvalSearchText || undefined,
         excludeCounts: "true",
@@ -407,7 +407,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         subSectionId: selectedSubSection,
         // stationId removed to prevent UI clearing when filtering by station (users aren't linked to stations)
         role: "STUDENT,CUSTOM",
-        includeTemporary: "true",
+        includeTemporary: "false",
         limit: 1000
     }, { skip: !selectedDepartment || !isMatrixOpen });
 

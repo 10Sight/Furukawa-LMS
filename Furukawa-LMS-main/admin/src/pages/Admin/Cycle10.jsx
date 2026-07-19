@@ -1028,6 +1028,9 @@ const Cycle10 = () => {
                                                                 <UserAutocomplete
                                                                     compact
                                                                     departmentId={selectedDepartmentFilter}
+                                                                    sectionId={selectedSectionFilter}
+                                                                    passedDate={row.date}
+                                                                    passedTestPaperOnly="any"
                                                                     value={row.inspectorName}
                                                                     onChange={(user) => handleOperatorSelect(row.id, user)}
                                                                     onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
@@ -1242,6 +1245,9 @@ const Cycle10 = () => {
                                                                 <UserAutocomplete
                                                                     compact
                                                                     departmentId={selectedDepartmentFilter}
+                                                                    sectionId={selectedSectionFilter}
+                                                                    passedDate={row.date}
+                                                                    passedTestPaperOnly="any"
                                                                     value={row.inspectorName}
                                                                     onChange={(user) => handleOperatorSelect(row.id, user)}
                                                                     onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
@@ -1439,6 +1445,9 @@ const Cycle10 = () => {
                                                                 <UserAutocomplete
                                                                     compact
                                                                     departmentId={selectedDepartmentFilter}
+                                                                    sectionId={selectedSectionFilter}
+                                                                    passedDate={row.date}
+                                                                    passedTestPaperOnly="any"
                                                                     value={row.inspectorName}
                                                                     onChange={(user) => handleOperatorSelect(row.id, user)}
                                                                     onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}

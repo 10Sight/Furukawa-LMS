@@ -6,7 +6,8 @@ import {
     updateConfiguration,
     deleteConfiguration,
     testHandoverScheduler,
-    testSixteenDayScheduler
+    testSixteenDayScheduler,
+    testSixteenDayEligibilityScheduler
 } from "../controllers/emailConfiguration.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
@@ -22,6 +23,7 @@ router.route("/")
 
 router.post("/test-handover-scheduler", testHandoverScheduler);
 router.post("/test-sixteenday-scheduler", testSixteenDayScheduler);
+router.post("/test-sixteenday-eligibility-scheduler", testSixteenDayEligibilityScheduler);
 
 router.route("/:id")
     .get(getConfigurationById)

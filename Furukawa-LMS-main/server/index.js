@@ -57,6 +57,7 @@ import departmentStatusScheduler from "./services/departmentStatusScheduler.js";
 import reportScheduler from "./services/reportScheduler.js";
 import handoverNotificationScheduler from "./services/handoverNotificationScheduler.js";
 import sixteenDayMonitoringScheduler from "./services/sixteenDayMonitoringScheduler.js";
+import sixteenDayEligibilityScheduler from "./services/sixteenDayEligibilityScheduler.js";
 import planNotificationScheduler from "./services/planNotificationScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
@@ -459,6 +460,7 @@ const startServer = async () => {
         reportScheduler.init();
         handoverNotificationScheduler.init();
         sixteenDayMonitoringScheduler.init();
+        sixteenDayEligibilityScheduler.init();
         planNotificationScheduler.init();
 
         // Initialize Core Tables
@@ -504,6 +506,7 @@ const startServer = async () => {
             departmentStatusScheduler.stop();
             handoverNotificationScheduler.stop();
             sixteenDayMonitoringScheduler.stop();
+            sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
             process.exit(0);
         });
@@ -513,6 +516,7 @@ const startServer = async () => {
             departmentStatusScheduler.stop();
             handoverNotificationScheduler.stop();
             sixteenDayMonitoringScheduler.stop();
+            sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
             process.exit(0);
         });

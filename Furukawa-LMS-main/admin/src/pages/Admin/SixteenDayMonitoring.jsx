@@ -50,41 +50,33 @@ import useCountdown from '@/hooks/useCountdown';
 
 const EMPTY_ARRAY = [];
 
-// Renders the stack-table action button, locking it behind a live countdown until
-// 24h after Handover approval — unless the viewer is an Admin/Trainer (override).
+// Renders the stack-table action button. The live countdown is shown to everyone whose 24h
+// Handover-approval wait hasn't elapsed; only the button itself is locked, and Admins/Trainers
+// (canOverride) can still click through early.
 const StartMonitoringCell = ({ item, readOnly, canOverride, onStart }) => {
-    const isLocked = !item.status && !item.isEligible && !canOverride;
-    const { isExpired, formatted } = useCountdown(isLocked ? item.eligibleAt : null);
-    const stillLocked = isLocked && !isExpired;
+    const notYetEligible = !item.status && !item.isEligible;
+    const { isExpired, formatted } = useCountdown(notYetEligible ? item.eligibleAt : null);
+    const stillWaiting = notYetEligible && !isExpired;
+    const blocked = stillWaiting && !canOverride;
 
-    if (stillLocked) {
-        return (
-            <div className="flex flex-col items-end gap-1">
+    return (
+        <div className="flex flex-col items-end gap-1">
+            {stillWaiting && (
                 <Badge variant="outline" className="text-[10px] font-semibold text-amber-600 border-amber-300 bg-amber-50 whitespace-nowrap">
                     ⏳ Eligible in {formatted}
                 </Badge>
-                <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs font-bold text-slate-400"
-                    disabled
-                    title="Unlocks 24 hours after Handover approval"
-                >
-                    Locked
-                </Button>
-            </div>
-        );
-    }
-
-    return (
-        <Button
-            size="sm"
-            variant={item.status ? "outline" : "default"}
-            className={cn("h-8 text-xs font-bold", !item.status && "bg-indigo-600 hover:bg-indigo-700")}
-            onClick={onStart}
-        >
-            {item.status ? (readOnly ? "View" : "View Latest") : (readOnly ? "View" : "Start Monitoring")}
-        </Button>
+            )}
+            <Button
+                size="sm"
+                variant={blocked ? "outline" : (item.status ? "outline" : "default")}
+                className={cn("h-8 text-xs font-bold", blocked ? "text-slate-400" : (!item.status && "bg-indigo-600 hover:bg-indigo-700"))}
+                disabled={blocked}
+                title={blocked ? "Unlocks 24 hours after Handover approval" : (stillWaiting ? "Admin/Trainer override — starting before the 24h wait has elapsed" : undefined)}
+                onClick={onStart}
+            >
+                {blocked ? "Locked" : (item.status ? (readOnly ? "View" : "View Latest") : (readOnly ? "View" : "Start Monitoring"))}
+            </Button>
+        </div>
     );
 };
 const SixteenDayMonitoring = ({ readOnly = false }) => {

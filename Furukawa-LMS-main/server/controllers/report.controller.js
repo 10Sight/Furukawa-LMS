@@ -433,13 +433,13 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
     // 4. Hiring Actual
     const joinSql = `
-        SELECT 
-            CONVERT(VARCHAR, joiningDate, 23) as dateKey, 
-            COUNT(*) as count 
-        FROM users u 
-        WHERE u.[isEmployee] = 1 
-          AND joiningDate >= ? 
-          AND joiningDate <= ? 
+        SELECT
+            CONVERT(VARCHAR, joiningDate, 23) as dateKey,
+            COUNT(*) as count
+        FROM users u
+        WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+          AND joiningDate >= ?
+          AND joiningDate <= ?
         GROUP BY CONVERT(VARCHAR, joiningDate, 23)
     `;
     const [joinData] = await executeQuery(joinSql, [start, end]);

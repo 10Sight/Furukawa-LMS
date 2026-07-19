@@ -353,7 +353,7 @@ const MultiSkilling = () => {
         lineId: evalLine || undefined,
         subSectionId: evalSubSection || undefined,
         role: "STUDENT,CUSTOM",
-        includeTemporary: "true",
+        includeTemporary: "false",
         includeEvaluationInfo: "true",
         search: debouncedEvalSearchText || undefined,
         excludeCounts: "true",

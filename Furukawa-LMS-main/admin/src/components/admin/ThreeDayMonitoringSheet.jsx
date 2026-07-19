@@ -24,7 +24,8 @@ import {
     XCircle,
     XCircle as RejectIcon,
     Trash2,
-    Printer
+    Printer,
+    Lock
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -418,9 +419,18 @@ const ThreeDayMonitoringSheet = ({
             return;
         }
 
+        const targetStatus = finalStatus || status || "Draft";
+
+        if (targetStatus === 'Submitted') {
+            const incompleteDays = [1, 2, 3].filter(d => !isDayColumnComplete(d));
+            if (incompleteDays.length > 0) {
+                toast.error(`Complete Day ${incompleteDays.join(', ')} (date + every checkpoint) before submitting.`);
+                return;
+            }
+        }
+
         try {
             setSaving(true);
-            const targetStatus = finalStatus || status || "Draft";
             const payload = {
                 ...headerInfo,
                 entries: gridData,
@@ -702,14 +712,89 @@ const ThreeDayMonitoringSheet = ({
         }
     }, [gridData, config, readOnly, isDesignMode]);
 
+    const getDisabledDatesForDay = (dayIdx) => {
+        let prevMaxDate = null;
+        for (let i = 1; i < dayIdx; i++) {
+            const val = gridData[`day_date_${i}`];
+            if (val && val.includes('-')) {
+                try {
+                    const d = parse(val, "dd-MMM-yy", new Date());
+                    if (!prevMaxDate || d > prevMaxDate) prevMaxDate = d;
+                } catch (e) {}
+            }
+        }
+        let nextMinDate = null;
+        for (let i = dayIdx + 1; i <= 3; i++) {
+            const val = gridData[`day_date_${i}`];
+            if (val && val.includes('-')) {
+                try {
+                    const d = parse(val, "dd-MMM-yy", new Date());
+                    if (!nextMinDate || d < nextMinDate) nextMinDate = d;
+                } catch (e) {}
+            }
+        }
+        return (date) => {
+            if (prevMaxDate && date <= prevMaxDate) return true;
+            if (nextMinDate && date >= nextMinDate) return true;
+            return false;
+        };
+    };
+
+    // Checks whether every checkpoint in a given day's column (dayIdx: 1-3) has a value.
+    // Attendance is excluded: the sheet only exposes a single shared attendance input (attendPresent_day1),
+    // not one per day, so it can't be used to gate Day 2/3 completeness.
+    const isDayColumnComplete = (dayIdx) => {
+        const day = `day${dayIdx}`;
+        if (!gridData[`day_date_${dayIdx}`]) return false;
+
+        for (const cat of config) {
+            for (const row of cat.rows) {
+                if (row.id === 'defectFree') continue;
+
+                if (row.id === 'prodPlan') {
+                    const plan = gridData[`prodPlan_${day}`];
+                    const free = gridData[`defectFree_${day}`];
+                    if (plan === undefined || plan === null || plan.toString().trim() === "") return false;
+                    if (free === undefined || free === null || free.toString().trim() === "") return false;
+                    continue;
+                }
+
+                if (row.type === 'cycle_detailed') {
+                    for (let i = 0; i < 10; i++) {
+                        const scoreVal = gridData[`${row.id}_${day}_score_${i}`];
+                        if (scoreVal === undefined || scoreVal === null || scoreVal.toString().trim() === "") return false;
+                        if (row.hasCT) {
+                            const ctVal = gridData[`${row.id}_${day}_ct_${i}`];
+                            if (ctVal === undefined || ctVal === null || ctVal.toString().trim() === "") return false;
+                        }
+                    }
+                    continue;
+                }
+
+                const isWeightNumeric = row.weight !== undefined && row.weight !== null && !isNaN(row.weight) && row.weight !== "-";
+                if (!isWeightNumeric) continue;
+                const val = gridData[`${row.id}_${day}`];
+                if (val === undefined || val === null || val.toString().trim() === "") return false;
+            }
+        }
+
+        if (dayIdx === 1) {
+            const attVal = gridData['attendPresent_day1'];
+            if (attVal === undefined || attVal === null || attVal.toString().trim() === "") return false;
+        }
+
+        return true;
+    };
+
     if (loading) return <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>;
 
     const days = ['day1', 'day2', 'day3'];
+    const allDaysComplete = [1, 2, 3].every(isDayColumnComplete);
 
     return (
         <div className="space-y-6">
-            <Card>
-                <div className="flex justify-between items-center print:hidden mb-4 px-4 pt-4">
+            <Card className="w-max min-w-full print:shadow-none print:border-none">
+                <div className="flex flex-wrap justify-between items-center gap-3 print:hidden mb-4 px-4 pt-4">
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
                             <Badge className={cn(
@@ -806,7 +891,8 @@ const ThreeDayMonitoringSheet = ({
                                     variant={status === 'Submitted' ? "outline" : "default"}
                                     size="sm"
                                     onClick={() => handleSave("Submitted")}
-                                    disabled={saving || isDesignMode}
+                                    disabled={saving || isDesignMode || !allDaysComplete}
+                                    title={!allDaysComplete ? "Complete all 3 day columns (dates + every checkpoint) before submitting" : undefined}
                                     className="h-8 gap-1.5 text-[11px]"
                                 >
                                     {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
@@ -929,26 +1015,41 @@ const ThreeDayMonitoringSheet = ({
                                         let selectedDate = undefined;
                                         try { if (val && val.includes('-')) selectedDate = parse(val, "dd-MMM-yy", new Date()); } catch (e) { }
 
+                                        const isDayLocked = dayIdx > 1 && !isDayColumnComplete(dayIdx - 1);
+
                                         return (
                                             <th key={i} colSpan="11" className="border-r border-b border-black text-center h-16 font-bold text-[13px] p-0 bg-gray-50">
-                                                <Popover>
-                                                    <PopoverTrigger asChild>
-                                                        <div className="flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 h-full w-full py-1">
-                                                            <span>Day-{dayIdx}</span>
-                                                            <span className={`text-[12px] ${val ? 'text-blue-700 underline decoration-dotted' : 'text-gray-400 font-normal italic'}`}>
-                                                                ({val || "Click to set date"})
-                                                            </span>
-                                                        </div>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent className="w-auto p-0 z-[9999]" align="start">
-                                                        <Calendar
-                                                            mode="single"
-                                                            selected={selectedDate}
-                                                            onSelect={(date) => date && handleGridChange('day_date', `${dayIdx}`, format(date, "dd-MMM-yy"))}
-                                                            initialFocus
-                                                        />
-                                                    </PopoverContent>
-                                                </Popover>
+                                                {isDayLocked ? (
+                                                    <div
+                                                        className="flex flex-col items-center justify-center h-full w-full py-1 opacity-50 cursor-not-allowed"
+                                                        title={`Complete Day ${dayIdx - 1} to unlock Day ${dayIdx}`}
+                                                    >
+                                                        <span>Day-{dayIdx}</span>
+                                                        <span className="text-[11px] text-gray-400 font-normal italic flex items-center justify-center gap-1">
+                                                            <Lock className="h-3 w-3" /> Locked
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <Popover>
+                                                        <PopoverTrigger asChild>
+                                                            <div className="flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 h-full w-full py-1">
+                                                                <span>Day-{dayIdx}</span>
+                                                                <span className={`text-[12px] ${val ? 'text-blue-700 underline decoration-dotted' : 'text-gray-400 font-normal italic'}`}>
+                                                                    ({val || "Click to set date"})
+                                                                </span>
+                                                            </div>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-auto p-0 z-[9999]" align="start">
+                                                            <Calendar
+                                                                mode="single"
+                                                                selected={selectedDate}
+                                                                onSelect={(date) => date && handleGridChange('day_date', `${dayIdx}`, format(date, "dd-MMM-yy"))}
+                                                                disabled={getDisabledDatesForDay(dayIdx)}
+                                                                initialFocus
+                                                            />
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                )}
                                             </th>
                                         );
                                     })}

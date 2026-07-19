@@ -440,7 +440,11 @@ const Report = () => {
                                             {headerDates.map((dateObj, colIndex) => {
                                                 const cellKey = dateObj.fullDate;
                                                 const key = `${row.dataKey || row.label}_${cellKey}`;
-                                                const value = tableData[key] ?? '';
+                                                const isHiringActual = row.label === "Hiring Actual";
+                                                const rawValue = tableData[key];
+                                                const value = row.label === "Hiring Plan"
+                                                    ? (rawValue ?? '0')
+                                                    : (rawValue ?? '');
                                                 const isPrevMonthCol = colIndex === 0;
 
                                                 return (
@@ -455,14 +459,17 @@ const Report = () => {
                                                             <input
                                                                 type="text"
                                                                 value={value}
+                                                                readOnly={isHiringActual}
                                                                 onChange={(e) =>
                                                                     handleInputChange(row.dataKey || row.label, cellKey, e.target.value)
                                                                 }
                                                                 className={`
-                                                                    w-full h-full px-1 py-1.5 bg-transparent text-center focus:outline-none focus:bg-blue-100 transition-colors
+                                                                    w-full h-full px-1 py-1.5 bg-transparent text-center focus:outline-none transition-colors
+                                                                    ${isHiringActual ? 'cursor-not-allowed' : 'focus:bg-blue-100'}
                                                                     ${row.bold ? 'font-bold' : ''}
                                                                 `}
                                                                 style={{ minHeight: '28px' }}
+                                                                title={isHiringActual ? 'Auto-calculated from actual joining dates (synced)' : undefined}
                                                             />
                                                         )}
                                                     </td>

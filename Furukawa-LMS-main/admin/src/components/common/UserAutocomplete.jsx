@@ -9,6 +9,9 @@ import { cn } from '@/lib/utils';
 
 const UserAutocomplete = ({
   departmentId,
+  sectionId,
+  passedDate,
+  passedTestPaperOnly,
   value,
   onChange,
   placeholder = "Search user...",
@@ -46,6 +49,13 @@ const UserAutocomplete = ({
       if (departmentId) {
         searchParams.departmentId = departmentId;
       }
+      if (sectionId) {
+        searchParams.sectionId = sectionId;
+      }
+      if (passedTestPaperOnly) {
+        searchParams.passedTestPaperOnly = passedTestPaperOnly;
+        if (passedDate) searchParams.passedDate = passedDate;
+      }
 
       if (mode === "all") {
         if (excludeTrainers) searchParams.excludeTrainers = "true";
@@ -61,7 +71,7 @@ const UserAutocomplete = ({
         triggerStudents(searchParams);
       }
     }
-  }, [debouncedSearch, departmentId, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly, includeHandoverMarks, options]);
+  }, [debouncedSearch, departmentId, sectionId, passedDate, passedTestPaperOnly, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly, includeHandoverMarks, options]);
 
   // Sync internal search state with external value when it changes externally
   useEffect(() => {

@@ -200,7 +200,7 @@ const ThreeDayMonitoring = () => {
     }, [monitoringList, searchTerm]);
 
     return (
-        <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
+        <div className="space-y-6 w-max min-w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">
@@ -240,7 +240,7 @@ const ThreeDayMonitoring = () => {
             </div>
 
             {/* Selection Panel */}
-            <Card className="border-slate-200 shadow-sm overflow-hidden">
+            <Card className="border-slate-200 shadow-sm overflow-hidden w-max min-w-full">
                 <CardHeader className="pb-3 border-b bg-slate-50/50">
                     <CardTitle className="text-base flex items-center gap-2">
                         <IconHierarchy2 className="w-4 h-4 text-amber-500" />
@@ -346,9 +346,9 @@ const ThreeDayMonitoring = () => {
                     ) : studentId ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
                             {!isEmployee && (
-                                <Button 
-                                    variant="ghost" 
-                                    size="sm" 
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
                                     className="mb-2 gap-2 text-slate-600 hover:text-amber-600"
                                     onClick={() => setStudentId("")}
                                 >
@@ -356,7 +356,7 @@ const ThreeDayMonitoring = () => {
                                     Back to Stack
                                 </Button>
                             )}
-                            
+
                             <ThreeDayMonitoringSheet
                                 studentId={studentId}
                                 departmentId={dept}
@@ -367,7 +367,7 @@ const ThreeDayMonitoring = () => {
                             />
                         </div>
                     ) : (
-                        <Card className="border-slate-200 shadow-sm overflow-hidden">
+                        <Card className="border-slate-200 shadow-sm overflow-hidden w-max min-w-full">
                             <Table>
                                 <TableHeader className="bg-slate-50/50">
                                     <TableRow className="border-slate-200 h-12">

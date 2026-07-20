@@ -1505,6 +1505,86 @@ class NotificationService {
         footerCell.alignment = { horizontal: 'center' };
     }
 
+    static async _fillMenteeFeedbackSheet(worksheet, formData) {
+        const { operatorName, employeeCode, departmentName, processName, topTableData = {}, dailyLogs = [] } = formData;
+
+        const questions = [
+            { id: 1, topic: "Have you got On Job training from Mentor?" },
+            { id: 2, topic: "Has today training content helped you in your work?" },
+            { id: 3, topic: "Have you face any misbehaviour on work station by any person?" },
+            { id: 4, topic: "Has mentor given solution of your query/problem?" },
+            { id: 5, topic: "Are required resources available on work station?" },
+            { id: 6, topic: "Other Issue/problem" },
+            { id: 7, topic: "Suggestion if any" },
+        ];
+
+        const totalCols = 17; // Topic + 16 days
+        worksheet.columns = [
+            { width: 32 },
+            ...Array.from({ length: 16 }, () => ({ width: 6 })),
+        ];
+
+        // Header
+        worksheet.mergeCells(1, 1, 1, totalCols);
+        const companyCell = worksheet.getCell(1, 1);
+        companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
+        companyCell.font = { bold: true, size: 10 };
+        companyCell.alignment = { horizontal: 'right' };
+
+        worksheet.mergeCells(2, 1, 2, totalCols);
+        const titleCell = worksheet.getCell(2, 1);
+        titleCell.value = 'MENTEES FEEDBACK MONITORING SHEET';
+        titleCell.font = { bold: true, size: 14 };
+        titleCell.alignment = { horizontal: 'center' };
+
+        worksheet.mergeCells(3, 1, 3, totalCols);
+        const infoCell = worksheet.getCell(3, 1);
+        infoCell.value = `Operator: ${operatorName || ''}   |   Emp Code: ${employeeCode || ''}   |   Department: ${departmentName || ''}   |   Process: ${processName || ''}`;
+        infoCell.font = { bold: true, size: 9 };
+
+        // Top table headers
+        const headerRowValues = ['Topic', ...Array.from({ length: 16 }, (_, i) => `D${i + 1}`)];
+        const headerRow = worksheet.addRow(headerRowValues);
+        headerRow.eachCell(cell => this._applyHeaderStyle(cell));
+
+        questions.forEach(q => {
+            const rowValues = [q.topic, ...Array.from({ length: 16 }, (_, i) => topTableData?.[q.id]?.[i] || '-')];
+            const row = worksheet.addRow(rowValues);
+            row.eachCell(cell => this._applyBorderStyle(cell));
+        });
+
+        // Spacer + daily logs section
+        worksheet.addRow([]);
+        const logsTitleRowNumber = worksheet.lastRow.number + 1;
+        worksheet.mergeCells(logsTitleRowNumber, 1, logsTitleRowNumber, totalCols);
+        const logsTitleCell = worksheet.getCell(logsTitleRowNumber, 1);
+        logsTitleCell.value = 'Detailed Logs';
+        logsTitleCell.font = { bold: true, size: 10 };
+        worksheet.addRow([]);
+
+        const logsHeaderRow = worksheet.addRow(['Day', 'Associates Feedback', 'Mentor Action Plan', 'Status', 'Area Engineer Verification', 'Status']);
+        logsHeaderRow.eachCell(cell => this._applyHeaderStyle(cell));
+
+        (dailyLogs || []).forEach((log, i) => {
+            const row = worksheet.addRow([
+                `Day ${i + 1}`,
+                log.associatesFeedback || '-',
+                log.mentorAction || '-',
+                log.status1 || '-',
+                log.areaEngineer || '-',
+                log.status2 || '-',
+            ]);
+            row.eachCell(cell => this._applyBorderStyle(cell));
+        });
+
+        // Footer
+        const footerRowNumber = worksheet.lastRow.number + 2;
+        worksheet.mergeCells(footerRowNumber, 1, footerRowNumber, totalCols);
+        const footerCell = worksheet.getCell(footerRowNumber, 1);
+        footerCell.value = 'FRM-HR-004 | REV: 07 | REV DATE: 11.12.21 | PAGE: 1 OF 1';
+        footerCell.alignment = { horizontal: 'center' };
+    }
+
     static async _fillTenCycleSheet(worksheet, formData) {
         // --- Header ---
         worksheet.mergeCells('A1:L1');

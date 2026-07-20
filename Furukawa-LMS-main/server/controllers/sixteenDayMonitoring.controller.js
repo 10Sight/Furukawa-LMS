@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -599,11 +600,18 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
     const monitoringConfig = await MonitoringConfig.findByTypeAndDepartment('16DAY', student?.departmentId, student?.sectionId);
     const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/16-day-monitoring/${studentId}`;
 
+    const operatorName = student?.fullName || sheet.employeeName;
+    const employeeCode = student?.empId || sheet.employeeCode;
+    const departmentName = student?.departmentName || sheet.dept || "N/A";
+    const processName = sheet.processName || "N/A";
+    const topTableData = feedback?.topTableData || {};
+    const dailyLogs = feedback?.dailyLogs || Array(16).fill({ associatesFeedback: '', mentorAction: '', status1: '', areaEngineer: '', status2: '' });
+
     const html = emailTemplates.generateCombinedMonitoringEmail({
-        operatorName: student?.fullName || sheet.employeeName,
-        employeeCode: student?.empId || sheet.employeeCode,
-        departmentName: student?.departmentName || sheet.dept || "N/A",
-        processName: sheet.processName || "N/A",
+        operatorName,
+        employeeCode,
+        departmentName,
+        processName,
         headerInfo: {
             handoverDate: sheet.handoverDate,
             checkedBy: sheet.checkedBy,
@@ -611,14 +619,45 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
             approvedBy: sheet.approvedBy,
             verifiedByEduCell: sheet.verifiedByEduCell,
         },
-        gridData: sheet.gridData || {},
-        sheetConfig: monitoringConfig?.config || [],
-        topTableData: feedback?.topTableData || {},
-        dailyLogs: feedback?.dailyLogs || Array(16).fill({ associatesFeedback: '', mentorAction: '', status1: '', areaEngineer: '', status2: '' }),
         portalUrl,
     });
 
-    await sendMail(to, `16-Day Monitoring & Mentee Feedback Report: ${student?.fullName || sheet.employeeName}`, html, [], cc);
+    // Build a two-sheet workbook matching the on-screen 16-Day Monitoring + Mentee Feedback layouts
+    const workbook = new ExcelJS.Workbook();
+    const monitoringSheet = workbook.addWorksheet('16-Day Monitoring');
+    await NotificationService._fillSixteenDaySheet(monitoringSheet, {
+        gridData: sheet.gridData || {},
+        employeeName: sheet.employeeName,
+        employeeCode: sheet.employeeCode,
+        dept: sheet.dept,
+        processName: sheet.processName,
+        handoverDate: sheet.handoverDate,
+        trgResult: sheet.trgResult,
+        workingWith: sheet.workingWith,
+        lineLeaderName: sheet.lineLeaderName,
+        config: monitoringConfig?.config || [],
+    });
+
+    const feedbackSheet = workbook.addWorksheet('Mentee Feedback');
+    await NotificationService._fillMenteeFeedbackSheet(feedbackSheet, {
+        operatorName,
+        employeeCode,
+        departmentName,
+        processName,
+        topTableData,
+        dailyLogs,
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `16-Day_Monitoring_Report_${(operatorName || 'associate').replace(/\s+/g, '_')}.xlsx`;
+
+    await sendMail(
+        to,
+        `16-Day Monitoring & Mentee Feedback Report: ${operatorName}`,
+        html,
+        [{ filename, content: buffer }],
+        cc
+    );
 
     logAudit(req.user?.id, "EMAIL_COMBINED_MONITORING_REPORT", {
         studentId: sid, employeeName: student?.fullName || sheet.employeeName, to, cc

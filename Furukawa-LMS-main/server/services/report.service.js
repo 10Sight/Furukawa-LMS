@@ -2003,9 +2003,334 @@ export async function sendBothReports(emails) {
 }
 
 
+
+// =================================================
+// AUTOMATIC EMAIL REPORT SCHEDULER
+// =================================================
+// Send times are provided by the controller from DB settings.
+// Daily and Management Daily reports are scheduled independently.
+// Existing manual sendBothReports() behavior remains unchanged.
+//
+// IMPORTANT FIX:
+// - Do NOT depend on an exact HH:mm equality only.
+// - If a report-generation task blocks the event loop or overlaps the next report's minute,
+//   the next scheduler tick will still send the missed report after its configured time.
+// - Daily and Management Daily use independent busy locks so one report does not block the other.
+// - A schedule change to a different time on the same day creates a new runKey, which is useful
+//   for testing a report again without restarting the backend.
+const getIndiaScheduleClock = () => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+    }).formatToParts(new Date());
+
+    const values = Object.fromEntries(
+        parts
+            .filter(part => part.type !== 'literal')
+            .map(part => [part.type, part.value])
+    );
+
+    const hour = Number(values.hour || 0);
+    const minute = Number(values.minute || 0);
+
+    return {
+        dateKey: `${values.year}-${values.month}-${values.day}`,
+        timeKey: `${values.hour}:${values.minute}`,
+        minuteOfDay: (hour * 60) + minute
+    };
+};
+
+const parseScheduleMinuteOfDay = (value) => {
+    const time = String(value || '').trim();
+
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)) {
+        return null;
+    }
+
+    const [hour, minute] = time.split(':').map(Number);
+    return (hour * 60) + minute;
+};
+
+const isMailFlagEnabled = (value) => {
+    if (value === true || value === 1) return true;
+
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+};
+
+const getUniqueEmails = (mails, predicate) => {
+    return [
+        ...new Set(
+            (mails || [])
+                .filter(predicate)
+                .map(mail => String(mail?.email || '').trim())
+                .filter(Boolean)
+        )
+    ];
+};
+
+export function initializeEmailReportScheduler({
+    getSchedule,
+    getRecipients
+} = {}) {
+    if (
+        typeof getSchedule !== 'function' ||
+        typeof getRecipients !== 'function'
+    ) {
+        console.warn(
+            "[EmailReportScheduler] Not started: getSchedule/getRecipients callback missing."
+        );
+        return;
+    }
+
+    // Prevent duplicate timers if the module is imported more than once.
+    if (globalThis.__sarvagyaEmailReportSchedulerStarted) {
+        return;
+    }
+    globalThis.__sarvagyaEmailReportSchedulerStarted = true;
+
+    globalThis.__sarvagyaEmailReportLastRun =
+        globalThis.__sarvagyaEmailReportLastRun || {
+            daily: null,
+            managementDaily: null
+        };
+
+    // Independent locks:
+    // A heavy Manpower Excel build must not permanently make Management Daily miss its minute,
+    // and vice versa.
+    let dailyBusy = false;
+    let managementDailyBusy = false;
+    let schedulerTickBusy = false;
+
+    const runDailyIfDue = async ({
+        mails,
+        dateKey,
+        timeKey,
+        minuteOfDay,
+        dailyTime
+    }) => {
+        const scheduledMinute = parseScheduleMinuteOfDay(dailyTime);
+        if (scheduledMinute === null) return;
+        if (minuteOfDay < scheduledMinute) return;
+
+        const normalizedTime = String(dailyTime).trim();
+        const runKey = `${dateKey}|${normalizedTime}`;
+
+        if (
+            dailyBusy ||
+            globalThis.__sarvagyaEmailReportLastRun.daily === runKey
+        ) {
+            return;
+        }
+
+        dailyBusy = true;
+
+        try {
+            const dailyEmails = getUniqueEmails(
+                mails,
+                mail => isMailFlagEnabled(mail?.isDailyReport)
+            );
+
+            if (dailyEmails.length === 0) {
+                console.log(
+                    `[EmailReportScheduler] Daily Manpower Report is due (${normalizedTime} IST), but no Daily recipients are configured.`
+                );
+
+                // Avoid repeating the same no-recipient log every scheduler tick.
+                globalThis.__sarvagyaEmailReportLastRun.daily = runKey;
+                return;
+            }
+
+            console.log(
+                `[EmailReportScheduler] Daily Manpower Report due at ${normalizedTime} IST. Current scheduler time: ${timeKey} IST. Sending to ${dailyEmails.length} recipient(s).`
+            );
+
+            await generateAndSend(dailyEmails);
+
+            // Mark only after the send function completes.
+            globalThis.__sarvagyaEmailReportLastRun.daily = runKey;
+
+            console.log(
+                `[EmailReportScheduler] Daily Manpower Report completed for schedule ${normalizedTime} IST.`
+            );
+        } catch (err) {
+            // Do not mark lastRun on thrown failure; a later tick can retry.
+            console.error(
+                "[EmailReportScheduler] Daily Manpower Report failed:",
+                err?.message || err
+            );
+        } finally {
+            dailyBusy = false;
+        }
+    };
+
+    const runManagementDailyIfDue = async ({
+        mails,
+        dateKey,
+        timeKey,
+        minuteOfDay,
+        managementDailyTime
+    }) => {
+        const scheduledMinute =
+            parseScheduleMinuteOfDay(managementDailyTime);
+
+        if (scheduledMinute === null) return;
+        if (minuteOfDay < scheduledMinute) return;
+
+        const normalizedTime = String(managementDailyTime).trim();
+        const runKey = `${dateKey}|${normalizedTime}`;
+
+        if (
+            managementDailyBusy ||
+            globalThis.__sarvagyaEmailReportLastRun.managementDaily === runKey
+        ) {
+            return;
+        }
+
+        managementDailyBusy = true;
+
+        try {
+            const managementEmails = getUniqueEmails(
+                mails,
+                mail => isMailFlagEnabled(mail?.isManagementDailyReport)
+            );
+
+            if (managementEmails.length === 0) {
+                console.log(
+                    `[EmailReportScheduler] Management Daily Report is due (${normalizedTime} IST), but no Management Daily recipients are configured.`
+                );
+
+                // Avoid repeating the same no-recipient log every scheduler tick.
+                globalThis.__sarvagyaEmailReportLastRun.managementDaily = runKey;
+                return;
+            }
+
+            console.log(
+                `[EmailReportScheduler] Management Daily Report due at ${normalizedTime} IST. Current scheduler time: ${timeKey} IST. Sending to ${managementEmails.length} recipient(s).`
+            );
+
+            await generateAndSendManagementDaily(managementEmails);
+
+            // Mark only after the send function completes.
+            globalThis.__sarvagyaEmailReportLastRun.managementDaily = runKey;
+
+            console.log(
+                `[EmailReportScheduler] Management Daily Report completed for schedule ${normalizedTime} IST.`
+            );
+        } catch (err) {
+            // Do not mark lastRun on thrown failure; a later tick can retry.
+            console.error(
+                "[EmailReportScheduler] Management Daily Report failed:",
+                err?.message || err
+            );
+        } finally {
+            managementDailyBusy = false;
+        }
+    };
+
+    const tick = async () => {
+        // This lock protects only DB/settings fetching for a single tick.
+        // Actual report generation uses separate locks and is started independently below.
+        if (schedulerTickBusy) return;
+        schedulerTickBusy = true;
+
+        try {
+            const schedule = await getSchedule();
+            const { dateKey, timeKey, minuteOfDay } =
+                getIndiaScheduleClock();
+
+            const dailyScheduledMinute =
+                parseScheduleMinuteOfDay(schedule?.dailyTime);
+
+            const managementScheduledMinute =
+                parseScheduleMinuteOfDay(schedule?.managementDailyTime);
+
+            const dailyRunKey = schedule?.dailyTime
+                ? `${dateKey}|${String(schedule.dailyTime).trim()}`
+                : null;
+
+            const managementRunKey = schedule?.managementDailyTime
+                ? `${dateKey}|${String(schedule.managementDailyTime).trim()}`
+                : null;
+
+            const dailyDue =
+                dailyScheduledMinute !== null &&
+                minuteOfDay >= dailyScheduledMinute &&
+                globalThis.__sarvagyaEmailReportLastRun.daily !== dailyRunKey;
+
+            const managementDue =
+                managementScheduledMinute !== null &&
+                minuteOfDay >= managementScheduledMinute &&
+                globalThis.__sarvagyaEmailReportLastRun.managementDaily !== managementRunKey;
+
+            if (!dailyDue && !managementDue) {
+                return;
+            }
+
+            const mails = await getRecipients();
+
+            // Start each due report independently.
+            // Do not await one before starting the other, otherwise a long Excel build can block
+            // the second report. Individual functions have their own busy locks.
+            if (dailyDue) {
+                void runDailyIfDue({
+                    mails,
+                    dateKey,
+                    timeKey,
+                    minuteOfDay,
+                    dailyTime: schedule?.dailyTime
+                });
+            }
+
+            if (managementDue) {
+                void runManagementDailyIfDue({
+                    mails,
+                    dateKey,
+                    timeKey,
+                    minuteOfDay,
+                    managementDailyTime: schedule?.managementDailyTime
+                });
+            }
+        } catch (err) {
+            console.error(
+                "[EmailReportScheduler] Tick failed:",
+                err?.message || err
+            );
+        } finally {
+            schedulerTickBusy = false;
+        }
+    };
+
+    // Check frequently. Because due-time uses >= instead of exact equality,
+    // a temporary delay or a long report build cannot permanently miss the configured minute.
+    const interval = setInterval(tick, 15 * 1000);
+
+    // Do not keep Node alive only because of this timer.
+    if (typeof interval.unref === 'function') {
+        interval.unref();
+    }
+
+    // First check shortly after application startup.
+    const initialTimer = setTimeout(tick, 3000);
+    if (typeof initialTimer.unref === 'function') {
+        initialTimer.unref();
+    }
+
+    console.log(
+        "[EmailReportScheduler] Started. Timezone: Asia/Kolkata. Daily and Management Daily schedules run independently with missed-minute recovery."
+    );
+}
+
+
 export default {
     getReportData,
     generateAndSend,
     generateAndSendManagementDaily,
-    sendBothReports
+    sendBothReports,
+    initializeEmailReportScheduler
 };

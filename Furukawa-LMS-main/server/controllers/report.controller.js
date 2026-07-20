@@ -1,5 +1,6 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import NotificationService from '../services/notification.service.js';
+import { initializeEmailReportScheduler } from '../services/report.service.js';
 import { executeQuery } from '../db/mssqlHelper.js';
 import ExcelJS from 'exceljs';
 import HeadcountReport from '../models/headcountReport.model.js';
@@ -705,11 +706,20 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     }
 
     // 7. Requirement Plan from requirements table
-    // Headcount required as per production plan:
+    // IMPORTANT:
+    // Only these two monthly-report rows use the same approved requirement logic
+    // as the dashboard first graph:
+    // 1) Headcount required as per production plan
+    // 2) Headcount required as per sale plan
+    //
+    // Production Plan:
     // Day 1 to 15 = prodPlanFN01
     // Day 16 onward = prodPlanFN02
-    // Headcount required as per sale plan = salesPlan
-    // Hiring Plan = prodPlan
+    //
+    // Sale Plan:
+    // salesPlan from the same valid/approved requirements rows.
+    //
+    // Hiring Plan keeps its existing logic unchanged.
     const formatDateKey = (dateObj) => {
         const y = dateObj.getFullYear();
         const m = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -753,11 +763,19 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         }
     });
 
+    // Existing map is retained for Hiring Plan only so its old logic remains untouched.
     let requirementPlanMap = {};
+
+    // Dashboard-aligned map is used ONLY for the two requirement rows requested above.
+    let dashboardRequirementPlanMap = {};
 
     if (uniqueRequirementMonths.length > 0) {
         const requirementWhereClause = uniqueRequirementMonths
             .map(() => `([year] = ? AND monthNumber = ?)`)
+            .join(' OR ');
+
+        const dashboardRequirementWhereClause = uniqueRequirementMonths
+            .map(() => `(r.[year] = ? AND r.monthNumber = ?)`)
             .join(' OR ');
 
         const requirementParams = [];
@@ -766,14 +784,12 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
             requirementParams.push(item.monthNumber);
         });
 
+        // Keep the original Hiring Plan source/logic exactly as it was.
         const [requirementRows] = await executeQuery(`
             SELECT
                 [year],
                 monthNumber,
-                SUM(ISNULL(salesPlan, 0)) AS salesPlan,
-                SUM(ISNULL(prodPlan, 0)) AS prodPlan,
-                SUM(ISNULL(prodPlanFN01, 0)) AS prodPlanFN01,
-                SUM(ISNULL(prodPlanFN02, 0)) AS prodPlanFN02
+                SUM(ISNULL(prodPlan, 0)) AS prodPlan
             FROM requirements
             WHERE ${requirementWhereClause}
               AND ISNULL(is_active, 1) = 1
@@ -783,30 +799,91 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         requirementRows.forEach(row => {
             const key = `${row.year}-${row.monthNumber}`;
             requirementPlanMap[key] = {
-                salesPlan: Number(row.salesPlan || 0),
-                prodPlan: Number(row.prodPlan || 0),
-                prodPlanFN01: Number(row.prodPlanFN01 || 0),
-                prodPlanFN02: Number(row.prodPlanFN02 || 0)
+                prodPlan: Number(row.prodPlan || 0)
+            };
+        });
+
+        // Exact dashboard first-graph approval logic for requirement rows.
+        // This includes active approved rows plus system-approved rows.
+        const dashboardApprovalCondition = `
+            AND (
+                (
+                    ISNULL(r.is_active, 0) = 1
+                    AND LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, 'approved')))) IN (
+                        'approved',
+                        'system_approved',
+                        'system approved',
+                        'system-approved',
+                        'systemapproved'
+                    )
+                )
+                OR LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, '')))) IN (
+                    'system_approved',
+                    'system approved',
+                    'system-approved',
+                    'systemapproved'
+                )
+            )
+        `;
+
+        // Match the dashboard first graph's requirements-table query structure.
+        // No dashboard Department/Section/Line filter is applied here because the
+        // monthly report's existing requirement rows are global totals.
+        const [dashboardRequirementRows] = await executeQuery(`
+            SELECT
+                r.[year] AS yearVal,
+                r.monthNumber AS monthNumber,
+                CAST(SUM(ISNULL(r.prodPlanFN01, 0)) AS BIGINT) AS required_fn01,
+                CAST(SUM(ISNULL(r.prodPlanFN02, 0)) AS BIGINT) AS required_fn02,
+                CAST(SUM(ISNULL(r.salesPlan, 0)) AS BIGINT) AS required_sales_plan
+            FROM requirements r
+            LEFT JOIN sections s
+                ON (
+                    UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                    OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                )
+                AND ISNULL(s.isActive, 1) = 1
+            LEFT JOIN departments d ON d.id = s.departmentId
+            WHERE (${dashboardRequirementWhereClause})
+            ${dashboardApprovalCondition}
+            GROUP BY r.[year], r.monthNumber
+        `, requirementParams);
+
+        dashboardRequirementRows.forEach(row => {
+            const key = `${row.yearVal}-${row.monthNumber}`;
+            dashboardRequirementPlanMap[key] = {
+                prodPlanFN01: Number(row.required_fn01 || 0),
+                prodPlanFN02: Number(row.required_fn02 || 0),
+                salesPlan: Number(row.required_sales_plan || 0)
             };
         });
     }
 
     visibleRequirementDates.forEach(item => {
         const planKey = `${item.year}-${item.monthNumber}`;
-        const plan = requirementPlanMap[planKey] || {
-            salesPlan: 0,
-            prodPlan: 0,
-            prodPlanFN01: 0,
-            prodPlanFN02: 0
+
+        // Used ONLY for Hiring Plan — existing logic unchanged.
+        const hiringPlan = requirementPlanMap[planKey] || {
+            prodPlan: 0
         };
 
+        // Used ONLY for the two requested requirement rows.
+        const dashboardRequirementPlan = dashboardRequirementPlanMap[planKey] || {
+            prodPlanFN01: 0,
+            prodPlanFN02: 0,
+            salesPlan: 0
+        };
+
+        // Same date split as dashboard first graph.
         const productionPlanRequirement = item.day <= 15
-            ? plan.prodPlanFN01
-            : plan.prodPlanFN02;
+            ? dashboardRequirementPlan.prodPlanFN01
+            : dashboardRequirementPlan.prodPlanFN02;
 
         tableData[`Headcount required as per production plan_${item.dateKey}`] = productionPlanRequirement;
-        tableData[`Headcount required as per sale plan_${item.dateKey}`] = plan.salesPlan;
-        tableData[`Hiring Plan_${item.dateKey}`] = plan.prodPlan;
+        tableData[`Headcount required as per sale plan_${item.dateKey}`] = dashboardRequirementPlan.salesPlan;
+
+        // Do not change Hiring Plan.
+        tableData[`Hiring Plan_${item.dateKey}`] = hiringPlan.prodPlan;
     });
 
     // 8. Shift Manpower — same eligibility/dedup treatment as shiftAttendanceSql above, plus a
@@ -867,6 +944,107 @@ export const getUserHierarchySnapshot = asyncHandler(async (req, res) => {
     });
 });
 
+
+// ============================================================
+// EMAIL REPORT SEND-TIME SETTINGS
+// Admin can independently choose the automatic send time for:
+// 1) Daily Manpower Report
+// 2) Management Daily Report
+//
+// The settings are stored separately from recipient rows so the
+// existing Mail model / recipient CRUD behavior remains unchanged.
+// ============================================================
+const ensureEmailReportScheduleTable = async () => {
+    await executeQuery(`
+        IF OBJECT_ID('dbo.email_report_schedule_settings', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.email_report_schedule_settings (
+                id INT NOT NULL PRIMARY KEY,
+                dailyTime NVARCHAR(5) NULL,
+                managementDailyTime NVARCHAR(5) NULL,
+                updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
+            )
+        END
+    `, []);
+
+    await executeQuery(`
+        IF NOT EXISTS (
+            SELECT 1
+            FROM dbo.email_report_schedule_settings
+            WHERE id = 1
+        )
+        BEGIN
+            INSERT INTO dbo.email_report_schedule_settings (
+                id,
+                dailyTime,
+                managementDailyTime
+            )
+            VALUES (1, NULL, NULL)
+        END
+    `, []);
+};
+
+const normalizeReportTime = (value) => {
+    const time = String(value || '').trim();
+
+    if (!time) return null;
+
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)) {
+        throw new Error("Invalid report time. Expected HH:mm in 24-hour format.");
+    }
+
+    return time;
+};
+
+const getEmailReportScheduleSettings = async () => {
+    await ensureEmailReportScheduleTable();
+
+    const [rows] = await executeQuery(`
+        SELECT
+            dailyTime,
+            managementDailyTime
+        FROM dbo.email_report_schedule_settings
+        WHERE id = 1
+    `, []);
+
+    return {
+        dailyTime: String(rows?.[0]?.dailyTime || '').trim(),
+        managementDailyTime: String(rows?.[0]?.managementDailyTime || '').trim(),
+        timezone: 'Asia/Kolkata'
+    };
+};
+
+const updateEmailReportScheduleSettings = async ({
+    dailyTime,
+    managementDailyTime
+}) => {
+    await ensureEmailReportScheduleTable();
+
+    const normalizedDailyTime = normalizeReportTime(dailyTime);
+    const normalizedManagementDailyTime = normalizeReportTime(managementDailyTime);
+
+    await executeQuery(`
+        UPDATE dbo.email_report_schedule_settings
+        SET
+            dailyTime = ?,
+            managementDailyTime = ?,
+            updatedAt = GETDATE()
+        WHERE id = 1
+    `, [
+        normalizedDailyTime,
+        normalizedManagementDailyTime
+    ]);
+
+    return getEmailReportScheduleSettings();
+};
+
+// Start the automatic scheduler once when this controller module is loaded.
+// The service owns the timer; controller only supplies schedule + recipient data.
+initializeEmailReportScheduler({
+    getSchedule: getEmailReportScheduleSettings,
+    getRecipients: async () => Mail.findAll()
+});
+
 /**
  * ==========================================
  * Email Report CRUD Operations
@@ -901,7 +1079,13 @@ export const getMails = asyncHandler(async (req, res) => {
         };
     });
 
-    res.status(200).json({ success: true, data: mapped });
+    const schedule = await getEmailReportScheduleSettings();
+
+    res.status(200).json({
+        success: true,
+        data: mapped,
+        schedule
+    });
 });
 
 /**
@@ -910,6 +1094,22 @@ export const getMails = asyncHandler(async (req, res) => {
 export const createMail = asyncHandler(async (req, res) => {
     try {
         console.log("[DEBUG] createMail Payload received:", req.body);
+
+        // Reuse the existing POST /api/reports/recipients endpoint for schedule settings
+        // so no route-file change is required.
+        if (String(req.body?.action || '').trim().toLowerCase() === 'updateschedule') {
+            const schedule = await updateEmailReportScheduleSettings({
+                dailyTime: req.body?.dailyTime,
+                managementDailyTime: req.body?.managementDailyTime
+            });
+
+            return res.status(200).json({
+                success: true,
+                data: schedule,
+                schedule,
+                message: "Email report send times updated successfully"
+            });
+        }
 
         const email = req.body.email || req.body.toEmails || null;
         const { frequency, reportTypes, formName } = req.body;

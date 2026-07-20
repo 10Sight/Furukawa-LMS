@@ -10,7 +10,8 @@ import {
     getMails,
     createMail,
     deleteMail,
-    triggerManualReport
+    triggerManualReport,
+    sendHeadcountReportManually
 } from '../controllers/report.controller.js';
 
 const router = express.Router();
@@ -54,6 +55,16 @@ router.post(
     '/send-manual',
     authorizeRole([SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_TRIGGER]),
     triggerManualReport
+);
+
+/**
+ * @route POST /api/v1/reports/headcount/send-manual
+ * @desc Force-send the current month's Associates Headcount Report now
+ */
+router.post(
+    '/headcount/send-manual',
+    authorizeRole([SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_TRIGGER]),
+    sendHeadcountReportManually
 );
 
 /**

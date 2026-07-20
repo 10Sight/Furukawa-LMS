@@ -9,7 +9,8 @@ import {
     Save,
     Download,
     Loader2,
-    RefreshCw
+    RefreshCw,
+    Mail
 } from "lucide-react";
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
@@ -24,6 +25,7 @@ const Report = () => {
     const [tableData, setTableData] = useState({});
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isSendingEmail, setIsSendingEmail] = useState(false);
 
     // Fetch Clubs from API
     const { data: clubsData } = useGetAllClubsQuery();
@@ -189,6 +191,25 @@ const Report = () => {
         exportToExcel("Associates Headcount Report", {
             date: currentDate.toISOString().split('T')[0]
         });
+    };
+
+    const handleResendEmail = async () => {
+        setIsSendingEmail(true);
+        const toastId = toast.loading("Sending Headcount Report email...");
+
+        try {
+            const response = await axiosInstance.post('/api/reports/headcount/send-manual');
+            if (response.data?.data?.sent) {
+                toast.success("Headcount Report emailed successfully!", { id: toastId });
+            } else {
+                toast.error(response.data?.message || "No email was sent.", { id: toastId });
+            }
+        } catch (error) {
+            console.error("Resend email error:", error);
+            toast.error("Failed to send Headcount Report email.", { id: toastId });
+        } finally {
+            setIsSendingEmail(false);
+        }
     };
 
     const rows = useMemo(() => {
@@ -357,6 +378,15 @@ const Report = () => {
                             >
                                 <Download className="h-4 w-4 mr-2" />
                                 Export
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                onClick={handleResendEmail}
+                                disabled={isSendingEmail}
+                            >
+                                <Mail className="h-4 w-4 mr-2" />
+                                {isSendingEmail ? "Sending..." : "Resend Email"}
                             </Button>
                         </div>
                     </div>

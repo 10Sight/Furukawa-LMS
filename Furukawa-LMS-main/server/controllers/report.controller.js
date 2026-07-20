@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import HeadcountReport from '../models/headcountReport.model.js';
 import UserHierarchySnapshot from '../models/userHierarchySnapshot.model.js';
 import Mail from '../models/mail.model.js';
+import headcountReportScheduler from '../services/headcountReportScheduler.js';
 import logAudit from '../utils/auditLogger.js';
 import { getEligibleUserSql, getDesignationShutterLeftJoinSql, getEligibleUserConditionViaJoin } from '../utils/userEligibility.js';
 
@@ -14,7 +15,7 @@ import { getEligibleUserSql, getDesignationShutterLeftJoinSql, getEligibleUserCo
  */
 export const exportFormReport = asyncHandler(async (req, res) => {
     const { formName } = req.params;
-    const { id, departmentId, studentId, sectionId, date } = req.query;
+    const { id, departmentId, studentId, sectionId, date, month, year } = req.query;
 
     if (!formName) {
         return res.status(400).json({ success: false, message: "Form name is required" });
@@ -166,6 +167,34 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             formData = { studentId, ...req.query };
             break;
 
+        case "Associates Headcount Report": {
+            const hcDeptId = departmentId || 0;
+            let useMonth = month ? Number(month) : null;
+            let useYear = year ? Number(year) : null;
+            // The frontend's "Export" button (exportHelper.js) sends `date` instead of month/year
+            if ((!useMonth || !useYear) && date) {
+                const parsedDate = new Date(date);
+                if (!isNaN(parsedDate)) {
+                    useMonth = useMonth || (parsedDate.getMonth() + 1);
+                    useYear = useYear || parsedDate.getFullYear();
+                }
+            }
+            if (!useMonth || !useYear) {
+                const now = new Date();
+                useMonth = useMonth || (now.getMonth() + 1);
+                useYear = useYear || now.getFullYear();
+            }
+            const report = await HeadcountReport.findOne({ departmentId: hcDeptId, month: useMonth, year: useYear });
+            formData = {
+                tableData: report?.tableData || {},
+                month: useMonth,
+                year: useYear,
+                date: new Date(useYear, useMonth - 1, 1).toISOString().split('T')[0]
+            };
+            resolvedDeptId = hcDeptId;
+            break;
+        }
+
         default:
             return res.status(404).json({ success: false, message: "Report format not found" });
     }
@@ -204,7 +233,11 @@ export const saveHeadcountReport = asyncHandler(async (req, res) => {
         month,
         year,
         date: reportDate.toISOString().split('T')[0]
-    }).catch(err => console.error("[Headcount] Notification failed:", err));
+    })
+        .then(sent => {
+            if (sent) return HeadcountReport.updateLastEmailSentAt(reportId);
+        })
+        .catch(err => console.error("[Headcount] Notification failed:", err));
 
     res.status(200).json({
         success: true,
@@ -314,8 +347,7 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // 17th must still show as a training-cell member on the 16th, and only drop out from the 17th
     // onward. isTemporary itself has no history, so — mirroring the identity rule already used by
     // getDojoHandoverComparison/getDojoHiringTrend in dashboard.controller.js — we fetch anyone
-    // who is currently temporary OR was ever a Dojo hire (expectedHandover IS NOT NULL), and use
-    // updatedAt as the handover-date proxy for those who've since been promoted out.
+    // who is currently temporary OR was ever a Dojo hire (expectedHandover IS NOT NULL).
     const [allDojoUsers] = await executeQuery(`
         SELECT u.id, u.joiningDate, u.leavingDate, u.updatedAt, u.status, u.isTemporary
         FROM users u
@@ -324,6 +356,40 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
           AND ds.[designation] IS NULL
     `);
+
+    // Approved handover date per user, used below as the promotion cutoff instead of updatedAt:
+    // updatedAt is bumped by any later, unrelated profile edit, which would silently shift
+    // already-synced historical "Present in Training Cell" counts. Mirrors the CROSS APPLY
+    // OPENJSON(entries) pattern already used for this lookup in sixteenDayMonitoring.controller.js.
+    const [approvedHandovers] = await executeQuery(`
+        SELECT TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) AS studentId,
+               MIN(JSON_VALUE(entry.value, '$.statusActionAt')) AS handoverDate
+        FROM handover_sheets hs
+        CROSS APPLY OPENJSON(hs.entries) AS entry
+        WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+        GROUP BY TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+    `);
+    const handoverDateMap = {};
+    approvedHandovers.forEach(row => {
+        if (row.studentId) handoverDateMap[row.studentId] = row.handoverDate;
+    });
+
+    // Normalizes a Date object (mssql returns DATE/DATETIME columns as UTC-based JS Date
+    // instances) or a date-like string to a YYYY-MM-DD string, so day-boundary comparisons
+    // in the loop below don't skew with the server's local timezone.
+    const toYMD = (dateVal) => {
+        if (!dateVal) return null;
+        if (dateVal instanceof Date) {
+            if (isNaN(dateVal.getTime())) return null;
+            return `${dateVal.getUTCFullYear()}-${String(dateVal.getUTCMonth() + 1).padStart(2, '0')}-${String(dateVal.getUTCDate()).padStart(2, '0')}`;
+        }
+        const str = String(dateVal);
+        const match = str.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (match) return match[1];
+        const d = new Date(str);
+        if (isNaN(d.getTime())) return null;
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    };
 
     const dailyTotalsMap = {};
     const presentDataMap = {};
@@ -347,17 +413,18 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         }).length;
 
         const dojoMembersOnDate = allDojoUsers.filter(u => {
-            const join = u.joiningDate ? new Date(u.joiningDate) : null;
-            if (join && join > dDate) return false;
+            const joinYMD = toYMD(u.joiningDate);
+            if (joinYMD && joinYMD > dKey) return false;
             if (u.status?.toLowerCase() === 'left') {
-                const left = new Date(u.leavingDate || u.updatedAt);
-                if (left <= dDate) return false;
+                const leftYMD = toYMD(u.leavingDate || u.updatedAt);
+                if (leftYMD && leftYMD <= dKey) return false;
             }
-            // Already promoted out of the Dojo before this date (isTemporary is now 0);
-            // updatedAt is used as the handover-date proxy, per the note above.
+            // Already promoted out of the Dojo before this date (isTemporary is now 0).
+            // Prefer the approved handover date; fall back to updatedAt only when no
+            // approved handover_sheets entry exists for this user.
             if (!u.isTemporary) {
-                const promoted = u.updatedAt ? new Date(u.updatedAt) : null;
-                if (promoted && promoted <= dDate) return false;
+                const promotedYMD = toYMD(handoverDateMap[u.id]) || toYMD(u.updatedAt);
+                if (promotedYMD && promotedYMD <= dKey) return false;
             }
             return true;
         });
@@ -1196,4 +1263,17 @@ export const triggerManualReport = asyncHandler(async (req, res) => {
             error: err.message
         });
     }
+});
+
+/**
+ * Trigger a manual (forced) send of the current month's Associates Headcount Report,
+ * ignoring the configured scheduledTime and the same-day dedup check.
+ */
+export const sendHeadcountReportManually = asyncHandler(async (req, res) => {
+    const result = await headcountReportScheduler.runNow();
+    res.status(result.ok ? 200 : 500).json({
+        success: result.ok,
+        message: result.message,
+        data: { month: result.month, year: result.year, sent: result.sent }
+    });
 });

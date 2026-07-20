@@ -168,7 +168,7 @@ const getTopChartInnerWidth = (dataLength = 0) => {
     return `${Math.max(safeLength, TOP_VISIBLE_DAYS) * TOP_DAY_MIN_WIDTH}px`;
 };
 
-const ScrollableTopChart = ({ dataLength = 0, children }) => {
+const ScrollableTopChart = ({ dataLength = 0, scrollToStart = false, children }) => {
     const scrollRef = useRef(null);
 
     useEffect(() => {
@@ -176,9 +176,11 @@ const ScrollableTopChart = ({ dataLength = 0, children }) => {
         if (!node) return;
 
         window.requestAnimationFrame(() => {
-            node.scrollLeft = node.scrollWidth;
+            // Preserve old default behavior (latest date visible).
+            // For a manually selected range, open from the starting date.
+            node.scrollLeft = scrollToStart ? 0 : node.scrollWidth;
         });
-    }, [dataLength]);
+    }, [dataLength, scrollToStart]);
 
     return (
         <div className={`w-full relative ${TOP_CHART_HEIGHT_CLASS}`}>
@@ -200,14 +202,14 @@ const ScrollableTopChart = ({ dataLength = 0, children }) => {
     );
 };
 
-const MANPOWER_DAY_MIN_WIDTH = 150;
+const MANPOWER_DAY_MIN_WIDTH = 180;
 
 const getManpowerChartInnerWidth = (dataLength = 0) => {
     const safeLength = Number(dataLength) || 0;
     return `${Math.max(safeLength, TOP_VISIBLE_DAYS) * MANPOWER_DAY_MIN_WIDTH}px`;
 };
 
-const ScrollableManpowerChart = ({ dataLength = 0, children }) => {
+const ScrollableManpowerChart = ({ dataLength = 0, scrollToStart = false, children }) => {
     const scrollRef = useRef(null);
 
     useEffect(() => {
@@ -215,9 +217,11 @@ const ScrollableManpowerChart = ({ dataLength = 0, children }) => {
         if (!node) return;
 
         window.requestAnimationFrame(() => {
-            node.scrollLeft = node.scrollWidth;
+            // Preserve old default behavior (latest date visible).
+            // For a manually selected range, open from the starting date.
+            node.scrollLeft = scrollToStart ? 0 : node.scrollWidth;
         });
-    }, [dataLength]);
+    }, [dataLength, scrollToStart]);
 
     return (
         <div className={`w-full relative ${TOP_CHART_HEIGHT_CLASS}`}>
@@ -486,6 +490,31 @@ const getQueryParams = (filter, extra = {}) => ({
         : filter.dateRange?.from
             ? formatDateLocal(filter.dateRange.from)
             : undefined,
+
+    shift: filter.shift || "ALL",
+    ...extra,
+});
+
+// LOWER GRAPH DATE RANGE FILTER DISABLED.
+// To restore date filtering on the graphs below the top three, replace
+// getLowerGraphQueryParams(...) calls with getQueryParams(...), or restore
+// the commented startDate/endDate fields below.
+const getLowerGraphQueryParams = (filter, extra = {}) => ({
+    department: serializeMultiValue(filter.department),
+    section: serializeMultiValue(filter.section),
+    line: serializeMultiValue(filter.line),
+
+    /* RESTORE LOWER GRAPH DATE RANGE FILTER:
+    startDate: filter.dateRange?.from
+        ? formatDateLocal(filter.dateRange.from)
+        : undefined,
+
+    endDate: filter.dateRange?.to
+        ? formatDateLocal(filter.dateRange.to)
+        : filter.dateRange?.from
+            ? formatDateLocal(filter.dateRange.from)
+            : undefined,
+    */
 
     shift: filter.shift || "ALL",
     ...extra,
@@ -1120,6 +1149,7 @@ const GraphFilterBar = ({
     setFilter,
     departments,
     showShift = true,
+    showDateRange = true,
     showTenure = false,
     tenureBucket = "ALL",
     setTenureBucket,
@@ -1130,6 +1160,7 @@ const GraphFilterBar = ({
     const [filteredLines, setFilteredLines] = useState([]);
     const [sectionsLoading, setSectionsLoading] = useState(false);
     const [linesLoading, setLinesLoading] = useState(false);
+    const [datePopoverOpen, setDatePopoverOpen] = useState(false);
 
     const isDepartmentSelected = hasRealSelection(filter.department);
     const isSectionSelected = hasRealSelection(filter.section);
@@ -1269,6 +1300,25 @@ const GraphFilterBar = ({
         }
     };
 
+    const handleDateRangeSelect = (range) => {
+        // Range mode stores only two values: from and to.
+        // First click selects the start date; second click selects the end date
+        // and closes the calendar. A new click after a completed range starts a new range.
+        if (!range?.from) {
+            handleFilterChange("dateRange", undefined);
+            return;
+        }
+
+        handleFilterChange("dateRange", {
+            from: range.from,
+            to: range.to || undefined,
+        });
+
+        if (range.to) {
+            setDatePopoverOpen(false);
+        }
+    };
+
     const handleReset = () => {
         setSections([]);
         setFilteredLines([]);
@@ -1356,43 +1406,47 @@ const GraphFilterBar = ({
                 </>
             )}
 
-            <div className="h-4 w-px bg-slate-300" />
+            {showDateRange && (
+                <>
+                    <div className="h-4 w-px bg-slate-300" />
 
-            <Popover>
-                <PopoverTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        className={`h-8 justify-start text-left font-normal px-2 ${!filter.dateRange?.from && "text-muted-foreground"}`}
-                    >
-                        <CalendarIcon className="mr-2 h-3 w-3" />
+                    <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className={`h-8 justify-start text-left font-normal px-2 ${!filter.dateRange?.from && "text-muted-foreground"}`}
+                            >
+                                <CalendarIcon className="mr-2 h-3 w-3" />
 
-                        {filter.dateRange?.from ? (
-                            filter.dateRange.to ? (
-                                <span className="text-xs">
-                                    {filter.dateRange.from.toLocaleDateString()} – {filter.dateRange.to.toLocaleDateString()}
-                                </span>
-                            ) : (
-                                <span className="text-xs">
-                                    {filter.dateRange.from.toLocaleDateString()}
-                                </span>
-                            )
-                        ) : (
-                            <span className="text-xs">Pick date range</span>
-                        )}
-                    </Button>
-                </PopoverTrigger>
+                                {filter.dateRange?.from ? (
+                                    filter.dateRange.to ? (
+                                        <span className="text-xs">
+                                            {filter.dateRange.from.toLocaleDateString()} – {filter.dateRange.to.toLocaleDateString()}
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs">
+                                            {filter.dateRange.from.toLocaleDateString()}
+                                        </span>
+                                    )
+                                ) : (
+                                    <span className="text-xs">Pick date range</span>
+                                )}
+                            </Button>
+                        </PopoverTrigger>
 
-                <PopoverContent className="w-auto p-0" align="end">
-                    <CalendarComponent
-                        initialFocus
-                        mode="range"
-                        defaultMonth={filter.dateRange?.from}
-                        selected={filter.dateRange}
-                        onSelect={(range) => handleFilterChange("dateRange", range)}
-                        numberOfMonths={2}
-                    />
-                </PopoverContent>
-            </Popover>
+                        <PopoverContent className="w-auto p-0" align="end">
+                            <CalendarComponent
+                                initialFocus
+                                mode="range"
+                                defaultMonth={filter.dateRange?.from}
+                                selected={filter.dateRange}
+                                onSelect={handleDateRangeSelect}
+                                numberOfMonths={2}
+                            />
+                        </PopoverContent>
+                    </Popover>
+                </>
+            )}
 
             {showTenure && (
                 <>
@@ -1771,10 +1825,13 @@ const HighchartsPieCard = ({
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                        {/* LOWER GRAPH DATE RANGE FILTER DISABLED.
+                            Remove showDateRange={false} to restore the calendar. */}
                         <GraphFilterBar
                             filter={filter}
                             setFilter={setFilter}
                             departments={departments}
+                            showDateRange={false}
                         />
 
                         {extraFilters}
@@ -2063,7 +2120,10 @@ const FullWidthToggleChartCard = ({
             </CardHeader>
 
             <CardContent className="px-2 pb-4 pt-2">
-                <ScrollableTopChart dataLength={data.length}>
+                <ScrollableTopChart
+                    dataLength={data.length}
+                    scrollToStart={Boolean(filter?.dateRange?.from)}
+                >
                     {isLoading && <ChartLoader />}
                     {!isLoading && isEmpty && <EmptyState text={emptyText} />}
 
@@ -2249,10 +2309,13 @@ const EducationChartCard = ({
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                        {/* LOWER GRAPH DATE RANGE FILTER DISABLED.
+                            Remove showDateRange={false} to restore the calendar. */}
                         <GraphFilterBar
                             filter={filter}
                             setFilter={setFilter}
                             departments={departments}
+                            showDateRange={false}
                         />
 
                         <ValueModeToggle
@@ -2389,10 +2452,13 @@ const ContractorPrefixChartCard = ({
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                        {/* LOWER GRAPH DATE RANGE FILTER DISABLED.
+                            Remove showDateRange={false} to restore the calendar. */}
                         <GraphFilterBar
                             filter={filter}
                             setFilter={setFilter}
                             departments={departments}
+                            showDateRange={false}
                         />
 
                         <ValueModeToggle
@@ -2507,6 +2573,7 @@ const TenureFullWidthChart = ({
     customTenureRange,
     setCustomTenureRange,
     showMasterComparison = true,
+    showShiftFilter = true,
 }) => {
     const isEmpty = !data || data.every(d => Number(d.value) === 0 && (!showMasterComparison || Number(d.masterValue || 0) === 0));
     const valueSuffix = valueMode === "percentage" ? "%" : "";
@@ -2525,6 +2592,8 @@ const TenureFullWidthChart = ({
                     </div>
 
                     <div className="flex items-center gap-3 flex-wrap">
+                        {/* LOWER TENURE DATE RANGE FILTER DISABLED.
+                            Remove showDateRange={false} to restore the calendar. */}
                         <GraphFilterBar
                             filter={filter}
                             setFilter={setFilter}
@@ -2534,6 +2603,8 @@ const TenureFullWidthChart = ({
                             setTenureBucket={setTenureBucket}
                             customTenureRange={customTenureRange}
                             setCustomTenureRange={setCustomTenureRange}
+                            showShift={showShiftFilter}
+                            showDateRange={false}
                         />
 
                         <ChartTypeToggle value={chartType} onChange={onChartTypeChange} />
@@ -2669,6 +2740,9 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         if (lineParam !== 'ALL') params.append('line', lineParam);
         if (shift !== 'ALL') params.append('shift', shift);
 
+        // LOWER TENURE GRAPH DATE RANGE FILTER DISABLED.
+        // Restore this block when date filtering is needed again:
+        /*
         if (filter.dateRange?.from) {
             params.append('startDate', formatDateLocal(filter.dateRange.from));
         }
@@ -2678,6 +2752,7 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         } else if (filter.dateRange?.from) {
             params.append('endDate', formatDateLocal(filter.dateRange.from));
         }
+        */
 
         // ✅ Custom tenure range is sent only when any tenure graph has selected "Custom days".
         // This prevents hardcoded 0–67 from affecting normal buckets.
@@ -2698,8 +2773,9 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         serializeMultiValue(filter.department),
         serializeMultiValue(filter.section),
         serializeMultiValue(filter.line),
-        filter.dateRange?.from,
-        filter.dateRange?.to,
+        // LOWER TENURE DATE DEPENDENCIES DISABLED. Restore with the date block above.
+        // filter.dateRange?.from,
+        // filter.dateRange?.to,
         shouldUseCustomTenureRange,
         customTenureRange?.from,
         customTenureRange?.to,
@@ -2859,7 +2935,10 @@ const DashboardHome = () => {
 
     useEffect(() => {
         setAttritionFilter(manpowerFilter);
-        setAbsenteeismFilter(manpowerFilter);
+        setAbsenteeismFilter({
+            ...manpowerFilter,
+            shift: "ALL",
+        });
     }, [manpowerFilter]);
 
     const {
@@ -2878,26 +2957,28 @@ const DashboardHome = () => {
         data: absenteeismStats,
         isLoading: absenteeismLoading,
         isFetching: absenteeismFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(absenteeismFilter, {}));
+    } = useGetDashboardStatsQuery(
+        getQueryParams(absenteeismFilter, { shift: "ALL" })
+    );
 
     const {
         data: contractorPrefixStats,
         isLoading: contractorPrefixLoading,
         isFetching: contractorPrefixFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(contractorPrefixFilter, {}));
+    } = useGetDashboardStatsQuery(getLowerGraphQueryParams(contractorPrefixFilter, {}));
 
     const {
         data: educationStats,
         isLoading: educationLoading,
         isFetching: educationFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(educationFilter, {}));
+    } = useGetDashboardStatsQuery(getLowerGraphQueryParams(educationFilter, {}));
 
     const {
         data: skillStats,
         isLoading: skillLoading,
         isFetching: skillFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(skillFilter, { masterAttendanceMode: "YES" })
+        getLowerGraphQueryParams(skillFilter, { masterAttendanceMode: "YES" })
     );
 
     const {
@@ -2905,7 +2986,7 @@ const DashboardHome = () => {
         isLoading: genderLoading,
         isFetching: genderFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(genderFilter, { masterAttendanceMode: "YES" })
+        getLowerGraphQueryParams(genderFilter, { masterAttendanceMode: "YES" })
     );
 
     const {
@@ -2913,7 +2994,7 @@ const DashboardHome = () => {
         isLoading: leaderExpertLoading,
         isFetching: leaderExpertFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(leaderExpertFilter, { masterAttendanceMode: "YES" })
+        getLowerGraphQueryParams(leaderExpertFilter, { masterAttendanceMode: "YES" })
     );
 
     const {
@@ -2921,7 +3002,7 @@ const DashboardHome = () => {
         isLoading: stateLoading,
         isFetching: stateFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(stateFilter, {
+        getLowerGraphQueryParams(stateFilter, {
             stateFilter: serializeMultiValue(selectedMasterState),
             masterAttendanceMode: "YES",
         }),
@@ -2933,7 +3014,7 @@ const DashboardHome = () => {
         isLoading: districtLoading,
         isFetching: districtFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(getStateLinkedFilter(districtFilter), {
+        getLowerGraphQueryParams(getStateLinkedFilter(districtFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -2946,7 +3027,7 @@ const DashboardHome = () => {
         isLoading: employeeGenderLoading,
         isFetching: employeeGenderFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(getStateLinkedFilter(employeeGenderFilter), {
+        getLowerGraphQueryParams(getStateLinkedFilter(employeeGenderFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -2959,7 +3040,7 @@ const DashboardHome = () => {
         isLoading: designationLoading,
         isFetching: designationFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(getStateLinkedFilter(designationFilter), {
+        getLowerGraphQueryParams(getStateLinkedFilter(designationFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -2978,14 +3059,22 @@ const DashboardHome = () => {
         shouldUseCustomTenureRange
     );
 
-    const normalize30Days = (data = []) => {
+    const normalizeTopGraphRange = (data = [], graphFilter = defaultFilter) => {
         if (!Array.isArray(data)) return [];
+
+        // A manually selected range must remain complete and inclusive,
+        // including both its starting and ending dates.
+        if (graphFilter?.dateRange?.from) {
+            return data;
+        }
+
+        // Keep the existing 30-day default only when no range is selected.
         return data.slice(-30);
     };
 
-    const manpowerData = normalize30Days(manpowerStats?.data?.manpowerData || []);
-    const attritionData = normalize30Days(attritionStats?.data?.attritionData || []);
-    const absenteeismData = normalize30Days(absenteeismStats?.data?.absenteeismData || []);
+    const manpowerData = normalizeTopGraphRange(manpowerStats?.data?.manpowerData || [], manpowerFilter);
+    const attritionData = normalizeTopGraphRange(attritionStats?.data?.attritionData || [], attritionFilter);
+    const absenteeismData = normalizeTopGraphRange(absenteeismStats?.data?.absenteeismData || [], absenteeismFilter);
 
     const skillPieData = normalizeSkillLevelChartData(skillStats?.data?.pieCharts?.skillLevels || []);
     const genderPieData = genderStats?.data?.pieCharts?.gender || [];
@@ -3135,7 +3224,10 @@ const DashboardHome = () => {
                 </CardHeader>
 
                 <CardContent className="px-2 pb-4 pt-2">
-                    <ScrollableManpowerChart dataLength={manpowerData.length}>
+                    <ScrollableManpowerChart
+                        dataLength={manpowerData.length}
+                        scrollToStart={Boolean(manpowerFilter?.dateRange?.from)}
+                    >
                         {(manpowerLoading || manpowerFetching) && <ChartLoader />}
                         {!(manpowerLoading || manpowerFetching) && manpowerData.length === 0 && (
                             <EmptyState text="No data found for selected filters" />
@@ -3145,8 +3237,8 @@ const DashboardHome = () => {
                             <ComposedChart
                                 data={manpowerData}
                                 margin={{ top: 66, right: 48, left: 4, bottom: 8 }}
-                                barCategoryGap="22%"
-                                barGap={14}
+                                barCategoryGap="30%"
+                                barGap={0}
                             >
                                 <defs>
                                     <linearGradient id="headcountGrad" x1="0" y1="0" x2="0" y2="1">
@@ -3184,7 +3276,7 @@ const DashboardHome = () => {
                                     name="Required"
                                     fill="#ea580c"
                                     radius={[4, 4, 0, 0]}
-                                    maxBarSize={28}
+                                    barSize={42}
                                     label={renderBarValueLabel("#ea580c", "", 13)}
                                 />
 
@@ -3195,7 +3287,7 @@ const DashboardHome = () => {
                                             name="Actual Present"
                                             fill="url(#presentGrad)"
                                             radius={[4, 4, 0, 0]}
-                                            maxBarSize={28}
+                                            barSize={42}
                                             label={renderBarValueLabel("#2563eb", "", 13)}
                                         />
 
@@ -3204,7 +3296,7 @@ const DashboardHome = () => {
                                             name="Current Headcount"
                                             fill="url(#headcountGrad)"
                                             radius={[4, 4, 0, 0]}
-                                            maxBarSize={28}
+                                            barSize={42}
                                             label={renderBarValueLabel("#7c5a00", "", 13)}
                                         />
                                     </>
@@ -3333,6 +3425,7 @@ const DashboardHome = () => {
                 departments={departments}
                 valueMode={graphValueModes.absenteeism}
                 onValueModeChange={(value) => setGraphValueMode("absenteeism", value)}
+                showShiftFilter={false}
             />
 
             <EducationChartCard
@@ -3481,6 +3574,7 @@ const DashboardHome = () => {
                     customTenureRange={customTenureRange}
                     setCustomTenureRange={setCustomTenureRange}
                     showMasterComparison={false}
+                    showShiftFilter={false}
                 />
 
                 <TenureFullWidthChart
@@ -3503,6 +3597,7 @@ const DashboardHome = () => {
                     customTenureRange={customTenureRange}
                     setCustomTenureRange={setCustomTenureRange}
                     showMasterComparison={false}
+                    showShiftFilter={false}
                 />
             </div>
 
@@ -3537,7 +3632,6 @@ const DashboardHome = () => {
                             chartView={pieChartViews.state}
                             onChartViewChange={(value) => setPieChartView("state", value)}
                             straightXAxisLabels={true}
-                            bottomValuesToggleable={true}
                         />
 
                         <HighchartsPieCard
@@ -3563,7 +3657,6 @@ const DashboardHome = () => {
                             chartView={pieChartViews.district}
                             onChartViewChange={(value) => setPieChartView("district", value)}
                             straightXAxisLabels={true}
-                            bottomValuesToggleable={true}
                         />
 
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch w-full">
@@ -3582,7 +3675,6 @@ const DashboardHome = () => {
                                 chartView={pieChartViews.employeeGender}
                                 onChartViewChange={(value) => setPieChartView("employeeGender", value)}
                                 straightXAxisLabels={true}
-                                bottomValuesToggleable={true}
                             />
                         </div>
 
@@ -3601,7 +3693,6 @@ const DashboardHome = () => {
                             chartView={pieChartViews.designation}
                             onChartViewChange={(value) => setPieChartView("designation", value)}
                             straightXAxisLabels={true}
-                            bottomValuesToggleable={true}
                         />
                     </div>
                 </div>

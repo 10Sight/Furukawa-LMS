@@ -22,6 +22,11 @@ const EmailReports = () => {
     const [recipients, setRecipients] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [savingSchedule, setSavingSchedule] = useState(false);
+    const [scheduleTimes, setScheduleTimes] = useState({
+        dailyTime: '',
+        managementDailyTime: ''
+    });
 
     const [form, setForm] = useState({
         email: '',
@@ -40,6 +45,12 @@ const EmailReports = () => {
             setLoading(true);
             const res = await axiosInstance.get('/api/reports/recipients');
             const list = res?.data?.data;
+            const savedSchedule = res?.data?.schedule || {};
+
+            setScheduleTimes({
+                dailyTime: savedSchedule?.dailyTime || '',
+                managementDailyTime: savedSchedule?.managementDailyTime || ''
+            });
 
             if (Array.isArray(list)) {
                 // Normalize: ensure frequency is always an array on each recipient
@@ -110,6 +121,41 @@ const EmailReports = () => {
             toast.error(err?.response?.data?.message || "Failed to save recipient");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleSaveSchedule = async () => {
+        try {
+            setSavingSchedule(true);
+
+            const res = await axiosInstance.post('/api/reports/recipients', {
+                action: 'updateSchedule',
+                dailyTime: scheduleTimes.dailyTime,
+                managementDailyTime: scheduleTimes.managementDailyTime
+            });
+
+            const savedSchedule =
+                res?.data?.schedule ||
+                res?.data?.data ||
+                scheduleTimes;
+
+            setScheduleTimes({
+                dailyTime: savedSchedule?.dailyTime || '',
+                managementDailyTime: savedSchedule?.managementDailyTime || ''
+            });
+
+            toast.success(
+                res?.data?.message ||
+                "Email report send times updated successfully"
+            );
+        } catch (err) {
+            console.error("Failed to save email report schedule", err);
+            toast.error(
+                err?.response?.data?.message ||
+                "Failed to update report send times"
+            );
+        } finally {
+            setSavingSchedule(false);
         }
     };
 
@@ -226,6 +272,78 @@ const EmailReports = () => {
                 {/* Configuration Panel */}
                 {canManageRecipients && (
                     <div className="lg:col-span-4 space-y-6">
+                        {isAdmin && (
+                            <div className="p-6 rounded-2xl border shadow-sm bg-white border-slate-200">
+                                <div className="flex items-center justify-between mb-5">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-slate-900">
+                                            Automatic Send Time
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Set separate daily send times in India time (IST).
+                                        </p>
+                                    </div>
+                                    <Clock size={20} className="text-blue-500" />
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                            Daily Manpower Report
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={scheduleTimes.dailyTime}
+                                            onChange={(e) =>
+                                                setScheduleTimes(prev => ({
+                                                    ...prev,
+                                                    dailyTime: e.target.value
+                                                }))
+                                            }
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                            Management Daily Report
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={scheduleTimes.managementDailyTime}
+                                            onChange={(e) =>
+                                                setScheduleTimes(prev => ({
+                                                    ...prev,
+                                                    managementDailyTime: e.target.value
+                                                }))
+                                            }
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-all text-slate-900"
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveSchedule}
+                                        disabled={savingSchedule}
+                                        className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
+                                            savingSchedule
+                                                ? 'bg-slate-400 cursor-not-allowed text-white'
+                                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                        }`}
+                                    >
+                                        {savingSchedule
+                                            ? 'Saving Time...'
+                                            : 'Save Send Time'}
+                                    </button>
+
+                                    <p className="text-[11px] leading-5 text-slate-500">
+                                        Leave a time empty to disable automatic sending for that report.
+                                        Manual report sending remains unchanged.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="p-6 rounded-2xl border shadow-sm bg-white sticky top-6 border-slate-200">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold text-slate-900">Add Recipient</h3>
@@ -327,7 +445,7 @@ const EmailReports = () => {
                                 {form.frequency.includes('Daily') && form.frequency.includes('Management Daily') && (
                                     <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
                                         <p className="text-[11px] font-semibold text-amber-700">
-                                            ✦ Both reports will be sent in a single email with 2 attachments.
+                                            ✦ Manual trigger sends both reports together. Automatic reports follow their separate configured send times.
                                         </p>
                                     </div>
                                 )}

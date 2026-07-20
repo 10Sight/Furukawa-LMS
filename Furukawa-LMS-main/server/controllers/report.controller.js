@@ -1081,14 +1081,31 @@ const getEmailReportScheduleSettings = async () => {
     };
 };
 
-const updateEmailReportScheduleSettings = async ({
-    dailyTime,
-    managementDailyTime
-}) => {
+const updateEmailReportScheduleSettings = async (settings = {}) => {
+    const {
+        dailyTime,
+        managementDailyTime
+    } = settings;
+
     await ensureEmailReportScheduleTable();
 
-    const normalizedDailyTime = normalizeReportTime(dailyTime);
-    const normalizedManagementDailyTime = normalizeReportTime(managementDailyTime);
+    // Separate save buttons send only one field at a time.
+    // Preserve the other saved time instead of accidentally overwriting it with NULL.
+    const currentSchedule = await getEmailReportScheduleSettings();
+
+    const hasDailyTime =
+        Object.prototype.hasOwnProperty.call(settings, 'dailyTime');
+
+    const hasManagementDailyTime =
+        Object.prototype.hasOwnProperty.call(settings, 'managementDailyTime');
+
+    const normalizedDailyTime = hasDailyTime
+        ? normalizeReportTime(dailyTime)
+        : normalizeReportTime(currentSchedule.dailyTime);
+
+    const normalizedManagementDailyTime = hasManagementDailyTime
+        ? normalizeReportTime(managementDailyTime)
+        : normalizeReportTime(currentSchedule.managementDailyTime);
 
     await executeQuery(`
         UPDATE dbo.email_report_schedule_settings
@@ -1165,16 +1182,28 @@ export const createMail = asyncHandler(async (req, res) => {
         // Reuse the existing POST /api/reports/recipients endpoint for schedule settings
         // so no route-file change is required.
         if (String(req.body?.action || '').trim().toLowerCase() === 'updateschedule') {
-            const schedule = await updateEmailReportScheduleSettings({
-                dailyTime: req.body?.dailyTime,
-                managementDailyTime: req.body?.managementDailyTime
-            });
+            // Separate save buttons send only one schedule field at a time.
+            // IMPORTANT: build the payload only with fields that were actually sent.
+            // Passing a missing field as `undefined` would make hasOwnProperty() true
+            // inside updateEmailReportScheduleSettings() and could overwrite the
+            // other saved schedule with NULL.
+            const schedulePayload = {};
+
+            if (Object.prototype.hasOwnProperty.call(req.body || {}, 'dailyTime')) {
+                schedulePayload.dailyTime = req.body.dailyTime;
+            }
+
+            if (Object.prototype.hasOwnProperty.call(req.body || {}, 'managementDailyTime')) {
+                schedulePayload.managementDailyTime = req.body.managementDailyTime;
+            }
+
+            const schedule = await updateEmailReportScheduleSettings(schedulePayload);
 
             return res.status(200).json({
                 success: true,
                 data: schedule,
                 schedule,
-                message: "Email report send times updated successfully"
+                message: "Email report send time updated successfully"
             });
         }
 
@@ -1277,3 +1306,4 @@ export const sendHeadcountReportManually = asyncHandler(async (req, res) => {
         data: { month: result.month, year: result.year, sent: result.sent }
     });
 });
+

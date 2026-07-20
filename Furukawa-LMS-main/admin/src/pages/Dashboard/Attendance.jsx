@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { RefreshCcw, Upload, FileSpreadsheet, Loader2, Search, UserMinus } from 'lucide-react';
+import { RefreshCcw, Upload, FileSpreadsheet, Loader2, Search, UserMinus, Download } from 'lucide-react';
 import axiosInstance from '../../Helper/axiosInstance';
 import UnmappedPresentModal from './UnmappedPresentModal';
 import { toast } from 'sonner'; // Assuming sonner is used, or I'll use simple alert if not found. I'll check imports elsewhere if needed, but for now generic toast or alert.
@@ -14,6 +14,79 @@ import { toast } from 'sonner'; // Assuming sonner is used, or I'll use simple a
 // I'll assume standard alert if I can't find it, but `DashboardHome` didn't show toast usage.
 // `Login.jsx` might have it. I'll just use a local helper or console for now, or check `main.jsx`.
 // Actually, I'll stick to standard alert or simple console for errors to be safe, or check if `toast` is available in `components/ui`.
+
+// Excel-compatible .xls export without adding any new frontend dependency.
+const escapeExcelHtml = (value) =>
+    String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+const downloadExcelTable = ({ rows, columns, fileName, title }) => {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (!safeRows.length) return false;
+
+    const headerHtml = columns
+        .map((column) => `<th>${escapeExcelHtml(column.header)}</th>`)
+        .join("");
+
+    const bodyHtml = safeRows
+        .map((row, rowIndex) => {
+            const cells = columns
+                .map((column) => {
+                    const value = typeof column.value === "function"
+                        ? column.value(row, rowIndex)
+                        : row?.[column.value];
+
+                    return `<td style="mso-number-format:'\\@';">${escapeExcelHtml(value)}</td>`;
+                })
+                .join("");
+
+            return `<tr>${cells}</tr>`;
+        })
+        .join("");
+
+    const workbookHtml = `<!DOCTYPE html>
+        <html xmlns:o="urn:schemas-microsoft-com:office:office"
+              xmlns:x="urn:schemas-microsoft-com:office:excel"
+              xmlns="http://www.w3.org/TR/REC-html40">
+            <head>
+                <meta charset="UTF-8" />
+                <style>
+                    table { border-collapse: collapse; font-family: Arial, sans-serif; }
+                    th { background: #e2e8f0; font-weight: 700; }
+                    th, td { border: 1px solid #94a3b8; padding: 6px 8px; white-space: nowrap; }
+                    .sheet-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+                </style>
+            </head>
+            <body>
+                <div class="sheet-title">${escapeExcelHtml(title)}</div>
+                <table>
+                    <thead><tr>${headerHtml}</tr></thead>
+                    <tbody>${bodyHtml}</tbody>
+                </table>
+            </body>
+        </html>`;
+
+    const blob = new Blob(["\ufeff", workbookHtml], {
+        type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = String(fileName || "attendance-export.xls")
+        .replace(/[\\/:*?"<>|]+/g, "-");
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+
+    return true;
+};
 
 const Attendance = () => {
     const { user } = useSelector((state) => state.auth);
@@ -36,6 +109,7 @@ const Attendance = () => {
     const [attendanceData, setAttendanceData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [unmappedExporting, setUnmappedExporting] = useState(false);
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -201,6 +275,136 @@ const Attendance = () => {
         }
     };
 
+    const handleDownloadAttendanceExcel = () => {
+        const exported = downloadExcelTable({
+            rows: filteredData,
+            fileName: `attendance-${filters.date || "selected-date"}.xls`,
+            title: `Attendance - ${filters.date || "Selected Date"}`,
+            columns: [
+                { header: "Sr.No", value: (_row, index) => index + 1 },
+                { header: "Date", value: () => filters.date || "" },
+                { header: "Emp ID", value: "empId" },
+                { header: "Employee Name", value: "name" },
+                { header: "Department", value: (row) => row.department || row.section || "" },
+                { header: "Designation", value: "designation" },
+                { header: "PayCode", value: "payCode" },
+                { header: "Card No", value: "cardNo" },
+                { header: "Shift", value: "shift" },
+                { header: "Start Time", value: "startTime" },
+                { header: "In Time", value: "inTime" },
+                { header: "Out Time", value: "outTime" },
+                { header: "Hrs Worked", value: (row) => row.hrsWorked ?? "" },
+                { header: "Status", value: "status" },
+                { header: "Late Arrival", value: (row) => row.lateArrival ?? "" },
+                { header: "Early Departure", value: (row) => row.earlyDeparture ?? "" },
+                { header: "OT Hrs", value: (row) => row.otHrs ?? "" },
+                { header: "OT Amount", value: (row) => row.otAmount ?? "" },
+            ],
+        });
+
+        if (!exported) {
+            alert("No attendance records available to download.");
+        }
+    };
+
+    const handleDownloadUnmappedExcel = async () => {
+        if (!filters.date) {
+            alert("Please select an attendance date first.");
+            return;
+        }
+
+        setUnmappedExporting(true);
+
+        try {
+            const exportPageSize = 500;
+            let exportPage = 1;
+            let exportTotalPages = 1;
+            const exportRows = [];
+
+            do {
+                const queryParams = new URLSearchParams({
+                    date: filters.date,
+                    search: "",
+                    page: String(exportPage),
+                    limit: String(exportPageSize),
+                }).toString();
+
+                const response = await axiosInstance.get(
+                    `/api/attendance/unmapped-present?${queryParams}`
+                );
+
+                // Supports both normal Axios response and interceptor-unwrapped response.
+                const payload =
+                    response?.data?.success !== undefined
+                        ? response.data
+                        : response;
+
+                if (!payload?.success) {
+                    throw new Error(
+                        payload?.message ||
+                        "Unable to fetch unmapped employees for download."
+                    );
+                }
+
+                const pageRows = Array.isArray(payload.data)
+                    ? payload.data
+                    : [];
+
+                exportRows.push(...pageRows);
+
+                exportTotalPages = Math.max(
+                    1,
+                    Number(payload.pagination?.totalPages) || 1
+                );
+
+                exportPage += 1;
+            } while (exportPage <= exportTotalPages);
+
+            const exported = downloadExcelTable({
+                rows: exportRows,
+                fileName: `unmapped-present-${filters.date}.xls`,
+                title: `Unmapped Present Employees - ${filters.date}`,
+                columns: [
+                    { header: "Sr.No", value: (_row, index) => index + 1 },
+                    { header: "Date", value: () => filters.date },
+                    { header: "PayCode", value: "payCode" },
+                    { header: "Card No", value: "cardNo" },
+                    { header: "Employee Name", value: "employeeName" },
+                    { header: "Department", value: "department" },
+                    { header: "Designation", value: "designation" },
+                    { header: "Shift", value: "shift" },
+                    { header: "Status", value: "status" },
+                    { header: "In Time", value: "inTime" },
+                    { header: "Out Time", value: "outTime" },
+                    {
+                        header: "Hrs Worked",
+                        value: (row) => row.hrsWorked ?? "",
+                    },
+                    { header: "Reason", value: "reason" },
+                ],
+            });
+
+            if (!exported) {
+                alert(
+                    "No unmapped present employees available for the selected date."
+                );
+            }
+        } catch (error) {
+            console.error(
+                "Failed to download unmapped employees Excel",
+                error
+            );
+
+            alert(
+                error?.response?.data?.message ||
+                error?.message ||
+                "Failed to download unmapped employees Excel file."
+            );
+        } finally {
+            setUnmappedExporting(false);
+        }
+    };
+
     return (
         <div className="space-y-6 w-full max-w-full overflow-hidden">
             {/* Header & Filters */}
@@ -292,6 +496,18 @@ const Attendance = () => {
                     </div>
 
 
+                    {/* Attendance Excel Download Button */}
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-green-300 hover:bg-green-50 text-green-700 text-xs h-8 shadow-sm flex items-center gap-1.5"
+                        onClick={handleDownloadAttendanceExcel}
+                        disabled={loading || filteredData.length === 0}
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                        Download Attendance
+                    </Button>
+
                     {/* Unmapped Present Button */}
                     <Button
                         size="sm"
@@ -301,6 +517,24 @@ const Attendance = () => {
                     >
                         <UserMinus className="w-3.5 h-3.5 text-orange-500" />
                         Unmapped Present
+                    </Button>
+
+                    {/* Direct Unmapped Excel Download Button */}
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-orange-300 hover:bg-orange-50 text-orange-700 text-xs h-8 shadow-sm flex items-center gap-1.5"
+                        onClick={handleDownloadUnmappedExcel}
+                        disabled={unmappedExporting}
+                    >
+                        {unmappedExporting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                            <Download className="w-3.5 h-3.5" />
+                        )}
+                        {unmappedExporting
+                            ? "Downloading..."
+                            : "Download Unmapped"}
                     </Button>
 
                     {/* Upload Button */}
@@ -422,7 +656,7 @@ const Attendance = () => {
                                                     <span className="font-medium text-slate-900 text-sm">{log.name}</span>
                                                 </div>
                                             </td>
-                                            <td className="py-3 pl-3 pr-3 w-[150px] text-slate-600 text-xs sticky left-[370px] bg-white group-hover:bg-slate-50 z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] border-r border-slate-200 truncate" title={log.department || log.section}>
+                                            <td className="py-3 pl-3 pr-3 w-[150px] text-slate-600 text-xs truncate" title={log.department || log.section}>
                                                 {log.department || log.section || '-'}
                                             </td>
                                             <td className="py-3 pl-3 pr-3 text-slate-600 text-xs truncate" title={log.designation}>

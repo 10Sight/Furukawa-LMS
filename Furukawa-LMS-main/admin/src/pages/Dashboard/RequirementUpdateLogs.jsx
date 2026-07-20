@@ -15,29 +15,12 @@ import { cn } from "@/lib/utils";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
 
-const IGNORED_KEYS = new Set([
-    "id",
-    "_id",
-    "log_id",
-    "lineId",
-    "line_id",
-    "updatedAt",
-    "createdAt",
-    "created_at",
-    "updated_at",
-    "limit",
-    "offset",
-    "section_id",
-    "subsection_id",
-    "sectionId",
-    "subSectionId",
-    "requirement_id",
-    "requirementId",
-    "section",
-    "sub_section",
-    "sectionName",
-    "subSectionName",
-]);
+const TRACKED_REQUIREMENT_FIELDS = [
+    { key: "salesPlan", label: "Sales Plan", oldColumn: "old_salesPlan", newColumn: "new_salesPlan" },
+    { key: "prodPlan", label: "Production Plan", oldColumn: "old_prodPlan", newColumn: "new_prodPlan" },
+    { key: "prodPlanFN01", label: "Production Plan FN01", oldColumn: "old_prodPlanFN01", newColumn: "new_prodPlanFN01" },
+    { key: "prodPlanFN02", label: "Production Plan FN02", oldColumn: "old_prodPlanFN02", newColumn: "new_prodPlanFN02" },
+];
 
 const formatValue = (v) => {
     if (v === undefined || v === null) return "-";
@@ -98,135 +81,118 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [requirementId]);
 
-    const formatSixMonthCounts = (counts) => {
-        if (!Array.isArray(counts) || counts.length === 0) return "No data";
-        const parts = counts.map((c) => {
-            const d = new Date(c.year, (c.month || 1) - 1, 1);
-            const label = format(d, "MMM yyyy");
-            return `${label}: ${c.count ?? 0}`;
-        });
-        return parts.join(", ");
-    };
-
     const processLogs = (apiLogs) => {
         const flattened = [];
 
         apiLogs.forEach((log) => {
-            const oldValsRaw = typeof log.old_values === "string" ? safeParse(log.old_values) : (log.old_values || {});
-            const newValsRaw = typeof log.new_values === "string" ? safeParse(log.new_values) : (log.new_values || {});
+            const oldValsRaw =
+                typeof log.old_values === "string"
+                    ? safeParse(log.old_values)
+                    : (log.old_values || {});
 
-            // New SQL table stores important numeric columns separately also.
-            // Merge them into old/new objects so existing UI can show row-wise field changes.
-            const oldVals = {
-                ...oldValsRaw,
-                ...(log.old_salesPlan !== undefined && log.old_salesPlan !== null ? { salesPlan: log.old_salesPlan } : {}),
-                ...(log.old_prodPlan !== undefined && log.old_prodPlan !== null ? { prodPlan: log.old_prodPlan } : {}),
-                ...(log.old_prodPlanFN01 !== undefined && log.old_prodPlanFN01 !== null ? { prodPlanFN01: log.old_prodPlanFN01 } : {}),
-                ...(log.old_prodPlanFN02 !== undefined && log.old_prodPlanFN02 !== null ? { prodPlanFN02: log.old_prodPlanFN02 } : {}),
-            };
+            const newValsRaw =
+                typeof log.new_values === "string"
+                    ? safeParse(log.new_values)
+                    : (log.new_values || {});
 
-            const newVals = {
-                ...newValsRaw,
-                ...(log.new_salesPlan !== undefined && log.new_salesPlan !== null ? { salesPlan: log.new_salesPlan } : {}),
-                ...(log.new_prodPlan !== undefined && log.new_prodPlan !== null ? { prodPlan: log.new_prodPlan } : {}),
-                ...(log.new_prodPlanFN01 !== undefined && log.new_prodPlanFN01 !== null ? { prodPlanFN01: log.new_prodPlanFN01 } : {}),
-                ...(log.new_prodPlanFN02 !== undefined && log.new_prodPlanFN02 !== null ? { prodPlanFN02: log.new_prodPlanFN02 } : {}),
-            };
+            const createdAt =
+                log.updated_at ||
+                log.updatedAt ||
+                log.created_at ||
+                log.createdAt ||
+                log.timestamp ||
+                log.time;
 
-            const allKeys = new Set([...Object.keys(oldVals || {}), ...Object.keys(newVals || {})]);
-
-            const createdAt = log.updated_at || log.updatedAt || log.created_at || log.createdAt || log.timestamp || log.time;
             const createdDate = toDateSafe(createdAt) || new Date();
+            const userName =
+                log.updated_by_name ||
+                log.user_name ||
+                log.employee_name ||
+                log.name ||
+                "Unknown";
 
-            const userName = log.updated_by_name || log.user_name || log.employee_name || log.name || "Unknown";
             const userAvatar = log.user_avatar || log.avatar || null;
             const userRole = log.employee_role || log.role || "User";
             const employeeId = log.employee_id || null;
 
             const sectionName =
                 log.section_name ||
-                newVals.sectionName ||
-                oldVals.sectionName ||
-                newVals.section_name ||
-                oldVals.section_name ||
+                newValsRaw.sectionName ||
+                oldValsRaw.sectionName ||
+                newValsRaw.section_name ||
+                oldValsRaw.section_name ||
                 "N/A";
 
             const subSectionName =
                 log.subsection_name ||
-                newVals.subSectionName ||
-                oldVals.subSectionName ||
-                newVals.subsection_name ||
-                oldVals.subsection_name ||
+                newValsRaw.subSectionName ||
+                oldValsRaw.subSectionName ||
+                newValsRaw.lineDescription ||
+                oldValsRaw.lineDescription ||
+                newValsRaw.subsection_name ||
+                oldValsRaw.subsection_name ||
                 "N/A";
 
-            const refMonth = ((newVals.monthName || newVals.month) && newVals.year)
-                ? toDateSafe(`${newVals.monthName || newVals.month} 1, ${newVals.year}`)
-                : ((oldVals.monthName || oldVals.month) && oldVals.year)
-                    ? toDateSafe(`${oldVals.monthName || oldVals.month} 1, ${oldVals.year}`)
-                    : (log.referenceMonth || createdDate);
+            const refMonth =
+                ((newValsRaw.monthName || newValsRaw.month) && newValsRaw.year)
+                    ? toDateSafe(`${newValsRaw.monthName || newValsRaw.month} 1, ${newValsRaw.year}`)
+                    : ((oldValsRaw.monthName || oldValsRaw.month) && oldValsRaw.year)
+                        ? toDateSafe(`${oldValsRaw.monthName || oldValsRaw.month} 1, ${oldValsRaw.year}`)
+                        : (log.referenceMonth || createdDate);
 
-            let pushedAny = false;
+            TRACKED_REQUIREMENT_FIELDS.forEach(({ key, label, oldColumn, newColumn }) => {
+                const oldValue =
+                    log[oldColumn] !== undefined && log[oldColumn] !== null
+                        ? log[oldColumn]
+                        : oldValsRaw?.[key];
 
-            allKeys.forEach((key) => {
-                if (IGNORED_KEYS.has(key)) return;
+                const newValue =
+                    log[newColumn] !== undefined && log[newColumn] !== null
+                        ? log[newColumn]
+                        : newValsRaw?.[key];
 
-                const oldV = oldVals?.[key];
-                const newV = newVals?.[key];
+                // A valid update log must have both the previous and the new value.
+                // This excludes create/upload-only records and other non-requirement logs.
+                if (
+                    oldValue === undefined ||
+                    oldValue === null ||
+                    newValue === undefined ||
+                    newValue === null
+                ) {
+                    return;
+                }
 
-                // eslint-disable-next-line eqeqeq
-                const changed = oldV != newV && JSON.stringify(oldV) !== JSON.stringify(newV);
+                const oldNumber = Number(oldValue);
+                const newNumber = Number(newValue);
+                const changed =
+                    Number.isFinite(oldNumber) && Number.isFinite(newNumber)
+                        ? oldNumber !== newNumber
+                        : String(oldValue) !== String(newValue);
+
                 if (!changed) return;
-
-                const isMentorOrSupervisor =
-                    key === "mentor" ||
-                    key === "supervisorName" ||
-                    key === "supervisor_name" ||
-                    key === "mentorName";
-
-                // Allow tracking of ALL changed keys, instead of restricting it to just plan counts or line ids
-                let displayField = key;
-                if (key === "salesPlan") displayField = "Sales Plan";
-                else if (key === "prodPlan") displayField = "Production Plan";
-                else if (key === "prodPlanFN01") displayField = "Production Plan FN01";
-                else if (key === "prodPlanFN02") displayField = "Production Plan FN02";
-                else if (key === "count") displayField = "Count";
-                else if (key === "lineArea" || key === "lineId" || key === "line_area" || key === "lineName") displayField = "Line / Area";
-                else if (isMentorOrSupervisor) displayField = (key === "mentor" || key === "mentorName") ? "Mentor" : "Supervisor";
-                else displayField = String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()); // Format nice string like MentorName -> Mentor Name
-
-                const sixMonthSummary = isMentorOrSupervisor
-                    ? formatSixMonthCounts(log.six_month_counts)
-                    : null;
-
-                pushedAny = true;
 
                 flattened.push({
                     id: `${log.log_id || log.id || createdDate.getTime()}-${key}`,
                     originalLogId: log.log_id || log.id || null,
-                    user: { name: userName, avatar: userAvatar, role: userRole, employeeId },
-                    target: { section: String(sectionName), subSection: String(subSectionName) },
+                    user: {
+                        name: userName,
+                        avatar: userAvatar,
+                        role: userRole,
+                        employeeId,
+                    },
+                    target: {
+                        section: String(sectionName),
+                        subSection: String(subSectionName),
+                    },
                     referenceMonth: refMonth || createdDate,
                     action: {
-                        field: displayField,
-                        oldValue: isMentorOrSupervisor && !oldV ? "-" : formatValue(oldV),
-                        newValue: formatValue(newV) + (sixMonthSummary && sixMonthSummary.trim() !== "" ? ` (6-Mo: ${sixMonthSummary})` : ""),
+                        field: label,
+                        oldValue: formatValue(oldValue),
+                        newValue: formatValue(newValue),
                     },
                     timestamp: createdDate,
                 });
             });
-
-            // If backend stored log but old/new are empty or identical, still show a generic row
-            if (!pushedAny) {
-                flattened.push({
-                    id: `${log.log_id || log.id || createdDate.getTime()}-generic`,
-                    originalLogId: log.log_id || log.id || null,
-                    user: { name: userName, avatar: userAvatar, role: userRole, employeeId },
-                    target: { section: String(sectionName), subSection: String(subSectionName) },
-                    referenceMonth: refMonth || createdDate,
-                    action: { field: "Count", oldValue: "-", newValue: "-" },
-                    timestamp: createdDate,
-                });
-            }
         });
 
         return flattened;

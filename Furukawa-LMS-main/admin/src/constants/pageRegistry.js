@@ -238,7 +238,7 @@ export const PAGE_REGISTRY = [
     { key: "course-level-settings", label: "Course Level Settings", labelKey: "nav.courseLevelSettings", layout: "admin", link: "/admin/course-level-settings", icon: "IconLayersIntersect" },
     // { key: "certificate-templates", label: "Certificate Templates", labelKey: "nav.certificateTemplates", layout: "admin", link: "/admin/certificate-templates", icon: "IconTemplate" },
     { key: "analytics", label: "Recent Activity", labelKey: "nav.analytics", layout: "admin", link: "/admin/analytics", icon: "IconChartPie" },
-    { key: "report", label: "Report", labelKey: "nav.report", layout: "admin", link: "/admin/report", icon: "IconClipboardList" },
+    { key: "report", label: "Monthly Report", labelKey: "nav.report", layout: "admin", link: "/admin/report", icon: "IconClipboardList" },
     // { key: "10-cycle", label: "10 Cycle", labelKey: "nav.tenCycle", layout: "admin", link: "/admin/10-cycle", icon: "IconRepeat" },
     // { key: "3-day-monitoring", label: "3-Day Monitoring", labelKey: "nav.threeDayMonitoring", layout: "admin", link: "/admin/3-day-monitoring", icon: "IconCalendarCheck" },
     { key: "16-day-monitoring", layout: "admin", link: "/admin/16-day-monitoring" },

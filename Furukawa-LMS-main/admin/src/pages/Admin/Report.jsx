@@ -296,7 +296,7 @@ const Report = () => {
                     value="report"
                     className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
                 >
-                    Report
+                    Monthly Report
                 </TabsTrigger>
                 <TabsTrigger
                     value="report-clubbing"

@@ -94,6 +94,70 @@ const userDateToDateSql = (columnSql) => `
     )
 `;
 
+
+// Same eligible-user rule used by Dashboard Daily Manpower Trend attendance.
+const getEligibleAttendanceUserSql = (alias = "u") => `
+    AND ISNULL(${alias}.isDeleted, 0) = 0
+    AND ISNULL(${alias}.isTemporary, 0) = 0
+    AND ${alias}.empId IS NOT NULL
+    AND ${alias}.empId != ''
+    ${getDesignationShutterExclusionSql(alias)}
+`;
+
+// Same 3-way section hierarchy rule used by Dashboard when Department + Section are selected:
+// 1) users.sectionId directly matches
+// 2) sectionId is NULL and line/sub-section resolves to the section
+// 3) user id exists in sections.users JSON
+const getDashboardSectionMatchSql = (userAlias = "u", sectionAlias = "s") => `
+    (
+        ${userAlias}.sectionId = ${sectionAlias}.id
+        OR (
+            ${userAlias}.sectionId IS NULL
+            AND EXISTS (
+                SELECT 1
+                FROM [lines] resolvedLine
+                LEFT JOIN sub_sections resolvedSubSection
+                    ON resolvedSubSection.id = ${userAlias}.subSectionId
+                WHERE resolvedLine.id = COALESCE(${userAlias}.lineId, resolvedSubSection.lineId)
+                  AND resolvedLine.sectionId = ${sectionAlias}.id
+            )
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM OPENJSON(
+                CASE
+                    WHEN ISJSON(CAST(${sectionAlias}.[users] AS NVARCHAR(MAX))) = 1
+                    THEN CAST(${sectionAlias}.[users] AS NVARCHAR(MAX))
+                    ELSE N'[]'
+                END
+            ) jsonSectionUser
+            WHERE TRY_CAST(jsonSectionUser.[value] AS INT) = ${userAlias}.id
+        )
+    )
+`;
+
+// Same shift matching rule as Dashboard addShiftFilter().
+const getDashboardShiftMatchSql = (alias = "al", shiftValue = "A") => {
+    const safeShift = String(shiftValue || "").trim().toUpperCase().replace(/'/g, "''");
+    const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(${alias}.shift AS NVARCHAR(100)))))`;
+    const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
+
+    return `
+        (
+            ${shiftColumn} = '${safeShift}'
+            OR ${shiftColumn} = 'SHIFT ${safeShift}'
+            OR ${shiftColumn} = '${safeShift} SHIFT'
+            OR ${shiftColumnCompact} = '${safeShift}'
+            OR ${shiftColumnCompact} = 'SHIFT${safeShift}'
+            OR ${shiftColumnCompact} = '${safeShift}SHIFT'
+            OR (
+                '${safeShift}' = 'G'
+                AND ${shiftColumnCompact} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
+            )
+        )
+    `;
+};
+
 const safeMerge = (ws, range) => {
     try { ws.mergeCells(range); } catch (_) { }
 };
@@ -198,6 +262,8 @@ async function fetchRequirements(dbPool, monthNumber, yearVal, reportDay = 1) {
         .query(`
             SELECT CAST(SUM(ISNULL(r.${reqColumn}, 0)) AS BIGINT) AS totalRequired
             FROM requirements r
+            ${sectionJoinSql}
+            LEFT JOIN departments d ON d.id = s.departmentId
             WHERE r.[year] = @yearVal
               AND r.monthNumber = @monthNumber
               ${approvalCondition}
@@ -399,11 +465,18 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
             .query(`
                 ${eligibleUsersCte}
                 SELECT
-                    lineId,
-                    COUNT(DISTINCT empId) AS cnt
-                FROM EligibleUsers
-                WHERE lineId IS NOT NULL
-                GROUP BY lineId
+                    l.id AS lineId,
+                    COUNT(DISTINCT eu.empId) AS cnt
+                FROM [lines] l
+                INNER JOIN sections s
+                    ON s.id = l.sectionId
+                   AND ISNULL(s.isActive, 1) = 1
+                LEFT JOIN EligibleUsers eu
+                    ON eu.departmentId = s.departmentId
+                   AND eu.lineId = l.id
+                   AND ${getDashboardSectionMatchSql("eu", "s")}
+                WHERE ISNULL(l.isActive, 1) = 1
+                GROUP BY l.id
             `);
 
         // This reproduces getSectionHierarchyMatchSql("u") from the dashboard.
@@ -490,180 +563,166 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 
 // =================================================
-// STEP 4: Fetch attendance/present manpower by section
-// SAME LOGIC AS DAILY MANPOWER TREND GRAPH:
-// attendance_logs.userId -> users.id, eligible users only, status = PRESENT.
-// COUNT(*) is used to match the graph's present count exactly.
+// STEP 4: Fetch Dashboard-exact attendance maps for yesterday
+// SAME LOGIC AS THE FIRST DAILY MANPOWER TREND GRAPH:
+// - attendance_logs.userId = users.id
+// - Present = COUNT(DISTINCT u.id) where status is P / PRESENT / Present
+// - eligible user: isDeleted=0, isTemporary=0, valid empId, designation shutter exclusion
+// - Department = users.departmentId
+// - Section = Dashboard 3-way section hierarchy + department
+// - Line = Dashboard combined Department + Section + Line hierarchy
+// - Shift columns use the exact Dashboard shift matching rule on attendance_logs.shift
 // =================================================
-async function fetchAvailableMPBySection(dbPool, reportDateStr) {
-    const makeMap = (rows) => {
-        const map = new Map();
-        rows.forEach(r => map.set(Number(r.sectionId), r));
-        return map;
-    };
-
+async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
     try {
-        const rows = (await dbPool.request()
+        const presentCondition = `al.status IN ('P','PRESENT','Present')`;
+        const shiftGeneralMatch = getDashboardShiftMatchSql("al", "G");
+        const shiftAMatch = getDashboardShiftMatchSql("al", "A");
+        const shiftBMatch = getDashboardShiftMatchSql("al", "B");
+        const shiftCMatch = getDashboardShiftMatchSql("al", "C");
+
+        const selectMetrics = `
+            COUNT(DISTINCT CASE WHEN ${presentCondition} THEN u.id END) AS totalPresent,
+            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftGeneralMatch} THEN u.id END) AS shiftGeneral,
+            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftAMatch} THEN u.id END) AS shiftA,
+            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftBMatch} THEN u.id END) AS shiftB,
+            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftCMatch} THEN u.id END) AS shiftC,
+            CAST(
+                SUM(CASE WHEN ${presentCondition} THEN COALESCE(al.otHrs, 0) ELSE 0 END) / 8.0
+                AS DECIMAL(10,2)
+            ) AS totalOtHrs,
+            CAST(
+                SUM(CASE WHEN ${presentCondition} THEN COALESCE(al.hrsWorked, 0) ELSE 0 END)
+                AS DECIMAL(10,2)
+            ) AS totalHrsWorked
+        `;
+
+        const totalPromise = dbPool.request()
             .input("reportDate", reportDateStr)
             .query(`
                 SELECT
-                    u.sectionId AS sectionId,
-                    COUNT(*) AS totalPresent,
-                    CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs
+                    ${selectMetrics}
                 FROM attendance_logs al
                 INNER JOIN users u
-                    ON u.id = al.userId
+                    ON al.userId = u.id
                 WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
-                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
-                  AND u.sectionId IS NOT NULL
-                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
-                GROUP BY u.sectionId
-            `)).recordset || [];
+                  ${getEligibleAttendanceUserSql("u")}
+            `);
 
-        console.log(`[fetchAvailableMPBySection] graph-aligned section attendance for ${reportDateStr}: ${rows.length} sections`);
-        return makeMap(rows);
-
-    } catch (e) {
-        console.error("[fetchAvailableMPBySection] failed:", e.message);
-        return new Map();
-    }
-}
-
-
-// SQL expressions below reproduce the graph's shift selection order:
-// A first, then G, then B, then C.
-const shiftExpr = "UPPER(ISNULL(al.shift, ISNULL(u.shift, '')))";
-const shiftAExpr = `CHARINDEX('A', ${shiftExpr}) > 0`;
-const shiftGExpr = `CHARINDEX('A', ${shiftExpr}) = 0 AND CHARINDEX('G', ${shiftExpr}) > 0`;
-const shiftBExpr = `CHARINDEX('A', ${shiftExpr}) = 0 AND CHARINDEX('G', ${shiftExpr}) = 0 AND CHARINDEX('B', ${shiftExpr}) > 0`;
-const shiftCExpr = `CHARINDEX('A', ${shiftExpr}) = 0 AND CHARINDEX('G', ${shiftExpr}) = 0 AND CHARINDEX('B', ${shiftExpr}) = 0 AND CHARINDEX('C', ${shiftExpr}) > 0`;
-
-
-// =================================================
-// STEP 5: Fetch shift-wise attendance by section
-// =================================================
-async function fetchShiftAttendanceBySection(dbPool, reportDateStr) {
-    const makeMap = (rows) => {
-        const map = new Map();
-        rows.forEach(r => map.set(Number(r.sectionId), r));
-        return map;
-    };
-
-    try {
-        const rows = (await dbPool.request()
-            .input("reportDate", reportDateStr)
-            .query(`
-                SELECT
-                    u.sectionId AS sectionId,
-                    COUNT(*) AS totalPresent,
-                    SUM(CASE WHEN ${shiftGExpr} THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN ${shiftAExpr} THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN ${shiftBExpr} THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN ${shiftCExpr} THEN 1 ELSE 0 END) AS shiftC,
-                    CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
-                    CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                FROM attendance_logs al
-                INNER JOIN users u
-                    ON u.id = al.userId
-                WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
-                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
-                  AND u.sectionId IS NOT NULL
-                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
-                GROUP BY u.sectionId
-            `)).recordset || [];
-
-        console.log(`[fetchShiftAttendanceBySection] graph-aligned rows for ${reportDateStr}: ${rows.length}`);
-        return makeMap(rows);
-
-    } catch (e) {
-        console.error("[fetchShiftAttendanceBySection] failed:", e.message);
-        return new Map();
-    }
-}
-
-
-// =================================================
-// STEP 6: Fetch shift-wise attendance by line
-// =================================================
-async function fetchShiftAttendanceByLine(dbPool, reportDateStr) {
-    const makeMap = (rows) => {
-        const map = new Map();
-        rows.forEach(r => map.set(Number(r.lineId), r));
-        return map;
-    };
-
-    try {
-        const rows = (await dbPool.request()
-            .input("reportDate", reportDateStr)
-            .query(`
-                SELECT
-                    u.lineId AS lineId,
-                    COUNT(*) AS totalPresent,
-                    SUM(CASE WHEN ${shiftGExpr} THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN ${shiftAExpr} THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN ${shiftBExpr} THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN ${shiftCExpr} THEN 1 ELSE 0 END) AS shiftC,
-                    CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
-                    CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
-                FROM attendance_logs al
-                INNER JOIN users u
-                    ON u.id = al.userId
-                WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
-                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
-                  AND u.lineId IS NOT NULL
-                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
-                GROUP BY u.lineId
-            `)).recordset || [];
-
-        console.log(`[fetchShiftAttendanceByLine] graph-aligned rows for ${reportDateStr}: ${rows.length}`);
-        return makeMap(rows);
-
-    } catch (e) {
-        console.error("[fetchShiftAttendanceByLine] failed:", e.message);
-        return new Map();
-    }
-}
-
-
-// =================================================
-// STEP 6B: Fetch shift-wise attendance by department
-// =================================================
-async function fetchShiftAttendanceByDepartment(dbPool, reportDateStr) {
-    const makeMap = (rows) => {
-        const map = new Map();
-        rows.forEach(r => map.set(Number(r.deptId), r));
-        return map;
-    };
-
-    try {
-        const rows = (await dbPool.request()
+        const departmentPromise = dbPool.request()
             .input("reportDate", reportDateStr)
             .query(`
                 SELECT
                     u.departmentId AS deptId,
-                    COUNT(*) AS totalPresent,
-                    SUM(CASE WHEN ${shiftGExpr} THEN 1 ELSE 0 END) AS shiftGeneral,
-                    SUM(CASE WHEN ${shiftAExpr} THEN 1 ELSE 0 END) AS shiftA,
-                    SUM(CASE WHEN ${shiftBExpr} THEN 1 ELSE 0 END) AS shiftB,
-                    SUM(CASE WHEN ${shiftCExpr} THEN 1 ELSE 0 END) AS shiftC,
-                    CAST(SUM(COALESCE(al.otHrs, 0)) / 8.0 AS DECIMAL(10,2)) AS totalOtHrs,
-                    CAST(SUM(COALESCE(al.hrsWorked, 0)) AS DECIMAL(10,2)) AS totalHrsWorked
+                    ${selectMetrics}
                 FROM attendance_logs al
                 INNER JOIN users u
-                    ON u.id = al.userId
+                    ON al.userId = u.id
                 WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
-                  AND (u.isEmployee = 1 OR u.isTemporary = 1)
                   AND u.departmentId IS NOT NULL
-                  AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
+                  ${getEligibleAttendanceUserSql("u")}
                 GROUP BY u.departmentId
-            `)).recordset || [];
+            `);
 
-        console.log(`[fetchShiftAttendanceByDepartment] graph-aligned rows for ${reportDateStr}: ${rows.length}`);
-        return makeMap(rows);
+        // Section query reproduces Dashboard Department + Section hierarchy filtering.
+        const sectionPromise = dbPool.request()
+            .input("reportDate", reportDateStr)
+            .query(`
+                SELECT
+                    s.id AS sectionId,
+                    ${selectMetrics}
+                FROM sections s
+                LEFT JOIN users u
+                    ON u.departmentId = s.departmentId
+                   AND ${getDashboardSectionMatchSql("u", "s")}
+                   ${getEligibleAttendanceUserSql("u")}
+                LEFT JOIN attendance_logs al
+                    ON al.userId = u.id
+                   AND CONVERT(VARCHAR, al.[date], 23) = @reportDate
+                WHERE ISNULL(s.isActive, 1) = 1
+                GROUP BY s.id
+            `);
+
+        // Line query reproduces Dashboard Department + Section + Line filtering.
+        const linePromise = dbPool.request()
+            .input("reportDate", reportDateStr)
+            .query(`
+                SELECT
+                    l.id AS lineId,
+                    ${selectMetrics}
+                FROM [lines] l
+                INNER JOIN sections s
+                    ON s.id = l.sectionId
+                   AND ISNULL(s.isActive, 1) = 1
+                LEFT JOIN users u
+                    ON u.departmentId = s.departmentId
+                   AND u.lineId = l.id
+                   AND ${getDashboardSectionMatchSql("u", "s")}
+                   ${getEligibleAttendanceUserSql("u")}
+                LEFT JOIN attendance_logs al
+                    ON al.userId = u.id
+                   AND CONVERT(VARCHAR, al.[date], 23) = @reportDate
+                WHERE ISNULL(l.isActive, 1) = 1
+                GROUP BY l.id
+            `);
+
+        const [totalResult, departmentResult, sectionResult, lineResult] = await Promise.all([
+            totalPromise,
+            departmentPromise,
+            sectionPromise,
+            linePromise
+        ]);
+
+        const byDepartment = new Map();
+        const bySection = new Map();
+        const byLine = new Map();
+
+        (departmentResult.recordset || []).forEach(r => {
+            byDepartment.set(Number(r.deptId), r);
+        });
+
+        (sectionResult.recordset || []).forEach(r => {
+            bySection.set(Number(r.sectionId), r);
+        });
+
+        (lineResult.recordset || []).forEach(r => {
+            byLine.set(Number(r.lineId), r);
+        });
+
+        const total = totalResult.recordset?.[0] || {
+            totalPresent: 0,
+            shiftGeneral: 0,
+            shiftA: 0,
+            shiftB: 0,
+            shiftC: 0,
+            totalOtHrs: 0,
+            totalHrsWorked: 0
+        };
+
+        console.log(
+            `[fetchDashboardAttendanceMaps] DASHBOARD-EXACT ${reportDateStr}: ` +
+            `present=${Number(total.totalPresent) || 0}, departments=${byDepartment.size}, ` +
+            `sections=${bySection.size}, lines=${byLine.size}`
+        );
+
+        return { byDepartment, bySection, byLine, total };
 
     } catch (e) {
-        console.error("[fetchShiftAttendanceByDepartment] failed:", e.message);
-        return new Map();
+        console.error("[fetchDashboardAttendanceMaps] failed:", e.message);
+        return {
+            byDepartment: new Map(),
+            bySection: new Map(),
+            byLine: new Map(),
+            total: {
+                totalPresent: 0,
+                shiftGeneral: 0,
+                shiftA: 0,
+                shiftB: 0,
+                shiftC: 0,
+                totalOtHrs: 0,
+                totalHrsWorked: 0
+            }
+        };
     }
 }
 
@@ -680,49 +739,65 @@ export const getReportData = async () => {
     const yearVal = reportDate.getFullYear();
     const reportDay = reportDate.getDate();
 
-    const [deptSections, reqMaps, activeMaps, attendanceMap] = await Promise.all([
+    const [deptSections, reqMaps, activeMaps, attendanceMaps] = await Promise.all([
         fetchDeptSections(dbPool),
         fetchRequirements(dbPool, monthNumber, yearVal, reportDay),
         fetchActiveManpowerMaps(dbPool, reportDateStr),
-        fetchAvailableMPBySection(dbPool, reportDateStr)
+        fetchDashboardAttendanceMaps(dbPool, reportDateStr)
     ]);
 
-    const result = deptSections.map(row => ({
-        deptId: row.deptId,
-        department_name: row.department_name,
-        department_code: row.department_code,
-        sectionId: row.sectionId,
-        section_name: row.section_name,
-        section_code: row.section_code,
-        category: row.category,
-        // Requirement = same FN logic as Daily Manpower Trend graph.
-        totalRequired: row.sectionId
-            ? (reqMaps.bySection.get(Number(row.sectionId)) || 0)
-            : 0,
-        departmentTotalRequired: row.deptId
-            ? (reqMaps.byDepartment.get(Number(row.deptId)) || 0)
-            : 0,
-        globalTotalRequired: reqMaps.total,
-        // Actual M/P = graph-aligned PRESENT attendance for yesterday.
-        totalPresent: row.sectionId
-            ? getNum(attendanceMap.get(Number(row.sectionId)), "totalPresent")
-            : 0,
-        // Available M/P = exact Dashboard Total Manpower logic for this Dept + Section.
-        totalAssigned: row.sectionId
-            ? (activeMaps.bySection.get(Number(row.sectionId)) || 0)
-            : 0,
-        // Keep exact department/global Dashboard totals so subtotal and GRAND TOTAL
-        // do not depend on summing section rows (which can miss null sectionId users).
-        departmentTotalAssigned: row.deptId
-            ? (activeMaps.byDepartment.get(Number(row.deptId)) || 0)
-            : 0,
-        globalTotalAssigned: activeMaps.total,
-        totalOtHrs: row.sectionId
-            ? getNum(attendanceMap.get(Number(row.sectionId)), "totalOtHrs")
-            : 0,
-    }));
+    const result = deptSections.map(row => {
+        const sectionAttendance = row.sectionId
+            ? (attendanceMaps.bySection.get(Number(row.sectionId)) || {})
+            : {};
+        const departmentAttendance = row.deptId
+            ? (attendanceMaps.byDepartment.get(Number(row.deptId)) || {})
+            : {};
 
-    console.log(`[getReportData] report date ${reportDateStr}, merged rows: ${result.length}, active manpower: ${activeMaps.total}`);
+        return {
+            deptId: row.deptId,
+            department_name: row.department_name,
+            department_code: row.department_code,
+            sectionId: row.sectionId,
+            section_name: row.section_name,
+            section_code: row.section_code,
+            category: row.category,
+
+            // Required = exact Dashboard Requirement bar logic for yesterday.
+            totalRequired: row.sectionId
+                ? (reqMaps.bySection.get(Number(row.sectionId)) || 0)
+                : 0,
+            departmentTotalRequired: row.deptId
+                ? (reqMaps.byDepartment.get(Number(row.deptId)) || 0)
+                : 0,
+            globalTotalRequired: reqMaps.total,
+
+            // Actual M/P = exact Dashboard Present bar logic for yesterday.
+            totalPresent: getNum(sectionAttendance, "totalPresent"),
+            departmentTotalPresent: getNum(departmentAttendance, "totalPresent"),
+            globalTotalPresent: getNum(attendanceMaps.total, "totalPresent"),
+
+            // Available M/P = exact Dashboard Total Manpower bar logic for yesterday.
+            totalAssigned: row.sectionId
+                ? (activeMaps.bySection.get(Number(row.sectionId)) || 0)
+                : 0,
+            departmentTotalAssigned: row.deptId
+                ? (activeMaps.byDepartment.get(Number(row.deptId)) || 0)
+                : 0,
+            globalTotalAssigned: activeMaps.total,
+
+            // OT Mandays uses the same eligible attendance population/hierarchy as Dashboard Present.
+            totalOtHrs: getNum(sectionAttendance, "totalOtHrs"),
+            departmentTotalOtHrs: getNum(departmentAttendance, "totalOtHrs"),
+            globalTotalOtHrs: getNum(attendanceMaps.total, "totalOtHrs"),
+        };
+    });
+
+    console.log(
+        `[getReportData] report date ${reportDateStr}, merged rows: ${result.length}, ` +
+        `required=${reqMaps.total}, manpower=${activeMaps.total}, attendance=${getNum(attendanceMaps.total, "totalPresent")}`
+    );
+
     return result;
 };
 
@@ -1014,23 +1089,28 @@ async function _buildManpowerBuffer() {
 
                 writeSubRow("Direct", dReq, dAvail, dAct, dGap, dOT);
                 writeSubRow("Indirect", iReq, iAvail, iAct, iGap, iOT);
-                // Department Total Available M/P must match Dashboard when that department is selected.
-                // Do not derive it by adding section rows because Dashboard section hierarchy can include
-                // users whose users.sectionId is null and because section membership can come from sections.users.
+                // Department Total row must match Dashboard when that department is selected.
+                // Requirement, Total Manpower, Present Attendance and OT all use exact department-level maps.
                 const exactDepartmentRequired = Number(
                     sections[0]?.departmentTotalRequired ?? (dReq + iReq)
                 ) || 0;
                 const exactDepartmentAvailable = Number(
                     sections[0]?.departmentTotalAssigned ?? (dAvail + iAvail)
                 ) || 0;
+                const exactDepartmentActual = Number(
+                    sections[0]?.departmentTotalPresent ?? (dAct + iAct)
+                ) || 0;
+                const exactDepartmentOT = Number(
+                    sections[0]?.departmentTotalOtHrs ?? (dOT + iOT)
+                ) || 0;
 
                 writeSubRow(
                     "Total",
                     exactDepartmentRequired,
                     exactDepartmentAvailable,
-                    dAct + iAct,
-                    (dAct + iAct) - exactDepartmentRequired,
-                    parseFloat((dOT + iOT).toFixed(2))
+                    exactDepartmentActual,
+                    exactDepartmentActual - exactDepartmentRequired,
+                    parseFloat(exactDepartmentOT.toFixed(2))
                 );
 
                 const subEnd = rowIdx - 1;
@@ -1060,16 +1140,13 @@ async function _buildManpowerBuffer() {
             }
         }
 
-        // GRAND TOTAL Available M/P must be the exact unfiltered Dashboard Total Manpower
-        // for yesterday, not the arithmetic sum of section rows.
+        // GRAND TOTAL must match the unfiltered Dashboard first manpower graph for yesterday.
+        // Do not derive Requirement / Total Manpower / Attendance / OT by adding section rows.
         if (data.length > 0) {
-            if (data[0].globalTotalRequired !== undefined) {
-                gReq = Number(data[0].globalTotalRequired) || 0;
-            }
-            if (data[0].globalTotalAssigned !== undefined) {
-                gAvail = Number(data[0].globalTotalAssigned) || 0;
-            }
-            // Gap is Actual M/P - Total Required.
+            gReq = Number(data[0].globalTotalRequired) || 0;
+            gAvail = Number(data[0].globalTotalAssigned) || 0;
+            gAct = Number(data[0].globalTotalPresent) || 0;
+            gOT = Number(data[0].globalTotalOtHrs) || 0;
             gGap = gAct - gReq;
         }
 
@@ -1184,19 +1261,19 @@ async function _buildManagementBuffer() {
             requirementDay
         );
         const lineReqMap = lineReqResult.byLine;
-        const lineReqSectionMap = lineReqResult.bySection;
 
-        // Available / handover manpower now uses the same active-user logic as the
-        // Daily Manpower Trend graph. No snapshot hierarchy verification is used.
+        // Handover/Available manpower uses the exact Dashboard Total Manpower bar logic.
+        // No user_hierarchy_snapshots verification is used.
         const activeMaps = await fetchActiveManpowerMaps(dbPool, reportDateStr);
         const handSecMap = activeMaps.bySection;
         const handLineMap = activeMaps.byLine;
         const handDeptMap = activeMaps.byDepartment;
 
-        // Attendance uses the exact graph relationship: attendance_logs.userId -> users.id.
-        const attSecMap = await fetchShiftAttendanceBySection(dbPool, reportDateStr);
-        const attLineMap = await fetchShiftAttendanceByLine(dbPool, reportDateStr);
-        const attDeptMap = await fetchShiftAttendanceByDepartment(dbPool, reportDateStr);
+        // Present/shift/OT/hour columns use the exact Dashboard Present bar population and hierarchy.
+        const attendanceMaps = await fetchDashboardAttendanceMaps(dbPool, reportDateStr);
+        const attSecMap = attendanceMaps.bySection;
+        const attLineMap = attendanceMaps.byLine;
+        const attDeptMap = attendanceMaps.byDepartment;
 
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet("Management Daily");
@@ -1399,6 +1476,18 @@ async function _buildManagementBuffer() {
             ri++;
         }
 
+        // Top Management Total row must match Dashboard with no Department/Section/Line filter.
+        // This preserves employees with NULL hierarchy and avoids arithmetic-sum mismatches.
+        grReq = Number(reqMaps.total) || 0;
+        grHand = Number(activeMaps.total) || 0;
+        grGen = getNum(attendanceMaps.total, "shiftGeneral");
+        grA = getNum(attendanceMaps.total, "shiftA");
+        grB = getNum(attendanceMaps.total, "shiftB");
+        grC = getNum(attendanceMaps.total, "shiftC");
+        grAct = getNum(attendanceMaps.total, "totalPresent");
+        grOT = getNum(attendanceMaps.total, "totalOtHrs");
+        grHrs = getNum(attendanceMaps.total, "totalHrsWorked");
+
         {
             const row = ws.getRow(ri);
             row.height = 22;
@@ -1489,9 +1578,10 @@ async function _buildManagementBuffer() {
                 const secLines = linesBySection.get(sec.sectionId) || [];
                 const att = attSecMap.get(sec.sectionId) || {};
 
-                // Detailed Attendance Report requirement must come from line_requirements only.
-                // Do not use requirements table here, even if the section has a single line or no active line.
-                const secReq = lineReqSectionMap.get(Number(sec.sectionId)) || 0;
+                // Section Total requirement must match Dashboard when that Section is selected:
+                // requirements table + approval rule + yesterday FN01/FN02.
+                // Individual line rows below still use line_requirements, exactly like Dashboard line filter.
+                const secReq = reqMaps.bySection.get(Number(sec.sectionId)) || 0;
                 const secHand = handSecMap.get(Number(sec.sectionId)) || 0;
                 const secAct = getNum(att, "totalPresent");
                 const secOT = getNum(att, "totalOtHrs"); // OT Mandays = section employees OT sum / 8
@@ -1684,9 +1774,9 @@ async function _buildManagementBuffer() {
                         ri++;
                     });
 
-                    // Section total should be the full line_requirements section total.
-                    // If sectionId total is missing for old records, fall back to sum of displayed line rows.
-                    const totalReqForSection = lineReqSectionMap.get(Number(sec.sectionId)) || totReq;
+                    // Section Total must match Dashboard Section filter logic, not the arithmetic
+                    // sum of line_requirements rows. Line rows themselves remain line_requirements-based.
+                    const totalReqForSection = reqMaps.bySection.get(Number(sec.sectionId)) || 0;
 
                     const secBlockEnd = ri - 1;
 

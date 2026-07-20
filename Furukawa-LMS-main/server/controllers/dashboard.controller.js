@@ -364,11 +364,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
                   AND ${leaveDateSql} IS NOT NULL
                   ${attritionHierCondition}
+                  ${getEligibleUserSql("u")}
                   -- NOTE: Attrition me employee tabhi count hoga jab users.status = LEFT ho.
                   -- leavingDate sirf employee ke exact left date ko determine karegi.
                   -- PRESENT status employee leavingDate filled hone par bhi attrition me count nahi hoga.
                   -- Hierarchy filters are applied directly from users table.
-                  -- isTemporary/isDeleted/designation filters are intentionally not applied in attrition.
+                  -- Same common dashboard eligibility applies here:
+                  -- isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
             `;
 
             const [totalRows] = await executeQuery(totalSql, []);
@@ -392,10 +394,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
                   ${attritionHierCondition}
+                  ${getEligibleUserSql("u")}
                   -- NOTE: Attrition me pehle users.status = LEFT check hoga.
                   -- leavingDate employee ko uske exact left date par show karegi.
                   -- PRESENT status employee attrition graph me count nahi hoga.
-                  -- isTemporary/isDeleted/designation/shift filters yahan apply nahi honge.
+                  -- Same common dashboard eligibility applies here:
+                  -- isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
+                  -- Shift behavior remains unchanged.
         `;
 
         const attrParams = [];
@@ -994,8 +999,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // Attrition graph me pehle users.status = LEFT check hoga.
         // leavingDate employee ke exact left date ko determine karegi.
         // PRESENT status employee attrition graph me count nahi hoga.
-        // isTemporary/isDeleted/designation/shift filters attrition graph par apply nahi honge.
-        // Department/Section/Line filters users table se apply honge.
+        // Same common dashboard employee eligibility attrition graph par bhi apply hogi:
+        // isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
+        // Department/Section/Line filters users table se apply honge; shift behavior unchanged rahega.
         attritionData = await buildDailyAttritionDataFromUsers();
     } catch (e) {
         console.warn("[DASHBOARD] Attrition daily query failed:", e.message);
@@ -3048,8 +3054,10 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${leaveDateSQL} = ?
 
                   ${attritionHierCondition}
-                  -- NOTE: isTemporary/isDeleted/designation/shift behavior remains unchanged
-                  -- and these filters are intentionally not applied to Tenure Attrition.
+                  ${getEligibleUserSql("u")}
+                  -- NOTE: Tenure Attrition now uses the same common dashboard eligibility:
+                  -- isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
+                  -- Shift behavior remains unchanged.
         `;
 
         const attritionParams = [sqlEndDate];
@@ -3079,7 +3087,9 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${leaveDateSQL} = ?
                   AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
                   ${attritionHierCondition}
-                  -- NOTE: Custom Tenure Attrition me isTemporary/isDeleted/designation/shift filters apply nahi honge.
+                  ${getEligibleUserSql("u")}
+                  -- NOTE: Custom Tenure Attrition also uses the same common dashboard eligibility.
+                  -- Shift behavior remains unchanged.
             `;
 
             const customAttritionParams = [sqlEndDate, customFromDays, customToDays];

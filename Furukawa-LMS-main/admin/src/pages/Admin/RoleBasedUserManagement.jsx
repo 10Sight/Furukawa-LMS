@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import {
@@ -42,6 +42,11 @@ import {
   IconRefresh,
   IconLoader,
   IconUserMinus,
+  IconX,
+  IconTrophy,
+  IconUsers,
+  IconUserCheck,
+  IconChartBar,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -59,13 +64,45 @@ import {
 } from "@/components/ui/tooltip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import SearchInput from "@/components/common/SearchInput";
+import FilterSelect from "@/components/common/FilterSelect";
+import FilterBar from "@/components/common/FilterBar";
+import StatCard from "@/components/common/StatCard";
 
 const MENTOR_ROLE_FIELD = "isMentor";
+
+const STATUS_OPTIONS = [
+  { value: "ALL", label: "All Status" },
+  { value: "PRESENT", label: "Present" },
+  { value: "ABSENT", label: "Absent" },
+  { value: "ON_LEAVE", label: "On Leave" },
+  { value: "LEFT", label: "Left" },
+];
+
+// Builds the month filter options: current month back through the previous 11 months, plus "All-Time".
+const buildMonthOptions = () => {
+  const options = [{ value: "ALL", label: "All-Time" }];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    options.push({ value, label: format(d, "MMMM yyyy") });
+  }
+  return options;
+};
+
+const getCurrentMonthValue = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
 
 const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
+  const [sectionFilter, setSectionFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthValue);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -96,7 +133,15 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     page: currentPage,
     limit: 10,
     search: searchTerm,
+    departmentId: departmentFilter !== "ALL" ? departmentFilter : "",
+    sectionId: sectionFilter !== "ALL" ? sectionFilter : "",
+    status: statusFilter !== "ALL" ? statusFilter : "",
+    ...(isMentorRole ? { month: selectedMonth } : {}),
   });
+
+  const monthlyStats = isMentorRole ? usersData?.data?.stats : null;
+  const monthOptions = useMemo(() => buildMonthOptions(), []);
+  const selectedMonthLabel = monthOptions.find((o) => o.value === selectedMonth)?.label || "";
 
   const [registerUser] = useUserRegisterMutation();
   const [updateUser] = useUpdateUserMutation();
@@ -107,6 +152,62 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     formData.departmentId,
     { skip: !formData.departmentId }
   );
+  const { data: filterSectionRes } = useGetSectionsByDepartmentQuery(
+    departmentFilter,
+    { skip: departmentFilter === "ALL" }
+  );
+
+  // Reset to page 1 whenever a filter or the search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, departmentFilter, sectionFilter, statusFilter, selectedMonth]);
+
+  const departmentOptions = useMemo(() => {
+    const options = [{ value: "ALL", label: "All Departments" }];
+    (deptRes?.data?.departments || []).forEach((dept) => {
+      options.push({ value: String(dept.id), label: dept.name });
+    });
+    return options;
+  }, [deptRes]);
+
+  const sectionOptions = useMemo(() => {
+    const options = [{ value: "ALL", label: "All Sections" }];
+    (filterSectionRes?.data || []).forEach((sec) => {
+      options.push({ value: String(sec.id), label: sec.name });
+    });
+    return options;
+  }, [filterSectionRes]);
+
+  const hasActiveFilters = departmentFilter !== "ALL" || sectionFilter !== "ALL" || statusFilter !== "ALL" || !!searchTerm;
+
+  const activeFilters = useMemo(() => {
+    const filters = [];
+    if (departmentFilter !== "ALL") {
+      filters.push({ label: "Department", value: departmentOptions.find((o) => o.value === departmentFilter)?.label });
+    }
+    if (sectionFilter !== "ALL") {
+      filters.push({ label: "Section", value: sectionOptions.find((o) => o.value === sectionFilter)?.label });
+    }
+    if (statusFilter !== "ALL") {
+      filters.push({ label: "Status", value: STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label });
+    }
+    if (searchTerm) {
+      filters.push({ label: "Search", value: searchTerm });
+    }
+    return filters;
+  }, [departmentFilter, sectionFilter, statusFilter, searchTerm, departmentOptions, sectionOptions]);
+
+  const clearFilters = () => {
+    setDepartmentFilter("ALL");
+    setSectionFilter("ALL");
+    setStatusFilter("ALL");
+    setSearchTerm("");
+  };
+
+  const handleDepartmentFilterChange = (val) => {
+    setDepartmentFilter(val);
+    setSectionFilter("ALL");
+  };
 
   const handleInputChange = (e) => {
     const { id, value } = e.target;
@@ -228,15 +329,96 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
           <h1 className="text-2xl font-bold">{roleName} Management</h1>
           <p className="text-gray-500">Manage all {roleName.toLowerCase()}s in the system</p>
         </div>
-        <Button onClick={() => { resetForm(); setIsAddDialogOpen(true); }}>
-          <IconPlus className="w-4 h-4 mr-2" />
-          Add {roleName}
-        </Button>
+        <div className="flex items-center gap-2">
+          {isMentorRole && (
+            <FilterSelect
+              value={selectedMonth}
+              onValueChange={setSelectedMonth}
+              options={monthOptions}
+              placeholder="Month"
+              className="w-44"
+            />
+          )}
+          <Button onClick={() => { resetForm(); setIsAddDialogOpen(true); }}>
+            <IconPlus className="w-4 h-4 mr-2" />
+            Add {roleName}
+          </Button>
+        </div>
       </div>
+
+      {isMentorRole && monthlyStats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-amber-800">Top Assigned Mentor</CardTitle>
+              <div className="p-2 rounded-full bg-amber-200">
+                <IconTrophy className="h-5 w-5 text-amber-700" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {monthlyStats.topMentor ? (
+                <>
+                  <div className="text-lg font-bold text-amber-900 truncate">{monthlyStats.topMentor.fullName}</div>
+                  <p className="text-xs text-amber-700 mt-1">{monthlyStats.topMentor.department || "No Department"}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge className="bg-amber-600 hover:bg-amber-600 text-white">
+                      {monthlyStats.topMentor.assignedCount} / {monthlyStats.topMentor.mentorLimit || "∞"} Mentees
+                    </Badge>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-amber-700">No assignments {selectedMonth === "ALL" ? "yet" : `for ${selectedMonthLabel}`}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <StatCard
+            title="Mentees Assigned"
+            value={monthlyStats.totalMenteesAssigned}
+            description={selectedMonth === "ALL" ? "All-time total" : selectedMonthLabel}
+            icon={IconUsers}
+            iconBgColor="bg-blue-100"
+            iconColor="text-blue-600"
+            gradientFrom="from-blue-50"
+            gradientTo="to-blue-100"
+            borderColor="border-blue-200"
+            textColor="text-blue-800"
+            valueColor="text-blue-900"
+          />
+
+          <StatCard
+            title="Active Mentors"
+            value={monthlyStats.totalMentors}
+            description="Matching current filters"
+            icon={IconUserCheck}
+            iconBgColor="bg-green-100"
+            iconColor="text-green-600"
+            gradientFrom="from-green-50"
+            gradientTo="to-green-100"
+            borderColor="border-green-200"
+            textColor="text-green-800"
+            valueColor="text-green-900"
+          />
+
+          <StatCard
+            title="Average Workload"
+            value={`${monthlyStats.avgMenteesPerMentor} / mentor`}
+            description={selectedMonth === "ALL" ? "All-time average" : selectedMonthLabel}
+            icon={IconChartBar}
+            iconBgColor="bg-purple-100"
+            iconColor="text-purple-600"
+            gradientFrom="from-purple-50"
+            gradientTo="to-purple-100"
+            borderColor="border-purple-200"
+            textColor="text-purple-800"
+            valueColor="text-purple-900"
+          />
+        </div>
+      )}
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex-1 max-w-sm">
               <SearchInput
                 placeholder={`Search ${roleName.toLowerCase()}s...`}
@@ -244,10 +426,40 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                 onChange={(val) => setSearchTerm(val)}
               />
             </div>
-            <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching}>
-              <IconRefresh className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterSelect
+                value={departmentFilter}
+                onValueChange={handleDepartmentFilterChange}
+                options={departmentOptions}
+                placeholder="Department"
+                className="w-48"
+              />
+              <FilterSelect
+                value={sectionFilter}
+                onValueChange={setSectionFilter}
+                options={sectionOptions}
+                placeholder="Section"
+                className="w-48"
+                disabled={departmentFilter === "ALL"}
+              />
+              <FilterSelect
+                value={statusFilter}
+                onValueChange={setStatusFilter}
+                options={STATUS_OPTIONS}
+                placeholder="Status"
+              />
+              {hasActiveFilters && (
+                <Button variant="ghost" onClick={clearFilters} className="text-muted-foreground">
+                  <IconX className="h-4 w-4 mr-1" />
+                  Clear
+                </Button>
+              )}
+              <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching}>
+                <IconRefresh className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
           </div>
+          <FilterBar filters={activeFilters} onClearFilters={clearFilters} className="mt-3" />
         </CardHeader>
         <CardContent>
           <Table>
@@ -260,7 +472,11 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                 <TableHead>Department</TableHead>
                 <TableHead>Status</TableHead>
                 {isMentorRole && <TableHead>Limit</TableHead>}
-                {isMentorRole && <TableHead>Assigned Mentees</TableHead>}
+                {isMentorRole && (
+                  <TableHead>
+                    Assigned Mentees {selectedMonth !== "ALL" && `(${selectedMonthLabel})`}
+                  </TableHead>
+                )}
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -359,6 +575,32 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
           </Table>
         </CardContent>
       </Card>
+
+      {usersData?.data?.totalPages > 1 && (
+        <div className="flex justify-between items-center px-2">
+          <p className="text-sm text-muted-foreground">
+            Page {usersData?.data?.currentPage || currentPage} of {usersData?.data?.totalPages} ({usersData?.data?.totalUsers} total)
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((prev) => prev - 1)}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === usersData?.data?.totalPages}
+              onClick={() => setCurrentPage((prev) => prev + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Add Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>

@@ -2040,14 +2040,26 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 // mentor as a free-text name (not a user id), so matching is done by normalized name.
 const normalizeMentorName = (name) => String(name || '').trim().toLowerCase();
 
+// Parses a "YYYY-MM" month string into inclusive start/end date strings for a
+// SQL `BETWEEN` clause. Returns null for a missing/invalid month or "ALL" (no filter).
+const getMonthDateRange = (month) => {
+  const match = /^(\d{4})-(\d{2})$/.exec(month || '');
+  if (!match) return null;
+  const [, year, mon] = match;
+  const lastDay = new Date(Number(year), Number(mon), 0).getDate();
+  return { start: `${year}-${mon}-01`, end: `${year}-${mon}-${String(lastDay).padStart(2, '0')}` };
+};
+
 // Scoped to just the mentor names being displayed (one page's worth, <=100) so the
 // JSON shred runs server-side in SQL and only for names that matter, instead of
 // pulling every handover_sheets row's entries blob to Node on every request.
-const getMentorAssignmentMap = async (mentorNames = []) => {
+// `dateRange` (from getMonthDateRange) optionally restricts entries to a specific month.
+const getMentorAssignmentMap = async (mentorNames = [], dateRange = null) => {
   const names = [...new Set(mentorNames.map(n => (n || '').trim()).filter(Boolean))];
   if (names.length === 0) return new Map();
 
   const placeholders = names.map(() => '?').join(',');
+  const dateClause = dateRange ? "AND hs.date BETWEEN ? AND ?" : "";
   const [rows] = await executeQuery(`
     SELECT
       JSON_VALUE(entry.value, '$.mentor') as mentor,
@@ -2057,7 +2069,8 @@ const getMentorAssignmentMap = async (mentorNames = []) => {
     CROSS APPLY OPENJSON(hs.entries) as entry
     WHERE JSON_VALUE(entry.value, '$.mentor') IN (${placeholders})
       AND JSON_VALUE(entry.value, '$.studentId') IS NOT NULL
-  `, names);
+      ${dateClause}
+  `, dateRange ? [...names, dateRange.start, dateRange.end] : names);
 
   const menteesByMentor = new Map();
   for (const row of rows) {
@@ -2159,8 +2172,67 @@ export const getAllMentors = asyncHandler(async (req, res) => {
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...attendanceParams, ...params, offset, limit]);
 
+  // Resolve the selected month ("YYYY-MM" or "ALL"), defaulting to the current month.
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const month = normalizeParam(req.query.month) || defaultMonth;
+  const isAllTime = month.toUpperCase() === "ALL";
+  const dateRange = isAllTime ? null : getMonthDateRange(month);
+
   const formattedUsers = users.map(formatUser);
-  const mentorAssignments = await getMentorAssignmentMap(formattedUsers.map(u => u.fullName));
+  const mentorAssignments = await getMentorAssignmentMap(formattedUsers.map(u => u.fullName), dateRange);
+
+  // --- Monthly assignment stats, computed across ALL mentors matching the current
+  // filters (not just this page), so the cards reflect the whole filtered set.
+  const [allMatchingMentors] = await executeQuery(`
+    SELECT u.id, u.fullName, u.mentorLimit, d.deptName
+    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
+  `, [...attendanceParams, ...params]);
+
+  const statsNames = [...new Set(allMatchingMentors.map(m => m.fullName).filter(Boolean))];
+  const statsAssignmentMap = await getMentorAssignmentMap(statsNames, dateRange);
+
+  let topMentor = null;
+  for (const m of allMatchingMentors) {
+    const count = statsAssignmentMap.get(normalizeMentorName(m.fullName))?.count || 0;
+    if (count > 0 && (!topMentor || count > topMentor.assignedCount)) {
+      topMentor = {
+        _id: String(m.id),
+        fullName: m.fullName,
+        department: m.deptName || null,
+        assignedCount: count,
+        mentorLimit: m.mentorLimit != null ? Number(m.mentorLimit) : 0,
+      };
+    }
+  }
+
+  let totalMenteesAssigned = 0;
+  if (statsNames.length > 0) {
+    const placeholders = statsNames.map(() => '?').join(',');
+    const dateClause = dateRange ? "AND hs.date BETWEEN ? AND ?" : "";
+    const [totalRows] = await executeQuery(`
+      SELECT COUNT(DISTINCT JSON_VALUE(entry.value, '$.studentId')) as totalDistinct
+      FROM handover_sheets hs
+      CROSS APPLY OPENJSON(hs.entries) as entry
+      WHERE JSON_VALUE(entry.value, '$.mentor') IN (${placeholders})
+        AND JSON_VALUE(entry.value, '$.studentId') IS NOT NULL
+        ${dateClause}
+    `, dateRange ? [...statsNames, dateRange.start, dateRange.end] : statsNames);
+    totalMenteesAssigned = totalRows[0]?.totalDistinct || 0;
+  }
+
+  const totalMentorsCount = allMatchingMentors.length;
+  const avgMenteesPerMentor = totalMentorsCount > 0
+    ? Math.round((totalMenteesAssigned / totalMentorsCount) * 10) / 10
+    : 0;
+
+  const stats = {
+    month: isAllTime ? "ALL" : month,
+    totalMentors: totalMentorsCount,
+    totalMenteesAssigned,
+    avgMenteesPerMentor,
+    topMentor,
+  };
 
   res.json(new ApiResponse(200, {
     users: formattedUsers.map(u => {
@@ -2174,7 +2246,8 @@ export const getAllMentors = asyncHandler(async (req, res) => {
     totalUsers: cnt[0].total,
     totalPages: Math.ceil(cnt[0].total / limit),
     currentPage: page,
-    limit
+    limit,
+    stats,
   }, "Mentors fetched successfully"));
 });
 
@@ -2266,6 +2339,14 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
     params.push(t, t, t);
   }
+  if (normalizeParam(req.query.departmentId)) {
+    whereClauses.push("u.departmentId = ?");
+    params.push(req.query.departmentId);
+  }
+  if (normalizeParam(req.query.sectionId)) {
+    whereClauses.push("u.sectionId = ?");
+    params.push(req.query.sectionId);
+  }
 
   const { dateFrom, dateTo, status, shift, date } = req.query;
 
@@ -2283,12 +2364,12 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
 
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT userId, 
-               MAX(status) as logStatus, 
+        SELECT userId,
+               MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
                COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
-        FROM attendance_logs 
+        FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
       ) al ON u.id = al.userId
@@ -2348,6 +2429,14 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
     const t = `%${req.query.search}%`;
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
     params.push(t, t, t);
+  }
+  if (normalizeParam(req.query.departmentId)) {
+    whereClauses.push("u.departmentId = ?");
+    params.push(req.query.departmentId);
+  }
+  if (normalizeParam(req.query.sectionId)) {
+    whereClauses.push("u.sectionId = ?");
+    params.push(req.query.sectionId);
   }
 
   const { dateFrom, dateTo, status, shift, date } = req.query;

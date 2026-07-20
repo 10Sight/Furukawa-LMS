@@ -25,10 +25,10 @@ export const instructorApi = createApi({
             providesTags: ['Instructor', 'User'],
         }),
         getAllMentors: builder.query({
-            query: ({ page = 1, limit = 10, search = "", status = "", unit = "", departmentId = "", sectionId = "" } = {}) => ({
+            query: ({ page = 1, limit = 10, search = "", status = "", unit = "", departmentId = "", sectionId = "", month = "" } = {}) => ({
                 url: "/api/users/mentors",
                 method: "GET",
-                params: { page, limit, search, status, unit, departmentId, sectionId }
+                params: { page, limit, search, status, unit, departmentId, sectionId, month }
             }),
             providesTags: ['Instructor'],
         }),
@@ -40,18 +40,18 @@ export const instructorApi = createApi({
             providesTags: (result, error, mentorId) => [{ type: 'Instructor', id: `mentor-mentees-${mentorId}` }],
         }),
         getAllSupervisors: builder.query({
-            query: ({ page = 1, limit = 10, search = "", status = "", unit = "" } = {}) => ({
+            query: ({ page = 1, limit = 10, search = "", status = "", unit = "", departmentId = "", sectionId = "" } = {}) => ({
                 url: "/api/users/supervisors",
                 method: "GET",
-                params: { page, limit, search, status, unit }
+                params: { page, limit, search, status, unit, departmentId, sectionId }
             }),
             providesTags: ['Instructor'],
         }),
         getAllIncharges: builder.query({
-            query: ({ page = 1, limit = 10, search = "", status = "", unit = "" } = {}) => ({
+            query: ({ page = 1, limit = 10, search = "", status = "", unit = "", departmentId = "", sectionId = "" } = {}) => ({
                 url: "/api/users/incharges",
                 method: "GET",
-                params: { page, limit, search, status, unit }
+                params: { page, limit, search, status, unit, departmentId, sectionId }
             }),
             providesTags: ['Instructor'],
         }),

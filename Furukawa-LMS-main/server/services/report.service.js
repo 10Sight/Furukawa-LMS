@@ -18,11 +18,13 @@ const transporter = nodemailer.createTransport({
 
     pool: true,
 
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    host: process.env.SMTP_HOST || "smtp.office365.com",
 
     port: parseInt(process.env.SMTP_PORT) || 587,
 
     secure: false,
+
+    requireTLS: true,
 
     auth: {
 
@@ -32,7 +34,7 @@ const transporter = nodemailer.createTransport({
 
     },
 
-    tls: { rejectUnauthorized: false }
+    tls: { ciphers: "TLSv1.2", rejectUnauthorized: false }
 
 });
 
@@ -4008,7 +4010,7 @@ export async function sendBothReports(emails) {
 
             console.error("[sendBothReports] Both NULL — no email sent.");
 
-            return;
+            throw new Error("Both Excel report buffers could not be generated.");
 
         }
 
@@ -4051,6 +4053,10 @@ export async function sendBothReports(emails) {
         console.error("[sendBothReports] FATAL:", err.message || err);
 
         console.error(err.stack);
+
+        // IMPORTANT: rethrow so the caller (manual trigger controller) knows the send failed
+        // instead of reporting a false success, matching generateAndSend/generateAndSendManagementDaily.
+        throw err;
 
     }
 

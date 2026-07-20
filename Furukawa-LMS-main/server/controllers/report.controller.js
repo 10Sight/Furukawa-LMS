@@ -1272,23 +1272,37 @@ export const triggerManualReport = asyncHandler(async (req, res) => {
         });
     }
 
-    try {
-        const emailList = mails.map(m => m.email);
+    // Split on comma/semicolon in case a recipient row holds more than one address,
+    // then trim and dedupe so Nodemailer never receives a malformed `to` entry.
+    const emailList = [...new Set(
+        mails
+            .flatMap(m => String(m.email || '').split(/[,;]/))
+            .map(email => email.trim())
+            .filter(Boolean)
+    )];
 
+    if (emailList.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: "No valid recipient email addresses configured."
+        });
+    }
+
+    try {
         const { sendBothReports } = await import('../services/report.service.js');
 
         await sendBothReports(emailList);
 
         res.status(200).json({
             success: true,
-            data: { recipientCount: mails.length, sent: mails.length, failed: 0 },
-            message: `Combined Excel reports sent to ${mails.length} recipients successfully.`
+            data: { recipientCount: emailList.length, sent: emailList.length, failed: 0 },
+            message: `Combined Excel reports sent to ${emailList.length} recipients successfully.`
         });
     } catch (err) {
         console.error("[Report Controller] Failed to trigger manual report:", err);
         res.status(500).json({
             success: false,
-            message: "Failed to generate and send Excel report.",
+            message: err.message || "Failed to generate and send Excel report.",
             error: err.message
         });
     }

@@ -324,10 +324,6 @@ const AddTestPaper = () => {
       ];
       updatedQuestions[index].pairs = [];
       updatedQuestions[index].correctAnswer = "";
-    } else if (newType === "shortAnswer") {
-      updatedQuestions[index].options = [];
-      updatedQuestions[index].pairs = [];
-      updatedQuestions[index].correctAnswer = "";
     } else if (newType === "matching") {
       updatedQuestions[index].options = [];
       updatedQuestions[index].pairs = [
@@ -557,8 +553,6 @@ const AddTestPaper = () => {
             return false;
           }
         }
-      } else if (qType === "shortAnswer") {
-        // Correct answer is optional; if left blank, user will audit manually later.
       } else if (qType === "matching") {
         if (!question.pairs || question.pairs.length < 1) {
           toast.error(`Question ${qIndex + 1} must have at least one matching pair`);
@@ -1254,7 +1248,7 @@ const AddTestPaper = () => {
               <div>
                 <CardTitle>Questions</CardTitle>
                 <CardDescription>
-                  Add questions for your quiz. You can create MCQs, Short Answers, and Matching Pairs.
+                  Add questions for your quiz. You can create MCQs and Matching Pairs.
                 </CardDescription>
               </div>
             </div>
@@ -1269,11 +1263,9 @@ const AddTestPaper = () => {
                       <span className="font-semibold text-lg text-gray-700">Question {qIndex + 1}</span>
                       <Badge className={
                         qType === 'mcq' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                          qType === 'shortAnswer' ? 'bg-green-100 text-green-700 hover:bg-green-200' :
-                            'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                          'bg-purple-100 text-purple-700 hover:bg-purple-200'
                       }>
-                        {qType === 'mcq' ? 'Multiple Choice' :
-                          qType === 'shortAnswer' ? 'Short Written' : 'Matching Pair'}
+                        {qType === 'mcq' ? 'Multiple Choice' : 'Matching Pair'}
                       </Badge>
                     </div>
 
@@ -1287,7 +1279,6 @@ const AddTestPaper = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="mcq">Multiple Choice</SelectItem>
-                          <SelectItem value="shortAnswer">Short Answer</SelectItem>
                           <SelectItem value="matching">Matching Pair</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1504,28 +1495,6 @@ const AddTestPaper = () => {
                     </div>
                   )}
 
-                  {qType === "shortAnswer" && (
-                    <div className="space-y-3 pt-2">
-                      <Label htmlFor={`correctAnswer-${qIndex}`} className="text-gray-700 font-semibold">Correct Answer (Optional)</Label>
-                      <Input
-                        id={`correctAnswer-${qIndex}`}
-                        value={question.correctAnswer || ""}
-                        onChange={(e) => handleQuestionChange(qIndex, "correctAnswer", e.target.value)}
-                        placeholder="Enter the correct answer text in English (optional - leave blank for manual audit)"
-                      />
-                      <Input
-                        id={`correctAnswerSec-${qIndex}`}
-                        value={question.correctAnswerSec || ""}
-                        onChange={(e) => handleQuestionChange(qIndex, "correctAnswerSec", e.target.value)}
-                        placeholder="Enter the correct answer text in secondary language (optional)"
-                        className="text-xs text-gray-500"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        If left blank, students' written answers will be manually reviewed/audited by the trainer later.
-                      </p>
-                    </div>
-                  )}
-
                   {qType === "matching" && (
                     <div className="space-y-3 pt-2">
                       <Label className="text-gray-700 font-semibold block">Matching Pairs *</Label>
@@ -1692,15 +1661,6 @@ const AddTestPaper = () => {
               >
                 <IconPlus className="h-4 w-4" />
                 Add MCQ
-              </Button>
-              <Button
-                type="button"
-                onClick={() => addQuestion("shortAnswer")}
-                variant="outline"
-                className="gap-2 border-green-200 text-green-700 hover:bg-green-50 transition-all shadow-sm"
-              >
-                <IconPlus className="h-4 w-4" />
-                Add Short Answer
               </Button>
               <Button
                 type="button"

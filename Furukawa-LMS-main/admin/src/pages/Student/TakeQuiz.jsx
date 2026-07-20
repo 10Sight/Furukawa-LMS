@@ -86,6 +86,13 @@ const TakeQuiz = () => {
   const nameSearchTimeoutRef = useRef(null);
   const eCodeSearchTimeoutRef = useRef(null);
 
+  // Scroll to top when the result summary is shown
+  useEffect(() => {
+    if (step === "result") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [step]);
+
   // Populate candidate info automatically if candidate is taking quiz directly
   useEffect(() => {
     if (!canAdminister && currentUser) {
@@ -201,14 +208,6 @@ const TakeQuiz = () => {
       return `${marksList[0]} ${markLabel}`;
     }
     return marksList.join(" + ") + ` ${t("takeQuiz.marks")}`;
-  };
-
-  const getCurrentQuarter = () => {
-    const month = new Date().getMonth();
-    if (month >= 3 && month <= 5) return "QUARTER-1 (APR-JUN)";
-    if (month >= 6 && month <= 8) return "QUARTER-2 (JUL-SEP)";
-    if (month >= 9 && month <= 11) return "QUARTER-3 (OCT-DEC)";
-    return "QUARTER-4 (JAN-MAR)";
   };
 
   // Load quiz data
@@ -1077,8 +1076,17 @@ const TakeQuiz = () => {
 
   // Show result page
   if (step === "result") {
+    const processName = quiz?.subSectionNames && quiz.subSectionNames.length > 0
+      ? quiz.subSectionNames.join(", ")
+      : quiz?.title || "—";
+    const department = selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName || "—";
+    const testDate = result.createdAt
+      ? new Date(result.createdAt).toLocaleDateString('en-GB').replace(/\//g, '.')
+      : new Date().toLocaleDateString('en-GB').replace(/\//g, '.');
+    const passingMarks = Math.round(result.totalMarks * (quiz?.passingScore || 70) / 100);
+
     return (
-      <div className="max-w-6xl mx-auto p-2 sm:p-6 space-y-8 animate-in fade-in duration-500">
+      <div className="max-w-4xl mx-auto p-2 sm:p-6 animate-in fade-in duration-500">
         <style dangerouslySetInnerHTML={{
           __html: `
           @media print {
@@ -1095,25 +1103,13 @@ const TakeQuiz = () => {
             .no-print {
               display: none !important;
             }
-            /* Custom paper worksheet styling for print */
-            table, th, td, input, select, textarea {
-              font-size: 11px !important;
-              line-height: 1.3 !important;
-              color: black !important;
-            }
-            th, td {
-              padding: 6px 8px !important;
-              border-color: black !important;
-            }
-            /* Prevent shadow grids */
-            .shadow-2xl, .shadow-sm {
+            .shadow-2xl, .shadow-sm, .shadow-lg {
               box-shadow: none !important;
             }
           }
         `}} />
 
-        {/* Dashboard summary card (hidden in print) */}
-        <Card className={`border-none shadow-2xl overflow-hidden no-print ${result.passed ? 'bg-gradient-to-br from-green-50 to-emerald-50' : 'bg-gradient-to-br from-red-50 to-rose-50'}`}>
+        <Card className={`border-none shadow-2xl overflow-hidden ${result.passed ? 'bg-gradient-to-br from-green-50 to-emerald-50' : 'bg-gradient-to-br from-red-50 to-rose-50'}`}>
           <div className={`h-2 ${result.passed ? 'bg-green-500' : 'bg-red-500'}`} />
           <CardHeader className="text-center pb-6 pt-8">
             <div className={`mx-auto size-20 rounded-full flex items-center justify-center mb-4 shadow-lg animate-in bounce-in duration-1000 ${result.passed ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
@@ -1128,8 +1124,35 @@ const TakeQuiz = () => {
           </CardHeader>
 
           <CardContent className="space-y-6 px-6 sm:px-12 pb-8">
-            {/* Score Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Candidate Summary */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-white shadow-sm p-5">
+              <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400 mb-3">{t("takeQuiz.header.evaluationResultSheet")}</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.candidateName")}</div>
+                  <div className="text-sm font-bold text-gray-800 truncate">{candidateName || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.eCode")}</div>
+                  <div className="text-sm font-bold text-gray-800 font-mono truncate">{eCode || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.department")}</div>
+                  <div className="text-sm font-bold text-gray-800 truncate">{department}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.processName")}</div>
+                  <div className="text-sm font-bold text-gray-800 truncate">{processName}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.testDate")}</div>
+                  <div className="text-sm font-bold text-gray-800">{testDate}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Key Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="bg-white/80 backdrop-blur-sm p-4 rounded-xl text-center shadow-sm border border-white">
                 <div className={`text-3xl font-black mb-0.5 ${result.passed ? 'text-green-600' : 'text-red-600'}`}>{result.scorePercent}%</div>
                 <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">{t("takeQuiz.result.accuracy")}</div>
@@ -1137,6 +1160,10 @@ const TakeQuiz = () => {
               <div className="bg-white/80 backdrop-blur-sm p-4 rounded-xl text-center shadow-sm border border-white">
                 <div className="text-3xl font-black mb-0.5 text-gray-800">{result.score}/{result.totalMarks}</div>
                 <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">{t("takeQuiz.result.totalPoints")}</div>
+              </div>
+              <div className="bg-white/80 backdrop-blur-sm p-4 rounded-xl text-center shadow-sm border border-white">
+                <div className="text-3xl font-black mb-0.5 text-amber-600">{passingMarks}</div>
+                <div className="text-[10px] uppercase font-bold tracking-widest text-gray-400">{t("takeQuiz.meta.passingMarks")}</div>
               </div>
               <div className="bg-white/80 backdrop-blur-sm p-4 rounded-xl text-center shadow-sm border border-white">
                 <div className="text-3xl font-black mb-0.5 text-blue-600">{Math.floor(result.timeTaken / 60)}m {result.timeTaken % 60}s</div>
@@ -1172,7 +1199,7 @@ const TakeQuiz = () => {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2 no-print">
               <Button
                 onClick={handleBackToCourse}
                 className="flex-1 h-12 bg-gray-900 text-white font-bold rounded-lg hover:bg-gray-800 transition-all text-sm uppercase tracking-wider"
@@ -1197,374 +1224,6 @@ const TakeQuiz = () => {
             </div>
           </CardContent>
         </Card>
-
-        {/* Standardized Graded Test Paper Worksheet */}
-        <div className="bg-white border-[3px] border-black text-black font-serif shadow-2xl overflow-hidden mb-12">
-          {/* HEADER TABLE */}
-          <div className="grid grid-cols-12 border-b-[3px] border-black">
-            {/* Logo box */}
-            <div className="col-span-3 border-r-[3px] border-black flex flex-col items-center justify-center p-3 bg-white text-center">
-              <span className="text-4xl font-extrabold italic tracking-tight text-black font-sans leading-none">
-                <img src="../../fme_transparent.png" alt="Furukawa Minda Electric" height={"75px"} width={"110px"} />
-              </span>
-              <span className="text-[12px] font-black text-black mt-0 uppercase tracking-tight leading-none text-center">
-                FURUKAWA MINDA<br />ELECTRIC PVT. LTD.
-              </span>
-            </div>
-
-            {/* Title box */}
-            <div className="col-span-6 border-r-[3px] border-black flex flex-col items-center justify-center py-4 bg-white text-center">
-              <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight uppercase leading-none">
-                {t("takeQuiz.header.evaluationResultSheet")}
-              </h1>
-              <h2 className="text-sm sm:text-base font-bold text-black tracking-wide mt-2.5 uppercase leading-none">
-                {formatPaperSubTitle(quiz?.paperSubTitle, quiz?.level, quiz?.isDojo, "Graded Sheet")}
-              </h2>
-            </div>
-
-            {/* Doc control metadata box */}
-            <div className="col-span-3 flex flex-col text-[10px] font-bold bg-white">
-              <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.docNo")}</div>
-                <div className="px-2 text-black">{quiz?.docNo || "TST-HR-02"}</div>
-              </div>
-              <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.rev")}</div>
-                <div className="px-2 text-black">02</div>
-              </div>
-              <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.revDate")}</div>
-                <div className="px-2">08.04.2021</div>
-              </div>
-              <div className="grid grid-cols-2 flex-1 items-center">
-                <div className="border-r border-black h-full flex items-center px-2">{t("takeQuiz.header.issueDate")}</div>
-                <div className="px-2">08.04.2021</div>
-              </div>
-            </div>
-          </div>
-
-          {/* QUARTER SUB-HEADER */}
-          <div className="border-b-[3px] border-black flex justify-end px-6 py-2 bg-white">
-            <span className="font-bold text-xs tracking-widest uppercase">{getCurrentQuarter()}</span>
-          </div>
-
-          {/* METADATA SECTION */}
-          <div className="grid grid-cols-12 border-b-[3px] border-black text-xs uppercase font-bold">
-            {/* Left box */}
-            <div className="col-span-7 border-r-[3px] border-black p-4 space-y-3 bg-white">
-              <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.processName")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold">
-                  {quiz?.subSectionNames && quiz.subSectionNames.length > 0
-                    ? quiz.subSectionNames.join(", ")
-                    : quiz?.title || "Visual"}
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.candidateName")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold">
-                  {candidateName || "—"}
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.eCode")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-mono">
-                  {eCode || "—"}
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="min-w-[120px] text-black">{t("takeQuiz.meta.department")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
-                  {(selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName) || "—"}
-                </span>
-              </div>
-            </div>
-
-            {/* Right box */}
-            <div className="col-span-5 p-4 space-y-2 bg-white text-[11px]">
-              <div className="flex gap-2 items-center">
-                <span className="text-black">{t("takeQuiz.meta.marksPerQ")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {getMarksOfEachQuestion()}
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-black">{t("takeQuiz.meta.totalMarks")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {result.totalMarks} {t("takeQuiz.marks")}
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-black">{t("takeQuiz.meta.passingMarks")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {Math.round(result.totalMarks * (quiz?.passingScore || 70) / 100)} {t("takeQuiz.marks")} ({quiz?.passingScore || 70}%)
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-black">{t("takeQuiz.meta.marksObtained")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-black text-xs">
-                  {result.score} {t("takeQuiz.marks")} ({result.scorePercent}%)
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-black">{t("takeQuiz.meta.resultStatus")}</span>
-                <span className={`border-b border-dashed border-black flex-1 pb-0.5 text-center font-black text-xs uppercase ${result.passed ? 'text-green-600 animate-pulse' : 'text-red-600'
-                  }`}>
-                  {result.passed ? t("takeQuiz.status.pass") : t("takeQuiz.status.fail")}
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-black">{t("takeQuiz.meta.conductedBy")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {result.conductedBy || conductedBy || "—"}
-                </span>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-black">{t("takeQuiz.meta.testDate")}</span>
-                <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {result.createdAt ? new Date(result.createdAt).toLocaleDateString('en-GB').replace(/\//g, '.') : new Date().toLocaleDateString('en-GB').replace(/\//g, '.')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* PARAMETERS HEADER */}
-          <div className="bg-gray-100/80 border-b-[3px] border-black p-3 font-bold uppercase text-lg tracking-wider text-center">
-            {quiz?.course?.title || quiz?.course?.name || quiz?.title || t("takeQuiz.header.theoreticalParamsReview")}
-          </div>
-
-          {/* QUESTIONS TABLE */}
-          <div className="bg-white relative overflow-hidden">
-            <Table className="border-collapse border-t-[3px] border-black">
-              <TableHeader className="bg-gray-100">
-                <TableRow className="border-b-[3px] border-black hover:bg-gray-100">
-                  <TableHead className="w-[80px] border-r-[3px] border-black text-center font-bold text-black uppercase text-sm">{t("takeQuiz.table.sNo")}</TableHead>
-                  <TableHead className="font-bold text-black uppercase text-sm">{t("takeQuiz.table.questionsCorrective")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {quiz?.questions?.map((question, questionIndex) => {
-                  const detailedAnswer = result.detailedAnswers?.find(d => d.questionNumber === questionIndex + 1) || {};
-
-                  return (
-                    <TableRow key={questionIndex} className="border-b-[3px] border-black hover:bg-transparent">
-                      {/* Serial Number */}
-                      <TableCell className="border-r-[3px] border-black text-center font-bold align-top py-6 text-lg w-[80px]">
-                        {questionIndex + 1}
-                      </TableCell>
-
-                      {/* Question Content & Graded Options */}
-                      <TableCell className="align-top py-6 px-6 space-y-4">
-                        <div className="flex justify-between items-start gap-4">
-                          <div className="flex flex-col">
-                            <span className="text-lg font-bold leading-snug">{question.questionText}</span>
-                            {question.questionTextSec && (
-                              <span className="text-sm font-semibold text-gray-600 italic mt-1">{question.questionTextSec}</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0 mt-1">
-                            <span className={`text-xs font-black shrink-0 border px-2 py-1 rounded uppercase tracking-wider leading-none shadow-sm ${detailedAnswer.isCorrect
-                              ? 'bg-green-100 border-green-300 text-green-800'
-                              : 'bg-red-100 border-red-300 text-red-800'
-                              }`}>
-                              {t("takeQuiz.score")}: {detailedAnswer.marksObtained} / {detailedAnswer.totalMarks}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Image Support */}
-                        {question.image && question.image.url && (
-                          <div className="border-2 border-black p-1 bg-white inline-block max-w-full my-2">
-                            <img
-                              src={getMediaUrl(question.image.url)}
-                              alt="Question Reference"
-                              className="max-h-60 object-contain"
-                            />
-                          </div>
-                        )}
-
-                        {/* MCQ option choices - aligned horizontally exactly as in the photo */}
-                        {(!question.type || question.type === "mcq") && (
-                          <div className="flex flex-wrap gap-x-8 gap-y-4 pt-2">
-                            {(question.options || []).map((option, optionIndex) => {
-                              const isCorrectOption = option.isCorrect || option.text === detailedAnswer.correctAnswer;
-                              const isUserSelected = option.text === detailedAnswer.userAnswer;
-
-                              let optionBg = 'hover:bg-gray-50 text-gray-800 border-transparent';
-                              let badgeColor = 'border-black text-black bg-white';
-                              let indicatorIcon = null;
-
-                              if (isUserSelected && isCorrectOption) {
-                                optionBg = 'bg-green-50/70 border-green-300 text-green-950 font-bold ring-2 ring-green-500 shadow-sm';
-                                badgeColor = 'border-green-600 bg-green-600 text-white';
-                                indicatorIcon = <IconCircleCheck size={16} className="text-green-600 ml-1 shrink-0" />;
-                              } else if (isUserSelected && !isCorrectOption) {
-                                optionBg = 'bg-red-50/70 border-red-300 text-red-950 font-bold ring-2 ring-red-500 shadow-sm';
-                                badgeColor = 'border-red-600 bg-red-600 text-white';
-                                indicatorIcon = <IconAlertCircle size={16} className="text-red-600 ml-1 shrink-0" />;
-                              } else if (!isUserSelected && isCorrectOption) {
-                                optionBg = 'bg-green-50/30 border-green-400 text-green-800 font-bold border-2 border-dashed';
-                                badgeColor = 'border-green-500 text-green-600 bg-white';
-                              }
-
-                              return (
-                                <div
-                                  key={optionIndex}
-                                  className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all ${optionBg}`}
-                                >
-                                  {/* Circle Bubble Index */}
-                                  <span className={`w-7 h-7 rounded-full flex items-center justify-center border-2 font-bold text-sm ${badgeColor}`}>
-                                    {optionIndex + 1}
-                                  </span>
-
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-bold tracking-tight">{option.text}</span>
-                                    {option.textSec && (
-                                      <span className="text-xs font-semibold text-gray-500 italic">{option.textSec}</span>
-                                    )}
-                                  </div>
-
-                                  {/* Indicator check/cross icon */}
-                                  {indicatorIcon}
-
-                                  {/* Image side-by-side inside choice block */}
-                                  {option.image && option.image.url && (
-                                    <div className="border border-black p-1 bg-white ml-2 rounded shadow-sm">
-                                      <img
-                                        src={getMediaUrl(option.image.url)}
-                                        alt={`Option ${optionIndex + 1}`}
-                                        className="max-h-16 object-contain"
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Short Answer view */}
-                        {question.type === "shortAnswer" && (
-                          <div className="pt-2 space-y-2">
-                            <div className="flex items-center gap-3">
-                              <span className="text-sm font-black text-gray-800 shrink-0">{t("takeQuiz.placeholder.yourAnswerLabel")}</span>
-                              <div className={`flex-1 border-b-2 py-1 font-bold text-base px-2 uppercase tracking-wide flex items-center justify-between ${detailedAnswer.isCorrect
-                                ? 'border-green-600 text-green-700 bg-green-50/20'
-                                : 'border-red-600 text-red-700 bg-red-50/20'
-                                }`}>
-                                <span>{detailedAnswer.userAnswer || t("takeQuiz.result.noAnswer")}</span>
-                                {detailedAnswer.isCorrect ? (
-                                  <IconCircleCheck size={18} className="text-green-600 shrink-0" />
-                                ) : (
-                                  <IconAlertCircle size={18} className="text-red-600 shrink-0" />
-                                )}
-                              </div>
-                            </div>
-
-                            {!detailedAnswer.isCorrect && (
-                              <div className="flex items-center gap-3 text-sm text-green-700 font-bold bg-green-50/50 p-2 border border-green-200">
-                                <span>{t("takeQuiz.result.correctAnswer")}</span>
-                                <span className="uppercase tracking-wide">{detailedAnswer.correctAnswer}</span>
-                                {detailedAnswer.correctAnswerSec && (
-                                  <span className="italic text-xs text-green-600">({detailedAnswer.correctAnswerSec})</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Matching Selection View */}
-                        {question.type === "matching" && (
-                          <div className="pt-2 space-y-4">
-                            <div className="bg-gray-50 border border-gray-300 p-2 text-xs font-bold text-gray-700 uppercase tracking-wider">
-                              {t("takeQuiz.result.gradedMatching")}
-                            </div>
-
-                            {(() => {
-                              let userMatches = {};
-                              try {
-                                if (detailedAnswer.userAnswer) {
-                                  userMatches = JSON.parse(detailedAnswer.userAnswer);
-                                }
-                              } catch (e) { }
-
-                              return (
-                                <div className="space-y-4">
-                                  {(question.pairs || []).map((pair, pIdx) => {
-                                    const userSelectedRight = userMatches[pair.leftText] || "";
-                                    const isPairCorrect = String(userSelectedRight).trim().toLowerCase() === String(pair.rightText).trim().toLowerCase();
-
-                                    return (
-                                      <div
-                                        key={pIdx}
-                                        className={`flex flex-col md:flex-row md:items-center gap-4 p-4 border-2 shadow-sm ${isPairCorrect
-                                          ? 'border-green-300 bg-green-50/10'
-                                          : 'border-red-300 bg-red-50/10'
-                                          }`}
-                                      >
-                                        {/* Left item */}
-                                        <div className="flex-1 space-y-1">
-                                          <div className="font-bold text-base text-black">
-                                            {pair.leftText}
-                                          </div>
-                                          {pair.leftTextSec && (
-                                            <div className="text-xs font-semibold text-gray-500 italic">
-                                              {pair.leftTextSec}
-                                            </div>
-                                          )}
-                                          {pair.leftImage && pair.leftImage.url && (
-                                            <div className="border border-black p-1 bg-white inline-block max-w-full">
-                                              <img
-                                                src={getMediaUrl(pair.leftImage.url)}
-                                                alt="Left Item"
-                                                className="max-h-24 object-contain"
-                                              />
-                                            </div>
-                                          )}
-                                        </div>
-
-                                        <div className="text-black font-black text-xl hidden md:block">➔</div>
-
-                                        {/* User match preview compared with correct */}
-                                        <div className="w-full md:w-[350px] space-y-2">
-                                          <div className={`p-3 rounded-lg border flex items-center justify-between ${isPairCorrect
-                                            ? 'bg-green-50 border-green-300 text-green-950 font-bold'
-                                            : 'bg-red-50 border-red-300 text-red-950 font-bold'
-                                            }`}>
-                                            <div className="flex flex-col text-sm">
-                                              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{t("takeQuiz.result.yourSelection")}</span>
-                                              <span>{userSelectedRight || t("takeQuiz.result.noSelection")}</span>
-                                            </div>
-                                            {isPairCorrect ? (
-                                              <IconCircleCheck size={18} className="text-green-600 shrink-0" />
-                                            ) : (
-                                              <IconAlertCircle size={18} className="text-red-600 shrink-0" />
-                                            )}
-                                          </div>
-
-                                          {!isPairCorrect && (
-                                            <div className="p-2 bg-green-50 border border-green-200 text-green-800 text-xs font-bold rounded flex flex-col">
-                                              <span className="text-[9px] text-green-600 font-bold uppercase tracking-wider">{t("takeQuiz.result.correctMatch")}</span>
-                                              <span>{pair.rightText} {pair.rightTextSec ? ` (${pair.rightTextSec})` : ''}</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
       </div>
     );
   }

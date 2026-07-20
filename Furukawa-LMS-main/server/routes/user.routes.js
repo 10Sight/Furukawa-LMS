@@ -83,7 +83,7 @@ const checkUserDeletePrivilege = async (req, res, next) => {
 };
 
 // Create user (admin/super-admin only) - sends welcome email with credentials
-router.post("/", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_CREATE, SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE]), checkUserManagementPrivilege, createUser);
+router.post("/", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_CREATE, SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, SYSTEM_PERMISSIONS.MENTOR_CREATE]), checkUserManagementPrivilege, createUser);
 
 // Get all users (admin/super-admin only)
 router.get("/", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllUsers);
@@ -95,10 +95,10 @@ router.get("/instructors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_REA
 router.get("/students", verifyJWT, authorizeRoles(SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, "isTrainer", "isAdmin"), getAllStudents);
 
 // Get all mentors
-router.get("/mentors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllMentors);
+router.get("/mentors", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.MENTOR_READ]), getAllMentors);
 
 // Get a single mentor's assigned mentees (must come before the generic /:id route)
-router.get("/mentors/:id/mentees", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getMentorMentees);
+router.get("/mentors/:id/mentees", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.MENTOR_READ]), getMentorMentees);
 
 // Get all supervisors
 router.get("/supervisors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllSupervisors);
@@ -130,8 +130,8 @@ router.patch(
 );
 router.post("/bulk-shift", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), bulkUpdateShiftSchedule);
 router.get("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getUserById);
-router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE]), checkUserUpdatePrivilege, updateUser);
+router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, SYSTEM_PERMISSIONS.MENTOR_UPDATE]), checkUserUpdatePrivilege, updateUser);
 router.delete("/bulk", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), checkPrivilege("user management"), bulkDeleteUsers);
-router.delete("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_DELETE, SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE]), checkUserDeletePrivilege, deleteUser);
+router.delete("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_DELETE, SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, SYSTEM_PERMISSIONS.MENTOR_DELETE]), checkUserDeletePrivilege, deleteUser);
 
 export default router;

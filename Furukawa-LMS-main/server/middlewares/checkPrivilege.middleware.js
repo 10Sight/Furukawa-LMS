@@ -23,14 +23,18 @@ export const checkPrivilege = (requiredPrivilegeName) => asyncHandler(async (req
         const permissions = req.user.customRole.permissions;
         
         if (requiredPrivilegeName === "user management") {
-            const hasUserPermission = permissions.includes("user:create") || 
-                                     permissions.includes("user:read") || 
-                                     permissions.includes("user:update") || 
+            const hasUserPermission = permissions.includes("user:create") ||
+                                     permissions.includes("user:read") ||
+                                     permissions.includes("user:update") ||
                                      permissions.includes("user:delete") ||
                                      permissions.includes("dojo_hiring:create") ||
                                      permissions.includes("dojo_hiring:read") ||
                                      permissions.includes("dojo_hiring:update") ||
-                                     permissions.includes("dojo_hiring:delete");
+                                     permissions.includes("dojo_hiring:delete") ||
+                                     permissions.includes("mentor:create") ||
+                                     permissions.includes("mentor:read") ||
+                                     permissions.includes("mentor:update") ||
+                                     permissions.includes("mentor:delete");
             if (hasUserPermission) {
                 return next();
             }

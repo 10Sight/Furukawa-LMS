@@ -380,7 +380,7 @@ const MultiSkilling = () => {
     }, [evalOperatorsTotalPages, evalOperatorsPage]);
 
     return (
-        <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
+        <div className="space-y-6 w-max min-w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">

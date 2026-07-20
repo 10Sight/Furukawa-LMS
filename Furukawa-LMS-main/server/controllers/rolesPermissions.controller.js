@@ -249,6 +249,12 @@ const SYSTEM_PERMISSIONS = {
   OPERATOR_OBSERVANCE_READ: "operator_observance:read",
   OPERATOR_OBSERVANCE_UPDATE: "operator_observance:update",
   OPERATOR_OBSERVANCE_DELETE: "operator_observance:delete",
+
+  // Mentor Management
+  MENTOR_CREATE: "mentor:create",
+  MENTOR_READ: "mentor:read",
+  MENTOR_UPDATE: "mentor:update",
+  MENTOR_DELETE: "mentor:delete",
 };
 
 // Define default role permissions
@@ -372,6 +378,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ,
       SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_UPDATE,
       SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_DELETE,
+      // Mentor Management
+      SYSTEM_PERMISSIONS.MENTOR_READ,
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -640,6 +648,12 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ, name: "View Operator Observance Sheets", description: "View and read operator observance sheets" },
         { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_UPDATE, name: "Edit Operator Observance Sheet", description: "Edit and save changes to existing operator observance sheets" },
         { id: SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_DELETE, name: "Delete Operator Observance Sheet", description: "Permanently delete operator observance sheet records" }
+      ],
+      "Mentor Management": [
+        { id: SYSTEM_PERMISSIONS.MENTOR_READ, name: "View Mentors", description: "Access and view the list of mentors, stats, and assigned mentees" },
+        { id: SYSTEM_PERMISSIONS.MENTOR_CREATE, name: "Create Mentors", description: "Create new mentor records" },
+        { id: SYSTEM_PERMISSIONS.MENTOR_UPDATE, name: "Update Mentors", description: "Edit mentor details and assignment limits" },
+        { id: SYSTEM_PERMISSIONS.MENTOR_DELETE, name: "Delete Mentors", description: "Delete or remove mentor records" }
       ]
     };
 

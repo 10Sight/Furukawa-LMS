@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { format } from "date-fns";
 import {
   useUpdateUserMutation,
@@ -42,6 +43,7 @@ import {
   IconRefresh,
   IconLoader,
   IconUserMinus,
+  IconUserPlus,
   IconX,
   IconTrophy,
   IconUsers,
@@ -67,6 +69,7 @@ import SearchInput from "@/components/common/SearchInput";
 import FilterSelect from "@/components/common/FilterSelect";
 import FilterBar from "@/components/common/FilterBar";
 import StatCard from "@/components/common/StatCard";
+import AssignMentorDialog from "@/components/mentors/AssignMentorDialog";
 
 const MENTOR_ROLE_FIELD = "isMentor";
 
@@ -97,6 +100,16 @@ const getCurrentMonthValue = () => {
 
 const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   const navigate = useNavigate();
+  const authUser = useSelector((state) => state.auth.user);
+
+  const isMasterAdmin =
+    authUser?.role === "SUPERADMIN" ||
+    authUser?.role === "ADMIN" ||
+    authUser?.isAdmin === 1 ||
+    authUser?.isAdmin === true;
+
+  const userPermissions = authUser?.customRole?.permissions || [];
+
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [departmentFilter, setDepartmentFilter] = useState("ALL");
@@ -105,11 +118,18 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthValue);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isMentorRole = roleField === MENTOR_ROLE_FIELD;
   const columnCount = isMentorRole ? 9 : 7;
+
+  // Granular Mentor permissions (only enforced for the Mentor page; other
+  // roles served by this component fall back to the previous always-shown behavior)
+  const canCreate = !isMentorRole || isMasterAdmin || userPermissions.includes("mentor:create");
+  const canUpdate = !isMentorRole || isMasterAdmin || userPermissions.includes("mentor:update");
+  const canDelete = !isMentorRole || isMasterAdmin || userPermissions.includes("mentor:delete");
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -281,6 +301,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     navigate(`${user._id}`);
   };
 
+
   const resetForm = () => {
     setFormData({
       fullName: "",
@@ -339,10 +360,18 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
               className="w-44"
             />
           )}
-          <Button onClick={() => { resetForm(); setIsAddDialogOpen(true); }}>
-            <IconPlus className="w-4 h-4 mr-2" />
-            Add {roleName}
-          </Button>
+          {isMentorRole && canUpdate && (
+            <Button variant="outline" onClick={() => setIsAssignDialogOpen(true)}>
+              <IconUserPlus className="w-4 h-4 mr-2" />
+              Assign Mentor
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => { resetForm(); setIsAddDialogOpen(true); }}>
+              <IconPlus className="w-4 h-4 mr-2" />
+              Add {roleName}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -556,17 +585,21 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                       </TableCell>
                     )}
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)} title="Edit">
-                        <IconPencil className="w-4 h-4 text-blue-600" />
-                      </Button>
-                      {isMentorRole && (
+                      {canUpdate && (
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)} title="Edit">
+                          <IconPencil className="w-4 h-4 text-blue-600" />
+                        </Button>
+                      )}
+                      {isMentorRole && canUpdate && (
                         <Button variant="ghost" size="icon" onClick={() => handleRemoveFromMentor(user)} title="Remove from Mentor">
                           <IconUserMinus className="w-4 h-4 text-amber-600" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user)} title="Delete">
-                        <IconTrash className="w-4 h-4 text-red-600" />
-                      </Button>
+                      {canDelete && (
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user)} title="Delete">
+                          <IconTrash className="w-4 h-4 text-red-600" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -798,6 +831,14 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {isMentorRole && (
+        <AssignMentorDialog
+          open={isAssignDialogOpen}
+          onOpenChange={setIsAssignDialogOpen}
+          onAssigned={refetch}
+        />
+      )}
     </div>
   );
 };

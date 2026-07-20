@@ -299,7 +299,7 @@ const Report = () => {
             { label: "B-Shift", align: "right", dataKey: "Assigned_B-Shift" },
             { label: "C-Shift", align: "right", dataKey: "Assigned_C-Shift" },
             { type: "spacer" },
-            { label: "Shift-wise Attendance", bold: true, dataKey: "Attendance_Total" },
+            { label: "Shift-wise Attendance %", bold: true, dataKey: "Attendance_Total" },
             { label: "A-Shift", align: "right", dataKey: "Attendance_A-Shift" },
             { label: "G-Shift", align: "right", dataKey: "Attendance_G-Shift" },
             { label: "B-Shift", align: "right", dataKey: "Attendance_B-Shift" },

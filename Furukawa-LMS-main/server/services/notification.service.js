@@ -78,9 +78,33 @@ class NotificationService {
                     <p>The <strong>${formName}</strong> for department <strong>${deptName}</strong> has been updated.</p>
                     <p>Please find the attached Excel report for your reference.</p>
                     <br/>
-                    <p>Best Regards,<br/>LMS System</p>
+                    <p>Best Regards,<br/>Furukawa Minda Electric</p>
                 </div>
             `;
+
+            if (formName === "Skill Upgradation Sheet" || formName === "Multi Skill Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const reviewUrl = formName === "Multi Skill Sheet"
+                    ? `${adminUrl}/admin/multi-skilling`
+                    : `${adminUrl}/admin/skill-matrix`;
+
+                let sectionName = "";
+                if (formData?.sectionId) {
+                    try {
+                        const sec = await Section.findById(formData.sectionId);
+                        sectionName = sec?.name || "";
+                    } catch (_) { /* non-critical */ }
+                }
+
+                htmlMessage = emailTemplates.generatePlanUpdateEmail({
+                    formName,
+                    departmentName: deptName,
+                    sectionName,
+                    year: formData?.year || "",
+                    savedBy: formData?.updatedBy || "",
+                    portalUrl: reviewUrl
+                });
+            }
 
             if (formName === "Daily 5M Recording Sheet") {
                 const date = formData?.date || new Date().toLocaleDateString();
@@ -264,16 +288,16 @@ class NotificationService {
         }
     }
 
-    static async _generateExcel(workbook, formName, departmentId, formData) {
+    static async _generateExcel(workbook, formName, departmentId, formData, highlightUserIds = new Set()) {
         const worksheet = workbook.addWorksheet(formName.substring(0, 31)); // Max 31 chars
         let filename = `${formName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         switch (formName) {
             case "Multi Skill Sheet":
-                await this._fillMultiSkillSheet(worksheet, departmentId, formData);
+                await this._fillMultiSkillSheet(worksheet, departmentId, formData, highlightUserIds);
                 break;
             case "Skill Upgradation Sheet":
-                await this._fillMultiSkillSheet(worksheet, departmentId, formData);
+                await this._fillMultiSkillSheet(worksheet, departmentId, formData, highlightUserIds);
                 break;
             case "Handover Sheet":
                 await this._fillHandoverSheet(worksheet, departmentId, formData);
@@ -317,8 +341,8 @@ class NotificationService {
         return filename;
     }
 
-    static async _fillMultiSkillSheet(worksheet, departmentId, formData) {
-        const { year, tableData = {} } = formData || {};
+    static async _fillMultiSkillSheet(worksheet, departmentId, formData, highlightUserIds = new Set()) {
+        const { year, tableData = {}, selectedLines = [] } = formData || {};
 
         // 1. Fetch Department & Students
         const department = await Department.findById(departmentId);
@@ -475,7 +499,14 @@ class NotificationService {
             ];
 
             const row = worksheet.addRow(rowValues);
-            row.eachCell(cell => this._applyBorderStyle(cell));
+            const isHighlighted = highlightUserIds && highlightUserIds.has(studentId);
+            row.eachCell(cell => {
+                this._applyBorderStyle(cell);
+                if (isHighlighted) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF59D' } };
+                    cell.font = { ...(cell.font || {}), bold: true };
+                }
+            });
         });
 
         // --- Footer Section ---

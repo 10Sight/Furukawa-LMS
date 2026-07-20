@@ -31,7 +31,7 @@ async function scanPlan(table, formName, today, currentYear) {
     console.log(`\n--- Scanning ${formName} (${table}) for date: ${today}, year: ${currentYear} ---`);
 
     const [plans] = await executeQuery(
-        `SELECT id, departmentId, sectionId, tableData, departmentName, sectionName FROM ${table} WHERE year = ?`,
+        `SELECT id, departmentId, sectionId, tableData FROM ${table} WHERE year = ?`,
         [currentYear]
     );
 

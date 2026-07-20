@@ -298,11 +298,24 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // Fetch all eligible users to calculate daily active counts
     // (isEmployee, non-temporary, non-deleted, non-shuttered-designation)
     const [allEligibleUsers] = await executeQuery(`
-        SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary
+        SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary,
+               shiftSchedule, shift, stationId, stations
         FROM users u
         WHERE u.isEmployee = 1
         ${getEligibleUserSql('u')}
     `);
+
+    // Shift-wise breakdown (Available/Assigned/Attendance) is driven purely by each user's
+    // SCHEDULED shift (users.shiftSchedule for the date, falling back to users.shift) and their
+    // active-on-this-date status — it intentionally does NOT require a matching attendance_logs
+    // row, per product decision: a user's planned shift should show up even before/without an
+    // attendance punch for that date.
+    allEligibleUsers.forEach(u => {
+        u._shiftSchedule = (() => {
+            try { return JSON.parse(u.shiftSchedule || '{}'); } catch (e) { return {}; }
+        })();
+        u._hasStation = !!u.stationId || (u.stations && !['[]', ''].includes(String(u.stations).trim()));
+    });
 
     // 2. Global Attendance Stats
     // NOTE: this query intentionally keeps a broad WHERE (isEmployee OR isTemporary) even though
@@ -450,57 +463,86 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
         tableData[`Absenteeism %_${dKey}`] = globalAbsPercent.toFixed(2);
     }
 
-    // Initialize all shift keys with "0"
-    const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
-    for (let d = 1; d <= totalDays; d++) {
-        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        shiftsList.forEach(s => {
-            tableData[`Available_${s}_${dKey}`] = "0";
-            tableData[`Assigned_${s}_${dKey}`] = "0";
-            tableData[`Attendance_${s}_${dKey}`] = "0";
-        });
-        tableData[`Available_Total_${dKey}`] = "0";
-        tableData[`Assigned_Total_${dKey}`] = "0";
-        tableData[`Attendance_Total_${dKey}`] = "0";
-    }
-
-    // Shift-wise attendance. Filters are kept identical to totalPresentEmployees above
-    // (eligibleEmployeeCondition/notYetLeftCondition) so Available_Total always matches
-    // Net Available Headcount Total exactly. Also deduplicated per (userId, date) for the
-    // same reason as netHeadcountSql/clubDailySql — a duplicate attendance_logs row on the
-    // same date would otherwise inflate the shift count without inflating the employee count.
-    const shiftAttendanceSql = `
-        SELECT
-            CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-            UPPER(ISNULL(al.shift, ISNULL(u.shift, ''))) AS userShift,
-            COUNT(*) AS count
-        FROM (
-            SELECT userId, [date], MAX(status) AS status, MAX(shift) AS shift
-            FROM attendance_logs
-            WHERE [date] >= ? AND [date] <= ?
-            GROUP BY userId, [date]
-        ) al
-        INNER JOIN users u ON u.id = al.userId
-        ${getDesignationShutterLeftJoinSql('u', 'ds')}
-        WHERE u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition}
-          AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
-        GROUP BY al.[date], UPPER(ISNULL(al.shift, ISNULL(u.shift, '')))
-    `;
-    const [shiftAttendanceData] = await executeQuery(shiftAttendanceSql, [start, end]);
-
-    const shiftMap = { 'A': 'A-Shift', 'G': 'G-Shift', 'B': 'B-Shift', 'C': 'C-Shift' };
-    shiftAttendanceData.forEach(row => {
-        const { dateKey, userShift, count } = row;
-        const shiftKey = Object.keys(shiftMap).find(k => userShift.includes(k));
-        if (shiftKey) {
-            const shiftName = shiftMap[shiftKey];
-            tableData[`Available_${shiftName}_${dateKey}`] = String(count || 0);
-            tableData[`Attendance_${shiftName}_${dateKey}`] = String(count || 0);
-
-            tableData[`Available_Total_${dateKey}`] = String(Number(tableData[`Available_Total_${dateKey}`] || 0) + count);
-            tableData[`Attendance_Total_${dateKey}`] = String(Number(tableData[`Attendance_Total_${dateKey}`] || 0) + count);
+    // Actual PRESENT punches per (userId, date), used only to compute the Shift-wise Attendance
+    // percentage below — Available_*/Assigned_* stay schedule-based (see above), but "Attendance"
+    // is defined as % actually present = (scheduled-for-shift users marked PRESENT that date) /
+    // (scheduled-for-shift users that date) * 100.
+    const [attendancePresenceRows] = await executeQuery(`
+        SELECT userId, CONVERT(VARCHAR, [date], 23) AS dateKey, MAX(status) AS status
+        FROM attendance_logs
+        WHERE [date] >= ? AND [date] <= ?
+        GROUP BY userId, [date]
+    `, [start, end]);
+    const presentSet = new Set();
+    attendancePresenceRows.forEach(row => {
+        if (row.dateKey && String(row.status || '').toUpperCase() === 'PRESENT') {
+            presentSet.add(`${row.userId}|${row.dateKey}`);
         }
     });
+
+    // Shift-wise breakdown: every active-on-this-date eligible employee (isEmployee = 1,
+    // non-temporary, non-deleted, non-shuttered-designation, not yet left as of this date — same
+    // eligibility and date-aware join/leave check as activeCount above), grouped by their
+    // SCHEDULED shift for the date (users.shiftSchedule, falling back to users.shift).
+    // Available_* is a pure schedule headcount, deliberately independent of attendance_logs — a
+    // user's planned shift should show up even without an attendance punch for that date.
+    // Assigned_* is a headcount too, but of the subset that (a) has a station assigned AND (b) is
+    // marked PRESENT in attendance_logs for that date (see presentSet above) — i.e. actually
+    // showed up to their assigned station. Attendance_* is a % actually present, not a headcount.
+    const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
+    const shiftMap = { 'A': 'A-Shift', 'G': 'G-Shift', 'B': 'B-Shift', 'C': 'C-Shift' };
+    for (let d = 1; d <= totalDays; d++) {
+        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dDate = new Date(dKey);
+
+        let availableTotal = 0;
+        let assignedTotal = 0;
+        let presentTotal = 0;
+        const availableByShift = {};
+        const assignedByShift = {};
+        const presentByShift = {};
+        shiftsList.forEach(s => { availableByShift[s] = 0; assignedByShift[s] = 0; presentByShift[s] = 0; });
+
+        allEligibleUsers.forEach(u => {
+            const join = u.joiningDate ? new Date(u.joiningDate) : null;
+            if (join && join > dDate) return;
+            if (u.status?.toLowerCase() === 'left') {
+                const left = new Date(u.leavingDate || u.updatedAt);
+                if (left <= dDate) return;
+            }
+
+            const resolvedShift = (u._shiftSchedule[dKey] || u.shift || '').toString().toUpperCase();
+            const shiftKey = Object.keys(shiftMap).find(k => resolvedShift.includes(k));
+            if (!shiftKey) return;
+            const shiftName = shiftMap[shiftKey];
+            const isPresent = presentSet.has(`${u.id}|${dKey}`);
+
+            availableByShift[shiftName]++;
+            availableTotal++;
+
+            if (u._hasStation && isPresent) {
+                assignedByShift[shiftName]++;
+                assignedTotal++;
+            }
+
+            if (isPresent) {
+                presentByShift[shiftName]++;
+                presentTotal++;
+            }
+        });
+
+        shiftsList.forEach(s => {
+            tableData[`Available_${s}_${dKey}`] = String(availableByShift[s]);
+            tableData[`Assigned_${s}_${dKey}`] = String(assignedByShift[s]);
+            const present = presentByShift[s];
+            const available = availableByShift[s];
+            tableData[`Attendance_${s}_${dKey}`] = available > 0 ? ((present / available) * 100).toFixed(2) : "0.00";
+        });
+
+        tableData[`Available_Total_${dKey}`] = String(availableTotal);
+        tableData[`Assigned_Total_${dKey}`] = String(assignedTotal);
+        tableData[`Attendance_Total_${dKey}`] = availableTotal > 0 ? ((presentTotal / availableTotal) * 100).toFixed(2) : "0.00";
+    }
 
     // 3. Dynamic Club Headcount rows
     for (const club of reportingClubs) {
@@ -951,42 +993,6 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
         // Do not change Hiring Plan.
         tableData[`Hiring Plan_${item.dateKey}`] = hiringPlan.prodPlan;
-    });
-
-    // 8. Shift Manpower — same eligibility/dedup treatment as shiftAttendanceSql above, plus a
-    // station-assignment check to distinguish "Assigned" (has a station) from "Available" (just
-    // present). Date-aware via attendance_logs, not a static per-employee snapshot.
-    const assignedManpowerSql = `
-        SELECT
-            CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-            UPPER(ISNULL(al.shift, ISNULL(u.shift, ''))) AS userShift,
-            COUNT(*) AS count
-        FROM (
-            SELECT userId, [date], MAX(status) AS status, MAX(shift) AS shift
-            FROM attendance_logs
-            WHERE [date] >= ? AND [date] <= ?
-            GROUP BY userId, [date]
-        ) al
-        INNER JOIN users u ON u.id = al.userId
-        ${getDesignationShutterLeftJoinSql('u', 'ds')}
-        WHERE u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition}
-          AND UPPER(ISNULL(al.[status], '')) = 'PRESENT'
-          AND (
-              u.stationId IS NOT NULL
-              OR (u.stations IS NOT NULL AND LTRIM(RTRIM(u.stations)) NOT IN ('[]', ''))
-          )
-        GROUP BY al.[date], UPPER(ISNULL(al.shift, ISNULL(u.shift, '')))
-    `;
-    const [assignedManpowerData] = await executeQuery(assignedManpowerSql, [start, end]);
-
-    assignedManpowerData.forEach(row => {
-        const { dateKey, userShift, count } = row;
-        const shiftKey = Object.keys(shiftMap).find(k => userShift.includes(k));
-        if (shiftKey) {
-            const shiftName = shiftMap[shiftKey];
-            tableData[`Assigned_${shiftName}_${dateKey}`] = String(count || 0);
-            tableData[`Assigned_Total_${dateKey}`] = String(Number(tableData[`Assigned_Total_${dateKey}`] || 0) + count);
-        }
     });
 
     res.status(200).json({ success: true, data: { tableData } });

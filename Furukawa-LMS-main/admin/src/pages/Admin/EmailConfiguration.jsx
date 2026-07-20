@@ -274,7 +274,7 @@ export default function EmailConfiguration() {
                                 </div>
                             </CardHeader>
                             <CardContent className="pt-4 pb-4">
-                                {(formName === "Handover Sheet" || formName === "16-Day Monitoring Sheet") && selectedDeptId === "all" && (
+                                {(formName === "Handover Sheet" || formName === "16-Day Monitoring Sheet" || formName === "Skill Upgradation Sheet" || formName === "Multi Skill Sheet") && selectedDeptId === "all" && (
                                     <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
                                         <span className="mt-0.5 shrink-0 font-bold">⚠</span>
                                         <span>
@@ -338,6 +338,7 @@ export default function EmailConfiguration() {
                                         <p className="text-[11px] text-gray-400">
                                             {formName === "Handover Sheet" ? "For Handover Sheet: sends one email per pending (unapproved) entry at this time daily." :
                                              formName === "16-Day Monitoring Sheet" ? "For 16-Day Monitoring Sheet: sends email report for each pending (unapproved/unverified) monitoring sheet at this time daily." :
+                                             (formName === "Skill Upgradation Sheet" || formName === "Multi Skill Sheet") ? `For ${formName}: sends an email warning for associates whose Plan Date is due today at this time daily.` :
                                              "No scheduler action defined for this form yet."}
                                         </p>
                                     </div>

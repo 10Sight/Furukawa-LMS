@@ -97,6 +97,51 @@ class Requirement {
                 BEGIN
                     ALTER TABLE requirements ADD prodPlan FLOAT DEFAULT 0;
                 END
+                -- Ensure approval-workflow columns exist (uploadBatchId/approve-reject tracking)
+                IF COL_LENGTH('requirements', 'uploadBatchId') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD uploadBatchId VARCHAR(100) NULL;
+                END
+                IF COL_LENGTH('requirements', 'approvalStatus') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD approvalStatus VARCHAR(50) NULL;
+                END
+                IF COL_LENGTH('requirements', 'approvalSource') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD approvalSource VARCHAR(50) NULL;
+                END
+                IF COL_LENGTH('requirements', 'approvedBy') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD approvedBy NVARCHAR(255) NULL;
+                END
+                IF COL_LENGTH('requirements', 'approvedByEmail') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD approvedByEmail NVARCHAR(255) NULL;
+                END
+                IF COL_LENGTH('requirements', 'approvedAt') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD approvedAt DATETIME NULL;
+                END
+                IF COL_LENGTH('requirements', 'rejectedBy') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD rejectedBy NVARCHAR(255) NULL;
+                END
+                IF COL_LENGTH('requirements', 'rejectedAt') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD rejectedAt DATETIME NULL;
+                END
+                IF COL_LENGTH('requirements', 'approvalOwnerName') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD approvalOwnerName NVARCHAR(255) NULL;
+                END
+                IF COL_LENGTH('requirements', 'approvalOwnerEmail') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD approvalOwnerEmail NVARCHAR(255) NULL;
+                END
+                IF COL_LENGTH('requirements', 'category') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD category NVARCHAR(255) NULL;
+                END
             END
         `;
         try {

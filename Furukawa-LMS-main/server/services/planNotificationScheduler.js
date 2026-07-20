@@ -1,7 +1,9 @@
 import cron from 'node-cron';
+import ExcelJS from 'exceljs';
 import { executeQuery } from '../db/mssqlHelper.js';
 import sendMail from '../utils/mail.util.js';
 import { generatePlanUpdationWarningEmail } from '../utils/emailTemplates.js';
+import NotificationService from './notification.service.js';
 import logger from '../logger/winston.logger.js';
 import ENV from '../configs/env.config.js';
 
@@ -91,7 +93,7 @@ class PlanNotificationScheduler {
                 ? 'multi_skilling_plans'
                 : 'skill_upgradation_plans';
 
-            let query = `SELECT tableData, departmentName, sectionName FROM ${table} WHERE departmentId = ? AND year = ?`;
+            let query = `SELECT tableData FROM ${table} WHERE departmentId = ? AND year = ?`;
             const params = [config.departmentId, currentYear];
 
             if (config.sectionId) {
@@ -107,6 +109,8 @@ class PlanNotificationScheduler {
             }
 
             const dueRows = [];
+            const dueUserIds = new Set();
+            const mergedTableData = {};
 
             for (const plan of plans) {
                 let tableData = {};
@@ -118,6 +122,8 @@ class PlanNotificationScheduler {
                     logger.error(`[PlanNotificationScheduler] tableData parse error for dept ${config.departmentId}: ${e.message}`);
                     continue;
                 }
+
+                Object.assign(mergedTableData, tableData);
 
                 for (const [userId, row] of Object.entries(tableData)) {
                     // Skip internal metadata key and blank/empty rows
@@ -134,7 +140,9 @@ class PlanNotificationScheduler {
                         if (actualDate) continue;
                         if (status === 'completed') continue;
 
+                        dueUserIds.add(userId);
                         dueRows.push({
+                            userId,
                             userName: row.userName || '—',
                             cardNo: row.cardNo || '—',
                             shift: row.shift || '—',
@@ -154,6 +162,23 @@ class PlanNotificationScheduler {
             }
 
             logger.info(`[PlanNotificationScheduler] ${dueRows.length} due row(s) for dept ${config.departmentId} (${config.departmentName}) — sending email.`);
+
+            // Resolve each due associate's email so it can be shown alongside their name in the mail
+            const numericUserIds = [...dueUserIds].map(id => parseInt(id)).filter(id => !isNaN(id));
+            if (numericUserIds.length > 0) {
+                try {
+                    const [userRows] = await executeQuery(
+                        "SELECT id, email FROM users WHERE id IN (?)",
+                        [numericUserIds]
+                    );
+                    const emailByUserId = new Map(userRows.map(u => [String(u.id), u.email]));
+                    dueRows.forEach(row => {
+                        row.email = emailByUserId.get(String(row.userId)) || '';
+                    });
+                } catch (e) {
+                    logger.error(`[PlanNotificationScheduler] Failed to resolve associate emails: ${e.message}`);
+                }
+            }
 
             let toEmails = config.toEmails || '';
             const ccEmails = config.ccEmails || '';
@@ -188,11 +213,27 @@ class PlanNotificationScheduler {
                 portalUrl,
             });
 
+            let attachments = [];
+            try {
+                const workbook = new ExcelJS.Workbook();
+                const filename = await NotificationService._generateExcel(
+                    workbook,
+                    config.formName,
+                    config.departmentId,
+                    { year: currentYear, tableData: mergedTableData, selectedLines: [] },
+                    dueUserIds
+                );
+                const buffer = await workbook.xlsx.writeBuffer();
+                attachments = [{ filename, content: buffer }];
+            } catch (e) {
+                logger.error(`[PlanNotificationScheduler] Failed to generate excel attachment for dept ${config.departmentId}: ${e.message}`);
+            }
+
             await sendMail(
                 toEmails,
                 `Plan Date Due Today — ${config.formName} (${config.departmentName || 'Dept'})`,
                 html,
-                [],
+                attachments,
                 ccEmails
             );
 

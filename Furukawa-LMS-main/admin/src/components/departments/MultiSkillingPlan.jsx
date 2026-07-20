@@ -7,7 +7,7 @@ import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import { toast } from "sonner";
-import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend } from "@tabler/icons-react";
 import {
     Select,
     SelectContent,
@@ -338,7 +338,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
         );
     }, [rows, searchText]);
 
-    const handleSave = async () => {
+    const handleSave = async (sendEmail = false) => {
         if (!departmentId) return;
 
         // Convert rows to tableData format
@@ -373,14 +373,15 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
 
         try {
             setIsSaving(true);
-            await axiosInstance.post(`/api/multi-skilling-plan/department/${departmentId}`, {
+            const response = await axiosInstance.post(`/api/multi-skilling-plan/department/${departmentId}`, {
                 sectionId,
                 year,
                 selectedLines: [],
                 tableData: newTableData,
+                sendEmail,
             });
             setTableData(newTableData);
-            toast.success("Multi-skilling plan saved successfully");
+            toast.success(response?.data?.message || "Multi-skilling plan saved successfully");
         } catch (error) {
             toast.error(error?.response?.data?.message || "Failed to save multi-skilling plan");
         } finally {
@@ -498,9 +499,15 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                             Print
                         </Button>
                         {canManage && (
-                            <Button onClick={handleSave} disabled={isSaving || isLoadingPlan} className="bg-amber-500 hover:bg-amber-600 text-white font-semibold shadow-sm">
+                            <Button variant="outline" onClick={() => handleSave(false)} disabled={isSaving || isLoadingPlan} className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
                                 <IconDeviceFloppy className="h-4 w-4 mr-2" />
                                 {isSaving ? "Saving..." : "Save"}
+                            </Button>
+                        )}
+                        {canManage && (
+                            <Button onClick={() => handleSave(true)} disabled={isSaving || isLoadingPlan} className="bg-amber-500 hover:bg-amber-600 text-white font-semibold shadow-sm">
+                                <IconSend className="h-4 w-4 mr-2" />
+                                {isSaving ? "Saving..." : "Submit & Mail"}
                             </Button>
                         )}
                     </div>

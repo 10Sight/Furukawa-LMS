@@ -1,6 +1,25 @@
 /**
  * Email template utilities for generating HTML emails
  */
+import { FME_LOGO_DATA_URI } from './emailLogo.js';
+
+// Shared light-theme header used by the plan-related emails (Skill Upgradation / Multi Skilling).
+// Soft blue accent, logo, generous whitespace, no heavy/saturated fills.
+const _renderLightEmailHeader = (title) => `
+    <div style="padding:28px 32px 20px;text-align:center;border-bottom:1px solid #eef2f6;">
+        <img src="${FME_LOGO_DATA_URI}" alt="Furukawa Minda Electric" width="120" style="display:inline-block;max-width:120px;height:auto;margin-bottom:12px;" />
+        <div style="font-size:12px;color:#94a3b8;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
+        <div style="font-size:18px;color:#334155;font-weight:600;margin-top:6px;">${title}</div>
+    </div>
+`;
+
+const _renderLightEmailFooter = () => `
+    <div style="padding:18px 32px;text-align:center;border-top:1px solid #eef2f6;">
+        <p style="margin:0;color:#b0b8c4;font-size:11px;">
+            Sent by the FME Digital Portal &nbsp;·&nbsp; ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+        </p>
+    </div>
+`;
 
 /**
  * Generate welcome email template for new users
@@ -1531,14 +1550,15 @@ export const generatePlanUpdationWarningEmail = ({
 
     const tableRows = (dueRows || []).map((row, index) => `
         <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px;">${row.userName}</td>
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px; text-align: center;">${row.cardNo}</td>
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px; text-align: center;">${row.shift}</td>
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px;">${row.modelLine}</td>
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px;">${row.station}</td>
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px; text-align: center;">${row.quarter}</td>
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px; text-align: center; font-weight: bold; color: #2563eb;">${row.targetSkill}</td>
-            <td style="padding: 9px 10px; border: 1px solid #e2e8f0; font-size: 12px; text-align: center;">${row.plannedDate}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; color:#334155;">${row.userName}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; color:#64748b;">${row.email || '—'}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; text-align: center; color:#334155;">${row.cardNo}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; text-align: center; color:#334155;">${row.shift}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; color:#334155;">${row.modelLine}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; color:#334155;">${row.station}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; text-align: center; color:#334155;">${row.quarter}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; text-align: center; font-weight: 600; color: #3b82f6;">${row.targetSkill}</td>
+            <td style="padding: 10px; border: 1px solid #eef2f6; font-size: 12px; text-align: center; color:#334155;">${row.plannedDate}</td>
         </tr>
     `).join('');
 
@@ -1549,63 +1569,68 @@ export const generatePlanUpdationWarningEmail = ({
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${planLabel} — Due Today</title>
+    <style>
+        @media only screen and (max-width: 600px) {
+            .plan-email-body { padding: 20px 18px !important; }
+            .plan-email-header { padding: 22px 18px 16px !important; }
+            .plan-email-table th, .plan-email-table td { font-size: 11px !important; padding: 7px !important; }
+        }
+    </style>
 </head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;">
-<div style="max-width:800px;margin:30px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);">
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+<div style="max-width:600px;margin:24px auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #eef2f6;">
 
-    <!-- Header -->
-    <div style="background:#1d4ed8;padding:24px 32px;">
-        <div style="font-size:13px;color:#bfdbfe;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
-        <div style="font-size:20px;color:#ffffff;font-weight:700;margin-top:6px;">${planLabel} — Planned Dates Due Today</div>
-    </div>
+    ${_renderLightEmailHeader(`${planLabel} — Due Today`)}
 
     <!-- Body -->
-    <div style="padding:28px 32px;">
-        <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear HOD / Incharge,</p>
-        <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
-            The following associates have a planned skill date scheduled for today
-            (<strong>${date}</strong>) that has not yet been actualized. Please take necessary action.
+    <div class="plan-email-body" style="padding:28px 32px;">
+        <p style="margin:0 0 14px;color:#475569;font-size:14px;">Hi there,</p>
+        <p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.7;">
+            A quick heads-up — the associates below have a planned skill-upgradation date for today
+            (<strong style="color:#334155;">${date}</strong>) that hasn't been marked complete yet.
+            Whenever you get a chance, please take a look.
         </p>
 
         <!-- Info block -->
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+        <div style="background:#f8fafc;border:1px solid #eef2f6;border-radius:10px;padding:16px 20px;margin-bottom:22px;">
             <table style="width:100%;border-collapse:collapse;font-size:13px;">
                 <tr>
-                    <td style="padding:5px 0;color:#6b7280;font-weight:600;width:140px;">Plan Type</td>
-                    <td style="padding:5px 0;color:#111827;font-weight:700;">${planLabel}</td>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;width:140px;">Plan Type</td>
+                    <td style="padding:5px 0;color:#334155;font-weight:600;">${planLabel}</td>
                 </tr>
                 <tr>
-                    <td style="padding:5px 0;color:#6b7280;font-weight:600;">Department</td>
-                    <td style="padding:5px 0;color:#111827;">${departmentName}</td>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Department</td>
+                    <td style="padding:5px 0;color:#334155;">${departmentName}</td>
                 </tr>
                 ${sectionName ? `<tr>
-                    <td style="padding:5px 0;color:#6b7280;font-weight:600;">Section</td>
-                    <td style="padding:5px 0;color:#111827;">${sectionName}</td>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Section</td>
+                    <td style="padding:5px 0;color:#334155;">${sectionName}</td>
                 </tr>` : ''}
                 <tr>
-                    <td style="padding:5px 0;color:#6b7280;font-weight:600;">Date</td>
-                    <td style="padding:5px 0;color:#111827;">${date}</td>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Date</td>
+                    <td style="padding:5px 0;color:#334155;">${date}</td>
                 </tr>
                 <tr>
-                    <td style="padding:5px 0;color:#6b7280;font-weight:600;">Due Associates</td>
-                    <td style="padding:5px 0;color:#dc2626;font-weight:700;">${dueRows.length}</td>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Due Associates</td>
+                    <td style="padding:5px 0;color:#3b82f6;font-weight:700;">${dueRows.length}</td>
                 </tr>
             </table>
         </div>
 
         <!-- Due associates table -->
-        <div style="overflow-x:auto;margin-bottom:24px;">
-            <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;">
+        <div style="overflow-x:auto;margin-bottom:22px;-webkit-overflow-scrolling:touch;">
+            <table class="plan-email-table" style="width:100%;min-width:560px;border-collapse:collapse;border:1px solid #eef2f6;">
                 <thead>
-                    <tr style="background:#1e293b;">
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:left;">Associate Name</th>
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:center;">Card No.</th>
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:center;">Shift</th>
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:left;">Model &amp; Line</th>
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:left;">Station</th>
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:center;">Target Quarter</th>
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:center;">Target Skill</th>
-                        <th style="padding:10px;border:1px solid #334155;color:#f1f5f9;font-size:12px;text-align:center;">Planned Date</th>
+                    <tr style="background:#f8fafc;">
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:left;font-weight:600;">Associate Name</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:left;font-weight:600;">Email</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:center;font-weight:600;">Card No.</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:center;font-weight:600;">Shift</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:left;font-weight:600;">Model &amp; Line</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:left;font-weight:600;">Station</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:center;font-weight:600;">Target Quarter</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:center;font-weight:600;">Target Skill</th>
+                        <th style="padding:10px;border:1px solid #eef2f6;color:#64748b;font-size:11px;text-align:center;font-weight:600;">Planned Date</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1615,28 +1640,113 @@ export const generatePlanUpdationWarningEmail = ({
         </div>
 
         <!-- Action note -->
-        <div style="background:#eff6ff;border-left:4px solid #3b82f6;border-radius:4px;padding:14px 18px;margin-bottom:24px;">
-            <p style="margin:0;color:#1e40af;font-size:13px;line-height:1.6;">
-                Please open the plan sheet, update the actual completion date for each associate listed above,
-                and set the status to <strong>Completed</strong> once the upgradation is done.
+        <div style="background:#f5f9ff;border-left:3px solid #93c5fd;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
+            <p style="margin:0;color:#475569;font-size:13px;line-height:1.7;">
+                Please open the plan sheet, add the actual completion date for each associate above,
+                and mark the status <strong style="color:#334155;">Completed</strong> once done.
+                The attached Excel has the due associate(s) highlighted for quick reference.
             </p>
         </div>
 
         <!-- CTA -->
-        <div style="text-align:center;margin:28px 0;">
+        <div style="text-align:center;margin:28px 0 8px;">
             <a href="${portalUrl}"
-               style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+               style="display:inline-block;background:#3b82f6;color:#ffffff;text-decoration:none;padding:12px 30px;border-radius:8px;font-weight:600;font-size:14px;">
                 Open ${planLabel}
             </a>
         </div>
     </div>
 
-    <!-- Footer -->
-    <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
-        <p style="margin:0;color:#94a3b8;font-size:11px;">
-            This is an automated notification from the FME Digital Portal. &nbsp;|&nbsp; ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+    ${_renderLightEmailFooter()}
+</div>
+</body>
+</html>`;
+};
+
+/**
+ * Generate the manual "Submit & Mail" confirmation email for Skill Upgradation Plan
+ * and Multi Skilling Plan. Light theme, logo, mobile-friendly — sent whenever an admin
+ * saves the sheet with the "Submit & Mail" action (attaches the sheet's Excel report).
+ */
+export const generatePlanUpdateEmail = ({
+    formName,
+    departmentName,
+    sectionName,
+    year,
+    savedBy,
+    portalUrl,
+}) => {
+    const planLabel = formName === 'Multi Skill Sheet' ? 'Multi-Skilling Plan' : 'Skill Upgradation Plan';
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${planLabel} — Updated</title>
+    <style>
+        @media only screen and (max-width: 600px) {
+            .plan-email-body { padding: 20px 18px !important; }
+            .plan-email-header { padding: 22px 18px 16px !important; }
+        }
+    </style>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+<div style="max-width:600px;margin:24px auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #eef2f6;">
+
+    ${_renderLightEmailHeader(`${planLabel} — Updated`)}
+
+    <!-- Body -->
+    <div class="plan-email-body" style="padding:28px 32px;">
+        <p style="margin:0 0 14px;color:#475569;font-size:14px;">Hi there,</p>
+        <p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.7;">
+            The ${planLabel.toLowerCase()} for <strong style="color:#334155;">${departmentName}</strong>
+            ${sectionName ? `(<strong style="color:#334155;">${sectionName}</strong>) ` : ''}
+            was just saved and this is a copy of the latest sheet, attached as an Excel file.
         </p>
+
+        <div style="background:#f8fafc;border:1px solid #eef2f6;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;width:140px;">Plan Type</td>
+                    <td style="padding:5px 0;color:#334155;font-weight:600;">${planLabel}</td>
+                </tr>
+                <tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Department</td>
+                    <td style="padding:5px 0;color:#334155;">${departmentName}</td>
+                </tr>
+                ${sectionName ? `<tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Section</td>
+                    <td style="padding:5px 0;color:#334155;">${sectionName}</td>
+                </tr>` : ''}
+                ${year ? `<tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Year</td>
+                    <td style="padding:5px 0;color:#334155;">${year}</td>
+                </tr>` : ''}
+                ${savedBy ? `<tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Saved By</td>
+                    <td style="padding:5px 0;color:#334155;">${savedBy}</td>
+                </tr>` : ''}
+            </table>
+        </div>
+
+        <div style="background:#f5f9ff;border-left:3px solid #93c5fd;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
+            <p style="margin:0;color:#475569;font-size:13px;line-height:1.7;">
+                No action is needed unless something looks off — the attached Excel report reflects
+                everything currently saved in the sheet.
+            </p>
+        </div>
+
+        <div style="text-align:center;margin:28px 0 8px;">
+            <a href="${portalUrl}"
+               style="display:inline-block;background:#3b82f6;color:#ffffff;text-decoration:none;padding:12px 30px;border-radius:8px;font-weight:600;font-size:14px;">
+                Open ${planLabel}
+            </a>
+        </div>
     </div>
+
+    ${_renderLightEmailFooter()}
 </div>
 </body>
 </html>`;
@@ -1850,6 +1960,7 @@ export default {
     generateSkillMatrixEmail,
     generateHandoverApprovalRequestEmail,
     generatePlanUpdationWarningEmail,
+    generatePlanUpdateEmail,
     generateObservanceStatusEmail,
     generateSixteenDayMonitoringEligibleEmail,
 };

@@ -32,7 +32,7 @@ export const saveMultiSkillingPlanByDepartment = asyncHandler(async (req, res) =
     const { departmentId } = req.params;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
-    const { sectionId, year, selectedLines, tableData } = req.body || {};
+    const { sectionId, year, selectedLines, tableData, sendEmail = false } = req.body || {};
 
     const saved = await MultiSkillingPlan.upsert({
         departmentId: parseInt(departmentId),
@@ -43,12 +43,17 @@ export const saveMultiSkillingPlanByDepartment = asyncHandler(async (req, res) =
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
     });
 
-    // Trigger Email Notification
-    NotificationService.sendFormReport("Multi Skill Sheet", departmentId, { sectionId, year, selectedLines, tableData })
-        .catch(err => console.error("[Notification] Failed to trigger email:", err));
+    // Trigger Email Notification only when explicitly requested
+    if (sendEmail === true) {
+        const updatedBy = req.user?.fullName || req.user?.name || req.user?.userName || "";
+        NotificationService.sendFormReport("Multi Skill Sheet", departmentId, { sectionId, year, selectedLines, tableData, updatedBy })
+            .catch(err => console.error("[Notification] Failed to trigger email:", err));
+    }
 
     return res.status(200).json(
-        new ApiResponse(200, saved, "Multi skilling plan saved successfully")
+        new ApiResponse(200, saved, sendEmail === true
+            ? "Multi skilling plan saved & email dispatched successfully"
+            : "Multi skilling plan saved successfully")
     );
 });
 

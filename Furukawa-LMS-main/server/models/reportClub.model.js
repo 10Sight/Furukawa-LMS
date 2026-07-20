@@ -23,7 +23,7 @@ class ReportClub {
                 CREATE TABLE [report_clubs] (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     name NVARCHAR(255) NOT NULL,
-                    departmentId INT NOT NULL,
+                    departmentId INT NULL, -- single dept for backward compat; NULL when a club spans multiple departments
                     sectionIds NVARCHAR(MAX) NOT NULL, -- JSON array of section IDs
                     showInReport BIT DEFAULT 0,
                     createdBy INT NOT NULL,
@@ -40,6 +40,12 @@ class ReportClub {
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('report_clubs') AND name = 'showInReport')
                 BEGIN
                     ALTER TABLE [report_clubs] ADD showInReport BIT DEFAULT 0;
+                END
+
+                -- Allow departmentId to be NULL so a club can span multiple departments
+                IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('report_clubs') AND name = 'departmentId' AND is_nullable = 0)
+                BEGIN
+                    ALTER TABLE [report_clubs] ALTER COLUMN departmentId INT NULL;
                 END
             END
         `;

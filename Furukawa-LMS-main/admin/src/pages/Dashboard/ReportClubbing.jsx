@@ -1,58 +1,94 @@
-import React, { useState } from 'react';
-import { 
-    Card, 
-    CardContent, 
-    CardHeader, 
+import React, { useMemo, useState } from 'react';
+import {
+    Card,
+    CardContent,
+    CardHeader,
     CardTitle,
-    CardDescription 
+    CardDescription
 } from "@/components/ui/card";
-import { 
-    Select, 
-    SelectContent, 
-    SelectItem, 
-    SelectTrigger, 
-    SelectValue 
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { 
-    Table, 
-    TableBody, 
-    TableCell, 
-    TableHead, 
-    TableHeader, 
-    TableRow 
+import { Badge } from "@/components/ui/badge";
+import {
+    Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent
+} from "@/components/ui/accordion";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow
 } from "@/components/ui/table";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
 import { Switch } from "@/components/ui/switch";
-import { 
-    useCreateClubMutation, 
-    useGetAllClubsQuery, 
+import {
+    useCreateClubMutation,
+    useGetAllClubsQuery,
     useDeleteClubMutation,
     useUpdateClubMutation
 } from '@/Redux/AllApi/ReportClubApi';
-import { Loader2, Plus, Trash2, Layers, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Plus, Trash2, Layers, Eye, EyeOff, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ReportClubbing = () => {
-    const [selectedDepartment, setSelectedDepartment] = useState("");
     const [clubName, setClubName] = useState("");
     const [selectedSections, setSelectedSections] = useState([]);
+    const [search, setSearch] = useState("");
 
     // Queries & Mutations
     const { data: deptsData, isLoading: loadingDepts } = useGetAllDepartmentsQuery();
-    const { data: sectionsData, isFetching: loadingSections } = useGetSectionsByDepartmentQuery(selectedDepartment, { skip: !selectedDepartment });
+    const departments = deptsData?.data?.departments || [];
+    const allDeptIds = useMemo(() => departments.map(d => d.id).join(','), [departments]);
+
+    const { data: sectionsData, isFetching: loadingSections } = useGetSectionsByDepartmentQuery(allDeptIds, { skip: !allDeptIds });
     const { data: clubsData, isLoading: loadingClubs } = useGetAllClubsQuery();
     const [createClub, { isLoading: isCreating }] = useCreateClubMutation();
     const [deleteClub] = useDeleteClubMutation();
     const [updateClub] = useUpdateClubMutation();
 
-    const departments = deptsData?.data?.departments || [];
-    const sections = sectionsData?.data || [];
+    const allSections = sectionsData?.data || [];
     const clubs = clubsData?.data || [];
+
+    const departmentNameById = useMemo(() => {
+        const map = new Map();
+        departments.forEach(d => map.set(String(d.id), d.name));
+        return map;
+    }, [departments]);
+
+    const sectionsByDepartment = useMemo(() => {
+        const query = search.trim().toLowerCase();
+        const filtered = query
+            ? allSections.filter(s => s.name.toLowerCase().includes(query))
+            : allSections;
+        const grouped = new Map();
+        filtered.forEach(sec => {
+            const key = String(sec.departmentId);
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key).push(sec);
+        });
+        return grouped;
+    }, [allSections, search]);
+
+    const selectedSectionDetails = useMemo(() => {
+        return selectedSections
+            .map(id => allSections.find(s => String(s.id) === String(id)))
+            .filter(Boolean);
+    }, [selectedSections, allSections]);
+
+    const handleSectionToggle = (sectionId) => {
+        setSelectedSections(prev =>
+            prev.includes(sectionId)
+                ? prev.filter(id => id !== sectionId)
+                : [...prev, sectionId]
+        );
+    };
 
     const handleToggleReportVisibility = async (club) => {
         try {
@@ -66,26 +102,16 @@ const ReportClubbing = () => {
         }
     };
 
-    const handleSectionToggle = (sectionId) => {
-        setSelectedSections(prev => 
-            prev.includes(sectionId) 
-                ? prev.filter(id => id !== sectionId)
-                : [...prev, sectionId]
-        );
-    };
-
     const handleCreateClub = async () => {
         if (!clubName.trim()) return toast.error("Please enter a club name");
-        if (!selectedDepartment) return toast.error("Please select a department");
         if (selectedSections.length === 0) return toast.error("Please select at least one section");
 
         try {
             await createClub({
                 name: clubName,
-                departmentId: selectedDepartment,
                 sectionIds: selectedSections
             }).unwrap();
-            
+
             toast.success("Report club created successfully");
             setClubName("");
             setSelectedSections([]);
@@ -108,7 +134,7 @@ const ReportClubbing = () => {
         <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex flex-col gap-2">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-800">Report Clubbing</h1>
-                <p className="text-slate-500">Group multiple sections into a single reporting unit.</p>
+                <p className="text-slate-500">Group sections from one or more departments into a single reporting unit.</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -116,74 +142,125 @@ const ReportClubbing = () => {
                 <Card className="lg:col-span-1 shadow-sm border-slate-200">
                     <CardHeader>
                         <CardTitle className="text-lg font-bold">Create New Club</CardTitle>
-                        <CardDescription>Select department and sections to group.</CardDescription>
+                        <CardDescription>Pick sections from any department(s) to group.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
                             <Label>Club Name</Label>
-                            <Input 
-                                placeholder="e.g. Assembly Group A" 
+                            <Input
+                                placeholder="e.g. Assembly Group A"
                                 value={clubName}
                                 onChange={(e) => setClubName(e.target.value)}
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Department</Label>
-                            <Select value={selectedDepartment} onValueChange={(val) => {
-                                setSelectedDepartment(val);
-                                setSelectedSections([]);
-                            }}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select Department" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {departments.map(dept => (
-                                        <SelectItem key={dept.id} value={String(dept.id)}>{dept.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <Label>Search Sections</Label>
+                            <div className="relative">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                <Input
+                                    placeholder="Search across all departments..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="pl-8"
+                                />
+                            </div>
                         </div>
 
-                        {selectedDepartment && (
-                            <div className="space-y-4 pt-2">
-                                <Label className="text-slate-600">Select Sections</Label>
-                                <div className="border rounded-xl p-3 max-h-[300px] overflow-y-auto space-y-3 bg-slate-50/50">
-                                    {loadingSections ? (
-                                        <div className="flex items-center justify-center p-4">
-                                            <Loader2 className="animate-spin h-5 w-5 text-blue-600" />
-                                        </div>
-                                    ) : sections.length === 0 ? (
-                                        <p className="text-sm text-slate-400 text-center py-4">No sections found in this department.</p>
-                                    ) : sections.map(sec => (
-                                        <div key={sec.id} className="flex items-center space-x-3 hover:bg-white p-2 rounded-lg transition-colors border border-transparent hover:border-slate-200 cursor-pointer" onClick={() => handleSectionToggle(sec.id)}>
-                                            <Checkbox 
-                                                id={`sec-${sec.id}`}
-                                                checked={selectedSections.includes(sec.id)}
-                                                onCheckedChange={() => handleSectionToggle(sec.id)}
-                                                onClick={(e) => e.stopPropagation()} // Prevent double trigger
-                                                className="border-slate-300 data-[state=checked]:bg-blue-600"
-                                            />
-                                            <div className="grid gap-1.5 leading-none">
-                                                <label 
-                                                    className="text-sm font-semibold leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                                                >
-                                                    {sec.name}
-                                                </label>
-                                                <p className="text-xs text-slate-500">
-                                                    {sec.category !== 'Not Applicable' ? `${sec.category} • ` : ''}
-                                                    Count: {sec.sectionCount || 0}
-                                                </p>
-                                            </div>
-                                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-slate-600">Departments &amp; Sections</Label>
+                            <div className="border rounded-xl max-h-[320px] overflow-y-auto bg-slate-50/50">
+                                {loadingDepts || loadingSections ? (
+                                    <div className="flex items-center justify-center p-6">
+                                        <Loader2 className="animate-spin h-5 w-5 text-blue-600" />
+                                    </div>
+                                ) : departments.length === 0 ? (
+                                    <p className="text-sm text-slate-400 text-center py-4">No departments found.</p>
+                                ) : (
+                                    <Accordion type="multiple" className="px-2">
+                                        {departments.map(dept => {
+                                            const deptSections = sectionsByDepartment.get(String(dept.id)) || [];
+                                            if (search.trim() && deptSections.length === 0) return null;
+                                            const selectedInDept = deptSections.filter(s => selectedSections.includes(s.id)).length;
+                                            return (
+                                                <AccordionItem key={dept.id} value={String(dept.id)}>
+                                                    <AccordionTrigger className="text-sm py-3">
+                                                        <span className="flex items-center gap-2">
+                                                            {dept.name}
+                                                            {selectedInDept > 0 && (
+                                                                <Badge variant="info">{selectedInDept} selected</Badge>
+                                                            )}
+                                                        </span>
+                                                    </AccordionTrigger>
+                                                    <AccordionContent>
+                                                        {deptSections.length === 0 ? (
+                                                            <p className="text-xs text-slate-400 px-1">No sections found.</p>
+                                                        ) : (
+                                                            <div className="space-y-2">
+                                                                {deptSections.map(sec => (
+                                                                    <div
+                                                                        key={sec.id}
+                                                                        className="flex items-center space-x-3 hover:bg-white p-2 rounded-lg transition-colors border border-transparent hover:border-slate-200 cursor-pointer"
+                                                                        onClick={() => handleSectionToggle(sec.id)}
+                                                                    >
+                                                                        <Checkbox
+                                                                            id={`sec-${sec.id}`}
+                                                                            checked={selectedSections.includes(sec.id)}
+                                                                            onCheckedChange={() => handleSectionToggle(sec.id)}
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className="border-slate-300 data-[state=checked]:bg-blue-600"
+                                                                        />
+                                                                        <div className="grid gap-1.5 leading-none">
+                                                                            <label className="text-sm font-semibold leading-none cursor-pointer">
+                                                                                {sec.name}
+                                                                            </label>
+                                                                            <p className="text-xs text-slate-500">
+                                                                                {sec.category && sec.category !== 'Not Applicable' ? `${sec.category} • ` : ''}
+                                                                                Count: {sec.sectionCount || 0}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </AccordionContent>
+                                                </AccordionItem>
+                                            );
+                                        })}
+                                    </Accordion>
+                                )}
+                            </div>
+                        </div>
+
+                        {selectedSectionDetails.length > 0 && (
+                            <div className="space-y-2">
+                                <Label className="text-slate-600">Selected ({selectedSectionDetails.length})</Label>
+                                <div className="flex flex-wrap gap-1.5 border rounded-xl p-2 bg-slate-50/50 max-h-[120px] overflow-y-auto">
+                                    {selectedSectionDetails.map(sec => (
+                                        <span
+                                            key={sec.id}
+                                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100"
+                                        >
+                                            {sec.name}
+                                            <span className="text-blue-400 font-normal">
+                                                ({departmentNameById.get(String(sec.departmentId)) || 'Unknown'})
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSectionToggle(sec.id)}
+                                                className="hover:text-red-600"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </span>
                                     ))}
                                 </div>
                             </div>
                         )}
 
-                        <Button 
-                            className="w-full bg-blue-600 hover:bg-blue-700 py-6 text-base font-semibold shadow-lg shadow-blue-100" 
-                            disabled={isCreating || !clubName || !selectedDepartment || selectedSections.length === 0}
+                        <Button
+                            className="w-full bg-blue-600 hover:bg-blue-700 py-6 text-base font-semibold shadow-lg shadow-blue-100"
+                            disabled={isCreating || !clubName || selectedSections.length === 0}
                             onClick={handleCreateClub}
                         >
                             {isCreating ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
@@ -215,7 +292,7 @@ const ReportClubbing = () => {
                                     <TableHeader className="bg-slate-50/50">
                                         <TableRow>
                                             <TableHead className="font-bold">Club Name</TableHead>
-                                            <TableHead className="font-bold">Department</TableHead>
+                                            <TableHead className="font-bold">Department(s)</TableHead>
                                             <TableHead className="font-bold">Sections Included</TableHead>
                                             <TableHead className="font-bold text-center">Trainee Count</TableHead>
                                             <TableHead className="font-bold text-center">Report Status</TableHead>
@@ -226,7 +303,13 @@ const ReportClubbing = () => {
                                         {clubs.map((club) => (
                                             <TableRow key={club.id} className="hover:bg-slate-50/30 transition-colors">
                                                 <TableCell className="font-bold text-slate-800">{club.name}</TableCell>
-                                                <TableCell className="text-slate-600">{club.departmentName}</TableCell>
+                                                <TableCell className="text-slate-600">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(club.departmentName || 'N/A').split(', ').map((deptName, i) => (
+                                                            <Badge key={i} variant="secondary">{deptName}</Badge>
+                                                        ))}
+                                                    </div>
+                                                </TableCell>
                                                 <TableCell>
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {club.sections?.map(s => (
@@ -241,7 +324,7 @@ const ReportClubbing = () => {
                                                 </TableCell>
                                                 <TableCell className="text-center">
                                                     <div className="flex items-center justify-center gap-2">
-                                                        <Switch 
+                                                        <Switch
                                                             checked={club.showInReport}
                                                             onCheckedChange={() => handleToggleReportVisibility(club)}
                                                         />
@@ -253,9 +336,9 @@ const ReportClubbing = () => {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Button 
-                                                        variant="ghost" 
-                                                        size="icon" 
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
                                                         className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                                                         onClick={() => handleDeleteClub(club.id)}
                                                     >

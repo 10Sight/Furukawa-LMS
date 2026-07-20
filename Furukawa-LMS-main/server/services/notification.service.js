@@ -34,7 +34,7 @@ class NotificationService {
             const config = await EmailConfiguration.findByFormDeptAndSection(formName, departmentId || null, sectionId || formData?.sectionId || null);
             if (!config) {
                 logger.info(`[NotificationService] No active email configuration for ${formName}, dept ${departmentId}, and section ${sectionId}. Skipping.`);
-                return;
+                return false;
             }
 
             // 2. Resolve Recipients
@@ -54,7 +54,7 @@ class NotificationService {
 
             if (toRecipients.length === 0) {
                 logger.warn(`[NotificationService] No recipients found for ${formName} after resolving. Skipping.`);
-                return;
+                return false;
             }
 
             // 4. Resolve Metadata Names
@@ -256,9 +256,11 @@ class NotificationService {
             // Ah, sendMail only takes 'email' (TO). I should update sendMail to support CC.
 
             logger.info(`[NotificationService] Email sent successfully for ${formName} to ${toRecipients.join(',')}`);
+            return true;
 
         } catch (error) {
             logger.error(`[NotificationService] Failed to send report: ${error.message}`, error);
+            return false;
         }
     }
 
@@ -1818,10 +1820,21 @@ class NotificationService {
     }
 
     static async _fillAssociatesHeadcountSheet(worksheet, departmentId, formData) {
-        const { tableData = {}, date } = formData || {};
-        const reportDate = date ? new Date(date) : new Date();
-        const year = reportDate.getFullYear();
-        const month = reportDate.getMonth();
+        const { tableData = {}, date, month: formMonth, year: formYear } = formData || {};
+
+        // Prefer the plain month/year integers over `date`: building `date` via
+        // toISOString() elsewhere UTC-shifts on positive-offset servers (e.g. IST),
+        // rolling day 1 back into the previous month and silently generating the
+        // wrong month's sheet (all tableData date-keys then miss every column).
+        let year, month;
+        if (formMonth && formYear) {
+            year = Number(formYear);
+            month = Number(formMonth) - 1;
+        } else {
+            const reportDate = date ? new Date(date) : new Date();
+            year = reportDate.getFullYear();
+            month = reportDate.getMonth();
+        }
 
         // 1. Fetch Department Info
         let deptName = "WIRING HARNESS MANUFACTURING";
@@ -1830,7 +1843,11 @@ class NotificationService {
             if (department) deptName = department.name;
         }
 
-        // 2. Setup Columns (Particulars + Days)
+        // 2. Fetch active report clubs (mirrors activeClubs in admin/src/pages/Admin/Report.jsx)
+        const [clubRows] = await executeQuery("SELECT id, name FROM report_clubs WHERE showInReport = 1");
+        const activeClubs = clubRows || [];
+
+        // 3. Setup Columns (Particulars + prev-month-last-day + every day of the month)
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         const headerDates = [];
         const prevMonthLastDay = new Date(year, month, 0);
@@ -1839,16 +1856,37 @@ class NotificationService {
             headerDates.push(new Date(year, month, day));
         }
 
+        // Local YYYY-MM-DD (not toISOString, which UTC-shifts and can disagree with
+        // the frontend's fullDate / syncHeadcountData's dKey near midnight)
+        const toDateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
         worksheet.columns = [
             { header: 'Particulars', key: 'particulars', width: 40 },
-            ...headerDates.map((d, i) => ({
+            ...headerDates.map(d => ({
                 header: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).replace(/ /g, '-'),
-                key: d.toISOString().split('T')[0],
+                key: toDateKey(d),
                 width: 10
             }))
         ];
 
-        // 3. Styling Utility
+        // 4. Color map — Tailwind class name (as used in Report.jsx) -> ARGB
+        const COLOR_MAP = {
+            'blue-50': 'FFEFF6FF',
+            'orange-100': 'FFFFEDD5',
+            'amber-300': 'FFFCD34D',
+            'amber-100': 'FFFEF3C7',
+            'yellow-100': 'FFFEF9C3',
+            'yellow-300': 'FFFDE047',
+            'yellow-50': 'FFFEFCE8',
+            'gray-50': 'FFF9FAFB',
+            'gray-100': 'FFF3F4F6',
+            'gray-200': 'FFE5E7EB'
+        };
+        const fillCell = (cell, colorKey) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_MAP[colorKey] } };
+        };
+
+        // 5. Styling Utility for data rows
         const applyRowStyles = (row, bg) => {
             row.eachCell((cell, colNumber) => {
                 cell.border = {
@@ -1858,59 +1896,58 @@ class NotificationService {
                     right: { style: 'thin' }
                 };
                 if (bg) {
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: bg.replace('bg-', '').replace('yellow-200', 'FFFFE0').replace('orange-100', 'FFE5B4').replace('amber-300', 'FFBF00').replace('amber-100', 'FFFACD') }
-                    };
+                    fillCell(cell, bg);
+                } else if (colNumber === 2) {
+                    // prev-month column defaults to yellow-50 when the row has no explicit bg
+                    fillCell(cell, 'yellow-50');
                 }
                 if (colNumber === 1) cell.font = { bold: true };
             });
         };
 
+        // 6. Row definitions — mirrors Report.jsx baseRows exactly, with dynamic club
+        // rows injected inline in the same position/order the frontend uses.
+        const clubRowsFor = (labelSuffix) => activeClubs.map(club => ({
+            label: `${club.name} ${labelSuffix}`,
+            bg: 'blue-50'
+        }));
+
         const rows = [
             { label: "Headcount required as per production plan", bold: true },
             { label: "Headcount required as per sale plan", bold: true },
-            { label: "C&C and inspection Headcount Required", bg: "FFFFE0" },
-            { label: "ASSY and inspection Headcount Required", bg: "FFFFE0" },
+            ...clubRowsFor("Headcount required"),
             { type: "spacer" },
             { label: "Hiring Plan" },
             { type: "spacer" },
-            { label: "Hiring Actual", bg: "FFE5B4" },
+            { label: "Hiring Actual", bg: "orange-100" },
             { type: "spacer" },
             { label: "Handover Plan" },
-            { label: "Handover Actual", bg: "FFE5B4" },
+            { label: "Handover Actual", bg: "orange-100" },
             { type: "spacer" },
             { label: "Headcount available", bold: true },
-            { label: "C&C and inspection Headcount available", bg: "FFFFE0" },
-            { label: "ASSY and inspection Headcount available", bg: "FFFFE0" },
+            ...clubRowsFor("Headcount available"),
             { type: "spacer" },
             { label: "Present in Training Cell", bold: true },
             { label: "Attrition & Absenteeism of Training Cell (Nos)" },
             { label: "Handed-over after training (Cumulative)" },
-            { label: "C&C and inspection Handed-over after training (Cumulative)", bg: "FFFFE0" },
-            { label: "ASSY Handed-over after training (Cumulative)", bg: "FFFFE0" },
+            ...clubRowsFor("Handed-over after training (Cumulative)"),
             { type: "spacer" },
             { label: "Separated (Cumulative)" },
-            { label: "Actual Separations (Cumulative)", bg: "FFBF00" },
-            { label: "Expected Separations (Cumulative)", bg: "FFFACD" },
-            { label: "Gap", bg: "FFBF00" },
-            { label: "C&C and inspection Separated (Cumulative)", bg: "FFFFE0" },
-            { label: "ASSY and inspection Separated (Cumulative)", bg: "FFFFE0" },
+            ...clubRowsFor("Separated (Cumulative)"),
+            { label: "Actual Separations (Cumulative)", bg: "amber-300" },
+            { label: "Expected Separations (Cumulative)", bg: "amber-100" },
+            { label: "Gap", bg: "amber-300" },
             { type: "spacer" },
             { label: "Absent" },
-            { label: "C&C and inspection absent", bg: "FFFFE0" },
-            { label: "ASSY and inspection absent", bg: "FFFFE0" },
+            ...clubRowsFor("absent"),
             { type: "spacer" },
-            { label: "Net Available Headcount (Total)", bold: true },
+            { label: "Net Available Headcount Total", bold: true },
             { type: "spacer" },
             { label: "Net Available Headcount Above 3 Months", bold: true },
-            { label: "C&C and inspection Net Available Headcount", bg: "FFFFE0" },
-            { label: "ASSY and inspection Net Available Headcount", bg: "FFFFE0" },
+            ...clubRowsFor("Net Available Headcount Above 3 Months"),
             { type: "spacer" },
             { label: "Absenteeism %", bold: true },
-            { label: "C&C and inspection Absenteeism %", bg: "FFFFE0" },
-            { label: "ASSY and inspection Absenteeism %", bg: "FFFFE0" },
+            ...clubRowsFor("Absenteeism %"),
             { type: "spacer" },
             { label: "Total Headcount (Present + Absent)" },
             { label: "Left in nos (Daily)" },
@@ -1918,36 +1955,77 @@ class NotificationService {
             { label: "Attrition % Cumulative", bold: true },
             { label: "Weekly Attrition %" },
             { type: "spacer" },
-            { label: "Shift-wise Breakdown of Available Manpower", bold: true },
-            { label: "A-Shift" },
-            { label: "G-Shift" },
-            { label: "B-Shift" },
-            { label: "C-Shift" },
+            { label: "Shift-wise Breakdown of Available Manpower", bold: true, dataKey: "Available_Total" },
+            { label: "A-Shift", dataKey: "Available_A-Shift" },
+            { label: "G-Shift", dataKey: "Available_G-Shift" },
+            { label: "B-Shift", dataKey: "Available_B-Shift" },
+            { label: "C-Shift", dataKey: "Available_C-Shift" },
             { type: "spacer" },
-            { label: "Shift-wise Breakdown of Assigned Manpower", bold: true },
-            { label: "A-Shift" },
-            { label: "G-Shift" },
-            { label: "B-Shift" },
-            { label: "C-Shift" },
+            { label: "Shift-wise Breakdown of Assigned Manpower", bold: true, dataKey: "Assigned_Total" },
+            { label: "A-Shift", dataKey: "Assigned_A-Shift" },
+            { label: "G-Shift", dataKey: "Assigned_G-Shift" },
+            { label: "B-Shift", dataKey: "Assigned_B-Shift" },
+            { label: "C-Shift", dataKey: "Assigned_C-Shift" },
             { type: "spacer" },
-            { label: "Shift-wise Attendance", bold: true },
-            { label: "A-Shift" },
-            { label: "G-Shift" },
-            { label: "B-Shift" },
-            { label: "C-Shift" },
+            { label: "Shift-wise Attendance", bold: true, dataKey: "Attendance_Total" },
+            { label: "A-Shift", dataKey: "Attendance_A-Shift" },
+            { label: "G-Shift", dataKey: "Attendance_G-Shift" },
+            { label: "B-Shift", dataKey: "Attendance_B-Shift" },
+            { label: "C-Shift", dataKey: "Attendance_C-Shift" },
         ];
 
-        // 4. Fill Rows
+        // 7. Day-name header row (Sun, Mon, ...) — Report.jsx renders this as a
+        // separate row above the date row; insert it above the auto column-header row.
+        const dayNameValues = ['', ...headerDates.map(d => d.toLocaleDateString('en-GB', { weekday: 'short' }))];
+        worksheet.insertRow(1, dayNameValues);
+        const dayNameRow = worksheet.getRow(1);
+        dayNameRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            cell.alignment = { horizontal: 'center' };
+            if (colNumber === 1) {
+                fillCell(cell, 'yellow-100');
+                cell.font = { bold: true };
+            } else if (colNumber === 2) {
+                fillCell(cell, 'yellow-100');
+            } else {
+                const dateObj = headerDates[colNumber - 2];
+                const isWeekend = dateObj && (dateObj.getDay() === 0 || dateObj.getDay() === 6);
+                if (isWeekend) {
+                    fillCell(cell, 'gray-200');
+                    cell.font = { color: { argb: 'FFFF0000' } };
+                } else {
+                    fillCell(cell, 'gray-100');
+                }
+            }
+        });
+
+        // 8. Date header row (auto-generated from worksheet.columns, now pushed to row 2)
+        const dateHeaderRow = worksheet.getRow(2);
+        dateHeaderRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            cell.alignment = { horizontal: 'center' };
+            if (colNumber === 1) {
+                fillCell(cell, 'yellow-100');
+                cell.font = { bold: true };
+            } else if (colNumber === 2) {
+                fillCell(cell, 'yellow-300');
+            } else {
+                fillCell(cell, 'gray-50');
+            }
+        });
+
+        // 9. Fill data rows
         rows.forEach(item => {
             if (item.type === 'spacer') {
                 worksheet.addRow({});
                 return;
             }
 
+            const rowKey = item.dataKey || item.label;
             const rowData = { particulars: item.label };
             headerDates.forEach(dateObj => {
-                const dateKey = dateObj.toISOString().split('T')[0];
-                rowData[dateKey] = tableData[`${item.label}_${dateKey}`] || '';
+                const dateKey = toDateKey(dateObj);
+                rowData[dateKey] = tableData[`${rowKey}_${dateKey}`] || '';
             });
 
             const row = worksheet.addRow(rowData);
@@ -1955,7 +2033,7 @@ class NotificationService {
             if (item.bold) row.font = { bold: true };
         });
 
-        // Title row at the top
+        // 10. Title row at the very top
         worksheet.insertRow(1, [`ASSOCIATES HEADCOUNT: ${deptName.toUpperCase()}`]);
         worksheet.mergeCells(1, 1, 1, daysInMonth + 2);
         const titleRow = worksheet.getRow(1);

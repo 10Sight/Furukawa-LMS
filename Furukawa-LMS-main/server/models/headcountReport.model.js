@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class HeadcountReport {
     constructor(data) {
@@ -7,6 +8,7 @@ class HeadcountReport {
         this.month = data.month;
         this.year = data.year;
         this.tableData = typeof data.tableData === 'string' ? JSON.parse(data.tableData) : (data.tableData || {});
+        this.lastEmailSentAt = data.lastEmailSentAt || null;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -27,7 +29,8 @@ class HeadcountReport {
                 )
             END
         `;
-        return await executeQuery(query);
+        await executeQuery(query);
+        await migrationHelper.ensureColumnExists('headcount_reports', 'lastEmailSentAt', 'DATETIME NULL');
     }
 
     static async findOne(query) {
@@ -60,6 +63,24 @@ class HeadcountReport {
             );
             return rows[0]?.id;
         }
+    }
+
+    static async updateLastEmailSentAt(id) {
+        await executeQuery(
+            `UPDATE headcount_reports SET lastEmailSentAt = GETDATE() WHERE id = ?`,
+            [id]
+        );
+    }
+
+    // Anchored to the DB's own GETDATE() (same clock updateLastEmailSentAt writes with)
+    // so this never disagrees with the write due to app-server/DB timezone differences.
+    static async wasEmailedToday(departmentId, month, year) {
+        const [rows] = await executeQuery(
+            `SELECT CASE WHEN lastEmailSentAt IS NOT NULL AND CAST(lastEmailSentAt AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END AS sentToday
+             FROM headcount_reports WHERE departmentId = ? AND month = ? AND year = ?`,
+            [departmentId, month, year]
+        );
+        return rows.length > 0 && !!rows[0].sentToday;
     }
 }
 

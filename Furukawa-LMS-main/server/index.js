@@ -59,6 +59,7 @@ import handoverNotificationScheduler from "./services/handoverNotificationSchedu
 import sixteenDayMonitoringScheduler from "./services/sixteenDayMonitoringScheduler.js";
 import sixteenDayEligibilityScheduler from "./services/sixteenDayEligibilityScheduler.js";
 import planNotificationScheduler from "./services/planNotificationScheduler.js";
+import headcountReportScheduler from "./services/headcountReportScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
@@ -462,6 +463,7 @@ const startServer = async () => {
         sixteenDayMonitoringScheduler.init();
         sixteenDayEligibilityScheduler.init();
         planNotificationScheduler.init();
+        headcountReportScheduler.init();
 
         // Initialize Core Tables
         await HandoverSheet.init();
@@ -508,6 +510,7 @@ const startServer = async () => {
             sixteenDayMonitoringScheduler.stop();
             sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
+            headcountReportScheduler.stop();
             process.exit(0);
         });
 
@@ -518,6 +521,7 @@ const startServer = async () => {
             sixteenDayMonitoringScheduler.stop();
             sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
+            headcountReportScheduler.stop();
             process.exit(0);
         });
 

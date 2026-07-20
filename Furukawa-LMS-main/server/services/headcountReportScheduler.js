@@ -1,0 +1,118 @@
+import cron from 'node-cron';
+import { executeQuery } from '../db/mssqlHelper.js';
+import HeadcountReport from '../models/headcountReport.model.js';
+import NotificationService from './notification.service.js';
+import logger from '../logger/winston.logger.js';
+
+class HeadcountReportScheduler {
+    constructor() {
+        this.job = null;
+        this.isInitialized = false;
+    }
+
+    init() {
+        if (this.isInitialized) return;
+
+        // Run every minute to match configured scheduledTime values (same pattern as
+        // handoverNotificationScheduler.js / sixteenDayMonitoringScheduler.js)
+        this.job = cron.schedule('* * * * *', async () => {
+            await this._checkAndSend();
+        }, {
+            scheduled: true,
+            timezone: "Asia/Kolkata"
+        });
+
+        this.isInitialized = true;
+        logger.info('[HeadcountReportScheduler] Initialized — checking every minute for scheduled headcount report emails.');
+    }
+
+    stop() {
+        if (this.job) {
+            this.job.stop();
+            this.job.destroy();
+            this.job = null;
+        }
+        this.isInitialized = false;
+        logger.info('[HeadcountReportScheduler] Stopped.');
+    }
+
+    _getISTTime() {
+        const now = new Date();
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const istNow = new Date(now.getTime() + istOffset);
+        return {
+            currentTime: `${String(istNow.getUTCHours()).padStart(2, '0')}:${String(istNow.getUTCMinutes()).padStart(2, '0')}`,
+            month: istNow.getUTCMonth() + 1,
+            year: istNow.getUTCFullYear()
+        };
+    }
+
+    async _checkAndSend() {
+        try {
+            const { currentTime, month, year } = this._getISTTime();
+
+            const [configs] = await executeQuery(`
+                SELECT id FROM email_configurations
+                WHERE formName = 'Associates Headcount Report'
+                  AND isActive = 1
+                  AND scheduledTime = ?
+                  AND toEmails IS NOT NULL
+            `, [currentTime]);
+
+            if (!configs || configs.length === 0) {
+                return;
+            }
+
+            logger.info(`[HeadcountReportScheduler] Time ${currentTime} — found ${configs.length} active config(s) scheduled.`);
+            const result = await this._sendReport(month, year);
+            logger.info(`[HeadcountReportScheduler] ${result.message}`);
+        } catch (error) {
+            logger.error(`[HeadcountReportScheduler] Error in _checkAndSend: ${error.message}`, error);
+        }
+    }
+
+    // Called from the API to force-send immediately, ignoring scheduledTime and the same-day dedup check.
+    async runNow() {
+        const { month, year } = this._getISTTime();
+        try {
+            const result = await this._sendReport(month, year, true);
+            return { ok: true, month, year, ...result };
+        } catch (error) {
+            logger.error(`[HeadcountReportScheduler] runNow error: ${error.message}`, error);
+            return { ok: false, message: error.message };
+        }
+    }
+
+    async _sendReport(month, year, forceResend = false) {
+        const departmentId = 0; // matches resolvedDeptId = departmentId || 0 in saveHeadcountReport
+        const report = await HeadcountReport.findOne({ departmentId, month, year });
+
+        if (!report || !report.tableData || Object.keys(report.tableData).length === 0) {
+            return { sent: false, message: `No saved headcount data for ${month}/${year}. Skipping.` };
+        }
+
+        if (!forceResend) {
+            const alreadySent = await HeadcountReport.wasEmailedToday(departmentId, month, year);
+            if (alreadySent) {
+                return { sent: false, message: `Headcount report for ${month}/${year} was already emailed today. Skipping.` };
+            }
+        }
+
+        const reportDate = new Date(year, month - 1, 1);
+        const sent = await NotificationService.sendFormReport("Associates Headcount Report", null, {
+            tableData: report.tableData,
+            month,
+            year,
+            date: reportDate.toISOString().split('T')[0]
+        });
+
+        if (sent) {
+            await HeadcountReport.updateLastEmailSentAt(report.id);
+            return { sent: true, message: `Headcount report sent for ${month}/${year}.` };
+        }
+
+        return { sent: false, message: `sendFormReport did not dispatch for ${month}/${year} (no active config or recipients).` };
+    }
+}
+
+export default new HeadcountReportScheduler();

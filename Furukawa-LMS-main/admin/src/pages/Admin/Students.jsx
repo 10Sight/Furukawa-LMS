@@ -257,6 +257,8 @@ const Students = () => {
     mentor: "",
     designation: "",
     isEmployee: true,
+    isMentor: false,
+    mentorLimit: "0",
     dob: "",
     joiningDate: "",
     education: "",
@@ -918,6 +920,8 @@ const Students = () => {
         phoneNumber: updateData.phoneNumber.trim(),
         role: selectedStudent?.role === "CUSTOM" ? "CUSTOM" : "STUDENT",
         isEmployee: true,
+        isMentor: !!updateData.isMentor,
+        mentorLimit: Number(updateData.mentorLimit) || 0,
         empId: updateData.empId?.trim() || null,
         idCard: updateData.idCard?.trim() || null,
         fatherHusbandName: updateData.fatherHusbandName?.trim() || null,
@@ -1494,6 +1498,8 @@ const Students = () => {
       incharge: student.incharge || student.Incharge || "",
       contractorId: student.contractorId ? String(student.contractorId) : "",
       isEmployee: student.isEmployee !== undefined ? student.isEmployee : (student.IsEmployee !== undefined ? student.IsEmployee : true),
+      isMentor: !!(student.isMentor !== undefined ? student.isMentor : student.IsMentor),
+      mentorLimit: String(student.mentorLimit ?? 0),
       dob: safeDateToISO(student.dob || student.DOB),
       joiningDate: safeDateToISO(student.joiningDate || student.JoiningDate),
       education: student.education || student.Education || "",
@@ -3694,6 +3700,31 @@ const Students = () => {
                 placeholder="Mentor Name"
               />
             </div>
+
+            <div className="flex items-center gap-2 pt-6">
+              <Checkbox
+                id="edit-isMentor"
+                checked={formData.isMentor}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isMentor: !!checked }))}
+              />
+              <Label htmlFor="edit-isMentor" className="font-normal cursor-pointer">
+                Also mark this Operator as a Mentor
+              </Label>
+            </div>
+
+            {formData.isMentor && (
+              <div className="grid gap-2">
+                <Label htmlFor="edit-mentorLimit">Mentor Limit (Max Mentees)</Label>
+                <Input
+                  id="edit-mentorLimit"
+                  name="mentorLimit"
+                  type="number"
+                  min="0"
+                  value={formData.mentorLimit}
+                  onChange={handleInputChange}
+                />
+              </div>
+            )}
 
             <div className="grid gap-2">
               <Label htmlFor="edit-education">Education</Label>

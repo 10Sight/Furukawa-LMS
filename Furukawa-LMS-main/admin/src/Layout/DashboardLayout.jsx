@@ -191,7 +191,7 @@ const DashboardLayout = () => {
     };
 
     return (
-        <div className={`flex min-h-screen ${theme.mainBg}`}>
+        <div className={`flex min-h-screen max-w-full overflow-x-hidden ${theme.mainBg}`}>
             {/* Mobile overlay */}
             {!collapsed && isMobile && (
                 <div
@@ -320,7 +320,7 @@ const DashboardLayout = () => {
 
             {/* Main Content Area */}
             <div
-                className={`flex-1 min-w-0 transition-all duration-300 ${collapsed ? "ml-16" : "ml-64"
+                className={`flex-1 min-w-0 max-w-full overflow-x-hidden transition-all duration-300 ${collapsed ? "ml-16" : "ml-64"
                     }`}
             >
                 {/* Header */}
@@ -452,8 +452,8 @@ const DashboardLayout = () => {
                 </header>
 
                 {/* Page Content */}
-                <div className="pt-20 pb-6 px-4 sm:px-6 min-h-screen w-max min-w-full">
-                    <div className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-all duration-300 hover:shadow-md w-max min-w-full`}>
+                <div className="pt-20 pb-6 px-4 sm:px-6 min-h-screen w-full max-w-full overflow-x-hidden">
+                    <div className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-all duration-300 hover:shadow-md w-full max-w-full overflow-x-auto`}>
                         <Outlet />
                     </div>
                 </div>

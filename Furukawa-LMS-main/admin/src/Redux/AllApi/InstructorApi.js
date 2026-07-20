@@ -25,12 +25,19 @@ export const instructorApi = createApi({
             providesTags: ['Instructor', 'User'],
         }),
         getAllMentors: builder.query({
-            query: ({ page = 1, limit = 10, search = "", status = "", unit = "" } = {}) => ({
+            query: ({ page = 1, limit = 10, search = "", status = "", unit = "", departmentId = "", sectionId = "" } = {}) => ({
                 url: "/api/users/mentors",
                 method: "GET",
-                params: { page, limit, search, status, unit }
+                params: { page, limit, search, status, unit, departmentId, sectionId }
             }),
             providesTags: ['Instructor'],
+        }),
+        getMentorMentees: builder.query({
+            query: (mentorId) => ({
+                url: `/api/users/mentors/${mentorId}/mentees`,
+                method: "GET",
+            }),
+            providesTags: (result, error, mentorId) => [{ type: 'Instructor', id: `mentor-mentees-${mentorId}` }],
         }),
         getAllSupervisors: builder.query({
             query: ({ page = 1, limit = 10, search = "", status = "", unit = "" } = {}) => ({
@@ -315,6 +322,7 @@ export const {
     useUpdateInstructorStatusMutation,
     useBulkDeleteInstructorsMutation,
     useGetAllMentorsQuery,
+    useGetMentorMenteesQuery,
     useGetAllSupervisorsQuery,
     useGetAllInchargesQuery,
     useLazyGetAllMentorsQuery,

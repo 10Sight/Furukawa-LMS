@@ -58,6 +58,7 @@
     "isMentor",
     "isSupervisor",
     "isIncharge",
+    "mentorLimit",
     "section",
     "line",
     "stationNo"

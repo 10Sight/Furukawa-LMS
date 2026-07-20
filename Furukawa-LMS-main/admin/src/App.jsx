@@ -83,6 +83,7 @@ const DailyProductionReport = lazy(() => import("./pages/Admin/DailyProductionRe
 const RoleManager = lazy(() => import("./pages/Admin/RoleManager"));
 const RoleUserManager = lazy(() => import("./pages/Admin/RoleUserManager"));
 const Mentor = lazy(() => import("./pages/Admin/Mentor"));
+const MentorDetail = lazy(() => import("./pages/Admin/MentorDetail"));
 const Supervisor = lazy(() => import("./pages/Admin/Supervisor"));
 const Incharge = lazy(() => import("./pages/Admin/Incharge"));
 const LineRequirementManager = lazy(() => import("./pages/Admin/LineRequirementManager.jsx"));
@@ -293,6 +294,7 @@ const App = () => {
             <Route path="manage-role/:roleId" element={<RoleUserManager />} />
             <Route path="all-users" element={<AllUsersManagement />} />
             <Route path="mentors" element={<Mentor />} />
+            <Route path="mentors/:mentorId" element={<MentorDetail />} />
             <Route path="supervisors" element={<Supervisor />} />
             <Route path="incharges" element={<Incharge />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />

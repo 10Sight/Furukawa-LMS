@@ -115,6 +115,7 @@ class User {
         this.isMentor = !!data.isMentor;
         this.isSupervisor = !!data.isSupervisor;
         this.isIncharge = !!data.isIncharge;
+        this.mentorLimit = data.mentorLimit !== undefined && data.mentorLimit !== null ? Number(data.mentorLimit) : 0;
         this.customRoleId = data.customRoleId || null;
         this.customRole = data.customRole || null;
         this.shiftSchedule = typeof data.shiftSchedule === 'string' ? (() => { try { return JSON.parse(data.shiftSchedule); } catch (e) { return {}; } })() : (data.shiftSchedule || {});
@@ -219,6 +220,7 @@ class User {
                     isMentor BIT DEFAULT 0,
                     isSupervisor BIT DEFAULT 0,
                     isIncharge BIT DEFAULT 0,
+                    mentorLimit INT DEFAULT 0,
                     expectedHandover DATE NULL,
                     dojoShift NVARCHAR(50) DEFAULT NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
@@ -263,6 +265,7 @@ class User {
                 { name: 'isMentor', type: 'BIT DEFAULT 0' },
                 { name: 'isSupervisor', type: 'BIT DEFAULT 0' },
                 { name: 'isIncharge', type: 'BIT DEFAULT 0' },
+                { name: 'mentorLimit', type: 'INT DEFAULT 0' },
                 { name: 'customRoleId', type: 'INT' },
                 { name: 'currentSkill', type: 'NVARCHAR(MAX) DEFAULT \'{}\'' },
                 { name: 'currentEffeciency', type: 'FLOAT DEFAULT 0' },
@@ -757,7 +760,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "createdAt", "ojt", "expectedHandover", "shiftSchedule", "contractorId", "dojoShift"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "mentorLimit", "customRoleId", "createdAt", "ojt", "expectedHandover", "shiftSchedule", "contractorId", "dojoShift"
         ];
 
         // Apply defaults if fields are missing in userData
@@ -1107,7 +1110,7 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt", "expectedHandover", "shiftSchedule", "dojoShift"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "mentorLimit", "customRoleId", "resetPasswordToken", "resetPasswordExpiry", "ojt", "expectedHandover", "shiftSchedule", "dojoShift"
         ];
 
         if (this.stations && Array.isArray(this.stations) && this.stations.length > 0) {

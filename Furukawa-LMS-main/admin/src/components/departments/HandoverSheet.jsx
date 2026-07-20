@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import UserAutocomplete from '../common/UserAutocomplete';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetAllMentorsQuery } from "@/Redux/AllApi/InstructorApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const INTERVIEW_OPTIONS = [
@@ -112,6 +113,42 @@ const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, classNam
                 {/* Fallback option if selectValue is not empty and doesn't match any subSection */}
                 {selectValue && !subSections.some(ss => (ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name || "") === selectValue) && (
                     <SelectItem value={selectValue}>{selectValue}</SelectItem>
+                )}
+            </SelectContent>
+        </Select>
+    );
+};
+
+// Mentors are scoped to the department/section of the sheet and show their current
+// mentee load so reviewers can see (and avoid picking) mentors who are already at capacity.
+// The value stored on the entry stays the mentor's fullName (matches how existing entries
+// are persisted), so a fallback option is added for saved names that fall outside the
+// current department/section scope or belong to a user no longer flagged as a mentor.
+const MentorSelect = ({ departmentId, sectionId, value, onValueChange, className = "" }) => {
+    const { data } = useGetAllMentorsQuery({ departmentId, sectionId, limit: 1000 }, { skip: !departmentId });
+    const mentors = data?.data?.users || [];
+    const matchedMentor = mentors.find(m => m.fullName === value);
+
+    return (
+        <Select value={value || ""} onValueChange={onValueChange}>
+            <SelectTrigger className={`h-7 w-full border-none shadow-none focus:ring-1 focus:ring-blue-400 text-xs bg-transparent [&>span]:line-clamp-none [&>span]:whitespace-nowrap ${className}`}>
+                <SelectValue placeholder="Search Mentor..." />
+            </SelectTrigger>
+            <SelectContent>
+                {mentors.length > 0 ? (
+                    mentors.map(m => {
+                        const atLimit = m.mentorLimit > 0 && m.assignedCount >= m.mentorLimit && m.fullName !== value;
+                        return (
+                            <SelectItem key={m._id} value={m.fullName} disabled={atLimit}>
+                                {m.fullName} (Assigned: {m.assignedCount}/{m.mentorLimit || "∞"}{atLimit ? " — Full" : ""})
+                            </SelectItem>
+                        );
+                    })
+                ) : (
+                    <SelectItem value="none" disabled>No Mentors Found</SelectItem>
+                )}
+                {value && !matchedMentor && (
+                    <SelectItem value={value}>{value}</SelectItem>
                 )}
             </SelectContent>
         </Select>
@@ -880,16 +917,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
                                                             />
                                                         ) : col.field === 'mentor' && !col.readOnly && canManage && isEditable ? (
-                                                            <UserAutocomplete
-                                                                mode="all"
-                                                                excludeAdmins={true}
+                                                            <MentorSelect
+                                                                departmentId={departmentId}
+                                                                sectionId={sectionId}
                                                                 value={entry.mentor}
-                                                                onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
-                                                                onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
-                                                                placeholder="Search..."
-                                                                compact={true}
-                                                                className="w-full"
-                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
+                                                                onValueChange={(val) => handleEntryChange(index, 'mentor', val)}
+                                                                className="text-center"
                                                             />
                                                         ) : (col.field === 'department' || col.field === 'departmentId') ? (
                                                             <div className="text-center text-xs font-medium text-blue-600 px-1">
@@ -998,16 +1031,12 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                     </td>
                                                     <td className="border p-1">
                                                         {canManage && isEditable ? (
-                                                            <UserAutocomplete
-                                                                mode="all"
-                                                                excludeAdmins={true}
+                                                            <MentorSelect
+                                                                departmentId={departmentId}
+                                                                sectionId={sectionId}
                                                                 value={entry.mentor}
-                                                                onChange={(user) => handleEntryChange(index, 'mentor', user.fullName)}
-                                                                onTextChange={(val) => handleEntryChange(index, 'mentor', val)}
-                                                                placeholder="Search Mentor..."
-                                                                compact={true}
-                                                                className="min-w-[120px]"
-                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-center"
+                                                                onValueChange={(val) => handleEntryChange(index, 'mentor', val)}
+                                                                className="min-w-[120px] text-center"
                                                             />
                                                         ) : (
                                                             <div className="p-1 text-center">{entry.mentor}</div>

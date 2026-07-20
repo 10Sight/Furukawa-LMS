@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import {
   useUpdateUserMutation,
@@ -26,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -39,6 +41,7 @@ import {
   IconSearch,
   IconRefresh,
   IconLoader,
+  IconUserMinus,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -48,16 +51,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import SearchInput from "@/components/common/SearchInput";
 
+const MENTOR_ROLE_FIELD = "isMentor";
+
 const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isMentorRole = roleField === MENTOR_ROLE_FIELD;
+  const columnCount = isMentorRole ? 9 : 7;
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -71,6 +86,8 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     password: "",
     userName: "",
     unit: "UNIT_1",
+    isEmployee: false,
+    mentorLimit: "0",
     [roleField]: true
   });
 
@@ -87,7 +104,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
 
   const { data: deptRes } = useGetAllDepartmentsQuery({ page: 1, limit: 100 });
   const { data: sectionRes } = useGetSectionsByDepartmentQuery(
-    { departmentId: formData.departmentId, page: 1, limit: 100 },
+    formData.departmentId,
     { skip: !formData.departmentId }
   );
 
@@ -106,7 +123,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     }
     setIsSubmitting(true);
     try {
-      await registerUser({ ...formData, role: "STUDENT" }).unwrap();
+      await registerUser({ ...formData, mentorLimit: Number(formData.mentorLimit) || 0, role: "STUDENT" }).unwrap();
       toast.success(`${roleName} added successfully`);
       setIsAddDialogOpen(false);
       resetForm();
@@ -121,7 +138,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   const handleEditUser = async () => {
     setIsSubmitting(true);
     try {
-      await updateUser({ id: selectedUser._id, ...formData }).unwrap();
+      await updateUser({ id: selectedUser._id, ...formData, mentorLimit: Number(formData.mentorLimit) || 0 }).unwrap();
       toast.success(`${roleName} updated successfully`);
       setIsEditDialogOpen(false);
       resetForm();
@@ -145,6 +162,24 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     }
   };
 
+  // Un-flags the user as a Mentor while keeping them as an Operator, so they don't
+  // disappear from user management entirely -- just move back to the Operators page.
+  const handleRemoveFromMentor = async (user) => {
+    if (!window.confirm(`Remove ${user.fullName} from Mentors? They will remain as an Operator.`)) return;
+    try {
+      await updateUser({ id: user._id, isMentor: false, isEmployee: true }).unwrap();
+      toast.success(`${user.fullName} removed from Mentors`);
+      refetch();
+    } catch (err) {
+      toast.error(err.data?.message || "Failed to remove from Mentors");
+    }
+  };
+
+  const handleRowClick = (user) => {
+    if (!isMentorRole) return;
+    navigate(`${user._id}`);
+  };
+
   const resetForm = () => {
     setFormData({
       fullName: "",
@@ -158,6 +193,8 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
       password: "",
       userName: "",
       unit: "UNIT_1",
+      isEmployee: false,
+      mentorLimit: "0",
       [roleField]: true
     });
     setSelectedUser(null);
@@ -171,12 +208,14 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
       email: user.email || "",
       phoneNumber: user.phoneNumber || "",
       designation: user.designation || "",
-      departmentId: user.department?._id || "",
-      sectionId: user.sectionId || "",
+      departmentId: user.department?._id ? String(user.department._id) : (user.departmentId ? String(user.departmentId) : ""),
+      sectionId: user.sectionId ? String(user.sectionId) : "",
       gender: user.gender || "MALE",
       password: "",
       userName: user.userName || "",
       unit: user.unit || "UNIT_1",
+      isEmployee: !!user.isEmployee,
+      mentorLimit: String(user.mentorLimit ?? 0),
       [roleField]: true
     });
     setIsEditDialogOpen(true);
@@ -220,25 +259,31 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                 <TableHead>Designation</TableHead>
                 <TableHead>Department</TableHead>
                 <TableHead>Status</TableHead>
+                {isMentorRole && <TableHead>Limit</TableHead>}
+                {isMentorRole && <TableHead>Assigned Mentees</TableHead>}
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10">
+                  <TableCell colSpan={columnCount} className="text-center py-10">
                     <IconLoader className="w-6 h-6 animate-spin mx-auto text-blue-600" />
                   </TableCell>
                 </TableRow>
               ) : usersData?.data?.users?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10 text-gray-500">
+                  <TableCell colSpan={columnCount} className="text-center py-10 text-gray-500">
                     No {roleName.toLowerCase()}s found.
                   </TableCell>
                 </TableRow>
               ) : (
                 usersData?.data?.users?.map((user) => (
-                  <TableRow key={user._id}>
+                  <TableRow
+                    key={user._id}
+                    onClick={() => handleRowClick(user)}
+                    className={isMentorRole ? "cursor-pointer hover:bg-muted/30" : ""}
+                  >
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar className="w-9 h-9">
@@ -262,11 +307,48 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                         {user.status || "PRESENT"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)}>
+                    {isMentorRole && (
+                      <TableCell>{user.mentorLimit ?? 0}</TableCell>
+                    )}
+                    {isMentorRole && (
+                      <TableCell>
+                        {(user.assignedMentees?.length || 0) === 0 ? (
+                          <Badge variant="secondary">0</Badge>
+                        ) : (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge
+                                  variant={
+                                    user.mentorLimit > 0 && user.assignedCount >= user.mentorLimit
+                                      ? "destructive"
+                                      : "success"
+                                  }
+                                  className="cursor-default"
+                                >
+                                  {user.assignedCount} / {user.mentorLimit || "∞"}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="max-w-xs">
+                                  {user.assignedMentees.map(m => m.employeeName).filter(Boolean).join(", ")}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)} title="Edit">
                         <IconPencil className="w-4 h-4 text-blue-600" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user)}>
+                      {isMentorRole && (
+                        <Button variant="ghost" size="icon" onClick={() => handleRemoveFromMentor(user)} title="Remove from Mentor">
+                          <IconUserMinus className="w-4 h-4 text-amber-600" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user)} title="Delete">
                         <IconTrash className="w-4 h-4 text-red-600" />
                       </Button>
                     </TableCell>
@@ -331,12 +413,36 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
               <Select value={formData.sectionId} onValueChange={(val) => setFormData(prev => ({ ...prev, sectionId: val }))} disabled={!formData.departmentId}>
                 <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
                 <SelectContent>
-                  {sectionRes?.data?.sections?.map(sec => (
+                  {sectionRes?.data?.map(sec => (
                     <SelectItem key={sec.id} value={String(sec.id)}>{sec.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            {isMentorRole && (
+              <div className="space-y-2">
+                <Label htmlFor="mentorLimit">Mentor Limit (Max Mentees)</Label>
+                <Input
+                  id="mentorLimit"
+                  type="number"
+                  min="0"
+                  value={formData.mentorLimit}
+                  onChange={handleInputChange}
+                />
+              </div>
+            )}
+            {isMentorRole && (
+              <div className="space-y-2 flex items-center gap-2 pt-6">
+                <Checkbox
+                  id="isEmployee"
+                  checked={formData.isEmployee}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isEmployee: !!checked }))}
+                />
+                <Label htmlFor="isEmployee" className="font-normal cursor-pointer">
+                  Also create as Operator (isEmployee)
+                </Label>
+              </div>
+            )}
             <div className="space-y-2 col-span-2">
               <Label htmlFor="userName">Username *</Label>
               <Input id="userName" value={formData.userName} onChange={handleInputChange} />
@@ -410,12 +516,36 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
               <Select value={formData.sectionId} onValueChange={(val) => setFormData(prev => ({ ...prev, sectionId: val }))} disabled={!formData.departmentId}>
                 <SelectTrigger><SelectValue placeholder="Select Section" /></SelectTrigger>
                 <SelectContent>
-                  {sectionRes?.data?.sections?.map(sec => (
+                  {sectionRes?.data?.map(sec => (
                     <SelectItem key={sec.id} value={String(sec.id)}>{sec.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            {isMentorRole && (
+              <div className="space-y-2">
+                <Label htmlFor="mentorLimit">Mentor Limit (Max Mentees)</Label>
+                <Input
+                  id="mentorLimit"
+                  type="number"
+                  min="0"
+                  value={formData.mentorLimit}
+                  onChange={handleInputChange}
+                />
+              </div>
+            )}
+            {isMentorRole && (
+              <div className="space-y-2 flex items-center gap-2 pt-6">
+                <Checkbox
+                  id="isEmployee"
+                  checked={formData.isEmployee}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isEmployee: !!checked }))}
+                />
+                <Label htmlFor="isEmployee" className="font-normal cursor-pointer">
+                  Also set as Operator (isEmployee)
+                </Label>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>

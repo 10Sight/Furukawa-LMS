@@ -101,7 +101,7 @@ export const register = asyncHandler(async (req, res) => {
     customRoleId, setAsPrimary,
     fatherHusbandName, gender, dob, education, district, state, pin, busRoute, reasonOfLeaving, mentor, designation,
     sectionId, subSectionId, lineId, stationId, departmentId,
-    isMentor, isSupervisor, isIncharge
+    isMentor, isSupervisor, isIncharge, mentorLimit
   } = req.body;
 
   if (!fullName || !userName || !password || !unit) {
@@ -161,7 +161,7 @@ export const register = asyncHandler(async (req, res) => {
     empId, isEmployee, isAdmin, isTrainer, shift, idCard, privileges, joiningDate, leavingDate,
     sectionId, subSectionId, lineId, stationId, departmentId,
     fatherHusbandName, gender, dob, education, district, state, pin, busRoute, reasonOfLeaving, mentor, designation,
-    customRoleId, isMentor, isSupervisor, isIncharge
+    customRoleId, isMentor, isSupervisor, isIncharge, mentorLimit
   };
 
   const user = await User.create(userData);

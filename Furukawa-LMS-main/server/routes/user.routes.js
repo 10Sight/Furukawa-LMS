@@ -19,6 +19,7 @@ import {
   getAllInstructors,
   getAllStudents,
   getAllMentors,
+  getMentorMentees,
   getAllSupervisors,
   getAllIncharges,
   getSoftDeletedUsers,
@@ -95,6 +96,9 @@ router.get("/students", verifyJWT, authorizeRoles(SYSTEM_PERMISSIONS.USER_READ, 
 
 // Get all mentors
 router.get("/mentors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllMentors);
+
+// Get a single mentor's assigned mentees (must come before the generic /:id route)
+router.get("/mentors/:id/mentees", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getMentorMentees);
 
 // Get all supervisors
 router.get("/supervisors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllSupervisors);

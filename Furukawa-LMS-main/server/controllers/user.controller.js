@@ -328,7 +328,8 @@ export const formatUser = (u) => {
     targetSectionId: u.targetSectionId,
     targetLineId: u.targetLineId,
     targetSubSectionId: u.targetSubSectionId,
-    targetStationId: u.targetStationId
+    targetStationId: u.targetStationId,
+    mentorLimit: u.mentorLimit != null ? Number(u.mentorLimit) : 0
   };
   delete formatted.password;
   delete formatted.refreshToken;
@@ -925,7 +926,7 @@ export const createUser = asyncHandler(async (req, res) => {
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId", "department",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
-    "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
+    "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge", "mentorLimit",
     "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "sections", "lines", "subSections", "contractorId", "shiftSchedule"
   ];
 
@@ -1089,7 +1090,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     "empId", "isEmployee", "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate", "leavingDate",
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
-    "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge",
+    "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge", "mentorLimit",
     "contractor", "contractorId", "expectedHandover",
     "customRoleId", "currentLevel", "currentSkill", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
@@ -2035,6 +2036,47 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
 // Other specialized fetches (Mentors, Supervisors, Incharges) can be added similarly using formatUser
 
+// Aggregates HandoverSheet entries into a per-mentor mentee list. Entries store the
+// mentor as a free-text name (not a user id), so matching is done by normalized name.
+const normalizeMentorName = (name) => String(name || '').trim().toLowerCase();
+
+// Scoped to just the mentor names being displayed (one page's worth, <=100) so the
+// JSON shred runs server-side in SQL and only for names that matter, instead of
+// pulling every handover_sheets row's entries blob to Node on every request.
+const getMentorAssignmentMap = async (mentorNames = []) => {
+  const names = [...new Set(mentorNames.map(n => (n || '').trim()).filter(Boolean))];
+  if (names.length === 0) return new Map();
+
+  const placeholders = names.map(() => '?').join(',');
+  const [rows] = await executeQuery(`
+    SELECT
+      JSON_VALUE(entry.value, '$.mentor') as mentor,
+      JSON_VALUE(entry.value, '$.studentId') as studentId,
+      JSON_VALUE(entry.value, '$.employeeName') as employeeName
+    FROM handover_sheets hs
+    CROSS APPLY OPENJSON(hs.entries) as entry
+    WHERE JSON_VALUE(entry.value, '$.mentor') IN (${placeholders})
+      AND JSON_VALUE(entry.value, '$.studentId') IS NOT NULL
+  `, names);
+
+  const menteesByMentor = new Map();
+  for (const row of rows) {
+    const key = normalizeMentorName(row.mentor);
+    if (!key || !row.studentId) continue;
+    if (!menteesByMentor.has(key)) menteesByMentor.set(key, new Map());
+    menteesByMentor.get(key).set(String(row.studentId), row.employeeName || '');
+  }
+
+  const result = new Map();
+  for (const [key, menteeMap] of menteesByMentor.entries()) {
+    result.set(key, {
+      count: menteeMap.size,
+      mentees: Array.from(menteeMap.entries()).map(([studentId, employeeName]) => ({ studentId, employeeName }))
+    });
+  }
+  return result;
+};
+
 export const getAllMentors = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page) || 1, 1);
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
@@ -2046,6 +2088,14 @@ export const getAllMentors = asyncHandler(async (req, res) => {
     const t = `%${req.query.search}%`;
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
     params.push(t, t, t);
+  }
+  if (normalizeParam(req.query.departmentId)) {
+    whereClauses.push("u.departmentId = ?");
+    params.push(req.query.departmentId);
+  }
+  if (normalizeParam(req.query.sectionId)) {
+    whereClauses.push("u.sectionId = ?");
+    params.push(req.query.sectionId);
   }
 
   const { dateFrom, dateTo, status, shift, date } = req.query;
@@ -2109,13 +2159,99 @@ export const getAllMentors = asyncHandler(async (req, res) => {
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...attendanceParams, ...params, offset, limit]);
 
+  const formattedUsers = users.map(formatUser);
+  const mentorAssignments = await getMentorAssignmentMap(formattedUsers.map(u => u.fullName));
+
   res.json(new ApiResponse(200, {
-    users: users.map(formatUser),
+    users: formattedUsers.map(u => {
+      const assignment = mentorAssignments.get(normalizeMentorName(u.fullName));
+      return {
+        ...u,
+        assignedCount: assignment?.count || 0,
+        assignedMentees: assignment?.mentees || []
+      };
+    }),
     totalUsers: cnt[0].total,
     totalPages: Math.ceil(cnt[0].total / limit),
     currentPage: page,
     limit
   }, "Mentors fetched successfully"));
+});
+
+// Detail view for a single mentor: their own profile plus the full list of mentees
+// assigned to them via HandoverSheet entries (matched by name, same as getAllMentors).
+export const getMentorMentees = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const [mentorRows] = await executeQuery(
+    "SELECT id, fullName, mentorLimit FROM users WHERE id = ? AND isMentor = 1 AND (isDeleted = 0 OR isDeleted IS NULL)",
+    [id]
+  );
+  if (mentorRows.length === 0) throw new ApiError("Mentor not found", 404);
+  const mentor = mentorRows[0];
+
+  const [entryRows] = await executeQuery(`
+    SELECT
+      JSON_VALUE(entry.value, '$.studentId') as studentId,
+      JSON_VALUE(entry.value, '$.employeeName') as employeeName,
+      JSON_VALUE(entry.value, '$.process') as process,
+      JSON_VALUE(entry.value, '$.marks') as marks,
+      JSON_VALUE(entry.value, '$.interview1') as interview1,
+      JSON_VALUE(entry.value, '$.interview2') as interview2,
+      hs.date as sheetDate
+    FROM handover_sheets hs
+    CROSS APPLY OPENJSON(hs.entries) as entry
+    WHERE JSON_VALUE(entry.value, '$.mentor') = ?
+      AND JSON_VALUE(entry.value, '$.studentId') IS NOT NULL
+    ORDER BY hs.date DESC
+  `, [mentor.fullName]);
+
+  // Entries are ordered by sheet date descending, so the first entry seen per
+  // studentId is the most recent one -- keep that and drop older duplicates.
+  const latestByStudent = new Map();
+  for (const row of entryRows) {
+    if (!latestByStudent.has(row.studentId)) latestByStudent.set(row.studentId, row);
+  }
+  const studentIds = [...latestByStudent.keys()].filter(Boolean);
+
+  let studentsById = new Map();
+  if (studentIds.length > 0) {
+    const placeholders = studentIds.map(() => '?').join(',');
+    const [students] = await executeQuery(`
+      SELECT u.id, u.fullName, u.empId, u.status, u.designation, u.avatar,
+             d.name as deptName, s.name as sectionName
+      FROM users u
+      LEFT JOIN departments d ON u.departmentId = d.id
+      LEFT JOIN [sections] s ON u.sectionId = s.id
+      WHERE u.id IN (${placeholders})
+    `, studentIds);
+    studentsById = new Map(students.map(s => [String(s.id), s]));
+  }
+
+  const mentees = [...latestByStudent.entries()].map(([studentId, entry]) => {
+    const student = studentsById.get(String(studentId));
+    return {
+      studentId,
+      employeeName: student?.fullName || entry.employeeName || '',
+      empId: student?.empId || null,
+      status: student?.status || null,
+      designation: student?.designation || null,
+      department: student?.deptName || null,
+      section: student?.sectionName || null,
+      avatar: student?.avatar ? parseJSON(student.avatar) : null,
+      process: entry.process || null,
+      marks: entry.marks || null,
+      interview1: entry.interview1 || null,
+      interview2: entry.interview2 || null,
+      sheetDate: entry.sheetDate,
+    };
+  });
+
+  res.json(new ApiResponse(200, {
+    mentor: { _id: String(mentor.id), fullName: mentor.fullName, mentorLimit: mentor.mentorLimit ?? 0 },
+    mentees,
+    assignedCount: mentees.length
+  }, "Mentor mentees fetched successfully"));
 });
 
 export const getAllSupervisors = asyncHandler(async (req, res) => {

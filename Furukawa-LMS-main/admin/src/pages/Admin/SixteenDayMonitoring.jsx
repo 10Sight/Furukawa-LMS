@@ -562,7 +562,12 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                                                 </AvatarFallback>
                                                             </Avatar>
                                                             <div className="flex flex-col">
-                                                                <span className="text-sm font-bold text-slate-800">{item.fullName}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-sm font-bold text-slate-800">{item.fullName}</span>
+                                                                    {item.userStatus === 'LEFT' && (
+                                                                        <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 text-[10px] font-bold px-1.5 py-0">LEFT</Badge>
+                                                                    )}
+                                                                </div>
                                                                 <span className="text-[11px] text-slate-500 font-medium">#{item.empId}</span>
                                                             </div>
                                                         </div>

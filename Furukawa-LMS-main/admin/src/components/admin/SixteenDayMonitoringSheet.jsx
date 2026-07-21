@@ -205,7 +205,7 @@ const SixteenDayMonitoringSheet = ({
     const eligibilityStillLocked = eligibilityStillWaiting && !canOverrideEligibility;
 
     const isCellLocked = (key, type = 'grid') => {
-        if (isLeftUser) return true;
+        if (isLeftUser) return key !== 'comment';
         if (readOnly) return true;
         if (isLocked) return true;
         if (eligibilityStillLocked) return true;
@@ -221,6 +221,15 @@ const SixteenDayMonitoringSheet = ({
         }
         return false;
     };
+
+    const isDayBlurred = (dayNum) => {
+        if (!isLeftUser) return false;
+        const val = gridData[`attendance_date_${dayNum}`];
+        return !val || !val.toString().trim();
+    };
+    const dayBlurClass = (dayNum) => isDayBlurred(dayNum) ? "filter blur-[3px] opacity-40 pointer-events-none select-none" : "";
+    const dayPrefixBlurClass = (dayPrefix) => dayBlurClass(parseInt(dayPrefix.replace('d', ''), 10));
+    const dayKeyBlurClass = (dayKey) => dayBlurClass(parseInt(dayKey.replace('day_', ''), 10));
 
     const didAdminChangeSavedValues = () => {
         // Helper: returns true if a gridData key is auto-computed by the useEffect
@@ -602,11 +611,6 @@ const SixteenDayMonitoringSheet = ({
     const handleSave = async (finalStatus = null, isSubmit = false, adminRemark = null) => {
         if (!studentId) {
             toast.error("Student selection is required to save data");
-            return;
-        }
-
-        if (isLeftUser) {
-            toast.error("This associate has left. The monitoring sheet is locked and cannot be saved.");
             return;
         }
 
@@ -1037,7 +1041,7 @@ const SixteenDayMonitoringSheet = ({
             {isLeftUser && (
                 <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 print:hidden">
                     <AlertTriangle className="h-4 w-4 shrink-0" />
-                    Associate has LEFT: This sheet is locked. No fields can be edited or saved.
+                    Associate has LEFT: This sheet is locked. Only the Comment field can be edited and saved.
                 </div>
             )}
             {eligibilityStillWaiting && (
@@ -1055,7 +1059,7 @@ const SixteenDayMonitoringSheet = ({
                             {headerInfo.status || 'Draft'}
                         </Badge>
                         {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
-                        {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Locked — Associate Left</Badge>}
+                        {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Associate Left — Comment Only</Badge>}
                         {eligibilityStillWaiting && (
                             <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
                                 ⏳ Eligible in {eligibilityCountdown}
@@ -1149,7 +1153,7 @@ const SixteenDayMonitoringSheet = ({
                                 <Button
                                     variant="secondary"
                                     onClick={() => handleSave("Draft", false)}
-                                    disabled={saving || !studentId || isLeftUser || eligibilityStillLocked}
+                                    disabled={saving || !studentId || eligibilityStillLocked}
                                     className="h-9 gap-2"
                                 >
                                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1161,7 +1165,7 @@ const SixteenDayMonitoringSheet = ({
                                 <Button
                                     variant="secondary"
                                     onClick={() => handleSave("Submitted", false)}
-                                    disabled={saving || !studentId || isLocked || readOnly || isLeftUser}
+                                    disabled={saving || !studentId || isLocked || readOnly}
                                     className="h-9 gap-2"
                                 >
                                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1364,7 +1368,7 @@ const SixteenDayMonitoringSheet = ({
 
                                             if (readOnly || isLocked || isCellLocked(`attendance_date_${dayIdx}`, 'grid')) {
                                                 return (
-                                                    <th key={i} colSpan="11" className="border-r border-black text-center h-16 font-bold text-[14px] p-0 bg-slate-50/50">
+                                                    <th key={i} colSpan="11" className={`border-r border-black text-center h-16 font-bold text-[14px] p-0 bg-slate-50/50 ${dayBlurClass(dayIdx)}`}>
                                                         <div className="flex flex-col items-center justify-center h-full w-full py-1">
                                                             <span>Day-{dayIdx}</span>
                                                             <span className="text-[16px] text-blue-900 font-semibold">
@@ -1407,7 +1411,7 @@ const SixteenDayMonitoringSheet = ({
 
                                             if (readOnly || isLocked || isCellLocked(`attendance_date_${dayIdx}`, 'grid')) {
                                                 return (
-                                                    <th key={i} rowSpan="2" className="border-r border-black min-w-[85px] text-[14px] font-bold p-0 bg-slate-50/50">
+                                                    <th key={i} rowSpan="2" className={`border-r border-black min-w-[85px] text-[14px] font-bold p-0 bg-slate-50/50 ${dayBlurClass(dayIdx)}`}>
                                                         <div className="flex flex-col items-center justify-center h-full w-full py-1">
                                                             <span>Day-{dayIdx}</span>
                                                             <span className="text-[10px] text-blue-900 font-semibold">
@@ -1446,8 +1450,8 @@ const SixteenDayMonitoringSheet = ({
                                     <tr className="border-b border-black bg-gray-50/30">
                                         {[...Array(3)].map((_, dIdx) => (
                                             <React.Fragment key={dIdx}>
-                                                {[...Array(10)].map((_, i) => <th key={i} className="border-r border-black min-w-[50px] text-[13px] h-10">{i + 1}</th>)}
-                                                <th className="border-r border-black min-w-[85px] text-[13px] font-bold italic leading-tight">Avg<br />Total</th>
+                                                {[...Array(10)].map((_, i) => <th key={i} className={`border-r border-black min-w-[50px] text-[13px] h-10 ${dayBlurClass(dIdx + 1)}`}>{i + 1}</th>)}
+                                                <th className={`border-r border-black min-w-[85px] text-[13px] font-bold italic leading-tight ${dayBlurClass(dIdx + 1)}`}>Avg<br />Total</th>
                                             </React.Fragment>
                                         ))}
                                     </tr>
@@ -1486,7 +1490,7 @@ const SixteenDayMonitoringSheet = ({
                                                                         {[...Array(10)].map((_, i) => {
                                                                             const val = gridData[`${row.id}_${dayPrefix}_${sub.id}_${i}`] || "";
                                                                             return (
-                                                                                <td key={i} className="p-0 border-r border-black align-middle h-full">
+                                                                                <td key={i} className={`p-0 border-r border-black align-middle h-full ${dayPrefixBlurClass(dayPrefix)}`}>
                                                                                     <div className="relative flex items-center justify-center min-w-[50px] h-full">
                                                                                         <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                                         <input
@@ -1499,7 +1503,7 @@ const SixteenDayMonitoringSheet = ({
                                                                                 </td>
                                                                             );
                                                                         })}
-                                                                        <td className="p-0 border-r border-black align-middle h-full font-bold bg-yellow-400">
+                                                                        <td className={`p-0 border-r border-black align-middle h-full font-bold bg-yellow-400 ${dayPrefixBlurClass(dayPrefix)}`}>
                                                                             <div className="relative flex items-center justify-center min-w-[80px] h-full">
                                                                                 <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_${sub.id}_avg`] || "00"}</span>
                                                                                 <input
@@ -1515,7 +1519,7 @@ const SixteenDayMonitoringSheet = ({
                                                                 {daysSummary.map(dayKey => {
                                                                     const val = gridData[`${row.id}_${dayKey}_${sub.id}`] || "";
                                                                     return (
-                                                                        <td key={dayKey} className="p-0 border-r border-black">
+                                                                        <td key={dayKey} className={`p-0 border-r border-black ${dayKeyBlurClass(dayKey)}`}>
                                                                             <div className="relative flex items-center justify-center min-w-[70px] h-full">
                                                                                 <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                                 <input
@@ -1553,7 +1557,7 @@ const SixteenDayMonitoringSheet = ({
                                                                             {[...Array(10)].map((_, i) => {
                                                                                 const val = gridData[`${row.id}_${dayPrefix}_${i}`] || "";
                                                                                 return (
-                                                                                    <td key={i} className="p-0 border-r border-black align-middle h-full">
+                                                                                    <td key={i} className={`p-0 border-r border-black align-middle h-full ${dayPrefixBlurClass(dayPrefix)}`}>
                                                                                         <div className="relative flex items-center justify-center min-w-[50px] h-full">
                                                                                             <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                                             <input
@@ -1566,7 +1570,7 @@ const SixteenDayMonitoringSheet = ({
                                                                                     </td>
                                                                                 );
                                                                             })}
-                                                                            <td className="p-0 border-r border-black align-middle h-full font-bold bg-yellow-400">
+                                                                            <td className={`p-0 border-r border-black align-middle h-full font-bold bg-yellow-400 ${dayPrefixBlurClass(dayPrefix)}`}>
                                                                                 <div className="relative flex items-center justify-center min-w-[80px] h-full text-blue-700">
                                                                                     <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_avg`] || "00"}</span>
                                                                                     <input
@@ -1579,7 +1583,7 @@ const SixteenDayMonitoringSheet = ({
                                                                             </td>
                                                                         </>
                                                                     ) : (
-                                                                        <td colSpan="11" className="p-0 border-r border-black align-middle h-full">
+                                                                        <td colSpan="11" className={`p-0 border-r border-black align-middle h-full ${dayPrefixBlurClass(dayPrefix)}`}>
                                                                             <div className="relative flex items-center justify-center min-w-[100px] h-full">
                                                                                 <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}`] || "00"}</span>
                                                                                 <input
@@ -1596,7 +1600,7 @@ const SixteenDayMonitoringSheet = ({
                                                             {daysSummary.map(dayKey => {
                                                                 const val = gridData[`${row.id}_${dayKey}`] || "";
                                                                 return (
-                                                                    <td key={dayKey} className="border-r border-black p-0 h-full">
+                                                                    <td key={dayKey} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(dayKey)}`}>
                                                                         <div className="relative flex items-center justify-center min-w-[70px] h-full">
                                                                             <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                                             <input
@@ -1620,7 +1624,7 @@ const SixteenDayMonitoringSheet = ({
                                                         <td colSpan="3" className="text-right p-2 font-bold text-[14px]">Total Mark:</td>
                                                         <td className="border-r border-black text-center font-bold text-blue-600 text-[14px]">{cat.totalMark}</td>
                                                         {daysDetailed.map(d => (
-                                                            <td key={d} colSpan="11" className="border-r border-black p-0">
+                                                            <td key={d} colSpan="11" className={`border-r border-black p-0 ${dayPrefixBlurClass(d)}`}>
                                                                 <div className="relative flex items-center justify-center min-w-[100px] h-10">
                                                                     <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_total`] || "00"}</span>
                                                                     <input
@@ -1633,7 +1637,7 @@ const SixteenDayMonitoringSheet = ({
                                                             </td>
                                                         ))}
                                                         {daysSummary.map(d => (
-                                                            <td key={d} className="border-r border-black p-0 h-full">
+                                                            <td key={d} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(d)}`}>
                                                                 <div className="relative flex items-center justify-center min-w-[70px] h-10">
                                                                     <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_total`] || "00"}</span>
                                                                     <input
@@ -1664,10 +1668,10 @@ const SixteenDayMonitoringSheet = ({
                                                             <td colSpan="3" className="text-right p-2 font-bold text-[14px]">Target:</td>
                                                             <td className="border-r border-black text-center font-bold text-[14px]">{cat.target}</td>
                                                             {daysDetailed.map(d => (
-                                                                <td key={d} colSpan="11" className="border-r border-black text-center font-bold text-[14px] h-12">100%</td>
+                                                                <td key={d} colSpan="11" className={`border-r border-black text-center font-bold text-[14px] h-12 ${dayPrefixBlurClass(d)}`}>100%</td>
                                                             ))}
                                                             {daysSummary.map(d => (
-                                                                <td key={d} className="border-r border-black text-center font-bold text-[14px] h-12">100%</td>
+                                                                <td key={d} className={`border-r border-black text-center font-bold text-[14px] h-12 ${dayKeyBlurClass(d)}`}>100%</td>
                                                             ))}
                                                             <td className="bg-white p-0 border-l border-black">
                                                                 <div className="flex w-full h-full divide-x divide-black min-h-[3rem]">
@@ -1680,7 +1684,7 @@ const SixteenDayMonitoringSheet = ({
                                                             <td colSpan="3" className="text-right p-2 font-bold text-[14px]">{cat.actualLabel || "Actual %:"}</td>
                                                             <td className="border-r border-black text-center font-bold italic text-[14px]">-</td>
                                                             {daysDetailed.map(d => (
-                                                                <td key={d} colSpan="11" className="border-r border-black p-0 h-full">
+                                                                <td key={d} colSpan="11" className={`border-r border-black p-0 h-full ${dayPrefixBlurClass(d)}`}>
                                                                     <div className="relative flex items-center justify-center min-w-[100px] h-12">
                                                                         <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_actual`] || "00"}</span>
                                                                         <input
@@ -1693,7 +1697,7 @@ const SixteenDayMonitoringSheet = ({
                                                                 </td>
                                                             ))}
                                                             {daysSummary.map(d => (
-                                                                <td key={d} className="border-r border-black p-0 h-full">
+                                                                <td key={d} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(d)}`}>
                                                                     <div className="relative flex items-center justify-center min-w-[70px] h-12">
                                                                         <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_actual`] || "00"}</span>
                                                                         <input
@@ -1749,7 +1753,7 @@ const SixteenDayMonitoringSheet = ({
 
                                                 if (readOnly || isLocked || isCellLocked(`attendance_date_${i + 1}`, 'grid')) {
                                                     return (
-                                                        <td key={i} className="border-r border-black min-w-[50px] p-0 h-full text-center font-bold text-[13px] text-blue-900 bg-slate-50/50">
+                                                        <td key={i} className={`border-r border-black min-w-[50px] p-0 h-full text-center font-bold text-[13px] text-blue-900 bg-slate-50/50 ${dayBlurClass(i + 1)}`}>
                                                             {val || "-"}
                                                         </td>
                                                     );
@@ -1789,7 +1793,7 @@ const SixteenDayMonitoringSheet = ({
                                             <td className="border-r border-black font-bold p-2 text-[14px]">Target %</td>
                                             <td className="min-w-[100px] border-r border-black text-center font-bold text-[14px]">100%</td>
                                             {Array.from({ length: 16 }, (_, i) => (
-                                                <td key={i} className="border-r border-black text-center text-[14px] font-bold">100%</td>
+                                                <td key={i} className={`border-r border-black text-center text-[14px] font-bold ${dayBlurClass(i + 1)}`}>100%</td>
                                             ))}
                                             <td className="bg-blue-100/50 text-center font-bold text-[14px] border-l border-black">100%</td>
                                         </tr>
@@ -1799,7 +1803,7 @@ const SixteenDayMonitoringSheet = ({
                                             {Array.from({ length: 16 }, (_, i) => {
                                                 const val = gridData[`attendance_actual_${i + 1}`] || "";
                                                 return (
-                                                    <td key={i} className="border-r border-black p-0 h-full">
+                                                    <td key={i} className={`border-r border-black p-0 h-full ${dayBlurClass(i + 1)}`}>
                                                         <div className="relative flex items-center justify-center min-w-[50px] h-12">
                                                             <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
                                                             <input
@@ -1831,7 +1835,7 @@ const SixteenDayMonitoringSheet = ({
                                             {Array.from({ length: 16 }, (_, i) => {
                                                 const val = gridData[`attendance_checked_${i + 1}`] || "";
                                                 return (
-                                                    <td key={i} className="border-r border-black p-0 h-full">
+                                                    <td key={i} className={`border-r border-black p-0 h-full ${dayBlurClass(i + 1)}`}>
                                                         <div className="relative flex items-center justify-center min-w-[50px] h-12">
                                                             <input
                                                                 disabled={readOnly || isLocked || isCellLocked(`attendance_checked_${i + 1}`, 'grid')}

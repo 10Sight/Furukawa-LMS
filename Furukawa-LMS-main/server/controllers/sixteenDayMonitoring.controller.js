@@ -37,7 +37,7 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
 
     let query = `
         SELECT
-            u.id, u.fullName, u.empId, u.avatar, u.departmentId, u.sectionId,
+            u.id, u.fullName, u.empId, u.avatar, u.departmentId, u.sectionId, u.status as userStatus,
             d.name as departmentName, s.name as sectionName,
             m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.verifiedByEduCell, m.updatedAt, m.attemptNumber, m.startDate, m.gridData, m.adminRemarksHistory,
             stats.totalAttempts, stats.rejectedCount,
@@ -66,7 +66,6 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
         ) ho
         WHERE u.departmentId = ?
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-        AND (u.status IS NULL OR u.status != 'LEFT')
         AND EXISTS (
             SELECT 1 
             FROM handover_sheets hs
@@ -274,9 +273,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     }
 
     const [userStatusRows] = await executeQuery("SELECT status FROM users WHERE id = ?", [sid]);
-    if (userStatusRows.length > 0 && userStatusRows[0].status === 'LEFT') {
-        throw new ApiError("This associate has left. The monitoring sheet is locked and cannot be modified.", 400);
-    }
+    const isLeftUser = userStatusRows.length > 0 && userStatusRows[0].status === 'LEFT';
 
     // 24-hour eligibility gate: only applies before the very first attempt is created.
     // Admins/Trainers can override and start monitoring early.
@@ -302,7 +299,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         }
     }
 
-    const {
+    let {
         employeeName, employeeCode, processName, dept,
         handoverDate, trgResult, workingWith, lineLeaderName,
         gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, status,
@@ -314,6 +311,32 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet = await SixteenDayMonitoring.findById(recordId);
     } else if (!isNewAttempt) {
         sheet = await SixteenDayMonitoring.findByStudentId(sid);
+    }
+
+    // LEFT associates: pin every field to its persisted value server-side and allow
+    // only the comment to change, regardless of what the client sends. This can't be
+    // enforced by the frontend UI lock alone since this endpoint is a real trust boundary.
+    if (isLeftUser) {
+        if (!sheet || isNewAttempt) {
+            throw new ApiError("This associate has left. A new monitoring attempt cannot be created.", 400);
+        }
+        const incomingComment = (gridData && gridData.comment) || '';
+        employeeName = sheet.employeeName;
+        employeeCode = sheet.employeeCode;
+        processName = sheet.processName;
+        dept = sheet.dept;
+        handoverDate = sheet.handoverDate;
+        trgResult = sheet.trgResult;
+        workingWith = sheet.workingWith;
+        lineLeaderName = sheet.lineLeaderName;
+        checkedBy = sheet.checkedBy;
+        verifiedBy = sheet.verifiedBy;
+        approvedBy = sheet.approvedBy;
+        verifiedByEduCell = sheet.verifiedByEduCell;
+        status = sheet.status;
+        startDate = sheet.startDate;
+        adminRemark = null;
+        gridData = { ...sheet.gridData, comment: incomingComment };
     }
 
     let updatedHistory = [];

@@ -2015,6 +2015,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
   const [statusCountsData] = await executeQuery(`
     SELECT
+      COUNT(*) as totalHeadcount,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
       SUM(CASE WHEN u.status = 'ON_LEAVE' THEN 1 ELSE 0 END) as onLeaveCount,
       SUM(CASE WHEN (u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE')) THEN 1 ELSE 0 END) as presentCount
@@ -2027,6 +2028,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     totalUsers: cnt[0].total,
     totalPages: Math.ceil(cnt[0].total / limit),
     counts: {
+      totalHeadcount: statusCountsData[0]?.totalHeadcount || 0,
       presentCount: statusCountsData[0]?.presentCount || 0,
       onLeaveCount: statusCountsData[0]?.onLeaveCount || 0,
       leftCount: statusCountsData[0]?.leftCount || 0,

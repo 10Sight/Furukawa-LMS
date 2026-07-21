@@ -1921,8 +1921,8 @@ const Students = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title="Total Operators"
-          value={studentsData?.data?.totalUsers || 0}
-          description="All registered operators"
+          value={studentsData?.data?.counts?.totalHeadcount ?? studentsData?.data?.totalUsers ?? 0}
+          description="All registered operators (total headcount)"
           icon={IconUsers}
           iconBgColor="bg-blue-100"
           iconColor="text-blue-600"

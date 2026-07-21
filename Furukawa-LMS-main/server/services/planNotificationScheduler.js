@@ -146,8 +146,11 @@ class PlanNotificationScheduler {
                             userName: row.userName || '—',
                             cardNo: row.cardNo || '—',
                             shift: row.shift || '—',
-                            modelLine: row.modelLine || '—',
-                            station: row.station || '—',
+                            // Multi-Skilling Plan stores Model & Line / Station per-quarter
+                            // (q1ModelLine, q2ModelLine, ...); Skill Upgradation Plan still
+                            // stores a single row-level modelLine/station, hence the fallback.
+                            modelLine: row[`${q.key}ModelLine`] || row.modelLine || '—',
+                            station: row[`${q.key}Station`] || row.station || '—',
                             quarter: q.label,
                             targetSkill: row[q.skillKey] || '—',
                             plannedDate,

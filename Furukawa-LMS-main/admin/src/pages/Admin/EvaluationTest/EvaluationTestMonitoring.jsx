@@ -171,8 +171,12 @@ const EvaluationTestMonitoring = () => {
   // Filter attempts locally
   const filteredAttempts = useMemo(() => {
     return rawAttempts.filter((attempt) => {
-      // 0. Only show temporary users
-      if (attempt.isTemporary !== 1 && attempt.isTemporary !== true && attempt.isTemporary !== '1') {
+      // 0. Only show Dojo (temporary) candidate attempts — check both the resolved
+      // flag and the raw snapshot so handed-over/LEFT/deleted candidates stay visible.
+      const isDojoUserAttempt =
+        attempt.studentIsTemporary === 1 || attempt.studentIsTemporary === true || String(attempt.studentIsTemporary) === '1' ||
+        attempt.isTemporary === 1 || attempt.isTemporary === true || String(attempt.isTemporary) === '1';
+      if (!isDojoUserAttempt) {
         return false;
       }
       // 1. Department Filter

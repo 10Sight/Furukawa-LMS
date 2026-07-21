@@ -1348,7 +1348,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
             COALESCE(u.userName, aq.studentEmpId, '') as studentUserName,
             u.email as studentEmail,
             u.role as studentRole,
-            COALESCE(u.isTemporary, aq.studentIsTemporary, 0) as studentIsTemporary,
+            CASE WHEN aq.studentIsTemporary = 1 OR u.isTemporary = 1 THEN 1 ELSE 0 END as studentIsTemporary,
             u.currentLevel as studentLevel,
             u_hier_resolved.resolvedDeptId as studentDepartmentId,
             u.department as studentDepartmentName,
@@ -1494,7 +1494,7 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
     }
 
     if (isTemporaryQuery) {
-        sql += " AND COALESCE(u.isTemporary, aq.studentIsTemporary, 0) = 1";
+        sql += " AND (aq.studentIsTemporary = 1 OR u.isTemporary = 1)";
     }
 
     if (search) {

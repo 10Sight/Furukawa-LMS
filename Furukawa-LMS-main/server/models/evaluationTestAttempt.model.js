@@ -257,7 +257,7 @@ class EvaluationTestAttempt {
     static async findById(id) {
         const query = `
             SELECT a.*, t.title as testTitle, t.performDateCount, t.processType, t.contentStructure, t.departmentId as testDepartmentId,
-                   u.userName, COALESCE(u.isTemporary, a.studentIsTemporary, 0) as isTemporary
+                   u.userName, CASE WHEN a.studentIsTemporary = 1 OR u.isTemporary = 1 THEN 1 ELSE 0 END as isTemporary
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
             LEFT JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
@@ -301,7 +301,7 @@ class EvaluationTestAttempt {
                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,
                    COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), a.studentSubSectionId) as subSectionId,
-                   COALESCE(u.isTemporary, a.studentIsTemporary, 0) as isTemporary, u.userName,
+                   CASE WHEN a.studentIsTemporary = 1 OR u.isTemporary = 1 THEN 1 ELSE 0 END as isTemporary, u.userName,
                    dept.name as departmentName, sec.name as sectionName,
                    l.name as lineName, ss.name as subSectionName
             FROM evaluation_test_attempts a
@@ -333,7 +333,7 @@ class EvaluationTestAttempt {
                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,
                    COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), a.studentSubSectionId) as subSectionId,
-                   COALESCE(u.isTemporary, a.studentIsTemporary, 0) as isTemporary, u.userName,
+                   CASE WHEN a.studentIsTemporary = 1 OR u.isTemporary = 1 THEN 1 ELSE 0 END as isTemporary, u.userName,
                    dept.name as departmentName, sec.name as sectionName,
                    l.name as lineName, ss.name as subSectionName
             FROM evaluation_test_attempts a

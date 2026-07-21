@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
@@ -350,6 +350,21 @@ const Cycle10 = () => {
             });
             if (response.data.success) {
                 toast.success(`Sheet ${action === 'APPROVE' ? 'Approved' : 'Rejected'} successfully`);
+
+                if (role === 'VERIFY' && action === 'APPROVE') {
+                    const verifierName = response.data.data?.verifiedBy || user?.fullName || user?.name || "";
+                    const signedRows = rows.map(row => ({
+                        ...row,
+                        tlSign: row.tlSign || verifierName,
+                    }));
+                    await axiosInstance.put(`/api/ten-cycle-sheets/${selectedSheetId}`, {
+                        ...headerData,
+                        formType,
+                        entries: signedRows,
+                        isSubmit: false,
+                    });
+                }
+
                 await fetchSheetById(selectedSheetId, isEditMode);
             }
         } catch (error) {
@@ -388,6 +403,11 @@ const Cycle10 = () => {
         setRows(rows.map(row => {
             if (row.id === id) {
                 let updatedRow = { ...row, [field]: value };
+
+                // Keep inspectorSign following inspectorName until the user overrides it manually
+                if (field === 'inspectorName' && (!row.inspectorSign || row.inspectorSign === row.inspectorName)) {
+                    updatedRow.inspectorSign = value;
+                }
 
                 // Fields to check for result (Marking fields)
                 const markingFields = [
@@ -453,6 +473,7 @@ const Cycle10 = () => {
             return {
                 ...row,
                 inspectorName: user.fullName || '',
+                inspectorSign: user.fullName || '',
                 empCode: user.empId || '',
                 skillLevel: user.currentLevel || '',
                 lineMachine,
@@ -462,6 +483,46 @@ const Cycle10 = () => {
 
     const handleHeaderChange = (field, value) => {
         setHeaderData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleAutoSignAll = () => {
+        const tlName = currentSheet?.verifiedBy || user?.fullName || user?.name || "";
+        setRows(rows.map(row => ({
+            ...row,
+            inspectorSign: row.inspectorSign || row.inspectorName || '',
+            tlSign: row.tlSign || tlName,
+        })));
+        toast.success("Auto-signed all rows");
+    };
+
+    const isAutoSign = (value, autoValue) => !!value && !!autoValue && value === autoValue;
+
+    const renderInspectorSignCell = (row) => (
+        <td className="border border-black p-0">
+            <input
+                className={`w-full text-center bg-transparent outline-none p-1 italic disabled:cursor-default ${isAutoSign(row.inspectorSign, row.inspectorName) ? 'text-indigo-600 font-medium' : 'text-blue-600'}`}
+                style={isAutoSign(row.inspectorSign, row.inspectorName) ? { fontFamily: "'Segoe Script', 'Brush Script MT', cursive" } : undefined}
+                value={row.inspectorSign}
+                onChange={(e) => handleRowChange(row.id, 'inspectorSign', e.target.value)}
+                disabled={!isEditMode}
+            />
+        </td>
+    );
+
+    const renderTLSignCell = (row) => {
+        const fallback = currentSheet?.verifiedBy || (currentSheet?.verifiedStatus === 'APPROVE' ? 'Signed' : '');
+        const displayValue = row.tlSign || (!isEditMode ? fallback : '');
+        return (
+            <td className="border border-black p-0">
+                <input
+                    className={`w-full text-center bg-transparent outline-none p-1 italic disabled:cursor-default ${isAutoSign(displayValue, currentSheet?.verifiedBy) || displayValue === 'Signed' ? 'text-indigo-600 font-medium' : 'text-blue-600'}`}
+                    style={(isAutoSign(displayValue, currentSheet?.verifiedBy) || displayValue === 'Signed') ? { fontFamily: "'Segoe Script', 'Brush Script MT', cursive" } : undefined}
+                    value={displayValue}
+                    onChange={(e) => handleRowChange(row.id, 'tlSign', e.target.value)}
+                    disabled={!isEditMode}
+                />
+            </td>
+        );
     };
 
     const renderTextInput = (row, field) => (
@@ -1060,12 +1121,8 @@ const Cycle10 = () => {
                                                             <td className="border border-black p-0 font-bold text-blue-600">
                                                                 {row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}
                                                             </td>
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 italic disabled:cursor-default" value={row.inspectorSign} onChange={(e) => handleRowChange(row.id, 'inspectorSign', e.target.value)} disabled={!isEditMode} />
-                                                            </td>
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 italic disabled:cursor-default" value={row.tlSign} onChange={(e) => handleRowChange(row.id, 'tlSign', e.target.value)} disabled={!isEditMode} />
-                                                            </td>
+                                                            {renderInspectorSignCell(row)}
+                                                            {renderTLSignCell(row)}
                                                             <td className="border border-black p-0">
                                                                 <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} />
                                                             </td>
@@ -1263,8 +1320,8 @@ const Cycle10 = () => {
                                                             <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0 bg-yellow-100 font-bold text-green-600">{row.passScore}</td>
                                                             <td className="border border-black p-0 font-bold text-blue-600">{row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}</td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 italic disabled:cursor-default" value={row.inspectorSign} onChange={(e) => handleRowChange(row.id, 'inspectorSign', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 italic disabled:cursor-default" value={row.tlSign} onChange={(e) => handleRowChange(row.id, 'tlSign', e.target.value)} disabled={!isEditMode} /></td>
+                                                            {renderInspectorSignCell(row)}
+                                                            {renderTLSignCell(row)}
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} /></td>
                                                         </tr>
                                                     ))}
@@ -1463,8 +1520,8 @@ const Cycle10 = () => {
                                                             <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0 bg-yellow-100 font-bold text-green-600">{row.passScore}</td>
                                                             <td className="border border-black p-0 font-bold text-blue-600">{row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}</td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 italic disabled:cursor-default" value={row.inspectorSign} onChange={(e) => handleRowChange(row.id, 'inspectorSign', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 italic disabled:cursor-default" value={row.tlSign} onChange={(e) => handleRowChange(row.id, 'tlSign', e.target.value)} disabled={!isEditMode} /></td>
+                                                            {renderInspectorSignCell(row)}
+                                                            {renderTLSignCell(row)}
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} /></td>
                                                         </tr>
                                                     ))}
@@ -1519,9 +1576,18 @@ const Cycle10 = () => {
                                 <div className="flex justify-between mt-4 print:hidden gap-2">
                                     <div className="flex gap-2">
                                         {isEditMode && (
-                                            <Button onClick={addRow} className="gap-2" variant="outline">
-                                                <Plus size={16} /> Add 10 Cycle Row
-                                            </Button>
+                                            <>
+                                                <Button onClick={addRow} className="gap-2" variant="outline">
+                                                    <Plus size={16} /> Add 10 Cycle Row
+                                                </Button>
+                                                <Button
+                                                    onClick={handleAutoSignAll}
+                                                    className="gap-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50"
+                                                    variant="outline"
+                                                >
+                                                    <PenLine size={16} /> Auto Sign All Rows
+                                                </Button>
+                                            </>
                                         )}
                                         <Button
                                             variant="outline"

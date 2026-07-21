@@ -62,12 +62,20 @@ class NotificationService {
             const deptName = department?.name || "Unknown Department";
             if (formData) formData.departmentName = deptName;
 
-            // 5. Generate Excel Report based on Form Name
-            const workbook = new ExcelJS.Workbook();
-            const filename = await this._generateExcel(workbook, formName, departmentId, formData);
+            // 5. Generate Excel Report based on Form Name.
+            // Skill Matrix Sheet is excluded: its station columns vary per department, so the
+            // email links straight to the sheet instead of attaching a copy (see the button-only
+            // template below).
+            const skipAttachment = formName === "Skill Matrix Sheet";
+            let filename = null;
+            let buffer = null;
+            if (!skipAttachment) {
+                const workbook = new ExcelJS.Workbook();
+                filename = await this._generateExcel(workbook, formName, departmentId, formData);
+                buffer = await workbook.xlsx.writeBuffer();
+            }
 
             // 6. Send Email
-            const buffer = await workbook.xlsx.writeBuffer();
             const subject = `${formName} Update - ${deptName} (${new Date().toLocaleDateString()})`;
 
             // Quick Actions template removed as we move to row-wise approval within the form
@@ -185,8 +193,6 @@ class NotificationService {
                     lineName,
                     subSectionName,
                     month: sheetMonth,
-                    entries: formData?.entries || [],
-                    config: formData?.footerInfo?.config || {},
                     portalUrl: reviewUrl
                 });
             }
@@ -265,7 +271,7 @@ class NotificationService {
                 toRecipients.join(','),
                 subject,
                 htmlMessage,
-                [
+                skipAttachment ? [] : [
                     {
                         filename: filename,
                         content: buffer

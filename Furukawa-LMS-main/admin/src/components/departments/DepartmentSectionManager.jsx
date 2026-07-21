@@ -144,11 +144,23 @@ const DepartmentSectionManager = ({ departmentId }) => {
             toast.error("Section name is required");
             return;
         }
+        const trimmedUniCode = newSectionUniCode.trim();
+        if (!trimmedUniCode) {
+            toast.error("UniCode is required");
+            return;
+        }
+        const isDuplicateUniCode = visibleSections.some(
+            (section) => (section.uniCode || "").trim().toLowerCase() === trimmedUniCode.toLowerCase()
+        );
+        if (isDuplicateUniCode) {
+            toast.error(`Section with UniCode '${trimmedUniCode}' already exists`);
+            return;
+        }
 
         try {
             await createSection({
                 name: newSectionName,
-                uniCode: newSectionUniCode,
+                uniCode: trimmedUniCode,
                 departmentId,
                 description: newSectionDescription,
                 category: newSectionCategory,
@@ -160,7 +172,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 details: {
                     departmentId,
                     name: newSectionName,
-                    uniCode: newSectionUniCode,
+                    uniCode: trimmedUniCode,
                     category: newSectionCategory,
                     daily5mFormType: newSectionFormTypes.join(","),
                     tenCycleFormType: newSectionTenCycleFormTypes.join(","),
@@ -220,12 +232,27 @@ const DepartmentSectionManager = ({ departmentId }) => {
             toast.error("Section name cannot be empty");
             return;
         }
+        const trimmedEditUniCode = editUniCode.trim();
+        if (!trimmedEditUniCode) {
+            toast.error("UniCode is required");
+            return;
+        }
+        const editingId = editingSection.id || editingSection._id;
+        const isDuplicateUniCode = visibleSections.some(
+            (section) =>
+                String(section.id || section._id) !== String(editingId) &&
+                (section.uniCode || "").trim().toLowerCase() === trimmedEditUniCode.toLowerCase()
+        );
+        if (isDuplicateUniCode) {
+            toast.error(`Section with UniCode '${trimmedEditUniCode}' already exists`);
+            return;
+        }
 
         try {
             await updateSection({
                 id: editingSection.id || editingSection._id,
                 name: editName,
-                uniCode: editUniCode,
+                uniCode: trimmedEditUniCode,
                 description: editDescription,
                 category: editCategory,
                 daily5mFormType: editFormTypes.join(","),
@@ -236,7 +263,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 details: {
                     id: editingSection.id || editingSection._id,
                     name: editName,
-                    uniCode: editUniCode,
+                    uniCode: trimmedEditUniCode,
                     category: editCategory,
                     daily5mFormType: editFormTypes.join(","),
                     tenCycleFormType: editTenCycleFormTypes.join(","),
@@ -296,12 +323,13 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="uniCode">UniCode (Unique)</Label>
+                                    <Label htmlFor="uniCode">UniCode (Required, Unique)</Label>
                                     <Input
                                         id="uniCode"
                                         placeholder="e.g., SEC-001"
                                         value={newSectionUniCode}
                                         onChange={(e) => setNewSectionUniCode(e.target.value)}
+                                        required
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -393,12 +421,13 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="editUniCode">UniCode (Unique)</Label>
+                                    <Label htmlFor="editUniCode">UniCode (Required, Unique)</Label>
                                     <Input
                                         id="editUniCode"
                                         placeholder="e.g., SEC-001"
                                         value={editUniCode}
                                         onChange={(e) => setEditUniCode(e.target.value)}
+                                        required
                                     />
                                 </div>
                                 <div className="space-y-2">

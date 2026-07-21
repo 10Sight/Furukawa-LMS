@@ -878,6 +878,11 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
     // Dashboard-aligned map is used ONLY for the two requirement rows requested above.
     let dashboardRequirementPlanMap = {};
 
+    // Per-club version of dashboardRequirementPlanMap, scoped to each club's sectionIds,
+    // used for the `${club.name} Headcount required` rows below.
+    const clubDashboardRequirementPlanMap = {};
+    reportingClubs.forEach(club => { clubDashboardRequirementPlanMap[club.id] = {}; });
+
     if (uniqueRequirementMonths.length > 0) {
         const requirementWhereClause = uniqueRequirementMonths
             .map(() => `([year] = ? AND monthNumber = ?)`)
@@ -966,6 +971,49 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
                 salesPlan: Number(row.required_sales_plan || 0)
             };
         });
+
+        // Same dashboard-approval logic as above, but scoped to each club's sectionIds so
+        // `${club.name} Headcount required` matches that club's slice of the production plan.
+        for (const club of reportingClubs) {
+            let clubSectionIds = [];
+            try {
+                clubSectionIds = typeof club.sectionIds === 'string'
+                    ? JSON.parse(club.sectionIds || "[]")
+                    : (club.sectionIds || []);
+            } catch (e) {
+                clubSectionIds = [];
+            }
+
+            if (!Array.isArray(clubSectionIds) || clubSectionIds.length === 0) continue;
+
+            const sectionPlaceholders = clubSectionIds.map(() => '?').join(',');
+            const [clubRequirementRows] = await executeQuery(`
+                SELECT
+                    r.[year] AS yearVal,
+                    r.monthNumber AS monthNumber,
+                    CAST(SUM(ISNULL(r.prodPlanFN01, 0)) AS BIGINT) AS required_fn01,
+                    CAST(SUM(ISNULL(r.prodPlanFN02, 0)) AS BIGINT) AS required_fn02
+                FROM requirements r
+                INNER JOIN sections s
+                    ON (
+                        UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                        OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                    )
+                    AND ISNULL(s.isActive, 1) = 1
+                WHERE (${dashboardRequirementWhereClause})
+                ${dashboardApprovalCondition}
+                  AND s.id IN (${sectionPlaceholders})
+                GROUP BY r.[year], r.monthNumber
+            `, [...requirementParams, ...clubSectionIds]);
+
+            clubRequirementRows.forEach(row => {
+                const key = `${row.yearVal}-${row.monthNumber}`;
+                clubDashboardRequirementPlanMap[club.id][key] = {
+                    prodPlanFN01: Number(row.required_fn01 || 0),
+                    prodPlanFN02: Number(row.required_fn02 || 0)
+                };
+            });
+        }
     }
 
     visibleRequirementDates.forEach(item => {
@@ -993,6 +1041,17 @@ export const syncHeadcountData = asyncHandler(async (req, res) => {
 
         // Do not change Hiring Plan.
         tableData[`Hiring Plan_${item.dateKey}`] = hiringPlan.prodPlan;
+
+        // `${club.name} Headcount required` — same FN01 (days 1-15) / FN02 (day 16+) split as
+        // the aggregate production-plan row, scoped to each club's own sectionIds.
+        reportingClubs.forEach(club => {
+            const clubPlan = clubDashboardRequirementPlanMap[club.id]?.[planKey] || {
+                prodPlanFN01: 0,
+                prodPlanFN02: 0
+            };
+            const clubRequirement = item.day <= 15 ? clubPlan.prodPlanFN01 : clubPlan.prodPlanFN02;
+            tableData[`${club.name} Headcount required_${item.dateKey}`] = clubRequirement;
+        });
     });
 
     res.status(200).json({ success: true, data: { tableData } });

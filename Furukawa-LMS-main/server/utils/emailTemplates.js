@@ -1117,7 +1117,11 @@ export const generateTenCycleSheetEmail = ({
 };
 
 /**
- * Generate Skill Matrix email template (Exact Same Format as UI)
+ * Generate Skill Matrix email template — summary card + button only.
+ * No inline sheet reconstruction and no Excel attachment (see notification.service.js,
+ * which skips Excel generation for "Skill Matrix Sheet"): the sheet can change shape per
+ * department (station columns vary), so a full inline copy went stale/unreadable fast in
+ * some mail clients. A direct link is more reliable than reproducing the sheet in the email.
  */
 export const generateSkillMatrixEmail = ({
     departmentName,
@@ -1125,238 +1129,73 @@ export const generateSkillMatrixEmail = ({
     lineName,
     subSectionName,
     month,
-    entries,
     portalUrl,
-    config = {}
 }) => {
-    const activeMachines = entries[0]?.stations || [];
-    const machineCount = activeMachines.length;
-    const totalCols = 5 + machineCount + 4; // SrNo, Name, Code, Exp, Pos + Stations + Plan, Actual, Status, %
-
-    // Helper to format signatures
-    const formatSign = (val) => {
-        if (!val) return '<span style="color: #ccc;">-</span>';
-        const parts = val.split(': ');
-        if (parts.length > 1) {
-            return `<strong style="color: ${parts[0] === 'Approved' ? '#10b981' : '#ef4444'};">${parts[0]}</strong><br/><small>${parts[1]}</small>`;
-        }
-        return val;
-    };
-
-    // Build Product/Revision Block
-    const productsHtml = (config.products || []).map(p => `
-        <td style="border: 1px solid black; padding: 2px; text-align: center; background: #f8fafc;">
-            <div style="font-size: 9px; font-weight: bold; border-bottom: 1px solid black; background: #eee;">Product</div>
-            <div style="font-size: 10px;">${p || '-'}</div>
-        </td>
-    `).join('');
-
-    const revisionsHtml = (config.revisions || []).map(rev => `
-        <td style="border: 1px solid black; padding: 0; text-align: center; background: #f8fafc;">
-            <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
-                <tr>
-                    <td style="font-size: 8px; border-bottom: 1px solid black; border-right: 1px solid black; padding: 1px; background: #eee;">Product</td>
-                    <td style="font-size: 8px; border-bottom: 1px solid black; border-right: 1px solid black; padding: 1px; background: #eee;">Rev</td>
-                    <td style="font-size: 8px; border-bottom: 1px solid black; padding: 1px; background: #eee;">Date</td>
-                </tr>
-                <tr>
-                    <td style="font-size: 9px; border-right: 1px solid black; padding: 1px;">${rev.product || '-'}</td>
-                    <td style="font-size: 9px; border-right: 1px solid black; padding: 1px;">${rev.revision || '-'}</td>
-                    <td style="font-size: 9px; padding: 1px;">${rev.date || '-'}</td>
-                </tr>
-            </table>
-        </td>
-    `).join('');
-
-    // Build Table Rows
-    const entryRows = (entries || []).map((entry, index) => {
-        const stationCells = (entry.stations || []).map(s => {
-            // Simplified Skill Symbol for Email
-            let levelColor = "#fff";
-            let levelText = s.curr || "-";
-            if (levelText === "L-0") levelColor = "#eee";
-            else if (levelText.startsWith("L")) levelColor = "#fef08a";
-
-            return `
-                <td style="border: 1px solid black; text-align: center; font-size: 10px; padding: 2px; background: ${levelColor};">
-                    ${levelText}
-                </td>
-            `;
-        }).join('');
-
-        return `
-            <tr>
-                <td style="border: 1px solid black; text-align: center; font-size: 10px; font-weight: bold;">${index + 1}</td>
-                <td style="border: 1px solid black; text-align: left; font-size: 10px; padding-left: 4px; font-weight: bold;">${entry.manualName || entry.name || '-'}</td>
-                <td style="border: 1px solid black; text-align: center; font-size: 10px;">${entry.cardNo || '-'}</td>
-                <td style="border: 1px solid black; padding: 0;">
-                    <div style="font-size: 8px; border-bottom: 1px solid black; text-align: center;">${entry.experience || '-'}</div>
-                    <div style="font-size: 8px; text-align: center;">${entry.certDate || '-'}</div>
-                </td>
-                <td style="border: 1px solid black; text-align: center; font-size: 10px; font-weight: bold; background: #fef9c3;">${entry.position || '-'}</td>
-                ${stationCells}
-                <td style="border: 1px solid black; text-align: center; font-size: 10px;">${entry.plan || '-'}</td>
-                <td style="border: 1px solid black; text-align: center; font-size: 10px; font-weight: bold; background: #f9fafb;">${entry.actual || '0'}</td>
-                <td style="border: 1px solid black; text-align: center; font-size: 10px;">${entry.status || 'OK'}</td>
-                <td style="border: 1px solid black; text-align: center; font-size: 10px; font-weight: bold; color: #2563eb;">
-                    ${((entry.actual / (entry.plan || 1)) * 100).toFixed(0)}%
-                </td>
-            </tr>
-        `;
-    }).join('');
-
-    // Footer Rows
-    const buildFooterRow = (label, dataKey) => {
-        const cells = activeMachines.map((_, i) => `
-            <td style="border: 1px solid black; text-align: center; font-size: 10px; font-weight: bold; padding: 2px;">
-                ${config.footerRows?.[dataKey]?.[i] || ''}
-            </td>
-        `).join('');
-        return `
-            <tr>
-                <th colspan="5" style="border: 1px solid black; text-align: right; padding-right: 8px; font-size: 10px; background: #f8fafc;">${label}</th>
-                ${cells}
-                <td colspan="4" style="border: 1px solid black; background: #eee;"></td>
-            </tr>
-        `;
-    };
-
     return `
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skill Matrix Sheet — Updated</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 10px; background: #f1f5f9; }
-        .wrapper { background: #ffffff; padding: 15px; border: 1px solid #cbd5e1; max-width: 1000px; margin: 0 auto; }
-        .header-title { text-align: center; background: #1e293b; color: white; padding: 8px; margin-bottom: 5px; }
-        .meta-table { width: 100%; border-collapse: collapse; margin-bottom: 5px; font-size: 11px; }
-        .meta-table td, .meta-table th { border: 1px solid black; padding: 4px; }
-        .matrix-table { width: 100%; border-collapse: collapse; border: 1px solid black; }
-        .matrix-table th { border: 1px solid black; background: #f1f5f9; font-size: 10px; padding: 4px; }
-        .matrix-table td { border: 1px solid black; }
-        .btn-container { text-align: center; margin: 20px 0; }
-        .btn { background: #2563eb; color: white !important; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 14px; display: inline-block; }
+        @media only screen and (max-width: 600px) {
+            .plan-email-body { padding: 20px 18px !important; }
+            .plan-email-header { padding: 22px 18px 16px !important; }
+        }
     </style>
 </head>
-<body>
-    <div class="wrapper">
-        <div class="header-title">
-            <h2 style="margin: 0; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Skill Matrix Sheet</h2>
-        </div>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+<div style="max-width:600px;margin:24px auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #eef2f6;">
 
-        <!-- Top Metadata & Signatures -->
-        <table class="meta-table">
-            <tr>
-                <th style="background: #f1f5f9; width: 80px;">Department</th>
-                <td style="font-weight: bold; width: 120px;">${departmentName}</td>
-                <th style="background: #f1f5f9; width: 80px;">Section</th>
-                <td style="font-weight: bold; width: 100px;">${sectionName}</td>
-                <th style="background: #f1f5f9; width: 80px;">Line</th>
-                <td style="font-weight: bold; width: 100px;">${lineName}</td>
-                <th style="background: #f1f5f9; width: 60px;">Shift</th>
-                <td style="font-weight: bold; width: 50px; text-align: center;">${config.shift || 'A'}</td>
-                <td style="padding: 0; border: none;">
-                    <table width="100%" style="border-collapse: collapse;">
-                        <tr>
-                            <td style="border: 1px solid black; font-size: 8px; text-align: center; background: #f8fafc;">QA In-charge</td>
-                            <td style="border: 1px solid black; font-size: 8px; text-align: center; background: #f8fafc;">Safety In-charge</td>
-                            <td style="border: 1px solid black; font-size: 8px; text-align: center; background: #f8fafc;">Process In-charge</td>
-                        </tr>
-                        <tr>
-                            <td style="border: 1px solid black; text-align: center; height: 35px; vertical-align: middle;">${formatSign(config.signatures?.qa)}</td>
-                            <td style="border: 1px solid black; text-align: center; height: 35px; vertical-align: middle;">${formatSign(config.signatures?.safety)}</td>
-                            <td style="border: 1px solid black; text-align: center; height: 35px; vertical-align: middle;">${formatSign(config.signatures?.process)}</td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
+    ${_renderLightEmailHeader('Skill Matrix Sheet — Updated')}
 
-        <!-- Products & Revisions -->
-        <table class="meta-table" style="width: auto;">
-            <tr>
-                ${productsHtml}
-                ${revisionsHtml}
-            </tr>
-        </table>
+    <!-- Body -->
+    <div class="plan-email-body" style="padding:28px 32px;">
+        <p style="margin:0 0 14px;color:#475569;font-size:14px;">Hi there,</p>
+        <p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.7;">
+            The Skill Matrix Sheet for <strong style="color:#334155;">${departmentName}</strong>
+            ${sectionName ? `(<strong style="color:#334155;">${sectionName}</strong>) ` : ''}
+            has just been updated. Open the sheet using the button below to review it.
+        </p>
 
-        <!-- Legend -->
-        <div style="border: 1px solid black; margin-bottom: 5px; padding: 4px; font-size: 10px; background: #fff;">
-            <strong>Skill Symbol:</strong> 
-            <span style="display: inline-block; margin-left: 10px;">(L-0) Under training</span>
-            <span style="display: inline-block; margin-left: 10px;">(L-1) Basic Knowledge</span>
-            <span style="display: inline-block; margin-left: 10px;">(L-2) Skilled</span>
-            <span style="display: inline-block; margin-left: 10px;">(L-3) Highly Skilled</span>
-            <span style="display: inline-block; margin-left: 10px;">(L-4) Expert/Trainer</span>
-        </div>
-
-        <!-- Main Matrix -->
-        <div style="overflow-x: auto;">
-            <table class="matrix-table">
-                <thead>
-                    <!-- Process Responsible -->
-                    <tr>
-                        <th colspan="5" style="text-align: right;">Process responsible person</th>
-                        <th colspan="${machineCount}" style="text-align: left; background: #fff;">${config.processPersons?.responsible || '-'}</th>
-                        <th colspan="4" style="background: #eee;"></th>
-                    </tr>
-                    <!-- Vice Process -->
-                    <tr>
-                        <th colspan="5" style="text-align: right;">Vice process responsible person</th>
-                        <th colspan="${machineCount}" style="text-align: left; background: #fff;">${config.processPersons?.vice || '-'} ${config.processPersons?.vice2 ? '/ ' + config.processPersons.vice2 : ''}</th>
-                        <th colspan="4" style="background: #eee;"></th>
-                    </tr>
-                    <!-- Process Name Header -->
-                    <tr>
-                        <th style="width: 30px;">SN</th>
-                        <th style="width: 150px;">Employee Name</th>
-                        <th style="width: 80px;">Code</th>
-                        <th style="width: 70px;">Exp / Cert</th>
-                        <th style="width: 60px;">Pos</th>
-                        ${activeMachines.map(m => `
-                            <th style="width: 35px; font-size: 8px;">
-                                <div style="height: 100px; padding: 2px;">
-                                    ${m.name}
-                                </div>
-                            </th>
-                        `).join('')}
-                        <th colspan="2" style="background: #fde047;">Process per person</th>
-                        <th style="background: #fde047; width: 50px;">Status</th>
-                        <th style="background: #fde047; width: 40px;">%</th>
-                    </tr>
-                    <!-- Min Skill Row -->
-                    <tr>
-                        <th colspan="5" style="text-align: right;">Min. Skill Required</th>
-                        ${activeMachines.map((_, i) => `
-                            <th style="background: #fff;">${config.minSkills?.[i] || 'L2'}</th>
-                        `).join('')}
-                        <th colspan="4" style="background: #eee;"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${entryRows}
-                </tbody>
-                <tfoot>
-                    ${buildFooterRow('Plan (Skilled Manpower)', 'plan')}
-                    ${buildFooterRow('Actual', 'actual')}
-                    ${buildFooterRow('% (Skilled Manpower)', 'percent')}
-                </tfoot>
+        <div style="background:#f8fafc;border:1px solid #eef2f6;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;width:140px;">Department</td>
+                    <td style="padding:5px 0;color:#334155;font-weight:600;">${departmentName}</td>
+                </tr>
+                ${sectionName ? `<tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Section</td>
+                    <td style="padding:5px 0;color:#334155;">${sectionName}</td>
+                </tr>` : ''}
+                ${lineName ? `<tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Line</td>
+                    <td style="padding:5px 0;color:#334155;">${lineName}</td>
+                </tr>` : ''}
+                ${subSectionName ? `<tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Sub-Section</td>
+                    <td style="padding:5px 0;color:#334155;">${subSectionName}</td>
+                </tr>` : ''}
+                ${month ? `<tr>
+                    <td style="padding:5px 0;color:#94a3b8;font-weight:600;">Month</td>
+                    <td style="padding:5px 0;color:#334155;">${month}</td>
+                </tr>` : ''}
             </table>
         </div>
 
-        <div class="btn-container">
-            <a href="${portalUrl}" class="btn">Review & Approve</a>
-        </div>
-
-        <div style="font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid #eee; padding-top: 10px; margin-top: 20px;">
-            <p>Generated by Furukawa Minda Electric Pvt. Ltd. | ${new Date().toLocaleString()}</p>
-            <p style="font-size: 8px;">${config.documentInfo?.docNo || 'FRM-WH-PR-009'} | Rev ${config.documentInfo?.revNo || '02'} | ${config.documentInfo?.revDate || '02.05.2022'}</p>
+        <div style="text-align:center;margin:28px 0 8px;">
+            <a href="${portalUrl}"
+               style="display:inline-block;background:#3b82f6;color:#ffffff;text-decoration:none;padding:12px 30px;border-radius:8px;font-weight:600;font-size:14px;">
+                Open Skill Matrix Sheet
+            </a>
         </div>
     </div>
+
+    ${_renderLightEmailFooter()}
+</div>
 </body>
-</html>
-    `;
+</html>`;
 };
 
 

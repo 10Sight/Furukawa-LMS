@@ -14,9 +14,22 @@ export const createSection = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Name and Department ID are required");
     }
 
+    const trimmedUniCode = (uniCode || "").trim();
+    if (!trimmedUniCode) {
+        throw new ApiError(400, "UniCode is required");
+    }
+
+    const [existing] = await executeQuery(
+        "SELECT id FROM [sections] WHERE LOWER(LTRIM(RTRIM(uniCode))) = LOWER(?)",
+        [trimmedUniCode]
+    );
+    if (existing.length > 0) {
+        throw new ApiError(400, `Section with UniCode '${trimmedUniCode}' already exists`);
+    }
+
     const newSection = await Section.create({
         name,
-        uniCode,
+        uniCode: trimmedUniCode,
         description,
         category,
         daily5mFormType,
@@ -71,9 +84,25 @@ export const updateSection = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive } = req.body;
 
+    let trimmedUniCode;
+    if (uniCode !== undefined) {
+        trimmedUniCode = uniCode.trim();
+        if (!trimmedUniCode) {
+            throw new ApiError(400, "UniCode is required");
+        }
+
+        const [existing] = await executeQuery(
+            "SELECT id FROM [sections] WHERE LOWER(LTRIM(RTRIM(uniCode))) = LOWER(?) AND id != ?",
+            [trimmedUniCode, id]
+        );
+        if (existing.length > 0) {
+            throw new ApiError(400, `Section with UniCode '${trimmedUniCode}' already exists`);
+        }
+    }
+
     const updatedSection = await Section.update(id, {
         name,
-        uniCode,
+        uniCode: trimmedUniCode,
         description,
         category,
         daily5mFormType,

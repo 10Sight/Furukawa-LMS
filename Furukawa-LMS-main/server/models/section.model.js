@@ -237,12 +237,46 @@ class Section {
                 BEGIN
                     ALTER TABLE [sections] ADD CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId);
                 END
+
+                -- Trim existing uniCode values so the unique index compares cleanly
+                UPDATE [sections] SET uniCode = LTRIM(RTRIM(uniCode)) WHERE uniCode IS NOT NULL;
+            END
+        `;
+
+        // Rename duplicate/blank uniCode values before enforcing uniqueness so the
+        // filtered unique index below does not fail on pre-existing data.
+        const dedupeQuery = `
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'sections')
+            BEGIN
+                ;WITH ranked AS (
+                    SELECT id, uniCode,
+                        ROW_NUMBER() OVER (PARTITION BY LOWER(uniCode) ORDER BY id ASC) AS rn
+                    FROM [sections]
+                    WHERE uniCode IS NOT NULL AND uniCode <> ''
+                )
+                UPDATE s
+                SET s.uniCode = s.uniCode + '-DUP' + CAST(r.id AS NVARCHAR(20))
+                FROM [sections] s
+                JOIN ranked r ON r.id = s.id AND r.rn > 1;
+
+                UPDATE [sections] SET uniCode = 'SEC-' + CAST(id AS NVARCHAR(20)) WHERE uniCode IS NULL OR uniCode = '';
+            END
+        `;
+
+        const uniqueIndexQuery = `
+            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_unique_section_unicode' AND object_id = OBJECT_ID('sections'))
+            BEGIN
+                CREATE UNIQUE NONCLUSTERED INDEX idx_unique_section_unicode
+                ON [sections](uniCode)
+                WHERE uniCode IS NOT NULL AND uniCode <> '';
             END
         `;
 
         try {
             await executeQuery(createQuery);
             await executeQuery(migrationQuery);
+            await executeQuery(dedupeQuery);
+            await executeQuery(uniqueIndexQuery);
             logger.info("Checked/Created sections table and migrated columns in MSSQL");
 
             // Initial sync for all sections

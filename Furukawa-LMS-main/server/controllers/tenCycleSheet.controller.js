@@ -8,34 +8,50 @@ import sendMail from "../utils/mail.util.js";
 import emailTemplates from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import logAudit from "../utils/auditLogger.js";
+import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
+
+const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
 
 export const listTenCycleSheets = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId } = req.query;
 
     const sheets = await TenCycleSheet.findByFilters({ departmentId, sectionId, lineId, subSectionId });
 
-    // Batch-fetch department names for all unique departmentIds in the result
-    const deptIds = [...new Set(sheets.map(s => s.departmentId).filter(Boolean))];
-    let deptMap = {};
-    if (deptIds.length > 0) {
-        const placeholders = deptIds.map(() => "?").join(", ");
-        const [deps] = await executeQuery(`SELECT id, name FROM departments WHERE id IN (${placeholders})`, deptIds);
-        deps.forEach(d => { deptMap[d.id] = d.name; });
-    }
+    // Batch-fetch names for all unique ids referenced in the result set
+    const buildMap = async (table, ids) => {
+        const uniqueIds = [...new Set(ids.filter(Boolean))];
+        if (uniqueIds.length === 0) return {};
+        const placeholders = uniqueIds.map(() => "?").join(", ");
+        const [rows] = await executeQuery(`SELECT id, name FROM ${table} WHERE id IN (${placeholders})`, uniqueIds);
+        return rows.reduce((map, row) => { map[row.id] = row.name; return map; }, {});
+    };
+
+    const [deptMap, sectionMap, lineMap, subSectionMap] = await Promise.all([
+        buildMap("departments", sheets.map(s => s.departmentId)),
+        buildMap("sections", sheets.map(s => s.sectionId)),
+        buildMap("lines", sheets.map(s => s.lineId)),
+        buildMap("sub_sections", sheets.map(s => s.subSectionId)),
+    ]);
 
     const result = sheets.map((s) => ({
         id: s.id,
         departmentId: s.departmentId,
         departmentName: deptMap[s.departmentId] || "",
         sectionId: s.sectionId,
+        sectionName: sectionMap[s.sectionId] || "",
         lineId: s.lineId,
+        lineName: lineMap[s.lineId] || "",
         subSectionId: s.subSectionId,
+        subSectionName: subSectionMap[s.subSectionId] || "",
         formType: s.formType,
         status: s.status,
         verifiedStatus: s.verifiedStatus,
         verifiedBy: s.verifiedBy,
         reviewedStatus: s.reviewedStatus,
         reviewedBy: s.reviewedBy,
+        createdBy: s.createdBy,
+        updatedBy: s.updatedBy,
+        lastEditRemark: s.lastEditRemark,
         createdDate: s.createdDate,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
@@ -90,12 +106,37 @@ export const getTenCycleSheetById = asyncHandler(async (req, res) => {
 
 export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, isSubmit } = req.body || {};
+    const { formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, isSubmit, editRemark } = req.body || {};
 
     const existing = await TenCycleSheet.findById(id);
     if (!existing) throw new ApiError("10 cycle sheet not found", 404);
 
     if (!["form1", "form2", "form3"].includes(formType)) throw new ApiError("Invalid form type", 400);
+
+    // Verified/Approved lock: only admins or specially-permissioned users may edit further
+    const isLocked = existing.verifiedStatus === 'APPROVE' || existing.reviewedStatus === 'APPROVE';
+    if (isLocked) {
+        const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+        const canEditApproved = isAdmin || hasAnyPermission(req.user, ['ten_cycle:manage', 'ten_cycle:edit_approved']);
+        if (!canEditApproved) {
+            throw new ApiError("Only Admin or authorized personnel can edit a verified or approved sheet", 403);
+        }
+    }
+
+    // Mandatory remark once a sheet has already been through at least one submission
+    if (existing.status && existing.status !== 'Draft' && !String(editRemark || "").trim()) {
+        throw new ApiError("Remark is required when saving or submitting sheet edits", 400);
+    }
+
+    const normalizedEntries = Array.isArray(entries) ? entries : [];
+
+    // Empty submission guard: every row must have its key fields filled
+    if (isSubmit) {
+        const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[field] || "").trim());
+        if (normalizedEntries.length === 0 || !normalizedEntries.every(isRowComplete)) {
+            throw new ApiError("Cannot submit an empty sheet. Please complete all rows before submitting", 400);
+        }
+    }
 
     const updated = await TenCycleSheet.updateById(id, {
         formType,
@@ -103,7 +144,7 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
         qualityEngineerSign,
         dojoEngineer,
         dojoEngineerSign,
-        entries: Array.isArray(entries) ? entries : [],
+        entries: normalizedEntries,
         status: isSubmit ? "Submitted" : existing.status,
         checkedBy: existing.checkedBy || req.user?.fullName || req.user?.name || "",
         verifiedBy: existing.verifiedBy,
@@ -113,6 +154,7 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
         reviewedStatus: existing.reviewedStatus,
         reviewedAt: existing.reviewedAt,
         updatedBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
+        lastEditRemark: editRemark || existing.lastEditRemark,
     });
 
     if (isSubmit) {
@@ -172,7 +214,7 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
     }
 
     logAudit(req.user?.id, isSubmit ? "SUBMIT_TEN_CYCLE_SHEET" : "SAVE_TEN_CYCLE_SHEET_DRAFT",
-        { sheetId: id, formType, entriesCount: Array.isArray(updated.entries) ? updated.entries.length : 0, qualityEngineer, dojoEngineer },
+        { sheetId: id, formType, entriesCount: Array.isArray(updated.entries) ? updated.entries.length : 0, qualityEngineer, dojoEngineer, editRemark: editRemark || null },
         { resourceType: "TenCycleSheet", resourceId: id, req }
     ).catch(err => console.error(`logAudit(${isSubmit ? "SUBMIT_TEN_CYCLE_SHEET" : "SAVE_TEN_CYCLE_SHEET_DRAFT"}) failed:`, err.message));
 

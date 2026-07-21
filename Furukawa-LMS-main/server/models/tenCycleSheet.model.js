@@ -26,6 +26,7 @@ class TenCycleSheet {
         this.reviewedAt = data.reviewedAt;
         this.createdBy = data.createdBy || "";
         this.updatedBy = data.updatedBy || "";
+        this.lastEditRemark = data.lastEditRemark || "";
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -87,6 +88,8 @@ class TenCycleSheet {
                     ALTER TABLE ten_cycle_sheets ADD reviewedStatus NVARCHAR(50);
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'reviewedAt')
                     ALTER TABLE ten_cycle_sheets ADD reviewedAt DATETIME;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'lastEditRemark')
+                    ALTER TABLE ten_cycle_sheets ADD lastEditRemark NVARCHAR(MAX);
             END
         `;
         await executeQuery(query);
@@ -201,13 +204,14 @@ class TenCycleSheet {
             reviewedStatus,
             reviewedAt,
             updatedBy,
+            lastEditRemark,
         } = data;
 
         await executeQuery(
             `UPDATE ten_cycle_sheets
              SET formType = ?, qualityEngineer = ?, qualityEngineerSign = ?, dojoEngineer = ?, dojoEngineerSign = ?,
                  entries = ?, status = ?, checkedBy = ?, verifiedBy = ?, verifiedStatus = ?, verifiedAt = ?, reviewedBy = ?, reviewedStatus = ?, reviewedAt = ?,
-                 updatedBy = ?, updatedAt = GETDATE()
+                 updatedBy = ?, lastEditRemark = ?, updatedAt = GETDATE()
              WHERE id = ?`,
             [
                 formType || "form1",
@@ -225,6 +229,7 @@ class TenCycleSheet {
                 reviewedStatus || null,
                 reviewedAt || null,
                 updatedBy || "",
+                lastEditRemark || "",
                 id,
             ]
         );

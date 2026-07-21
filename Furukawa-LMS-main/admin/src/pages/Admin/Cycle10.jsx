@@ -38,6 +38,9 @@ const ALL_FORM_TYPES = [
     { id: 'form3', label: 'Form 3 (10 Cycle Numerical)' }
 ];
 
+const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
+const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[field] || "").trim());
+
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
     const { user } = useSelector(state => state.auth);
@@ -46,6 +49,8 @@ const Cycle10 = () => {
     const canRead = isAdmin || user?.permissions?.includes('ten_cycle:read') || user?.permissions?.includes('ten_cycle:manage');
     const canUpdate = isAdmin || user?.permissions?.includes('ten_cycle:update') || user?.permissions?.includes('ten_cycle:manage');
     const canDelete = isAdmin || user?.permissions?.includes('ten_cycle:delete') || user?.permissions?.includes('ten_cycle:manage');
+    const canEditApproved = isAdmin || user?.permissions?.includes('ten_cycle:manage') || user?.permissions?.includes('ten_cycle:edit_approved');
+    const isSheetLocked = (sheet) => sheet?.verifiedStatus === 'APPROVE' || sheet?.reviewedStatus === 'APPROVE';
 
     const [logAction] = useLogActionMutation();
 
@@ -62,6 +67,10 @@ const Cycle10 = () => {
     const [selectedSectionFilter, setSelectedSectionFilter] = useState("");
     const [selectedLineFilter, setSelectedLineFilter] = useState("");
     const [selectedSubSectionFilter, setSelectedSubSectionFilter] = useState("");
+
+    const [remarkDialogOpen, setRemarkDialogOpen] = useState(false);
+    const [editRemarkText, setEditRemarkText] = useState("");
+    const [pendingIsSubmit, setPendingIsSubmit] = useState(false);
 
     const [createOpen, setCreateOpen] = useState(false);
     const [createDepartmentId, setCreateDepartmentId] = useState("");
@@ -311,8 +320,7 @@ const Cycle10 = () => {
         }
     };
 
-    const handleSave = async (isSubmitArg = false) => {
-        const isSubmit = isSubmitArg === true;
+    const executeSave = async (isSubmit, remark) => {
         if (!selectedSheetId) {
             toast.error("No sheet selected");
             return;
@@ -325,7 +333,8 @@ const Cycle10 = () => {
                 ...headerData,
                 formType,
                 entries: rows,
-                isSubmit: !!isSubmit
+                isSubmit: !!isSubmit,
+                editRemark: remark || "",
             };
             await axiosInstance.put(`/api/ten-cycle-sheets/${selectedSheetId}`, payload);
             toast.success(isSubmit ? "10 Cycle Sheet Submitted & Email Sent" : "10 Cycle Check Saved Successfully");
@@ -333,26 +342,52 @@ const Cycle10 = () => {
             await fetchSheetById(selectedSheetId, isEditMode);
         } catch (error) {
             console.error("Error saving data:", error);
-            toast.error("Failed to save data");
+            toast.error(error?.response?.data?.message || "Failed to save data");
         } finally {
             setSaving(false);
             setSubmitting(false);
         }
     };
 
+    const handleSave = (isSubmitArg = false) => {
+        const isSubmit = isSubmitArg === true;
+
+        if (isSubmit && (rows.length === 0 || !rows.every(isRowComplete))) {
+            toast.error("Cannot submit an empty sheet. Please complete all rows before submitting.");
+            return;
+        }
+
+        const remarkRequired = !!currentSheet?.status && currentSheet.status !== 'Draft';
+        if (remarkRequired) {
+            setPendingIsSubmit(isSubmit);
+            setEditRemarkText("");
+            setRemarkDialogOpen(true);
+            return;
+        }
+
+        executeSave(isSubmit, "");
+    };
+
+    const handleConfirmRemark = () => {
+        if (!editRemarkText.trim()) {
+            toast.error("Please enter a remark describing your changes");
+            return;
+        }
+        setRemarkDialogOpen(false);
+        executeSave(pendingIsSubmit, editRemarkText.trim());
+    };
+
     const handleApproval = async (role, action) => {
         if (!selectedSheetId) return;
         try {
             setLoading(true);
-            const response = await axiosInstance.patch(`/api/ten-cycle-sheets/${selectedSheetId}/approve`, {
-                role, // 'VERIFY' or 'APPROVE'
-                action // 'APPROVE' or 'REJECT'
-            });
-            if (response.data.success) {
-                toast.success(`Sheet ${action === 'APPROVE' ? 'Approved' : 'Rejected'} successfully`);
 
-                if (role === 'VERIFY' && action === 'APPROVE') {
-                    const verifierName = response.data.data?.verifiedBy || user?.fullName || user?.name || "";
+            // Persist the TL auto-sign BEFORE the sheet becomes locked by verification,
+            // otherwise a non-admin verifier would be blocked from saving their own sign-off.
+            // Failure here must not block the actual verify/approve action below.
+            if (role === 'VERIFY' && action === 'APPROVE') {
+                try {
+                    const verifierName = user?.fullName || user?.name || "";
                     const signedRows = rows.map(row => ({
                         ...row,
                         tlSign: row.tlSign || verifierName,
@@ -362,9 +397,19 @@ const Cycle10 = () => {
                         formType,
                         entries: signedRows,
                         isSubmit: false,
+                        editRemark: `Auto-signed TL signature on verification approval by ${verifierName}`,
                     });
+                } catch (signError) {
+                    console.error("Failed to auto-persist TL signature:", signError);
                 }
+            }
 
+            const response = await axiosInstance.patch(`/api/ten-cycle-sheets/${selectedSheetId}/approve`, {
+                role, // 'VERIFY' or 'APPROVE'
+                action // 'APPROVE' or 'REJECT'
+            });
+            if (response.data.success) {
+                toast.success(`Sheet ${action === 'APPROVE' ? 'Approved' : 'Rejected'} successfully`);
                 await fetchSheetById(selectedSheetId, isEditMode);
             }
         } catch (error) {
@@ -736,7 +781,7 @@ const Cycle10 = () => {
                             </div>
                         </div>
 
-                        <div className="border rounded">
+        <div className="border rounded overflow-x-auto">
                             {loadingSheets ? (
                                 <div className="p-4 flex items-center gap-2 text-sm text-muted-foreground">
                                     <Loader2 className="h-4 w-4 animate-spin" /> Loading sheets...
@@ -746,67 +791,96 @@ const Cycle10 = () => {
                                     No sheets found.{canCreate ? " Create a new 10 cycle sheet." : ""}
                                 </div>
                             ) : (
-                                <div className="divide-y divide-slate-100">
-                                    {sheetList.map((sheet) => {
-                                        const getStatusInfo = () => {
-                                            if (sheet.reviewedStatus === 'REJECT') return { label: 'Rejected (Reviewer)', color: 'bg-red-100 text-red-700', by: sheet.reviewedBy };
-                                            if (sheet.verifiedStatus === 'REJECT') return { label: 'Rejected (Verifier)', color: 'bg-red-100 text-red-700', by: sheet.verifiedBy };
-                                            if (sheet.reviewedStatus === 'APPROVE') return { label: 'Approved', color: 'bg-green-100 text-green-700', by: sheet.reviewedBy };
-                                            if (sheet.status === 'Submitted') return { label: 'Submitted', color: 'bg-blue-100 text-blue-700', by: null };
-                                            return { label: 'Draft', color: 'bg-slate-100 text-slate-700', by: null };
-                                        };
-                                        const status = getStatusInfo();
+                                <table className="w-full text-xs border-collapse">
+                                    <thead>
+                                        <tr className="bg-slate-100 text-left text-slate-600 uppercase text-[10px] tracking-wide">
+                                            <th className="p-2 border-b">Sr. No.</th>
+                                            <th className="p-2 border-b">Department</th>
+                                            <th className="p-2 border-b">Section</th>
+                                            <th className="p-2 border-b">Line / Sub-Section</th>
+                                            <th className="p-2 border-b">Form Type</th>
+                                            <th className="p-2 border-b">Created Date / By</th>
+                                            <th className="p-2 border-b">Last Updated By / Remark</th>
+                                            <th className="p-2 border-b">Action By</th>
+                                            <th className="p-2 border-b">Status</th>
+                                            <th className="p-2 border-b">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sheetList.map((sheet, index) => {
+                                            const getStatusInfo = () => {
+                                                if (sheet.reviewedStatus === 'REJECT') return { label: 'Rejected (Reviewer)', color: 'bg-red-100 text-red-700', by: sheet.reviewedBy };
+                                                if (sheet.verifiedStatus === 'REJECT') return { label: 'Rejected (Verifier)', color: 'bg-red-100 text-red-700', by: sheet.verifiedBy };
+                                                if (sheet.reviewedStatus === 'APPROVE') return { label: 'Approved', color: 'bg-green-100 text-green-700', by: sheet.reviewedBy };
+                                                if (sheet.verifiedStatus === 'APPROVE') return { label: 'Verified', color: 'bg-teal-100 text-teal-700', by: sheet.verifiedBy };
+                                                if (sheet.status === 'Submitted') return { label: 'Submitted', color: 'bg-blue-100 text-blue-700', by: null };
+                                                return { label: 'Draft', color: 'bg-slate-100 text-slate-700', by: null };
+                                            };
+                                            const status = getStatusInfo();
+                                            const locked = isSheetLocked(sheet);
+                                            const lineSubSection = [sheet.lineName, sheet.subSectionName].filter(Boolean).join(" / ");
 
-                                        return (
-                                            <div key={sheet.id} className="flex items-center hover:bg-slate-50/80 transition-colors">
-                                                <button
-                                                    className="flex-1 text-left p-4"
-                                                    onClick={() => fetchSheetById(String(sheet.id), false)}
-                                                >
-                                                    <div className="space-y-1">
-                                                        <div className="font-bold text-slate-900">
-                                                            {sheet.departmentName || "Department"} - {sheet.formType === "form1" ? "Form 1" : sheet.formType === "form2" ? "Form 2" : "Form 3"}
-                                                        </div>
-                                                        <div className="text-xs text-slate-500 flex items-center gap-2">
-                                                            <span>Created: {sheet.createdDate ? String(sheet.createdDate).split("T")[0] : "-"}</span>
-                                                            {status.by && (
-                                                                <>
-                                                                    <span className="size-1 bg-slate-300 rounded-full"></span>
-                                                                    <span className="font-medium text-slate-600">Action By: {status.by}</span>
-                                                                </>
+                                            return (
+                                                <tr key={sheet.id} className="border-b hover:bg-slate-50/80 transition-colors">
+                                                    <td className="p-2 align-top">{index + 1}</td>
+                                                    <td className="p-2 align-top">
+                                                        <button className="font-bold text-slate-900 hover:underline text-left" onClick={() => fetchSheetById(String(sheet.id), false)}>
+                                                            {sheet.departmentName || "-"}
+                                                        </button>
+                                                    </td>
+                                                    <td className="p-2 align-top">{sheet.sectionName || "-"}</td>
+                                                    <td className="p-2 align-top">{lineSubSection || "-"}</td>
+                                                    <td className="p-2 align-top">{sheet.formType === "form1" ? "Form 1" : sheet.formType === "form2" ? "Form 2" : "Form 3"}</td>
+                                                    <td className="p-2 align-top">
+                                                        <div>{sheet.createdDate ? String(sheet.createdDate).split("T")[0] : "-"}</div>
+                                                        <div className="text-slate-500">{sheet.createdBy || "-"}</div>
+                                                    </td>
+                                                    <td className="p-2 align-top max-w-[220px]">
+                                                        <div className="font-medium text-slate-700">{sheet.updatedBy || "-"}</div>
+                                                        {sheet.lastEditRemark && (
+                                                            <div className="text-slate-500 italic truncate" title={sheet.lastEditRemark}>
+                                                                &quot;{sheet.lastEditRemark}&quot;
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-2 align-top">{status.by || "-"}</td>
+                                                    <td className="p-2 align-top">
+                                                        <Badge className={`${status.color} border-none font-bold uppercase text-[9px] tracking-wider px-2 py-0.5`}>
+                                                            {status.label}
+                                                        </Badge>
+                                                    </td>
+                                                    <td className="p-2 align-top">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => fetchSheetById(String(sheet.id), false)}>
+                                                                View
+                                                            </Button>
+                                                            {canUpdate && (!locked || canEditApproved) && (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    className="h-7 text-xs gap-1"
+                                                                    onClick={() => fetchSheetById(String(sheet.id), true)}
+                                                                >
+                                                                    <Pencil size={12} /> Edit
+                                                                </Button>
+                                                            )}
+                                                            {canDelete && (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    className="h-7 text-xs gap-1 border-red-300 text-red-600 hover:bg-red-50"
+                                                                    onClick={() => handleDeleteSheet(sheet.id)}
+                                                                >
+                                                                    <Trash2 size={12} /> Delete
+                                                                </Button>
                                                             )}
                                                         </div>
-                                                    </div>
-                                                </button>
-                                                <div className="flex items-center gap-2 pr-4 shrink-0">
-                                                    <Badge className={`${status.color} border-none font-bold uppercase text-[10px] tracking-wider px-2.5 py-0.5`}>
-                                                        {status.label}
-                                                    </Badge>
-                                                    {canUpdate && (
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="h-7 text-xs gap-1"
-                                                            onClick={(e) => { e.stopPropagation(); fetchSheetById(String(sheet.id), true); }}
-                                                        >
-                                                            <Pencil size={12} /> Edit
-                                                        </Button>
-                                                    )}
-                                                    {canDelete && (
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="h-7 text-xs gap-1 border-red-300 text-red-600 hover:bg-red-50"
-                                                            onClick={(e) => { e.stopPropagation(); handleDeleteSheet(sheet.id); }}
-                                                        >
-                                                            <Trash2 size={12} /> Delete
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
                             )}
                         </div>
                     </div>
@@ -864,9 +938,18 @@ const Cycle10 = () => {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {!isEditMode && canUpdate && (
-                                                <Button size="sm" variant="outline" className="gap-1" onClick={() => setIsEditMode(true)}>
-                                                    <Pencil size={14} /> Edit Sheet
-                                                </Button>
+                                                isSheetLocked(currentSheet) && !canEditApproved ? (
+                                                    <span
+                                                        className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200"
+                                                        title="Only Admin or authorized personnel can edit a verified or approved sheet"
+                                                    >
+                                                        Locked (Verified/Approved)
+                                                    </span>
+                                                ) : (
+                                                    <Button size="sm" variant="outline" className="gap-1" onClick={() => setIsEditMode(true)}>
+                                                        <Pencil size={14} /> Edit Sheet
+                                                    </Button>
+                                                )
                                             )}
                                             {isEditMode && (
                                                 <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">EDIT MODE</span>
@@ -1623,6 +1706,34 @@ const Cycle10 = () => {
                         )}
                     </div>
                 )}
+
+                {/* ── Mandatory Edit Remark Dialog ─────────────────────────── */}
+                <Dialog open={remarkDialogOpen} onOpenChange={setRemarkDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>{pendingIsSubmit ? "Submit Sheet" : "Save Changes"} — Remark Required</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-2">
+                            <Label className="text-xs">
+                                Please describe what you changed on this already-submitted sheet:
+                            </Label>
+                            <textarea
+                                className="w-full h-24 p-2 text-sm border rounded outline-none resize-none focus:ring-1 focus:ring-blue-500"
+                                value={editRemarkText}
+                                onChange={(e) => setEditRemarkText(e.target.value)}
+                                placeholder="e.g. Corrected cycle time for row 3 as per operator feedback"
+                                autoFocus
+                            />
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setRemarkDialogOpen(false)}>Cancel</Button>
+                            <Button onClick={handleConfirmRemark} disabled={!editRemarkText.trim() || saving || submitting} className="bg-blue-600 hover:bg-blue-700">
+                                {(saving || submitting) ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
+                                Confirm & {pendingIsSubmit ? "Submit" : "Save"}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 {/* ── Create Sheet Dialog ──────────────────────────────────── */}
                 <Dialog open={createOpen} onOpenChange={setCreateOpen}>

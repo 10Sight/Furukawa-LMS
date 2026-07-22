@@ -672,7 +672,7 @@ const Cycle10 = () => {
     );
 
     return (
-        <Card className="w-full overflow-hidden">
+        <Card className="w-full">
             <CardContent className="p-4 space-y-4">
 
                 {/* ── Tab Bar ─────────────────────────────────────────────── */}
@@ -781,7 +781,7 @@ const Cycle10 = () => {
                             </div>
                         </div>
 
-        <div className="border rounded overflow-x-auto">
+        <div className="border rounded">
                             {loadingSheets ? (
                                 <div className="p-4 flex items-center gap-2 text-sm text-muted-foreground">
                                     <Loader2 className="h-4 w-4 animate-spin" /> Loading sheets...
@@ -1029,7 +1029,7 @@ const Cycle10 = () => {
                                     </div>
                                 </div>
 
-                                <div className="overflow-x-auto border-2 border-black">
+                                <div className="border-2 border-black">
                                     {formType === 'form1' ? (
                                         /* FORM 1: Checkbox Style with Dropdowns */
                                         <div className="min-w-[3200px]">

@@ -310,8 +310,9 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                                     const userData = row.data[3]?.[cIdx];
                                     const isAbsent = status === 'Absent';
                                     const isPresent = status === 'Present';
+                                    const isMismatch = status === 'Mismatch';
                                     return (
-                                        <td key={cIdx} className={`border border-black p-0 relative ${isAbsent ? 'bg-red-50' : isPresent ? 'bg-green-50' : ''}`}>
+                                        <td key={cIdx} className={`border border-black p-0 relative ${isAbsent ? 'bg-red-50' : isPresent ? 'bg-green-50' : isMismatch ? 'bg-blue-50' : ''}`}>
                                             <div className="flex items-center h-full">
                                                 {isAbsent && val ? (
                                                     <div
@@ -328,7 +329,7 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                                                         fontSize="text-[8px]"
                                                         padding="p-0.5"
                                                         disabled={disabled}
-                                                        className={isAbsent ? 'text-red-600 font-bold' : isPresent ? 'text-green-600 font-bold' : ''}
+                                                        className={isAbsent ? 'text-red-600 font-bold' : isPresent ? 'text-green-600 font-bold' : isMismatch ? 'text-blue-600 font-bold' : ''}
                                                     />
                                                 )}
                                             </div>
@@ -343,8 +344,9 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                                     const status = row.data[2]?.[cIdx];
                                     const isAbsent = status === 'Absent';
                                     const isPresent = status === 'Present';
+                                    const isMismatch = status === 'Mismatch';
                                     return (
-                                        <td key={cIdx} className={`border border-black p-0 relative ${isAbsent ? 'bg-red-50' : isPresent ? 'bg-green-50' : ''}`}>
+                                        <td key={cIdx} className={`border border-black p-0 relative ${isAbsent ? 'bg-red-50' : isPresent ? 'bg-green-50' : isMismatch ? 'bg-blue-50' : ''}`}>
                                             <div className="flex items-center h-full">
                                                 <TextCell
                                                     value={val}
@@ -352,7 +354,7 @@ const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, s
                                                     fontSize="text-[8px]"
                                                     padding="p-0.5"
                                                     disabled={disabled}
-                                                    className={isAbsent ? 'text-red-600 font-bold' : isPresent ? 'text-green-600 font-bold' : ''}
+                                                    className={isAbsent ? 'text-red-600 font-bold' : isPresent ? 'text-green-600 font-bold' : isMismatch ? 'text-blue-600 font-bold' : ''}
                                                 />
                                                 {isAbsent && val && (
                                                     <span className="absolute right-0 top-0 text-[6px] bg-red-600 text-white px-0.5 rounded-bl font-bold">5M</span>

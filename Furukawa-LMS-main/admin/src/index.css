@@ -154,6 +154,10 @@
   background-color: #6b7280;
 }
 
+.highcharts-container {
+  touch-action: pan-y !important;
+}
+
 @media print {
   .no-print,
   .fixed:not(.print-visible),

@@ -340,7 +340,7 @@ class DailyProductionReport {
         const shiftParam = shift === 'all' ? 'all' : shift;
 
         const query = `
-            SELECT 
+            SELECT
                 ma.machine_id as machineId,
                 u.id as userId,
                 u.fullName,
@@ -350,12 +350,15 @@ class DailyProductionReport {
                 u.lineId,
                 u.subSectionId,
                 u.currentLevel,
+                u.shift as defaultShift,
+                u.shiftSchedule as shiftSchedule,
                 d.name as departmentName,
                 s.name as sectionName,
                 l.name as lineName,
                 ss.name as subSectionName,
                 m.name as stationName,
-                CASE WHEN al.status IS NOT NULL AND LTRIM(RTRIM(al.status)) = 'Present' THEN 'Present' ELSE 'Absent' END as status
+                al.logShift,
+                al.logStatus
             FROM machine_assignments ma
             JOIN users u ON ma.user_id = u.id
             LEFT JOIN departments d ON u.departmentId = d.id
@@ -363,19 +366,72 @@ class DailyProductionReport {
             LEFT JOIN lines l ON u.lineId = l.id
             LEFT JOIN sub_sections ss ON u.subSectionId = ss.id
             LEFT JOIN machines m ON ma.machine_id = m.id
-            LEFT JOIN attendance_logs al ON (al.userId = u.id OR (u.empId IS NOT NULL AND LTRIM(RTRIM(al.payCode)) = LTRIM(RTRIM(u.empId))))
-                AND CAST(al.[date] AS DATE) = CAST(? AS DATE)
-                AND (LTRIM(RTRIM(al.shift)) = ? OR ? = 'all')
+            OUTER APPLY (
+                SELECT TOP 1
+                    LTRIM(RTRIM(al2.shift)) as logShift,
+                    CASE WHEN al2.status IS NOT NULL AND LTRIM(RTRIM(al2.status)) = 'Present' THEN 'Present' ELSE 'Absent' END as logStatus
+                FROM attendance_logs al2
+                WHERE (al2.userId = u.id OR (u.empId IS NOT NULL AND LTRIM(RTRIM(al2.payCode)) = LTRIM(RTRIM(u.empId))))
+                    AND CAST(al2.[date] AS DATE) = CAST(? AS DATE)
+                ORDER BY
+                    CASE
+                        WHEN al2.status IS NOT NULL AND LTRIM(RTRIM(al2.status)) = 'Present' AND LTRIM(RTRIM(al2.shift)) = ? THEN 0
+                        WHEN al2.status IS NOT NULL AND LTRIM(RTRIM(al2.status)) = 'Present' THEN 1
+                        ELSE 2
+                    END
+            ) al
             WHERE ma.machine_id IN (${placeholders})
             ORDER BY u.fullName ASC
         `;
 
-        const params = [formattedDate, shiftParam, shiftParam, ...machineIds];
+        const params = [formattedDate, shiftParam, ...machineIds];
         const [rows] = await executeQuery(query, params);
+
+        // Canonical shift codes used across shiftSchedule, users.shift, attendance_logs.shift and the DPR shift selector.
+        const SHIFT_KEYS = ['A', 'B', 'C', 'G'];
+        const resolveShiftKey = (raw) => {
+            const normalized = (raw || '').toString().trim().toUpperCase();
+            if (!normalized) return null;
+            return SHIFT_KEYS.find(k => normalized === k || normalized.includes(k)) || null;
+        };
+        const requestedShiftKey = shiftParam === 'all' ? 'all' : resolveShiftKey(shiftParam);
 
         // Group by machineId
         const assignments = {};
         rows.forEach(row => {
+            let scheduledShiftRaw = row.defaultShift;
+            if (row.shiftSchedule) {
+                try {
+                    const scheduleObj = JSON.parse(row.shiftSchedule);
+                    if (scheduleObj && scheduleObj[formattedDate]) {
+                        scheduledShiftRaw = scheduleObj[formattedDate];
+                    }
+                } catch (e) {
+                    // Keep the default shift if the schedule JSON is malformed
+                }
+            }
+            const scheduledShiftKey = resolveShiftKey(scheduledShiftRaw);
+            const logShiftKey = resolveShiftKey(row.logShift);
+            const isPresentLog = row.logStatus === 'Present';
+
+            let status;
+            if (requestedShiftKey === 'all') {
+                status = isPresentLog ? 'Present' : 'Absent';
+            } else {
+                const isScheduledForShift = scheduledShiftKey === requestedShiftKey;
+                const isPresentInShift = isPresentLog && logShiftKey === requestedShiftKey;
+
+                // Only show a user on this shift's sheet if they're scheduled for it or actually punched in during it
+                if (!isScheduledForShift && !isPresentInShift) return;
+
+                if (!isPresentLog) {
+                    status = 'Absent';
+                } else {
+                    // Unknown schedule (null) is not treated as a contradiction, so it isn't flagged Mismatch
+                    status = (!scheduledShiftKey || logShiftKey === scheduledShiftKey) ? 'Present' : 'Mismatch';
+                }
+            }
+
             if (!assignments[row.machineId]) {
                 assignments[row.machineId] = [];
             }
@@ -383,7 +439,7 @@ class DailyProductionReport {
                 userId: row.userId,
                 fullName: row.fullName,
                 empId: row.empId,
-                status: row.status,
+                status,
                 departmentId: row.departmentId,
                 sectionId: row.sectionId,
                 lineId: row.lineId,

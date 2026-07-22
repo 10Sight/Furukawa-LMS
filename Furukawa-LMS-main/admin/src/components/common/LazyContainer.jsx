@@ -29,7 +29,7 @@ const LazyContainer = ({ children, minHeight = 400, rootMargin = "200px" }) => {
   }, [isVisible, rootMargin]);
 
   return (
-    <div ref={containerRef} style={{ minHeight: isVisible ? undefined : minHeight }}>
+    <div ref={containerRef} style={{ minHeight }}>
       {isVisible ? children : <Skeleton className="w-full h-full" style={{ height: minHeight }} />}
     </div>
   );

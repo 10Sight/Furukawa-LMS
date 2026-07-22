@@ -408,7 +408,7 @@ const MultiSkilling = () => {
                 </TabsList>
 
                 {/* Plan Calander Tab */}
-                <TabsContent value="planCalendar" className="space-y-6">
+                <TabsContent value="planCalendar" className="space-y-6 min-w-0 w-full max-w-full overflow-hidden">
                     {/* Selection Panel */}
                     <Card className="border-slate-200 shadow-sm overflow-hidden">
                         <CardHeader className="pb-3 border-b bg-slate-50/50">

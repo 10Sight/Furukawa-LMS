@@ -376,7 +376,7 @@ const OnJobTraining = () => {
                                 <p className="text-sm font-semibold text-slate-500">Loading training records...</p>
                             </div>
                         ) : ojtList.length > 0 ? (
-                            <div className="overflow-x-auto">
+                            <div>
                                 <Table>
                                     <TableHeader className="bg-slate-50/75">
                                         <TableRow>

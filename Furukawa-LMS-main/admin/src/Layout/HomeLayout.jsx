@@ -152,7 +152,11 @@ export function HomeLayout() {
     if (pathname.startsWith("/admin/skill-matrix")) {
       return new URLSearchParams(search).get("tab") === "skillUpgradation";
     }
-    return ["/admin/multi-skilling", "/admin/departments"].some(p => pathname.startsWith(p));
+    if (pathname.startsWith("/admin/multi-skilling")) {
+      const tab = new URLSearchParams(search).get("tab");
+      return !tab || tab === "planCalendar"; // MultiSkillingPlan.jsx's own bounded scroll track
+    }
+    return pathname.startsWith("/admin/departments");
   }, [pathname, search]);
 
   useEffect(() => {
@@ -216,6 +220,16 @@ export function HomeLayout() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Sidebar width transition doesn't fire a native resize event, so Highcharts
+  // (which only reflows on window resize) won't pick up the new content width
+  // until something else triggers one. Dispatch one once the CSS transition ends.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [collapsed]);
 
   if (!isPathAllowed && pathname === "/admin") {
     return <div className="flex items-center justify-center min-h-screen">
@@ -404,12 +418,12 @@ export function HomeLayout() {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 transition-all duration-300 ${collapsed ? "ml-16" : "ml-64"
+        className={`flex-1 transition-[margin] duration-300 ${collapsed ? "ml-16" : "ml-64"
           } ${needsMinW0 ? "min-w-0" : ""}`}
       >
         {/* Header */}
         <header
-          className={`px-4 sm:px-6 ${theme.card} backdrop-blur-lg shadow-sm border-b ${theme.border} flex h-16 items-center justify-between gap-2 sm:gap-4 fixed right-0 top-0 z-30 transition-all duration-300 ${collapsed ? "w-[calc(100%-4rem)]" : "w-[calc(100%-16rem)]"
+          className={`px-4 sm:px-6 ${theme.card} backdrop-blur-lg shadow-sm border-b ${theme.border} flex h-16 items-center justify-between gap-2 sm:gap-4 fixed right-0 top-0 z-30 transition-[width,margin] duration-300 ${collapsed ? "w-[calc(100%-4rem)]" : "w-[calc(100%-16rem)]"
             }`}
         >
           {/* Mobile menu button */}
@@ -588,7 +602,7 @@ export function HomeLayout() {
         {/* Page Content */}
         <div className="pt-20 pb-6 px-4 sm:px-6 min-h-screen">
           <div
-            className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-all duration-300 hover:shadow-md`}
+            className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-shadow duration-300 hover:shadow-md`}
           >
             {/* Prevent flash of dashboard if root access is not permitted */}
             {pathname === "/admin" && !tabs.some(t => t.link === "/admin") && tabs.length > 0 ? (

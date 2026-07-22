@@ -748,6 +748,7 @@ const DailyProductionReport = () => {
                         if (stats) {
                             return {
                                 ...row,
+                                handover: stats.totalCount || 0,
                                 present: stats.presentCount || 0,
                                 absent: stats.absentCount || 0
                             };
